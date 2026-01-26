@@ -38,7 +38,7 @@ jobs:
             tasks: mingwX64Test
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
     
     - name: Set up JDK 17
       uses: actions/setup-java@v5
@@ -51,21 +51,22 @@ jobs:
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
+      if: runner.os != 'Windows'
 
     - name: Run Gradle tasks
       run: ./gradlew ${{ matrix.tasks }}
       continue-on-error: true
 
-    # 发布测试结果到 PR/Commit 中
+    # 发布测试结果到 PR/Commit 中（仅在 Linux 上运行）
     - name: Publish Test Results
-      if: always()
+      if: always() && runner.os == 'Linux'
       uses: EnricoMi/publish-unit-test-result-action@v2
       with:
         files: '**/build/test-results/**/TEST-*.xml'
-        check_name: 'Test Results - ${{ matrix.os }}'
+        check_name: 'Test Results - JVM'
         comment_mode: 'always'
 
-    # 上传测试报告作为制品
+    # 上传测试报告作为制品（所有平台）
     - name: Upload Test Reports
       if: always()
       uses: actions/upload-artifact@v4
@@ -76,9 +77,9 @@ jobs:
           **/build/test-results/
         retention-days: 30
 
-    # 如果测试失败，在 PR 中添加评论（仅在 PR 时）
+    # 如果测试失败，在 PR 中添加评论（仅在 Linux 上）
     - name: Comment on PR if tests failed
-      if: failure() && github.event_name == 'pull_request'
+      if: failure() && github.event_name == 'pull_request' && runner.os == 'Linux'
       uses: actions/github-script@v7
       with:
         script: |
@@ -86,5 +87,5 @@ jobs:
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: '❌ ${{ matrix.os }} 上的测试失败！请查看 [CI 日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) 了解详情。'
+            body: '❌ JVM 测试失败！请查看 [CI 日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) 了解详情。'
           })
