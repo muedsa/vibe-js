@@ -80,7 +80,7 @@ jobs:
     # 如果测试失败，在 PR 中添加评论（仅在 Linux 上）
     - name: Comment on PR if tests failed
       if: failure() && github.event_name == 'pull_request' && runner.os == 'Linux'
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       with:
         script: |
           github.rest.issues.createComment({
