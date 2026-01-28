@@ -69,7 +69,7 @@ jobs:
     # 上传测试报告作为制品（所有平台）
     - name: Upload Test Reports
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: test-reports-${{ matrix.os }}
         path: |
