@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.kotlin.benchmark)
+    alias(libs.plugins.kotlin.binary.compatibility.validator)
 }
 
 group = "com.muedsa.js"

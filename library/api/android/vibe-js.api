@@ -1,0 +1,898 @@
+public abstract class com/muedsa/js/ast/ASTNode {
+	public final fun getRange ()Lkotlin/ranges/IntRange;
+	public final fun getTokens ()Ljava/util/List;
+	public final fun setRange (Lkotlin/ranges/IntRange;)V
+	public final fun setTokens (Ljava/util/List;)V
+}
+
+public final class com/muedsa/js/ast/ArrayLiteral : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lcom/muedsa/js/ast/ArrayLiteral;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/ArrayLiteral;Ljava/util/List;ILjava/lang/Object;)Lcom/muedsa/js/ast/ArrayLiteral;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getElements ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/AssignmentExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/AssignmentExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/AssignmentExpr;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/AssignmentExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getTarget ()Ljava/lang/String;
+	public final fun getValue ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/BinaryOp : com/muedsa/js/ast/Expression {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/BinaryOp;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/BinaryOp;Lcom/muedsa/js/ast/Expression;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/BinaryOp;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/muedsa/js/ast/Expression;
+	public final fun getOperator ()Ljava/lang/String;
+	public final fun getRight ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/BlockStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lcom/muedsa/js/ast/BlockStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/BlockStatement;Ljava/util/List;ILjava/lang/Object;)Lcom/muedsa/js/ast/BlockStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getStatements ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/BooleanLiteral : com/muedsa/js/ast/Expression {
+	public fun <init> (Z)V
+	public final fun component1 ()Z
+	public final fun copy (Z)Lcom/muedsa/js/ast/BooleanLiteral;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/BooleanLiteral;ZILjava/lang/Object;)Lcom/muedsa/js/ast/BooleanLiteral;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/BreakStatement : com/muedsa/js/ast/Statement {
+	public fun <init> ()V
+}
+
+public final class com/muedsa/js/ast/CallExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Ljava/util/List;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Ljava/util/List;)Lcom/muedsa/js/ast/CallExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/CallExpr;Lcom/muedsa/js/ast/Expression;Ljava/util/List;ILjava/lang/Object;)Lcom/muedsa/js/ast/CallExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArguments ()Ljava/util/List;
+	public final fun getCallee ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/CatchClause {
+	public fun <init> (Ljava/lang/String;Lcom/muedsa/js/ast/BlockStatement;Lkotlin/ranges/IntRange;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun component3 ()Lkotlin/ranges/IntRange;
+	public final fun copy (Ljava/lang/String;Lcom/muedsa/js/ast/BlockStatement;Lkotlin/ranges/IntRange;)Lcom/muedsa/js/ast/CatchClause;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/CatchClause;Ljava/lang/String;Lcom/muedsa/js/ast/BlockStatement;Lkotlin/ranges/IntRange;ILjava/lang/Object;)Lcom/muedsa/js/ast/CatchClause;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun getParam ()Ljava/lang/String;
+	public final fun getRange ()Lkotlin/ranges/IntRange;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/CoalesceExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/CoalesceExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/CoalesceExpr;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/CoalesceExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/muedsa/js/ast/Expression;
+	public final fun getRight ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/CompoundAssignmentExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/CompoundAssignmentExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/CompoundAssignmentExpr;Ljava/lang/String;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/CompoundAssignmentExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOperator ()Ljava/lang/String;
+	public final fun getTarget ()Ljava/lang/String;
+	public final fun getValue ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/ConditionalExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component3 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/ConditionalExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/ConditionalExpr;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/ConditionalExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCondition ()Lcom/muedsa/js/ast/Expression;
+	public final fun getElseBranch ()Lcom/muedsa/js/ast/Expression;
+	public final fun getThenBranch ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/ContinueStatement : com/muedsa/js/ast/Statement {
+	public fun <init> ()V
+}
+
+public abstract class com/muedsa/js/ast/Expression : com/muedsa/js/ast/ASTNode {
+}
+
+public final class com/muedsa/js/ast/ExpressionStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/ExpressionStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/ExpressionStatement;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/ExpressionStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpression ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/ForStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Lcom/muedsa/js/ast/Statement;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Statement;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component3 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component4 ()Lcom/muedsa/js/ast/Statement;
+	public final fun copy (Lcom/muedsa/js/ast/Statement;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;)Lcom/muedsa/js/ast/ForStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/ForStatement;Lcom/muedsa/js/ast/Statement;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;ILjava/lang/Object;)Lcom/muedsa/js/ast/ForStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()Lcom/muedsa/js/ast/Statement;
+	public final fun getCondition ()Lcom/muedsa/js/ast/Expression;
+	public final fun getInit ()Lcom/muedsa/js/ast/Statement;
+	public final fun getUpdate ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/FunctionDeclaration : com/muedsa/js/ast/Statement {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Lcom/muedsa/js/ast/BlockStatement;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Lcom/muedsa/js/ast/BlockStatement;)Lcom/muedsa/js/ast/FunctionDeclaration;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/FunctionDeclaration;Ljava/lang/String;Ljava/util/List;Lcom/muedsa/js/ast/BlockStatement;ILjava/lang/Object;)Lcom/muedsa/js/ast/FunctionDeclaration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getParams ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/FunctionExpression : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Lcom/muedsa/js/ast/BlockStatement;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Lcom/muedsa/js/ast/BlockStatement;)Lcom/muedsa/js/ast/FunctionExpression;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/FunctionExpression;Ljava/lang/String;Ljava/util/List;Lcom/muedsa/js/ast/BlockStatement;ILjava/lang/Object;)Lcom/muedsa/js/ast/FunctionExpression;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getParams ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/Identifier : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/muedsa/js/ast/Identifier;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/Identifier;Ljava/lang/String;ILjava/lang/Object;)Lcom/muedsa/js/ast/Identifier;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/IfStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;Lcom/muedsa/js/ast/Statement;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Lcom/muedsa/js/ast/Statement;
+	public final fun component3 ()Lcom/muedsa/js/ast/Statement;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;Lcom/muedsa/js/ast/Statement;)Lcom/muedsa/js/ast/IfStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/IfStatement;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;Lcom/muedsa/js/ast/Statement;ILjava/lang/Object;)Lcom/muedsa/js/ast/IfStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAlternate ()Lcom/muedsa/js/ast/Statement;
+	public final fun getCondition ()Lcom/muedsa/js/ast/Expression;
+	public final fun getConsequent ()Lcom/muedsa/js/ast/Statement;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/MemberAssignmentExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Z)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component3 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component4 ()Z
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Z)Lcom/muedsa/js/ast/MemberAssignmentExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/MemberAssignmentExpr;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;ZILjava/lang/Object;)Lcom/muedsa/js/ast/MemberAssignmentExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getComputed ()Z
+	public final fun getObj ()Lcom/muedsa/js/ast/Expression;
+	public final fun getProperty ()Lcom/muedsa/js/ast/Expression;
+	public final fun getValue ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/MemberExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Z)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component3 ()Z
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Z)Lcom/muedsa/js/ast/MemberExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/MemberExpr;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;ZILjava/lang/Object;)Lcom/muedsa/js/ast/MemberExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getComputed ()Z
+	public final fun getObj ()Lcom/muedsa/js/ast/Expression;
+	public final fun getProperty ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/NewExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Ljava/util/List;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Ljava/util/List;)Lcom/muedsa/js/ast/NewExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/NewExpr;Lcom/muedsa/js/ast/Expression;Ljava/util/List;ILjava/lang/Object;)Lcom/muedsa/js/ast/NewExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArguments ()Ljava/util/List;
+	public final fun getObjConstructor ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/NullLiteral : com/muedsa/js/ast/Expression {
+	public fun <init> ()V
+}
+
+public final class com/muedsa/js/ast/NumberLiteral : com/muedsa/js/ast/Expression {
+	public fun <init> (D)V
+	public final fun component1 ()D
+	public final fun copy (D)Lcom/muedsa/js/ast/NumberLiteral;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/NumberLiteral;DILjava/lang/Object;)Lcom/muedsa/js/ast/NumberLiteral;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/ObjectLiteral : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/util/Map;)V
+	public final fun component1 ()Ljava/util/Map;
+	public final fun copy (Ljava/util/Map;)Lcom/muedsa/js/ast/ObjectLiteral;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/ObjectLiteral;Ljava/util/Map;ILjava/lang/Object;)Lcom/muedsa/js/ast/ObjectLiteral;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getProperties ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/ReturnStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/ReturnStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/ReturnStatement;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/ReturnStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class com/muedsa/js/ast/Statement : com/muedsa/js/ast/ASTNode {
+}
+
+public final class com/muedsa/js/ast/StringLiteral : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/muedsa/js/ast/StringLiteral;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/StringLiteral;Ljava/lang/String;ILjava/lang/Object;)Lcom/muedsa/js/ast/StringLiteral;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/SwitchCase {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Ljava/util/List;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Ljava/util/List;)Lcom/muedsa/js/ast/SwitchCase;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/SwitchCase;Lcom/muedsa/js/ast/Expression;Ljava/util/List;ILjava/lang/Object;)Lcom/muedsa/js/ast/SwitchCase;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConsequent ()Ljava/util/List;
+	public final fun getTest ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/SwitchStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Ljava/util/List;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Ljava/util/List;)Lcom/muedsa/js/ast/SwitchStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/SwitchStatement;Lcom/muedsa/js/ast/Expression;Ljava/util/List;ILjava/lang/Object;)Lcom/muedsa/js/ast/SwitchStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCases ()Ljava/util/List;
+	public final fun getDiscriminant ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/ThisExpr : com/muedsa/js/ast/Expression {
+	public fun <init> ()V
+}
+
+public final class com/muedsa/js/ast/ThrowStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/ThrowStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/ThrowStatement;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/ThrowStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArgument ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/TryStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Lcom/muedsa/js/ast/BlockStatement;Lcom/muedsa/js/ast/CatchClause;Lcom/muedsa/js/ast/BlockStatement;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun component2 ()Lcom/muedsa/js/ast/CatchClause;
+	public final fun component3 ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun copy (Lcom/muedsa/js/ast/BlockStatement;Lcom/muedsa/js/ast/CatchClause;Lcom/muedsa/js/ast/BlockStatement;)Lcom/muedsa/js/ast/TryStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/TryStatement;Lcom/muedsa/js/ast/BlockStatement;Lcom/muedsa/js/ast/CatchClause;Lcom/muedsa/js/ast/BlockStatement;ILjava/lang/Object;)Lcom/muedsa/js/ast/TryStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBlock ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun getFinalizer ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun getHandler ()Lcom/muedsa/js/ast/CatchClause;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/UnaryOp : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/UnaryOp;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/UnaryOp;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/UnaryOp;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOperand ()Lcom/muedsa/js/ast/Expression;
+	public final fun getOperator ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/UpdateExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Ljava/lang/String;Lcom/muedsa/js/ast/Expression;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component3 ()Z
+	public final fun copy (Ljava/lang/String;Lcom/muedsa/js/ast/Expression;Z)Lcom/muedsa/js/ast/UpdateExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/UpdateExpr;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;ZILjava/lang/Object;)Lcom/muedsa/js/ast/UpdateExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArgument ()Lcom/muedsa/js/ast/Expression;
+	public final fun getOperator ()Ljava/lang/String;
+	public final fun getPrefix ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/VarDeclaration : com/muedsa/js/ast/Statement {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/muedsa/js/ast/Expression;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;)Lcom/muedsa/js/ast/VarDeclaration;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/VarDeclaration;Ljava/lang/String;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;ILjava/lang/Object;)Lcom/muedsa/js/ast/VarDeclaration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInitializer ()Lcom/muedsa/js/ast/Expression;
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/ast/WhileStatement : com/muedsa/js/ast/Statement {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Lcom/muedsa/js/ast/Statement;
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;)Lcom/muedsa/js/ast/WhileStatement;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/WhileStatement;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Statement;ILjava/lang/Object;)Lcom/muedsa/js/ast/WhileStatement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()Lcom/muedsa/js/ast/Statement;
+	public final fun getCondition ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/lexer/Lexer {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun tokenize ()Ljava/util/List;
+}
+
+public final class com/muedsa/js/lexer/Token {
+	public fun <init> (Lcom/muedsa/js/lexer/TokenType;Ljava/lang/String;IILkotlin/ranges/IntRange;)V
+	public synthetic fun <init> (Lcom/muedsa/js/lexer/TokenType;Ljava/lang/String;IILkotlin/ranges/IntRange;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/muedsa/js/lexer/TokenType;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun component5 ()Lkotlin/ranges/IntRange;
+	public final fun copy (Lcom/muedsa/js/lexer/TokenType;Ljava/lang/String;IILkotlin/ranges/IntRange;)Lcom/muedsa/js/lexer/Token;
+	public static synthetic fun copy$default (Lcom/muedsa/js/lexer/Token;Lcom/muedsa/js/lexer/TokenType;Ljava/lang/String;IILkotlin/ranges/IntRange;ILjava/lang/Object;)Lcom/muedsa/js/lexer/Token;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColumn ()I
+	public final fun getLine ()I
+	public final fun getRange ()Lkotlin/ranges/IntRange;
+	public final fun getType ()Lcom/muedsa/js/lexer/TokenType;
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/lexer/TokenType : java/lang/Enum {
+	public static final field AND Lcom/muedsa/js/lexer/TokenType;
+	public static final field ARROW Lcom/muedsa/js/lexer/TokenType;
+	public static final field ASSIGN Lcom/muedsa/js/lexer/TokenType;
+	public static final field BITWISE_AND Lcom/muedsa/js/lexer/TokenType;
+	public static final field BITWISE_NOT Lcom/muedsa/js/lexer/TokenType;
+	public static final field BITWISE_OR Lcom/muedsa/js/lexer/TokenType;
+	public static final field BITWISE_XOR Lcom/muedsa/js/lexer/TokenType;
+	public static final field BREAK Lcom/muedsa/js/lexer/TokenType;
+	public static final field CASE Lcom/muedsa/js/lexer/TokenType;
+	public static final field CATCH Lcom/muedsa/js/lexer/TokenType;
+	public static final field COALESCE Lcom/muedsa/js/lexer/TokenType;
+	public static final field COLON Lcom/muedsa/js/lexer/TokenType;
+	public static final field COMMA Lcom/muedsa/js/lexer/TokenType;
+	public static final field CONST Lcom/muedsa/js/lexer/TokenType;
+	public static final field CONTINUE Lcom/muedsa/js/lexer/TokenType;
+	public static final field DECREMENT Lcom/muedsa/js/lexer/TokenType;
+	public static final field DEFAULT Lcom/muedsa/js/lexer/TokenType;
+	public static final field DIVIDE Lcom/muedsa/js/lexer/TokenType;
+	public static final field DIVIDE_ASSIGN Lcom/muedsa/js/lexer/TokenType;
+	public static final field DOT Lcom/muedsa/js/lexer/TokenType;
+	public static final field ELSE Lcom/muedsa/js/lexer/TokenType;
+	public static final field EOF Lcom/muedsa/js/lexer/TokenType;
+	public static final field EQ Lcom/muedsa/js/lexer/TokenType;
+	public static final field EXPONENT Lcom/muedsa/js/lexer/TokenType;
+	public static final field FALSE Lcom/muedsa/js/lexer/TokenType;
+	public static final field FINALLY Lcom/muedsa/js/lexer/TokenType;
+	public static final field FOR Lcom/muedsa/js/lexer/TokenType;
+	public static final field FUNCTION Lcom/muedsa/js/lexer/TokenType;
+	public static final field GT Lcom/muedsa/js/lexer/TokenType;
+	public static final field GTE Lcom/muedsa/js/lexer/TokenType;
+	public static final field IDENTIFIER Lcom/muedsa/js/lexer/TokenType;
+	public static final field IF Lcom/muedsa/js/lexer/TokenType;
+	public static final field INCREMENT Lcom/muedsa/js/lexer/TokenType;
+	public static final field LBRACE Lcom/muedsa/js/lexer/TokenType;
+	public static final field LBRACKET Lcom/muedsa/js/lexer/TokenType;
+	public static final field LEFT_SHIFT Lcom/muedsa/js/lexer/TokenType;
+	public static final field LET Lcom/muedsa/js/lexer/TokenType;
+	public static final field LPAREN Lcom/muedsa/js/lexer/TokenType;
+	public static final field LT Lcom/muedsa/js/lexer/TokenType;
+	public static final field LTE Lcom/muedsa/js/lexer/TokenType;
+	public static final field MINUS Lcom/muedsa/js/lexer/TokenType;
+	public static final field MINUS_ASSIGN Lcom/muedsa/js/lexer/TokenType;
+	public static final field MODULO Lcom/muedsa/js/lexer/TokenType;
+	public static final field MODULO_ASSIGN Lcom/muedsa/js/lexer/TokenType;
+	public static final field MULTIPLY Lcom/muedsa/js/lexer/TokenType;
+	public static final field MULTIPLY_ASSIGN Lcom/muedsa/js/lexer/TokenType;
+	public static final field NEQ Lcom/muedsa/js/lexer/TokenType;
+	public static final field NEW Lcom/muedsa/js/lexer/TokenType;
+	public static final field NEWLINE Lcom/muedsa/js/lexer/TokenType;
+	public static final field NOT Lcom/muedsa/js/lexer/TokenType;
+	public static final field NULL Lcom/muedsa/js/lexer/TokenType;
+	public static final field NUMBER Lcom/muedsa/js/lexer/TokenType;
+	public static final field NUMBER_BIN Lcom/muedsa/js/lexer/TokenType;
+	public static final field NUMBER_HEX Lcom/muedsa/js/lexer/TokenType;
+	public static final field NUMBER_OCT Lcom/muedsa/js/lexer/TokenType;
+	public static final field OR Lcom/muedsa/js/lexer/TokenType;
+	public static final field PLUS Lcom/muedsa/js/lexer/TokenType;
+	public static final field PLUS_ASSIGN Lcom/muedsa/js/lexer/TokenType;
+	public static final field QUESTION Lcom/muedsa/js/lexer/TokenType;
+	public static final field RBRACE Lcom/muedsa/js/lexer/TokenType;
+	public static final field RBRACKET Lcom/muedsa/js/lexer/TokenType;
+	public static final field RETURN Lcom/muedsa/js/lexer/TokenType;
+	public static final field RIGHT_SHIFT Lcom/muedsa/js/lexer/TokenType;
+	public static final field RPAREN Lcom/muedsa/js/lexer/TokenType;
+	public static final field SEMICOLON Lcom/muedsa/js/lexer/TokenType;
+	public static final field STRICT_EQ Lcom/muedsa/js/lexer/TokenType;
+	public static final field STRICT_NEQ Lcom/muedsa/js/lexer/TokenType;
+	public static final field STRING Lcom/muedsa/js/lexer/TokenType;
+	public static final field SWITCH Lcom/muedsa/js/lexer/TokenType;
+	public static final field THIS Lcom/muedsa/js/lexer/TokenType;
+	public static final field THROW Lcom/muedsa/js/lexer/TokenType;
+	public static final field TRUE Lcom/muedsa/js/lexer/TokenType;
+	public static final field TRY Lcom/muedsa/js/lexer/TokenType;
+	public static final field TYPEOF Lcom/muedsa/js/lexer/TokenType;
+	public static final field UNSIGNED_RIGHT_SHIFT Lcom/muedsa/js/lexer/TokenType;
+	public static final field VAR Lcom/muedsa/js/lexer/TokenType;
+	public static final field WHILE Lcom/muedsa/js/lexer/TokenType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/muedsa/js/lexer/TokenType;
+	public static fun values ()[Lcom/muedsa/js/lexer/TokenType;
+}
+
+public final class com/muedsa/js/parser/ParseException : java/lang/Exception {
+	public fun <init> (Ljava/lang/String;IILcom/muedsa/js/lexer/Token;)V
+	public synthetic fun <init> (Ljava/lang/String;IILcom/muedsa/js/lexer/Token;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getColumn ()I
+	public final fun getLine ()I
+	public final fun getToken ()Lcom/muedsa/js/lexer/Token;
+}
+
+public final class com/muedsa/js/parser/Parser {
+	public fun <init> (Ljava/util/List;)V
+	public final fun parse ()Lcom/muedsa/js/ast/BlockStatement;
+}
+
+public final class com/muedsa/js/runtime/BrowserRuntimeEnvKt {
+	public static final fun initBrowserEnv (Lcom/muedsa/js/runtime/Interpreter;)Lcom/muedsa/js/runtime/Interpreter;
+}
+
+public final class com/muedsa/js/runtime/Environment {
+	public fun <init> ()V
+	public fun <init> (Lcom/muedsa/js/runtime/Environment;Z)V
+	public synthetic fun <init> (Lcom/muedsa/js/runtime/Environment;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun assign (Ljava/lang/String;Lcom/muedsa/js/runtime/value/JSValue;)V
+	public final fun define (Ljava/lang/String;Lcom/muedsa/js/runtime/value/JSValue;Lcom/muedsa/js/runtime/VariableKind;)V
+	public final fun dumpEnv (Ljava/lang/String;)Ljava/lang/String;
+	public static synthetic fun dumpEnv$default (Lcom/muedsa/js/runtime/Environment;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun get (Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun getAllVariables ()Ljava/util/Map;
+	public final fun getLocalVariables ()Ljava/util/Map;
+	public final fun getParent ()Lcom/muedsa/js/runtime/Environment;
+	public final fun getSafe (Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun getThis ()Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun hasLocal (Ljava/lang/String;)Z
+	public final fun isVarScope ()Z
+	public final fun removeLocal (Ljava/lang/String;)V
+}
+
+public final class com/muedsa/js/runtime/Interpreter {
+	public fun <init> ()V
+	public final fun getAllValues ()Ljava/util/Map;
+	public final fun getCallStack ()Ljava/util/List;
+	public final fun getCurrentEnv ()Lcom/muedsa/js/runtime/Environment;
+	public final fun getGlobalEnv ()Lcom/muedsa/js/runtime/Environment;
+	public final fun getGlobalValue (Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun getLocalValues ()Ljava/util/Map;
+	public final fun getPrimitiveBoolean (Lcom/muedsa/js/runtime/value/JSValue;)Z
+	public final fun getPrimitiveNumber (Lcom/muedsa/js/runtime/value/JSValue;)D
+	public final fun getPrimitiveString (Lcom/muedsa/js/runtime/value/JSValue;)Ljava/lang/String;
+	public final fun getValue (Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun interpret (Lcom/muedsa/js/ast/BlockStatement;)Lcom/muedsa/js/runtime/value/JSValue;
+}
+
+public final class com/muedsa/js/runtime/VariableKind : java/lang/Enum {
+	public static final field CONST Lcom/muedsa/js/runtime/VariableKind;
+	public static final field LET Lcom/muedsa/js/runtime/VariableKind;
+	public static final field VAR Lcom/muedsa/js/runtime/VariableKind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/muedsa/js/runtime/VariableKind;
+	public static fun values ()[Lcom/muedsa/js/runtime/VariableKind;
+}
+
+public final class com/muedsa/js/runtime/VariableSlot {
+	public fun <init> (Lcom/muedsa/js/runtime/value/JSValue;Lcom/muedsa/js/runtime/VariableKind;)V
+	public final fun component1 ()Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun component2 ()Lcom/muedsa/js/runtime/VariableKind;
+	public final fun copy (Lcom/muedsa/js/runtime/value/JSValue;Lcom/muedsa/js/runtime/VariableKind;)Lcom/muedsa/js/runtime/VariableSlot;
+	public static synthetic fun copy$default (Lcom/muedsa/js/runtime/VariableSlot;Lcom/muedsa/js/runtime/value/JSValue;Lcom/muedsa/js/runtime/VariableKind;ILjava/lang/Object;)Lcom/muedsa/js/runtime/VariableSlot;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKind ()Lcom/muedsa/js/runtime/VariableKind;
+	public final fun getValue ()Lcom/muedsa/js/runtime/value/JSValue;
+	public fun hashCode ()I
+	public final fun setValue (Lcom/muedsa/js/runtime/value/JSValue;)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/exception/BreakException : java/lang/Throwable {
+	public fun <init> ()V
+}
+
+public final class com/muedsa/js/runtime/exception/ContinueException : java/lang/Throwable {
+	public fun <init> ()V
+}
+
+public final class com/muedsa/js/runtime/exception/JSException : java/lang/Throwable {
+	public fun <init> (Lcom/muedsa/js/runtime/value/JSValue;Ljava/util/List;)V
+	public synthetic fun <init> (Lcom/muedsa/js/runtime/value/JSValue;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getStackTrace ()Ljava/util/List;
+	public final fun getValue ()Lcom/muedsa/js/runtime/value/JSValue;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/exception/ReturnValue : java/lang/Throwable {
+	public fun <init> (Lcom/muedsa/js/runtime/value/JSValue;)V
+	public final fun getValue ()Lcom/muedsa/js/runtime/value/JSValue;
+}
+
+public final class com/muedsa/js/runtime/exception/StackFrame {
+	public fun <init> (Ljava/lang/String;II)V
+	public synthetic fun <init> (Ljava/lang/String;IIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun copy (Ljava/lang/String;II)Lcom/muedsa/js/runtime/exception/StackFrame;
+	public static synthetic fun copy$default (Lcom/muedsa/js/runtime/exception/StackFrame;Ljava/lang/String;IIILjava/lang/Object;)Lcom/muedsa/js/runtime/exception/StackFrame;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColumn ()I
+	public final fun getFunctionName ()Ljava/lang/String;
+	public final fun getLine ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSArray : com/muedsa/js/runtime/value/JSObject, java/util/List, kotlin/jvm/internal/markers/KMutableList {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun add (ILcom/muedsa/js/runtime/value/JSValue;)V
+	public synthetic fun add (ILjava/lang/Object;)V
+	public fun add (Lcom/muedsa/js/runtime/value/JSValue;)Z
+	public synthetic fun add (Ljava/lang/Object;)Z
+	public fun addAll (ILjava/util/Collection;)Z
+	public fun addAll (Ljava/util/Collection;)Z
+	public fun clear ()V
+	public fun contains (Lcom/muedsa/js/runtime/value/JSValue;)Z
+	public final fun contains (Ljava/lang/Object;)Z
+	public fun containsAll (Ljava/util/Collection;)Z
+	public final fun copy (Ljava/util/List;)Lcom/muedsa/js/runtime/value/JSArray;
+	public static synthetic fun copy$default (Lcom/muedsa/js/runtime/value/JSArray;Ljava/util/List;ILjava/lang/Object;)Lcom/muedsa/js/runtime/value/JSArray;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun get (I)Lcom/muedsa/js/runtime/value/JSValue;
+	public synthetic fun get (I)Ljava/lang/Object;
+	public fun getProperty (Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSValue;
+	public fun getSize ()I
+	public fun hashCode ()I
+	public fun indexOf (Lcom/muedsa/js/runtime/value/JSValue;)I
+	public final fun indexOf (Ljava/lang/Object;)I
+	public fun isEmpty ()Z
+	public fun isPrimitive ()Z
+	public fun iterator ()Ljava/util/Iterator;
+	public fun lastIndexOf (Lcom/muedsa/js/runtime/value/JSValue;)I
+	public final fun lastIndexOf (Ljava/lang/Object;)I
+	public fun listIterator ()Ljava/util/ListIterator;
+	public fun listIterator (I)Ljava/util/ListIterator;
+	public final fun remove (I)Lcom/muedsa/js/runtime/value/JSValue;
+	public synthetic fun remove (I)Ljava/lang/Object;
+	public fun remove (Lcom/muedsa/js/runtime/value/JSValue;)Z
+	public final fun remove (Ljava/lang/Object;)Z
+	public fun removeAll (Ljava/util/Collection;)Z
+	public fun removeAt (I)Lcom/muedsa/js/runtime/value/JSValue;
+	public fun retainAll (Ljava/util/Collection;)Z
+	public fun set (ILcom/muedsa/js/runtime/value/JSValue;)Lcom/muedsa/js/runtime/value/JSValue;
+	public synthetic fun set (ILjava/lang/Object;)Ljava/lang/Object;
+	public fun setProperty (Ljava/lang/String;Lcom/muedsa/js/runtime/value/JSValue;)Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun size ()I
+	public fun subList (II)Ljava/util/List;
+	public fun toArray ()[Ljava/lang/Object;
+	public fun toArray ([Ljava/lang/Object;)[Ljava/lang/Object;
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSArrayKt {
+	public static final fun convertJSValueToJSArray (Lcom/muedsa/js/runtime/value/JSValue;Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSArray;
+	public static final fun getArrayConstructor ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+	public static final fun getArrayPrototype ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+}
+
+public abstract class com/muedsa/js/runtime/value/JSBoolean : com/muedsa/js/runtime/value/JSObject {
+	public static final field Companion Lcom/muedsa/js/runtime/value/JSBoolean$Companion;
+	public synthetic fun <init> (ZLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getValue ()Z
+	public fun isPrimitive ()Z
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSBoolean$Companion {
+	public final fun getJsBoolean (Z)Lcom/muedsa/js/runtime/value/JSBoolean;
+}
+
+public final class com/muedsa/js/runtime/value/JSBoolean$False : com/muedsa/js/runtime/value/JSBoolean {
+	public static final field INSTANCE Lcom/muedsa/js/runtime/value/JSBoolean$False;
+}
+
+public final class com/muedsa/js/runtime/value/JSBoolean$True : com/muedsa/js/runtime/value/JSBoolean {
+	public static final field INSTANCE Lcom/muedsa/js/runtime/value/JSBoolean$True;
+}
+
+public final class com/muedsa/js/runtime/value/JSBooleanKt {
+	public static final fun getBooleanConstructor ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+	public static final fun getBooleanPrototype ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+}
+
+public final class com/muedsa/js/runtime/value/JSError : com/muedsa/js/runtime/value/JSObject {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSError;
+	public static synthetic fun copy$default (Lcom/muedsa/js/runtime/value/JSError;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/muedsa/js/runtime/value/JSError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toPrimitiveString ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSErrorKt {
+	public static final fun getErrorConstructor ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+	public static final fun getErrorPrototype ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+}
+
+public final class com/muedsa/js/runtime/value/JSFunction : com/muedsa/js/runtime/value/JSObject {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Lcom/muedsa/js/ast/BlockStatement;Lcom/muedsa/js/runtime/Environment;)V
+	public final fun getBody ()Lcom/muedsa/js/ast/BlockStatement;
+	public final fun getClosure ()Lcom/muedsa/js/runtime/Environment;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getParams ()Ljava/util/List;
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSNativeFunction : com/muedsa/js/runtime/value/JSObject {
+	public fun <init> (Ljava/lang/String;Lkotlin/Lazy;Lcom/muedsa/js/runtime/value/JSValue;Lkotlin/jvm/functions/Function3;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/Lazy;Lcom/muedsa/js/runtime/value/JSValue;Lkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getFunction ()Lkotlin/jvm/functions/Function3;
+	public final fun getName ()Ljava/lang/String;
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSNativeFunctionKt {
+	public static final fun getNativeFunctionPrototype ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+}
+
+public final class com/muedsa/js/runtime/value/JSNull : com/muedsa/js/runtime/value/JSValue {
+	public static final field INSTANCE Lcom/muedsa/js/runtime/value/JSNull;
+	public fun isPrimitive ()Z
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSNumber : com/muedsa/js/runtime/value/JSObject {
+	public static final field Companion Lcom/muedsa/js/runtime/value/JSNumber$Companion;
+	public fun <init> (D)V
+	public final fun component1 ()D
+	public final fun copy (D)Lcom/muedsa/js/runtime/value/JSNumber;
+	public static synthetic fun copy$default (Lcom/muedsa/js/runtime/value/JSNumber;DILjava/lang/Object;)Lcom/muedsa/js/runtime/value/JSNumber;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()D
+	public fun hashCode ()I
+	public fun isPrimitive ()Z
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSNumber$Companion {
+	public final fun getMAX_VALUE ()Lcom/muedsa/js/runtime/value/JSNumber;
+	public final fun getMIN_VALUE ()Lcom/muedsa/js/runtime/value/JSNumber;
+	public final fun getNEGATIVE_INFINITY ()Lcom/muedsa/js/runtime/value/JSNumber;
+	public final fun getNaN ()Lcom/muedsa/js/runtime/value/JSNumber;
+	public final fun getPOSITIVE_INFINITY ()Lcom/muedsa/js/runtime/value/JSNumber;
+	public final fun getZERO ()Lcom/muedsa/js/runtime/value/JSNumber;
+}
+
+public final class com/muedsa/js/runtime/value/JSNumberKt {
+	public static final fun convertJSValueToJSNumber (Lcom/muedsa/js/runtime/value/JSValue;Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSNumber;
+	public static final fun getNumberConstructor ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+	public static final fun getNumberPrototype ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+}
+
+public class com/muedsa/js/runtime/value/JSObject : com/muedsa/js/runtime/value/JSValue {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/Map;Lcom/muedsa/js/runtime/value/JSValue;)V
+	public synthetic fun <init> (Ljava/util/Map;Lcom/muedsa/js/runtime/value/JSValue;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lkotlin/Lazy;Lcom/muedsa/js/runtime/value/JSValue;)V
+	public synthetic fun <init> (Lkotlin/Lazy;Lcom/muedsa/js/runtime/value/JSValue;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getOwnProperties ()Ljava/util/Map;
+	public fun getProperty (Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun hasProperty (Ljava/lang/String;)Z
+	public fun isPrimitive ()Z
+	public fun setProperty (Ljava/lang/String;Lcom/muedsa/js/runtime/value/JSValue;)Lcom/muedsa/js/runtime/value/JSValue;
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSObjectKt {
+	public static final fun convertJSValueToJSObject (Lcom/muedsa/js/runtime/value/JSValue;)Lcom/muedsa/js/runtime/value/JSObject;
+	public static final fun getObjectConstructor ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+	public static final fun getObjectPrototype ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+}
+
+public final class com/muedsa/js/runtime/value/JSString : com/muedsa/js/runtime/value/JSObject {
+	public static final field Companion Lcom/muedsa/js/runtime/value/JSString$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSString;
+	public static synthetic fun copy$default (Lcom/muedsa/js/runtime/value/JSString;Ljava/lang/String;ILjava/lang/Object;)Lcom/muedsa/js/runtime/value/JSString;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getProperty (Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun isPrimitive ()Z
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/runtime/value/JSString$Companion {
+	public final fun getEmptyString ()Lcom/muedsa/js/runtime/value/JSString;
+}
+
+public final class com/muedsa/js/runtime/value/JSStringKt {
+	public static final fun convertJSValueToJSString (Lcom/muedsa/js/runtime/value/JSValue;Ljava/lang/String;)Lcom/muedsa/js/runtime/value/JSString;
+	public static final fun getStringConstructor ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+	public static final fun getStringPrototype ()Lcom/muedsa/js/runtime/value/JSNativeFunction;
+}
+
+public final class com/muedsa/js/runtime/value/JSUndefined : com/muedsa/js/runtime/value/JSValue {
+	public static final field INSTANCE Lcom/muedsa/js/runtime/value/JSUndefined;
+	public fun isPrimitive ()Z
+	public fun toPrimitiveBoolean ()Z
+	public fun toPrimitiveNumber ()D
+	public fun toPrimitiveString ()Ljava/lang/String;
+}
+
+public abstract class com/muedsa/js/runtime/value/JSValue {
+	public abstract fun isPrimitive ()Z
+	public abstract fun toPrimitiveBoolean ()Z
+	public abstract fun toPrimitiveNumber ()D
+	public abstract fun toPrimitiveString ()Ljava/lang/String;
+}
+
+public final class com/muedsa/js/utils/JsonConverter {
+	public static final field INSTANCE Lcom/muedsa/js/utils/JsonConverter;
+	public final fun toJSValue (Lkotlinx/serialization/json/JsonElement;)Lcom/muedsa/js/runtime/value/JSValue;
+	public final fun toJsonElement (Lcom/muedsa/js/runtime/value/JSValue;)Lkotlinx/serialization/json/JsonElement;
+}
+
