@@ -35,7 +35,7 @@ class JSMathTest {
             var ln2 = Math.LN2;
             var sqrt2 = Math.SQRT2;
         """.trimIndent())
-        
+
         assertNumberEquals(PI, (i.getValue("pi") as JSNumber).value)
         assertNumberEquals(E, (i.getValue("e") as JSNumber).value)
         assertNumberEquals(kotlin.math.ln(2.0), (i.getValue("ln2") as JSNumber).value)
@@ -92,7 +92,7 @@ class JSMathTest {
         // -1 * 5 = -5
         assertNumberEquals(-5.0, (i.getValue("val") as JSNumber).value)
     }
-    
+
     @Test
     fun `test Math hypot`() {
          val i = eval("var h = Math.hypot(3, 4);")

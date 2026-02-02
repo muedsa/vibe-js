@@ -55,7 +55,7 @@ class FunctionTest {
         """.trimIndent())
         assertEquals(7.0, (i.getValue("res") as JSNumber).value)
     }
-    
+
     @Test
     fun `test IIFE`() {
         val i = eval("""
@@ -64,7 +64,7 @@ class FunctionTest {
         """.trimIndent())
         assertEquals(16.0, (i.getValue("res") as JSNumber).value)
     }
-    
+
     @Test
     fun `test function scope`() {
         val i = eval("""

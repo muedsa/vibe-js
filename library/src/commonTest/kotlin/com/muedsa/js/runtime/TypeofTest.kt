@@ -49,7 +49,7 @@ class TypeofTest {
         assertTypeof("typeof function(){}", "function")
         // assertTypeof("typeof (() => {})", "function") // Arrow functions not supported yet
         // assertTypeof("typeof console.log", "function") // console.log not in base runtime
-        
+
         // Let's use a defined function
         val interpreter = eval("""
             function f() {}
@@ -71,7 +71,7 @@ class TypeofTest {
         assertTypeof("typeof (typeof 1)", "string")
         assertTypeof("typeof typeof typeof 1", "string")
     }
-    
+
     @Test
     fun `test typeof operator precedence`() {
         // typeof 1 + 2 -> "number2" because typeof binds tighter than +?
@@ -79,7 +79,7 @@ class TypeofTest {
         // typeof 1 + 2 parses as (typeof 1) + 2 -> "number" + 2 -> "number2"
         val interpreter = eval("var res = typeof 1 + 2;")
         assertEquals("number2", (interpreter.getValue("res") as JSString).value)
-        
+
         // typeof (1 + 2) -> "number"
         val interpreter2 = eval("var res = typeof(1 + 2);")
         assertEquals("number", (interpreter2.getValue("res") as JSString).value)

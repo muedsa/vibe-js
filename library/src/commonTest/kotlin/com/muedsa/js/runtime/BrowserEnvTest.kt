@@ -1,18 +1,13 @@
 package com.muedsa.js.runtime
 
 import com.muedsa.js.createBrowserRuntime
-import com.muedsa.js.parser.Parser
 import com.muedsa.js.lexer.Lexer
-import com.muedsa.js.runtime.value.JSBoolean
-import com.muedsa.js.runtime.value.JSNumber
-import com.muedsa.js.runtime.value.JSString
-import com.muedsa.js.runtime.value.JSUndefined
-import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.parser.Parser
+import com.muedsa.js.runtime.value.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
-import kotlin.test.assertFails
 
 class BrowserEnvTest {
 
@@ -43,18 +38,18 @@ class BrowserEnvTest {
             var encoded = btoa("Hello");
             var decoded = atob(encoded);
         """.trimIndent())
-        
+
         assertEquals("SGVsbG8=", (i.getValue("encoded") as JSString).value)
         assertEquals("Hello", (i.getValue("decoded") as JSString).value)
     }
-    
+
     @Test
     fun `test JSON stringify`() {
         val i = eval("""
             var obj = { x: 1, y: "a" };
             var json = JSON.stringify(obj);
         """.trimIndent())
-        
+
         // JSON string order is not guaranteed in spec but usually insertion order or alphabetical
         // Simple assertion to check it contains keys/values
         val json = (i.getValue("json") as JSString).value
@@ -71,7 +66,7 @@ class BrowserEnvTest {
             var x = obj.x;
             var y = obj.y;
         """.trimIndent())
-        
+
         assertEquals(10.0, (i.getValue("x") as JSNumber).value)
         assertEquals("hello", (i.getValue("y") as JSString).value)
     }
@@ -93,7 +88,7 @@ class BrowserEnvTest {
             var b = isNaN(NaN);
             var c = isFinite(100);
         """.trimIndent())
-        
+
         assertEquals(123.0, (i.getValue("a") as JSNumber).value)
         assertEquals(true, (i.getValue("b") as JSBoolean).value)
         assertEquals(true, (i.getValue("c") as JSBoolean).value)

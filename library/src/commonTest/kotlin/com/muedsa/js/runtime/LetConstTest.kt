@@ -38,12 +38,12 @@ class LetConstTest {
 
         assertEquals(1.0, (i.getValue("x") as JSNumber).value)
         assertEquals(2.0, (i.getValue("y") as JSNumber).value)
-        
+
         // 验证 z 在外部不可见，访问应抛出错误 (ReferenceError)
         val lexer = Lexer("z;")
         val parser = Parser(lexer.tokenize())
         val program = parser.parse()
-        
+
         assertFailsWith<JSException> {
             i.interpret(program)
         }
@@ -63,12 +63,12 @@ class LetConstTest {
         """.trimIndent())
 
         assertEquals(100.0, (i.getValue("captured") as JSNumber).value)
-        
+
         // 验证 temp 在外部不可见，访问应抛出错误
         val lexer = Lexer("temp;")
         val parser = Parser(lexer.tokenize())
         val program = parser.parse()
-        
+
         assertFailsWith<JSException> {
             i.interpret(program)
         }
@@ -94,7 +94,7 @@ class LetConstTest {
                 let a = 2;
             """.trimIndent())
         }
-        
+
         assertFailsWith<JSException> {
             eval("""
                 let b = 1;
@@ -138,7 +138,7 @@ class LetConstTest {
             """.trimIndent())
         }
     }
-    
+
     @Test
     fun `test const redeclaration error`() {
         // 测试 const 重复声明应报错

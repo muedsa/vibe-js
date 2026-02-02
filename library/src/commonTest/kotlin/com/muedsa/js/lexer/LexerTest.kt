@@ -2,7 +2,6 @@ package com.muedsa.js.lexer
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
 
 class LexerTest {

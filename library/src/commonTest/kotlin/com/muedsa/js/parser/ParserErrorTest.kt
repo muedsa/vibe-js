@@ -104,7 +104,7 @@ class ParserErrorTest {
         // 测试数组字面量缺少闭合方括号 ']'
         assertParseError("var arr = [1, 2", "Expected ']'")
     }
-    
+
     @Test
     fun `test unexpected token`() {
         // 测试 switch 语句块中出现意外的 Token (非 case 或 default)

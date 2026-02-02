@@ -91,7 +91,7 @@ class ClosureAndThisTest {
         // 验证对象确实继承了 Object.prototype 上的方法（如 toString）
         val i = eval("""
             var obj = { a: 1 };
-            var s = obj.toString(); 
+            var s = obj.toString();
             // ObjectPrototype 中定义了 toString 返回 [object Object]
         """.trimIndent())
         assertEquals("[object Object]", (i.getValue("s") as JSString).value)

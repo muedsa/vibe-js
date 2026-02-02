@@ -32,7 +32,7 @@ class BasicIntegrationTest {
         assertEquals(2.0, (i.getValue("d") as JSNumber).value)
         assertEquals(1.0, (i.getValue("e") as JSNumber).value)
     }
-    
+
     @Test
     fun `test string concatenation`() {
         val i = eval("var s = 'Hello' + ' ' + 'World'; var n = 'Num: ' + 5;")
@@ -48,7 +48,7 @@ class BasicIntegrationTest {
             var c = null === null;
             var d = null === undefined;
         """.trimIndent())
-        
+
         assertTrue((i.getValue("a") as JSBoolean).value)
         assertFalse((i.getValue("b") as JSBoolean).value)
         assertTrue((i.getValue("c") as JSBoolean).value)
@@ -80,7 +80,7 @@ class BasicIntegrationTest {
             var e = 1 && 2; // Returns 2
             var f = 0 || 3; // Returns 3
         """.trimIndent())
-        
+
         assertFalse((i.getValue("a") as JSBoolean).value)
         assertTrue((i.getValue("b") as JSBoolean).value)
         assertFalse((i.getValue("c") as JSBoolean).value)
@@ -88,7 +88,7 @@ class BasicIntegrationTest {
         assertEquals(2.0, (i.getValue("e") as JSNumber).value)
         assertEquals(3.0, (i.getValue("f") as JSNumber).value)
     }
-    
+
     @Test
     fun `test bitwise operators`() {
         val i = eval("""
@@ -99,7 +99,7 @@ class BasicIntegrationTest {
             var e = 5 << 1; // 10
             var f = 5 >> 1; // 2
         """.trimIndent())
-        
+
         assertEquals(1.0, (i.getValue("a") as JSNumber).value)
         assertEquals(7.0, (i.getValue("b") as JSNumber).value)
         assertEquals(6.0, (i.getValue("c") as JSNumber).value)
@@ -114,7 +114,7 @@ class BasicIntegrationTest {
         assertEquals(1.0, (i.getValue("a") as JSNumber).value)
         assertEquals(2.0, (i.getValue("b") as JSNumber).value)
     }
-    
+
     @Test
     fun `test coalesce operator`() {
         val i = eval("var a = null ?? 1; var b = undefined ?? 2; var c = 0 ?? 3;")

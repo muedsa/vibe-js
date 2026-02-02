@@ -97,7 +97,7 @@ class ControlFlowTest {
         """.trimIndent())
         assertEquals("two", (i.getValue("res") as JSString).value)
     }
-    
+
     @Test
     fun `test switch fallthrough`() {
         // 测试 switch 语句的贯穿 (Fallthrough) 行为（无 break 时继续执行下一个 case）

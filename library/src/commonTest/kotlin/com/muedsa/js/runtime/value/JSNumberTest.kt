@@ -42,17 +42,17 @@ class JSNumberTest {
         result = NumberConstructor.function(runtime, JSUndefined, listOf(JSString("  123.45  ")))
         assertIs<JSNumber>(result)
         assertEquals(123.45, result.value)
-        
+
         // Null -> 0
         result = NumberConstructor.function(runtime, JSUndefined, listOf(JSNull))
         assertIs<JSNumber>(result)
         assertEquals(0.0, result.value)
-        
+
         // true -> 1
         result = NumberConstructor.function(runtime, JSUndefined, listOf(JSBoolean.True))
         assertIs<JSNumber>(result)
         assertEquals(1.0, result.value)
-        
+
         // false -> 0
         result = NumberConstructor.function(runtime, JSUndefined, listOf(JSBoolean.False))
         assertIs<JSNumber>(result)
@@ -113,7 +113,7 @@ class JSNumberTest {
         result = parseInt.function(runtime, JSUndefined, listOf(JSString("  123 kg")))
         assertIs<JSNumber>(result)
         assertEquals(123.0, result.value)
-        
+
         result = parseInt.function(runtime, JSUndefined, listOf(JSString("12.99")))
         assertIs<JSNumber>(result)
         assertEquals(12.0, result.value)
@@ -121,7 +121,7 @@ class JSNumberTest {
         result = parseInt.function(runtime, JSUndefined, listOf(JSString("kg123")))
         assertIs<JSNumber>(result)
         assertTrue(result.value.isNaN())
-        
+
         result = parseInt.function(runtime, JSUndefined, listOf(JSString("")))
         assertIs<JSNumber>(result)
         assertTrue(result.value.isNaN())

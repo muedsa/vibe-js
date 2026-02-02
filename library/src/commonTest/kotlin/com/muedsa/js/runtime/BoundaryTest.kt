@@ -30,13 +30,13 @@ class BoundaryTest {
             var b = -1 / 0;
             var c = 0 / 0;
         """.trimIndent())
-        
+
         val a = (i.getValue("a") as JSNumber).value
         assertEquals(Double.POSITIVE_INFINITY, a)
-        
+
         val b = (i.getValue("b") as JSNumber).value
         assertEquals(Double.NEGATIVE_INFINITY, b)
-        
+
         val c = (i.getValue("c") as JSNumber).value
         assertTrue(c.isNaN())
     }
@@ -50,7 +50,7 @@ class BoundaryTest {
             var d = null + 1;
             var e = undefined + 1; // undefined -> NaN, NaN + 1 -> NaN
         """.trimIndent())
-        
+
         assertEquals("12", (i.getValue("a") as JSString).value)
         assertEquals("34", (i.getValue("b") as JSString).value)
         assertEquals(2.0, (i.getValue("c") as JSNumber).value)
@@ -64,10 +64,10 @@ class BoundaryTest {
         // Interpreter.kt: is Identifier -> currentEnv.get(expression.name)
         // Environment.kt likely handles 'get'. If not found, does it throw?
         // Let's assume strict mode or standard JS behavior where 'x' throws if not defined.
-        // Wait, Interpreter.kt `evaluate` -> `currentEnv.get`. 
+        // Wait, Interpreter.kt `evaluate` -> `currentEnv.get`.
         // I need to check `Environment.kt` to be sure.
         // But usually it throws ReferenceError.
-        
+
         assertFailsWith<JSException> {
             eval("var x = y;") // y is undefined
         }
@@ -83,7 +83,7 @@ class BoundaryTest {
             }
             var res = test();
         """.trimIndent())
-        
+
         assertEquals("local", (i.getValue("res") as JSString).value)
         assertEquals("global", (i.getValue("x") as JSString).value)
     }
@@ -96,11 +96,11 @@ class BoundaryTest {
             var y = 1;
             false && (y = 2); // Should not execute right side
         """.trimIndent())
-        
+
         assertEquals(1.0, (i.getValue("x") as JSNumber).value)
         assertEquals(1.0, (i.getValue("y") as JSNumber).value)
     }
-    
+
     @Test
     fun `test property access on null undefined`() {
         assertFailsWith<JSException> {

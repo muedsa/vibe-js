@@ -49,7 +49,7 @@ class ObjectArrayTest {
         """.trimIndent())
         assertEquals(10.0, (i.getValue("res") as JSNumber).value)
     }
-    
+
     @Test
     fun `test array assignment`() {
         val i = eval("""
@@ -58,7 +58,7 @@ class ObjectArrayTest {
             var len = arr.length;
         """.trimIndent())
         assertEquals(2.0, (i.getValue("len") as JSNumber).value)
-        
+
         val arr = i.getValue("arr")
         assertIs<JSArray>(arr)
         assertEquals(2.0, (arr.getProperty("1") as JSNumber).value)

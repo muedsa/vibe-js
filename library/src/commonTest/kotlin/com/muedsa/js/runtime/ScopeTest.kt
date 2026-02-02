@@ -40,7 +40,7 @@ class ScopeTest {
         """.trimIndent())
         assertEquals(42.0, (i.getValue("res") as JSNumber).value)
     }
-    
+
     @Test
     fun `test block scope let`() {
         // If let is supported as block scoped
@@ -53,7 +53,7 @@ class ScopeTest {
         // Outer x should remain 1
         assertEquals(1.0, (i.getValue("x") as JSNumber).value)
     }
-    
+
     @Test
     fun `test shadowing`() {
         val i = eval("""
