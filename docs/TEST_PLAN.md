@@ -136,62 +136,147 @@
 - [x] **嵌套 Try-Catch**: 异常冒泡机制。
 
 ### 3.7 原生函数与标准库 (如果有)
+
 - [ ] **Print/Log**: 验证输出功能。
-- [ ] **Math/Date**: 如果实现了相关内置对象，需进行测试。
+
+- [x] **Math/Date**: Math 已经实现并进行测试。
+
+
 
 ### 3.8 标准库 (Standard Library)
+
 目标：验证 JavaScript 标准内置对象的属性和方法是否按规范实现。
 
+
+
 #### 3.8.1 Array (数组)
+
 - [x] **属性**: `length`
+
 - [x] **静态方法**: `from`, `isArray`, `of`
+
 - [x] **原型方法 (迭代)**:
+
   - [x] `forEach`
+
   - [x] `map`
+
   - [x] `filter`
+
   - [x] `reduce`
+
   - [x] `reduceRight`
+
   - [x] `every`
+
   - [x] `some`
+
   - [x] `find`
+
   - [x] `findIndex`
+
 - [x] **原型方法 (操作)**:
+
   - [x] `push`, `pop`
+
   - [x] `shift`, `unshift`
+
   - [x] `slice`
+
   - [x] `splice`
+
   - [x] `concat`
+
   - [x] `reverse`
+
   - [x] `sort`
+
   - [x] `join`
+
 - [x] **原型方法 (查找/访问)**:
+
   - [x] `indexOf`
+
   - [x] `includes`
+
   - [x] `at`
+
   - [x] `toString`
 
+
+
 #### 3.8.2 String (字符串)
+
 - [x] **属性**: `length`
+
 - [x] **静态方法**: `fromCharCode`, `fromCodePoint`
+
 - [x] **原型方法 (字符访问)**:
+
   - [x] `at`
+
   - [x] `charAt`
+
   - [x] `charCodeAt`
+
   - [x] `codePointAt`
+
 - [x] **原型方法 (搜索/匹配)**:
+
   - [x] `includes`
+
   - [x] `indexOf`
+
   - [x] `lastIndexOf`
+
   - [x] `startsWith`
+
   - [x] `endsWith`
+
 - [x] **原型方法 (操作/变换)**:
+
   - [x] `concat`
+
   - [x] `slice`
+
   - [x] `substring`
+
   - [x] `split`
+
   - [x] `trim`, `trimStart`, `trimEnd`
+
   - [x] `toLowerCase`, `toUpperCase`
+
   - [x] `padEnd`, `padStart`
+
   - [x] `repeat`
+
   - [x] `replace`, `replaceAll`
+
   - [x] `toString`
+
+
+
+#### 3.8.3 Math (数学)
+
+- [x] **常量**: `PI`, `E`, `LN2`, `SQRT2` 等
+
+- [x] **原型方法**:
+
+  - [x] `abs`
+
+  - [x] `ceil`, `floor`, `round`, `trunc`
+
+  - [x] `max`, `min`
+
+  - [x] `pow`, `sqrt`, `cbrt`
+
+  - [x] `sin`, `cos`, `tan` 等三角函数
+
+  - [x] `random`
+
+  - [x] `imul`, `clz32`
+
+  - [x] `hypot`
+
+  - [x] `exp`, `log` 等指数对数函数

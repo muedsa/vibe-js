@@ -42,6 +42,7 @@ Vibe JS 是一个用 Kotlin 多平台实现的轻量级 JavaScript 运行时，�
 - **标准库方法**：
     - **Array**: `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `reverse`, `sort`, `join`, `indexOf`, `includes`, `forEach`, `map`, `filter`, `reduce`, `reduceRight`, `every`, `some`, `find`, `findIndex`, `at`, `toString`, `from`, `isArray`, `of`
     - **String**: `charAt`, `charCodeAt`, `codePointAt`, `concat`, `endsWith`, `includes`, `indexOf`, `lastIndexOf`, `padEnd`, `padStart`, `repeat`, `replace`, `replaceAll`, `slice`, `split`, `startsWith`, `substring`, `toLowerCase`, `toUpperCase`, `trim`, `trimEnd`, `trimStart`, `toString`, `at`, `fromCharCode`, `fromCodePoint`
+    - **Math**: `E`, `LN2`, `LN10`, `LOG2E`, `LOG10E`, `PI`, `SQRT1_2`, `SQRT2`, `abs`, `acos`, `acosh`, `asin`, `asinh`, `atan`, `atanh`, `atan2`, `cbrt`, `ceil`, `clz32`, `cos`, `cosh`, `exp`, `expm1`, `floor`, `fround`, `hypot`, `imul`, `log`, `log1p`, `log10`, `log2`, `max`, `min`, `pow`, `random`, `round`, `sign`, `sin`, `sinh`, `sqrt`, `tan`, `tanh`, `trunc`
 
 ### 变量
 - **变量声明**：支持 `var` `let` `const`关键字
