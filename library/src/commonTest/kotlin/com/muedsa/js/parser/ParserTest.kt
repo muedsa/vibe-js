@@ -17,7 +17,7 @@ class ParserTest {
     }
 
     private fun parseExpr(code: String): Expression {
-        val program = parse(code + ";")
+        val program = parse("$code;")
         return (program.statements[0] as ExpressionStatement).expression
     }
 
@@ -28,18 +28,21 @@ class ParserTest {
 
         val varStmt = program.statements[0] as VarDeclaration
         assertEquals("var", varStmt.kind)
-        assertEquals("x", varStmt.name)
-        assertIs<NumberLiteral>(varStmt.initializer)
+        assertEquals(1, varStmt.declarations.size)
+        assertEquals("x", varStmt.declarations[0].name)
+        assertIs<NumberLiteral>(varStmt.declarations[0].initializer)
 
         val letStmt = program.statements[1] as VarDeclaration
         assertEquals("let", letStmt.kind)
-        assertEquals("y", letStmt.name)
-        assertEquals(null, letStmt.initializer)
+        assertEquals(1, letStmt.declarations.size)
+        assertEquals("y", letStmt.declarations[0].name)
+        assertEquals(null, letStmt.declarations[0].initializer)
 
         val constStmt = program.statements[2] as VarDeclaration
         assertEquals("const", constStmt.kind)
-        assertEquals("z", constStmt.name)
-        assertIs<NumberLiteral>(constStmt.initializer)
+        assertEquals(1, constStmt.declarations.size)
+        assertEquals("z", constStmt.declarations[0].name)
+        assertIs<NumberLiteral>(constStmt.declarations[0].initializer)
     }
 
     @Test
@@ -119,7 +122,7 @@ class ParserTest {
         val stmt = program.statements[0] as ForStatement
 
         val init = stmt.init as VarDeclaration
-        assertEquals("i", init.name)
+        assertEquals("i", init.declarations[0].name)
 
         val test = stmt.condition as BinaryOp
         assertEquals("<", test.operator)
@@ -166,7 +169,7 @@ class ParserTest {
     fun `test object literal`() {
         val program = parse("var obj = { x: 1 };")
         val stmt = program.statements[0] as VarDeclaration
-        val obj = stmt.initializer as ObjectLiteral
+        val obj = stmt.declarations[0].initializer as ObjectLiteral
 
         assertEquals(1, obj.properties.size)
     }
@@ -254,7 +257,7 @@ class ParserTest {
         assertEquals(2, array.elements.size)
 
         val objectProgram = parse("var o = { a: 1, b: 2, };")
-        val obj = ((objectProgram.statements[0] as VarDeclaration).initializer as ObjectLiteral)
+        val obj = ((objectProgram.statements[0] as VarDeclaration).declarations[0].initializer as ObjectLiteral)
         assertEquals(2, obj.properties.size)
     }
 
@@ -279,10 +282,27 @@ class ParserTest {
     }
 
     @Test
+    fun `test multiple variable declarations`() {
+        val program = parse("var a = 1, b = 2, c;")
+        val stmt = program.statements[0] as VarDeclaration
+        assertEquals("var", stmt.kind)
+        assertEquals(3, stmt.declarations.size)
+
+        assertEquals("a", stmt.declarations[0].name)
+        assertIs<NumberLiteral>(stmt.declarations[0].initializer)
+
+        assertEquals("b", stmt.declarations[1].name)
+        assertIs<NumberLiteral>(stmt.declarations[1].initializer)
+
+        assertEquals("c", stmt.declarations[2].name)
+        assertEquals(null, stmt.declarations[2].initializer)
+    }
+
+    @Test
     fun `test function expression`() {
         val program = parse("var f = function(a) { return a; };")
         val varDecl = program.statements[0] as VarDeclaration
-        val funcExpr = varDecl.initializer as FunctionExpression
+        val funcExpr = varDecl.declarations[0].initializer as FunctionExpression
 
         assertEquals(null, funcExpr.name) // Anonymous
         assertEquals(1, funcExpr.params.size)
@@ -293,7 +313,7 @@ class ParserTest {
     @Test
     fun `test named function expression`() {
         val program = parse("var f = function myName() {};")
-        val funcExpr = (program.statements[0] as VarDeclaration).initializer as FunctionExpression
+        val funcExpr = (program.statements[0] as VarDeclaration).declarations[0].initializer as FunctionExpression
         assertEquals("myName", funcExpr.name)
     }
 

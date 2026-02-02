@@ -70,21 +70,33 @@ class Parser(private val tokens: List<Token>) {
     }
 
     /**
-     * 解析变量声明: var/let/const name = value;
+     * 解析变量声明: var/let/const name = value, name2 = value2;
      */
-    private fun parseVarDeclaration(): VarDeclaration {
+    private fun parseVarDeclaration(requireSemicolon: Boolean = true): VarDeclaration {
         val startPos = pos
         val kind = advance().value // 获取 var, let 或 const
-        val name = consume(TokenType.IDENTIFIER, "Expected identifier").value
 
-        var initializer: Expression? = null
-        // 检查是否有初始化赋值
-        if (match(TokenType.ASSIGN)) {
-            initializer = parseExpression()
+        val declarations = mutableListOf<VariableDeclarator>()
+        do {
+            val declStartPos = pos
+            val name = consume(TokenType.IDENTIFIER, "Expected identifier").value
+
+            var initializer: Expression? = null
+            // 检查是否有初始化赋值
+            if (match(TokenType.ASSIGN)) {
+                initializer = parseExpression()
+            }
+
+            val declarator = VariableDeclarator(name, initializer)
+            declarator.range = tokens[declStartPos].range.first..previous().range.last
+            declarator.tokens = tokens.subList(declStartPos, pos)
+            declarations.add(declarator)
+        } while (match(TokenType.COMMA))
+
+        if (requireSemicolon) {
+            consumeSemicolon()
         }
-
-        consumeSemicolon()
-        val declaration = VarDeclaration(kind, name, initializer)
+        val declaration = VarDeclaration(kind, declarations)
         declaration.range = tokens[startPos].range.first..previous().range.last
         declaration.tokens = tokens.subList(startPos, pos)
         return declaration

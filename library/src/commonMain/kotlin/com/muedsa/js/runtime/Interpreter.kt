@@ -96,25 +96,29 @@ class Interpreter {
         return when (statement) {
             is ExpressionStatement -> evaluate(statement.expression)
             is VarDeclaration -> {
-                val value = statement.initializer?.let { evaluate(it) } ?: JSUndefined
                 // 将 AST 的字符串类型转换为 Enum
                 val kind = when (statement.kind) {
                     "const" -> VariableKind.CONST
                     "let" -> VariableKind.LET
                     else -> VariableKind.VAR
                 }
-                // 检查 const 必须初始化
-                if (kind == VariableKind.CONST && statement.initializer == null) {
-                    throw JSException(JSError("SyntaxError", "Missing initializer in const declaration"))
-                }
 
-                if (kind == VariableKind.VAR) {
-                    // var 已经在提升阶段定义过了，这里只需赋值
-                    // 使用 assign 确保遵循作用域链找到之前提升的那个位置
-                    currentEnv.assign(statement.name, value)
-                } else {
-                    // let 和 const 依然在执行到这一行时才定义
-                    currentEnv.define(statement.name, value, kind)
+                for (decl in statement.declarations) {
+                    val value = decl.initializer?.let { evaluate(it) } ?: JSUndefined
+
+                    // 检查 const 必须初始化
+                    if (kind == VariableKind.CONST && decl.initializer == null) {
+                        throw JSException(JSError("SyntaxError", "Missing initializer in const declaration"))
+                    }
+
+                    if (kind == VariableKind.VAR) {
+                        // var 已经在提升阶段定义过了，这里只需赋值
+                        // 使用 assign 确保遵循作用域链找到之前提升的那个位置
+                        currentEnv.assign(decl.name, value)
+                    } else {
+                        // let 和 const 依然在执行到这一行时才定义
+                        currentEnv.define(decl.name, value, kind)
+                    }
                 }
                 JSUndefined
             }
@@ -169,7 +173,9 @@ class Interpreter {
                     val loopVars = mutableListOf<String>()
                     val initStmt = statement.init
                     if (initStmt is VarDeclaration && initStmt.kind != "var") {
-                        loopVars.add(initStmt.name)
+                        for (decl in initStmt.declarations) {
+                            loopVars.add(decl.name)
+                        }
                     }
 
                     while (statement.condition?.let { getPrimitiveBoolean(evaluate(it)) } != false) {
@@ -359,10 +365,12 @@ class Interpreter {
                 is VarDeclaration -> {
                     // 仅处理关键字为 "var" 的声明
                     if (statement.kind == "var") {
-                        // 检查是否已经定义过（防止函数名被同名 var 覆盖提升，JS中函数提升优先级更高）
-                        // 如果环境里还没这个变量，则初始化为 JSUndefined
-                        if (!env.hasLocal(statement.name)) {
-                            env.define(statement.name, JSUndefined, VariableKind.VAR)
+                        for (decl in statement.declarations) {
+                            // 检查是否已经定义过（防止函数名被同名 var 覆盖提升，JS中函数提升优先级更高）
+                            // 如果环境里还没这个变量，则初始化为 JSUndefined
+                            if (!env.hasLocal(decl.name)) {
+                                env.define(decl.name, JSUndefined, VariableKind.VAR)
+                            }
                         }
                     }
                     // 注意：let 和 const 不在此处处理，它们在 executeStatement 时才进入环境
@@ -395,7 +403,11 @@ class Interpreter {
                     // for(var i = 0; ... ) 这里的 var i 也需要提升
                     val init = statement.init
                     if (init is VarDeclaration && init.kind == "var") {
-                        env.define(init.name, JSUndefined, VariableKind.VAR)
+                        for (decl in init.declarations) {
+                            if (!env.hasLocal(decl.name)) {
+                                env.define(decl.name, JSUndefined, VariableKind.VAR)
+                            }
+                        }
                     }
                     // 扫描循环体
                     hoistDeclarations(listOf(statement.body), env)
