@@ -3,6 +3,7 @@ package com.muedsa.js.runtime
 import com.muedsa.js.ast.*
 import com.muedsa.js.lexer.TokenType
 import com.muedsa.js.runtime.exception.*
+import com.muedsa.js.runtime.internal.JSMath
 import com.muedsa.js.runtime.value.*
 import kotlin.math.pow
 
@@ -18,6 +19,7 @@ class Interpreter {
         globalEnv.define("String", StringConstructor, VariableKind.CONST)
         globalEnv.define("Array", ArrayConstructor, VariableKind.CONST)
         globalEnv.define("Error", ErrorConstructor, VariableKind.CONST)
+        globalEnv.define("Math", JSMath, VariableKind.CONST)
         
         globalEnv.define("undefined", JSUndefined, VariableKind.CONST)
         globalEnv.define("NaN", JSNumber(Double.NaN), VariableKind.CONST)
@@ -545,12 +547,12 @@ class Interpreter {
             "!=" -> JSBoolean.getJsBoolean(!compareEqual(left, right))
             "===" -> JSBoolean.getJsBoolean(compareStrict(left, right))
             "!==" -> JSBoolean.getJsBoolean(!compareStrict(left, right))
-            "&" -> JSNumber((getPrimitiveNumber(left).toInt() and getPrimitiveNumber(right).toInt()).toDouble())
-            "|" -> JSNumber((getPrimitiveNumber(left).toInt() or getPrimitiveNumber(right).toInt()).toDouble())
-            "^" -> JSNumber((getPrimitiveNumber(left).toInt() xor getPrimitiveNumber(right).toInt()).toDouble())
-            "<<" -> JSNumber((getPrimitiveNumber(left).toInt() shl getPrimitiveNumber(right).toInt()).toDouble())
-            ">>" -> JSNumber((getPrimitiveNumber(left).toInt() shr getPrimitiveNumber(right).toInt()).toDouble())
-            ">>>" -> JSNumber((getPrimitiveNumber(left).toInt() ushr getPrimitiveNumber(right).toInt()).toDouble())
+            "&" -> JSNumber((getPrimitiveNumber(left).toLong().toInt() and getPrimitiveNumber(right).toLong().toInt()).toDouble())
+            "|" -> JSNumber((getPrimitiveNumber(left).toLong().toInt() or getPrimitiveNumber(right).toLong().toInt()).toDouble())
+            "^" -> JSNumber((getPrimitiveNumber(left).toLong().toInt() xor getPrimitiveNumber(right).toLong().toInt()).toDouble())
+            "<<" -> JSNumber((getPrimitiveNumber(left).toLong().toInt() shl getPrimitiveNumber(right).toLong().toInt()).toDouble())
+            ">>" -> JSNumber((getPrimitiveNumber(left).toLong().toInt() shr getPrimitiveNumber(right).toLong().toInt()).toDouble())
+            ">>>" -> JSNumber((getPrimitiveNumber(left).toLong().toInt() ushr getPrimitiveNumber(right).toLong().toInt()).toDouble())
             else -> JSUndefined
         }
     }
