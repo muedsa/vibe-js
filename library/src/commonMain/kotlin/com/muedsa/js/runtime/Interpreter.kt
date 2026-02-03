@@ -522,6 +522,14 @@ class Interpreter {
             }
 
             is MemberExpr -> evaluateMemberExpr(expression)
+
+            is SequenceExpr -> {
+                var result: JSValue = JSUndefined
+                for (expr in expression.expressions) {
+                    result = evaluate(expr)
+                }
+                result
+            }
         }
     }
 

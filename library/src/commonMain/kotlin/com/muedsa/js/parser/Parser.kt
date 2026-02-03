@@ -84,7 +84,7 @@ class Parser(private val tokens: List<Token>) {
             var initializer: Expression? = null
             // 检查是否有初始化赋值
             if (match(TokenType.ASSIGN)) {
-                initializer = parseExpression()
+                initializer = parseAssignment()
             }
 
             val declarator = VariableDeclarator(name, initializer)
@@ -416,7 +416,26 @@ class Parser(private val tokens: List<Token>) {
     // ==========================================
 
     private fun parseExpression(): Expression {
-        return parseAssignment()
+        var expr = parseAssignment()
+
+        if (check(TokenType.COMMA)) {
+            val expressions = mutableListOf(expr)
+            val allTokens = mutableListOf<Token>()
+            allTokens.addAll(expr.tokens)
+
+            while (match(TokenType.COMMA)) {
+                allTokens.add(previous())
+                val right = parseAssignment()
+                expressions.add(right)
+                allTokens.addAll(right.tokens)
+            }
+
+            val sequenceExpr = SequenceExpr(expressions)
+            sequenceExpr.range = expr.range.first..expressions.last().range.last
+            sequenceExpr.tokens = allTokens
+            return sequenceExpr
+        }
+        return expr
     }
 
     /**
@@ -827,7 +846,7 @@ class Parser(private val tokens: List<Token>) {
             val args = mutableListOf<Expression>()
             if (!check(TokenType.RPAREN)) {
                 do {
-                    args.add(parseExpression())
+                    args.add(parseAssignment())
                 } while (match(TokenType.COMMA))
             }
             consume(TokenType.RPAREN, "Expected ')' after function arguments")
@@ -854,7 +873,7 @@ class Parser(private val tokens: List<Token>) {
                 val argList = mutableListOf<Expression>()
                 if (!check(TokenType.RPAREN)) {
                     do {
-                        argList.add(parseExpression())
+                        argList.add(parseAssignment())
                     } while (match(TokenType.COMMA))
                 }
                 consume(TokenType.RPAREN, "Expected ')'")
@@ -962,7 +981,7 @@ class Parser(private val tokens: List<Token>) {
                 val elements = mutableListOf<Expression>()
                 if (!check(TokenType.RBRACKET)) {
                     do {
-                        elements.add(parseExpression())
+                        elements.add(parseAssignment())
                         if (!check(TokenType.COMMA)) {
                             break
                         }
@@ -983,7 +1002,7 @@ class Parser(private val tokens: List<Token>) {
                     do {
                         val key = parseObjectKey()
                         consume(TokenType.COLON, "Expected ':' after object key")
-                        val value = parseExpression()
+                        val value = parseAssignment()
                         properties[key] = value
                         if (!check(TokenType.COMMA)) {
                             break
