@@ -292,6 +292,23 @@ class JSStringTest {
         assertEquals(JSBoolean.True, callee.function(createRuntime(), thisVal, listOf(JSString("Sat"))))
         assertEquals(JSBoolean.False, callee.function(createRuntime(), thisVal, listOf(JSString("Sat"), JSNumber(3.0))))
     }
+
+    @Test
+    fun `String_prototype_substr should return substring with length`() {
+        val callee = StringPrototype.getProperty("substr") as JSNativeFunction
+        val thisVal = JSString("Mozilla")
+        
+        // 传入 start 和 length
+        assertEquals("Moz", callee.function(createRuntime(), thisVal, listOf(JSNumber(0.0), JSNumber(3.0))).toPrimitiveString())
+        // 仅传入 start
+        assertEquals("zilla", callee.function(createRuntime(), thisVal, listOf(JSNumber(2.0))).toPrimitiveString())
+        // 负数 start
+        assertEquals("lla", callee.function(createRuntime(), thisVal, listOf(JSNumber(-3.0))).toPrimitiveString())
+        // start 越界
+        assertEquals("", callee.function(createRuntime(), thisVal, listOf(JSNumber(10.0))).toPrimitiveString())
+        // 负数 length
+        assertEquals("", callee.function(createRuntime(), thisVal, listOf(JSNumber(1.0), JSNumber(-1.0))).toPrimitiveString())
+    }
     
     @Test
     fun `String_prototype_substring should return substring`() {

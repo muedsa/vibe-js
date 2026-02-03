@@ -209,6 +209,28 @@ val StringPrototype = JSNativeFunction(
                 val position = args.getOrNull(1)?.let { interpreter.getPrimitiveNumber(it) }?.toInt() ?: 0
                 JSBoolean.getJsBoolean(thisString.value.startsWith(searchString, position.coerceAtLeast(0)))
             },
+            "substr" to JSNativeFunction("String.prototype.substr") { interpreter, thisValue, args ->
+                val thisString = convertJSValueToJSString(thisValue, "String.prototype.substr")
+                val size = thisString.value.length
+                var start = args.getOrNull(0)?.let { interpreter.getPrimitiveNumber(it).toInt() } ?: 0
+                val lengthArg = args.getOrNull(1)
+                
+                if (start < 0) start = (size + start).coerceAtLeast(0)
+                
+                val resultLength = if (lengthArg == null || lengthArg is JSUndefined) {
+                    size
+                } else {
+                    interpreter.getPrimitiveNumber(lengthArg).toInt()
+                }
+                
+                val actualLength = resultLength.coerceIn(0, (size - start).coerceAtLeast(0))
+                
+                if (actualLength <= 0 || start >= size) {
+                    JSString.EmptyString
+                } else {
+                    JSString(thisString.value.substring(start, start + actualLength))
+                }
+            },
             "substring" to JSNativeFunction("String.prototype.substring") { interpreter, thisValue, args ->
                 val thisString = convertJSValueToJSString(thisValue, "String.prototype.substring")
                 val len = thisString.value.length

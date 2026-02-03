@@ -242,6 +242,8 @@
 
   - [x] `substring`
 
+  - [x] `substr`
+
   - [x] `split`
 
   - [x] `trim`, `trimStart`, `trimEnd`
