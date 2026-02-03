@@ -1,1 +1,30 @@
-* text=auto eol=crlf
+# 自动检测文本文件
+* text=auto
+
+# 脚本文件：强制执行所需的换行符
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 核心代码与配置文件：统一使用 LF 确保跨平台一致性
+*.kt text eol=lf
+*.kts text eol=lf
+*.gradle text eol=lf
+*.md text eol=lf
+*.properties text eol=lf
+*.xml text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+.editorconfig text eol=lf
+.gitignore text eol=lf
+
+# 二进制文件：禁止 Git 尝试修改换行符
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
