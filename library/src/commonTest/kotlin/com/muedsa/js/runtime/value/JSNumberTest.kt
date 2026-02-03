@@ -6,6 +6,9 @@ import kotlin.test.*
 
 class JSNumberTest {
 
+    private val runtime = createRuntime()
+    private val parseInt = NumberConstructor.getProperty("parseInt") as JSNativeFunction
+
     @Test
     fun `JSNumber should convert to primitive boolean correctly`() {
         assertEquals(true, JSNumber(1.0).toPrimitiveBoolean())
@@ -32,7 +35,6 @@ class JSNumberTest {
 
     @Test
     fun `Number constructor should create JSNumber instances correctly`() {
-        val runtime = createRuntime()
         // No args
         var result = NumberConstructor.function(runtime, JSUndefined, emptyList())
         assertIs<JSNumber>(result)
@@ -70,7 +72,6 @@ class JSNumberTest {
 
     @Test
     fun `Number_isNaN should correctly identify NaN values`() {
-        val runtime = createRuntime()
         val isNaN = NumberConstructor.getProperty("isNaN") as JSNativeFunction
         assertEquals(JSBoolean.True, isNaN.function(runtime, JSUndefined, listOf(JSNumber.NaN)))
         assertEquals(JSBoolean.True, isNaN.function(runtime, JSUndefined, listOf(JSString("abc"))))
@@ -81,7 +82,6 @@ class JSNumberTest {
 
     @Test
     fun `Number_isFinite should correctly identify finite values`() {
-        val runtime = createRuntime()
         val isFinite = NumberConstructor.getProperty("isFinite") as JSNativeFunction
         assertEquals(JSBoolean.True, isFinite.function(runtime, JSUndefined, listOf(JSNumber(123.0))))
         assertEquals(JSBoolean.True, isFinite.function(runtime, JSUndefined, listOf(JSString("123"))))
@@ -92,7 +92,6 @@ class JSNumberTest {
 
     @Test
     fun `Number_isInteger should correctly identify integer values`() {
-        val runtime = createRuntime()
         val isInteger = NumberConstructor.getProperty("isInteger") as JSNativeFunction
         assertEquals(JSBoolean.True, isInteger.function(runtime, JSUndefined, listOf(JSNumber(123.0))))
         assertEquals(JSBoolean.False, isInteger.function(runtime, JSUndefined, listOf(JSNumber(123.4))))
@@ -104,32 +103,71 @@ class JSNumberTest {
 
     @Test
     fun `Number_parseInt should parse integers correctly from strings`() {
-        val runtime = createRuntime()
-        val parseInt = NumberConstructor.getProperty("parseInt") as JSNativeFunction
-        var result = parseInt.function(runtime, JSUndefined, listOf(JSString("123.45")))
-        assertIs<JSNumber>(result)
-        assertEquals(123.0, result.value)
+        // Basic base 10
+        checkParseInt("123", null, 123.0)
+        checkParseInt("  123", null, 123.0)
+        checkParseInt("123  ", null, 123.0)
+        checkParseInt("+123", null, 123.0)
+        checkParseInt("-123", null, -123.0)
+        checkParseInt("123.45", null, 123.0)
+        checkParseInt("123abc", null, 123.0)
+        checkParseInt("  123 kg", null, 123.0)
 
-        result = parseInt.function(runtime, JSUndefined, listOf(JSString("  123 kg")))
-        assertIs<JSNumber>(result)
-        assertEquals(123.0, result.value)
+        // Hex detection
+        checkParseInt("0x10", null, 16.0)
+        checkParseInt("0X10", null, 16.0)
+        checkParseInt("  0x10", null, 16.0)
+        checkParseInt("0xABC", null, 2748.0)
+        checkParseInt("-0x10", null, -16.0)
 
-        result = parseInt.function(runtime, JSUndefined, listOf(JSString("12.99")))
-        assertIs<JSNumber>(result)
-        assertEquals(12.0, result.value)
+        // Explicit radix
+        checkParseInt("10", 10, 10.0)
+        checkParseInt("10", 2, 2.0)
+        checkParseInt("10", 8, 8.0)
+        checkParseInt("10", 16, 16.0)
+        checkParseInt("10", 36, 36.0)
+        checkParseInt("Z", 36, 35.0)
+        checkParseInt("z", 36, 35.0)
 
-        result = parseInt.function(runtime, JSUndefined, listOf(JSString("kg123")))
-        assertIs<JSNumber>(result)
-        assertTrue(result.value.isNaN())
+        // Radix 0 or missing
+        checkParseInt("10", 0, 10.0)
+        checkParseInt("0x10", 0, 16.0)
 
-        result = parseInt.function(runtime, JSUndefined, listOf(JSString("")))
-        assertIs<JSNumber>(result)
-        assertTrue(result.value.isNaN())
+        // Invalid radix
+        checkParseInt("10", 1, Double.NaN)
+        checkParseInt("10", 37, Double.NaN)
+        checkParseInt("10", -1, Double.NaN)
+
+        // Stops at invalid char
+        checkParseInt("1012", 2, 5.0)
+        checkParseInt("123", 2, 1.0)
+        checkParseInt("3", 2, Double.NaN)
+
+        // Whitespace and sign
+        checkParseInt("   -10", 10, -10.0)
+        checkParseInt(" \t \n 11", 2, 3.0)
+
+        // Empty and junk
+        checkParseInt("", null, Double.NaN)
+        checkParseInt("kg123", null, Double.NaN)
+    }
+
+    private fun checkParseInt(input: String, radix: Int?, expected: Double) {
+        val args = mutableListOf<JSValue>(JSString(input))
+        if (radix != null) {
+            args.add(JSNumber(radix.toDouble()))
+        }
+        val res = parseInt.function(runtime, JSUndefined, args)
+        assertIs<JSNumber>(res)
+        if (expected.isNaN()) {
+            assertTrue(res.value.isNaN(), "Expected NaN for input '$input' radix $radix, but got ${res.value}")
+        } else {
+            assertEquals(expected, res.value, "Failed for input '$input' radix $radix")
+        }
     }
 
     @Test
     fun `Number_parseFloat should parse floats correctly from strings`() {
-        val runtime = createRuntime()
         val parseFloat = NumberConstructor.getProperty("parseFloat") as JSNativeFunction
         val result = parseFloat.function(runtime, JSUndefined, listOf(JSString("123.45")))
         assertIs<JSNumber>(result)

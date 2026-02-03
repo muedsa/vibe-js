@@ -73,14 +73,62 @@ val NumberConstructor = JSNativeFunction(
                 }
             },
             "parseInt" to JSNativeFunction("parseInt") { interpreter, _, args ->
-                val argStr = interpreter.getPrimitiveString(args.getOrElse(0) { JSUndefined })
-                val regex = Regex("""^\s*([+-]?\d+)""")
-                val match = regex.find(argStr)
-                if (match != null) {
-                    val numberStr = match.groupValues[1]
-                    JSNumber(numberStr.toDouble())
-                } else {
+                val inputString = interpreter.getPrimitiveString(args.getOrElse(0) { JSUndefined })
+                val radixArg = args.getOrElse(1) { JSUndefined }
+
+                // 1. Trim leading whitespace
+                var s = inputString.trimStart()
+
+                // 2. Sign
+                var sign = 1.0
+                if (s.isNotEmpty()) {
+                    if (s[0] == '-') {
+                        sign = -1.0
+                        s = s.substring(1)
+                    } else if (s[0] == '+') {
+                        s = s.substring(1)
+                    }
+                }
+
+                // 3. Radix
+                var R = if (radixArg == JSUndefined) 0 else interpreter.getPrimitiveNumber(radixArg).toInt()
+
+                var stripPrefix = false
+                if (R == 0) {
+                    if (s.length >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+                        R = 16
+                        stripPrefix = true
+                    } else {
+                        R = 10
+                    }
+                } else if (R == 16) {
+                    stripPrefix = true
+                } else if (R < 2 || R > 36) {
+                    return@JSNativeFunction JSNumber.NaN
+                }
+
+                if (stripPrefix && s.length >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+                    s = s.substring(2)
+                }
+
+                // 4. Parsing digits
+                var value = 0.0
+                var hasDigits = false
+
+                for (char in s) {
+                    val digit = digitValue(char)
+                    if (digit != -1 && digit < R) {
+                        value = value * R + digit
+                        hasDigits = true
+                    } else {
+                        break
+                    }
+                }
+
+                if (!hasDigits) {
                     JSNumber.NaN
+                } else {
+                    JSNumber(sign * value)
                 }
             },
             "parseFloat" to JSNativeFunction("parseFloat") { interpreter, _, args ->
@@ -96,4 +144,13 @@ val NumberConstructor = JSNativeFunction(
 fun convertJSValueToJSNumber(value: JSValue, callee: String): JSNumber {
     return value as? JSNumber
         ?: throw JSException(JSError("TypeError", "$callee requires that 'this' be a Number"))
+}
+
+private fun digitValue(c: Char): Int {
+    return when (c) {
+        in '0'..'9' -> c - '0'
+        in 'a'..'z' -> c - 'a' + 10
+        in 'A'..'Z' -> c - 'A' + 10
+        else -> -1
+    }
 }
