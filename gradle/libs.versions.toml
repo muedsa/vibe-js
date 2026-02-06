@@ -4,7 +4,7 @@ kotlin = "2.3.10"
 android-minSdk = "24"
 android-compileSdk = "36"
 kotlin-serialization-json = "1.10.0"
-kotlin-benchmark = "0.4.15"
+kotlin-benchmark = "0.4.16"
 kotlin-binary-compatibility-validator = "0.18.1"
 
 [libraries]
