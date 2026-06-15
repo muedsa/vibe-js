@@ -20,7 +20,7 @@ class Interpreter {
         globalEnv.define("Array", ArrayConstructor, VariableKind.CONST)
         globalEnv.define("Error", ErrorConstructor, VariableKind.CONST)
         globalEnv.define("Math", JSMath, VariableKind.CONST)
-        
+
         globalEnv.define("undefined", JSUndefined, VariableKind.CONST)
         globalEnv.define("NaN", JSNumber(Double.NaN), VariableKind.CONST)
         globalEnv.define("Infinity", JSNumber(Double.POSITIVE_INFINITY), VariableKind.CONST)
@@ -219,7 +219,7 @@ class Interpreter {
                                 currentEnv = forEnv
                             }
                         }
-                        
+
                         statement.update?.let { evaluate(it) }
                     }
                 } finally {
@@ -670,6 +670,9 @@ class Interpreter {
             "*=" -> JSNumber(getPrimitiveNumber(currentValue) * getPrimitiveNumber(rightValue))
             "/=" -> JSNumber(getPrimitiveNumber(currentValue) / getPrimitiveNumber(rightValue))
             "%=" -> JSNumber(getPrimitiveNumber(currentValue) % getPrimitiveNumber(rightValue))
+            "^=" -> JSNumber((getPrimitiveNumber(currentValue).toLong() xor getPrimitiveNumber(rightValue).toLong()).toDouble())
+            "&=" -> JSNumber((getPrimitiveNumber(currentValue).toLong() and getPrimitiveNumber(rightValue).toLong()).toDouble())
+            "|=" -> JSNumber((getPrimitiveNumber(currentValue).toLong() or getPrimitiveNumber(rightValue).toLong()).toDouble())
             else -> JSUndefined
         }
 

@@ -140,13 +140,14 @@ class LexerTest {
 
     @Test
     fun `test compound assignment operators`() {
-        val code = "+= -= *= /= %="
+        val code = "+= -= *= /= %= ^= &= |="
         val lexer = Lexer(code)
         val tokens = lexer.tokenize()
 
         val expectedTypes = listOf(
             TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.MULTIPLY_ASSIGN,
             TokenType.DIVIDE_ASSIGN, TokenType.MODULO_ASSIGN,
+            TokenType.BITWISE_XOR_ASSIGN, TokenType.BITWISE_AND_ASSIGN, TokenType.BITWISE_OR_ASSIGN,
             TokenType.EOF
         )
 

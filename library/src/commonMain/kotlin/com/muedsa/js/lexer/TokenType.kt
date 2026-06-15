@@ -53,6 +53,9 @@ enum class TokenType {
     MULTIPLY_ASSIGN,    // *= 乘法赋值运算符
     DIVIDE_ASSIGN,      // /= 除法赋值运算符
     MODULO_ASSIGN,      // %= 取模赋值运算符
+    BITWISE_XOR_ASSIGN, // ^= 按位异或赋值
+    BITWISE_AND_ASSIGN, // &= 按位与赋值
+    BITWISE_OR_ASSIGN,  // |= 按位或赋值
 
     // 比较运算符 (Comparison Operators)
     EQ,         // == 相等比较运算符

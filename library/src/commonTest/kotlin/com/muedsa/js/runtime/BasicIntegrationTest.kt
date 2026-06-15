@@ -109,6 +109,22 @@ class BasicIntegrationTest {
     }
 
     @Test
+    fun `test bitwise compound assignment operators`() {
+        val i = eval("""
+            var a = 5;
+            a ^= 3;  // 5 ^ 3 = 6
+            var b = 5;
+            b &= 3;  // 5 & 3 = 1
+            var c = 5;
+            c |= 3;  // 5 | 3 = 7
+        """.trimIndent())
+
+        assertEquals(6.0, (i.getValue("a") as JSNumber).value)
+        assertEquals(1.0, (i.getValue("b") as JSNumber).value)
+        assertEquals(7.0, (i.getValue("c") as JSNumber).value)
+    }
+
+    @Test
     fun `test ternary operator`() {
         val i = eval("var a = true ? 1 : 2; var b = false ? 1 : 2;")
         assertEquals(1.0, (i.getValue("a") as JSNumber).value)

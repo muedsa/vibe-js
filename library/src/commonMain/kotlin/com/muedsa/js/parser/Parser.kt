@@ -478,7 +478,8 @@ class Parser(private val tokens: List<Token>) {
             }
         } else if (match(
                 TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.MULTIPLY_ASSIGN,
-                TokenType.DIVIDE_ASSIGN, TokenType.MODULO_ASSIGN
+                TokenType.DIVIDE_ASSIGN, TokenType.MODULO_ASSIGN,
+                TokenType.BITWISE_XOR_ASSIGN, TokenType.BITWISE_AND_ASSIGN, TokenType.BITWISE_OR_ASSIGN
             )
         ) {
             // 处理复合赋值 (+=, -= 等)

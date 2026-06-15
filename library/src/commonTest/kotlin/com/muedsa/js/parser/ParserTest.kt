@@ -363,6 +363,24 @@ class ParserTest {
     }
 
     @Test
+    fun `test bitwise compound assignment`() {
+        var expr = parseExpr("a ^= 5") as CompoundAssignmentExpr
+        assertEquals("a", expr.target)
+        assertEquals("^=", expr.operator)
+        assertIs<NumberLiteral>(expr.value)
+
+        expr = parseExpr("a &= 6") as CompoundAssignmentExpr
+        assertEquals("a", expr.target)
+        assertEquals("&=", expr.operator)
+        assertIs<NumberLiteral>(expr.value)
+
+        expr = parseExpr("a |= 7") as CompoundAssignmentExpr
+        assertEquals("a", expr.target)
+        assertEquals("|=", expr.operator)
+        assertIs<NumberLiteral>(expr.value)
+    }
+
+    @Test
     fun `test unary operators`() {
         var expr = parseExpr("!a") as UnaryOp
         assertEquals("!", expr.operator)

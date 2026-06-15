@@ -222,27 +222,42 @@ class Lexer(private val input: String) {
 
             current == '&' -> {
                 advance()
-                if (peek() == '&') {
-                    advance()
-                    Token(TokenType.AND, "&&", startLine, startColumn, startPos until pos)
-                } else {
-                    Token(TokenType.BITWISE_AND, "&", startLine, startColumn, startPos until pos)
+                when {
+                    peek() == '&' -> {
+                        advance()
+                        Token(TokenType.AND, "&&", startLine, startColumn, startPos until pos)
+                    }
+                    peek() == '=' -> {
+                        advance()
+                        Token(TokenType.BITWISE_AND_ASSIGN, "&=", startLine, startColumn, startPos until pos)
+                    }
+                    else -> Token(TokenType.BITWISE_AND, "&", startLine, startColumn, startPos until pos)
                 }
             }
 
             current == '|' -> {
                 advance()
-                if (peek() == '|') {
-                    advance()
-                    Token(TokenType.OR, "||", startLine, startColumn, startPos until pos)
-                } else {
-                    Token(TokenType.BITWISE_OR, "|", startLine, startColumn, startPos until pos)
+                when {
+                    peek() == '|' -> {
+                        advance()
+                        Token(TokenType.OR, "||", startLine, startColumn, startPos until pos)
+                    }
+                    peek() == '=' -> {
+                        advance()
+                        Token(TokenType.BITWISE_OR_ASSIGN, "|=", startLine, startColumn, startPos until pos)
+                    }
+                    else -> Token(TokenType.BITWISE_OR, "|", startLine, startColumn, startPos until pos)
                 }
             }
 
             current == '^' -> {
                 advance()
-                Token(TokenType.BITWISE_XOR, "^", startLine, startColumn, startPos until pos)
+                if (peek() == '=') {
+                    advance()
+                    Token(TokenType.BITWISE_XOR_ASSIGN, "^=", startLine, startColumn, startPos until pos)
+                } else {
+                    Token(TokenType.BITWISE_XOR, "^", startLine, startColumn, startPos until pos)
+                }
             }
 
             current == '~' -> {
