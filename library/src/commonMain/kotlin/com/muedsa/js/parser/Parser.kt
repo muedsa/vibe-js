@@ -860,23 +860,61 @@ class Parser(private val tokens: List<Token>) {
             expr = newExpr
         }
 
-        // 函数调用链 call()()
-        while (match(TokenType.LPAREN)) {
-            val startPos = pos - 1
-            val args = mutableListOf<Expression>()
-            if (!check(TokenType.RPAREN)) {
-                do {
-                    args.add(parseAssignment())
-                } while (match(TokenType.COMMA))
+        // 调用链与成员访问交替: a.b().c[0]()
+        while (true) {
+            when {
+                // 函数调用
+                match(TokenType.LPAREN) -> {
+                    val startPos = pos - 1
+                    val args = mutableListOf<Expression>()
+                    if (!check(TokenType.RPAREN)) {
+                        do {
+                            args.add(parseAssignment())
+                        } while (match(TokenType.COMMA))
+                    }
+                    consume(TokenType.RPAREN, "Expected ')' after function arguments")
+                    val newExpr = CallExpr(expr, args)
+                    newExpr.range = expr.range.first..previous().range.last
+                    newExpr.tokens = buildList {
+                        addAll(expr.tokens)
+                        addAll(tokens.subList(startPos, pos))
+                    }
+                    expr = newExpr
+                }
+
+                // 点号成员访问
+                match(TokenType.DOT) -> {
+                    val startPos = pos - 1
+                    val propertyPos = pos
+                    val propertyToken = consume(TokenType.IDENTIFIER, "Expected property name after '.'")
+                    val property = Identifier(propertyToken.value)
+                    property.tokens = listOf(propertyToken)
+                    property.range = propertyPos .. propertyPos
+                    val newExpr = MemberExpr(expr, property, false)
+                    newExpr.range = expr.range.first..previous().range.last
+                    newExpr.tokens = buildList {
+                        addAll(expr.tokens)
+                        addAll(tokens.subList(startPos, pos))
+                    }
+                    expr = newExpr
+                }
+
+                // 括号成员访问 (computed property)
+                match(TokenType.LBRACKET) -> {
+                    val startPos = pos - 1
+                    val index = parseExpression()
+                    consume(TokenType.RBRACKET, "Expected ']' after computed member expression")
+                    val newExpr = MemberExpr(expr, index, true)
+                    newExpr.range = expr.range.first..previous().range.last
+                    newExpr.tokens = buildList {
+                        addAll(expr.tokens)
+                        addAll(tokens.subList(startPos, pos))
+                    }
+                    expr = newExpr
+                }
+
+                else -> break
             }
-            consume(TokenType.RPAREN, "Expected ')' after function arguments")
-            val newExpr = CallExpr(expr, args)
-            newExpr.range = expr.range.first..previous().range.last
-            newExpr.tokens = buildList {
-                addAll(expr.tokens)
-                addAll(tokens.subList(startPos, pos))
-            }
-            expr = newExpr
         }
 
         return expr

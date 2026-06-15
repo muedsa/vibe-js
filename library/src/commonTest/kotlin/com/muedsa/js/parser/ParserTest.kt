@@ -460,4 +460,73 @@ class ParserTest {
         assertIs<BinaryOp>(expr.left)
         assertEquals("<<", expr.left.operator)
     }
+
+    @Test
+    fun `test chained call then member access`() {
+        // a().b
+        val expr = parseExpr("a().b") as MemberExpr
+        assertIs<CallExpr>(expr.obj)
+        assertIs<Identifier>(expr.property)
+        assertEquals("b", expr.property.name)
+        assertEquals(false, expr.computed)
+    }
+
+    @Test
+    fun `test chained call then call`() {
+        // a()()
+        val expr = parseExpr("a()()") as CallExpr
+        val inner = expr.callee as CallExpr
+        assertEquals(0, expr.arguments.size)
+        assertEquals(0, inner.arguments.size)
+    }
+
+    @Test
+    fun `test chained member call then member call`() {
+        // a.b().c()
+        val expr = parseExpr("a.b().c()") as CallExpr
+        val member = expr.callee as MemberExpr
+        assertIs<CallExpr>(member.obj)
+        assertEquals("c", (member.property as Identifier).name)
+        assertEquals(0, expr.arguments.size)
+    }
+
+    @Test
+    fun `test chained call then bracket then call`() {
+        // a()[0]()
+        val expr = parseExpr("a()[0]()") as CallExpr
+        val bracketAccess = expr.callee as MemberExpr
+        assertIs<CallExpr>(bracketAccess.obj)
+        assertIs<NumberLiteral>(bracketAccess.property)
+        assertEquals(true, bracketAccess.computed)
+        assertEquals(0, expr.arguments.size)
+    }
+
+    @Test
+    fun `test chained new with method calls`() {
+        // new Foo().bar().baz()
+        val expr = parseExpr("new Foo().bar().baz()") as CallExpr
+        val bazMember = expr.callee as MemberExpr
+        val barCall = bazMember.obj as CallExpr
+        val barMember = barCall.callee as MemberExpr
+        assertIs<NewExpr>(barMember.obj)
+        assertEquals("bar", (barMember.property as Identifier).name)
+        assertEquals("baz", (bazMember.property as Identifier).name)
+    }
+
+    @Test
+    fun `test chained mixed alternating expression`() {
+        // a.b(x).c[0].d()
+        // AST: CallExpr(MemberExpr(.d, MemberExpr([0], MemberExpr(.c, CallExpr(MemberExpr(a,b), [x])))), [])
+        val expr = parseExpr("a.b(x).c[0].d()") as CallExpr
+        val dMember = expr.callee as MemberExpr
+        assertEquals("d", (dMember.property as Identifier).name)
+
+        val bracketAccess = dMember.obj as MemberExpr
+        assertIs<NumberLiteral>(bracketAccess.property)
+        assertEquals(true, bracketAccess.computed)
+
+        val cMember = bracketAccess.obj as MemberExpr
+        assertEquals("c", (cMember.property as Identifier).name)
+        assertIs<CallExpr>(cMember.obj)
+    }
 }
