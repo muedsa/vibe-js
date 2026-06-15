@@ -249,6 +249,25 @@ public final class com/muedsa/js/ast/MemberAssignmentExpr : com/muedsa/js/ast/Ex
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/muedsa/js/ast/MemberCompoundAssignmentExpr : com/muedsa/js/ast/Expression {
+	public fun <init> (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;Z)V
+	public final fun component1 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component2 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lcom/muedsa/js/ast/Expression;
+	public final fun component5 ()Z
+	public final fun copy (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;Z)Lcom/muedsa/js/ast/MemberCompoundAssignmentExpr;
+	public static synthetic fun copy$default (Lcom/muedsa/js/ast/MemberCompoundAssignmentExpr;Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Ljava/lang/String;Lcom/muedsa/js/ast/Expression;ZILjava/lang/Object;)Lcom/muedsa/js/ast/MemberCompoundAssignmentExpr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getComputed ()Z
+	public final fun getObj ()Lcom/muedsa/js/ast/Expression;
+	public final fun getOperator ()Ljava/lang/String;
+	public final fun getProperty ()Lcom/muedsa/js/ast/Expression;
+	public final fun getValue ()Lcom/muedsa/js/ast/Expression;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/muedsa/js/ast/MemberExpr : com/muedsa/js/ast/Expression {
 	public fun <init> (Lcom/muedsa/js/ast/Expression;Lcom/muedsa/js/ast/Expression;Z)V
 	public final fun component1 ()Lcom/muedsa/js/ast/Expression;

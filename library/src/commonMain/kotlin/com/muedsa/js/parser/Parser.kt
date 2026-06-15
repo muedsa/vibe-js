@@ -483,19 +483,38 @@ class Parser(private val tokens: List<Token>) {
             )
         ) {
             // 处理复合赋值 (+=, -= 等)
-            if (expr is Identifier) {
-                val startPos = pos
-                val operator = previous().value
-                val value = parseAssignment()
-                val newExpr = CompoundAssignmentExpr(expr.name, operator, value)
-                newExpr.range = newExpr.range.first..value.range.last
-                newExpr.tokens = buildList {
-                    addAll(expr.tokens)
-                    addAll(tokens.subList(startPos, pos))
+            when (expr) {
+                is Identifier -> {
+                    val startPos = pos
+                    val operator = previous().value
+                    val value = parseAssignment()
+                    val newExpr = CompoundAssignmentExpr(expr.name, operator, value)
+                    newExpr.range = newExpr.range.first..value.range.last
+                    newExpr.tokens = buildList {
+                        addAll(expr.tokens)
+                        addAll(tokens.subList(startPos, pos))
+                    }
+                    expr = newExpr
                 }
-                expr = newExpr
-            } else {
-                throw createParseException("Invalid assignment target")
+
+                is MemberExpr -> {
+                    val startPos = pos
+                    val operator = previous().value
+                    val value = parseAssignment()
+                    val newExpr = MemberCompoundAssignmentExpr(
+                        expr.obj, expr.property, operator, value, expr.computed
+                    )
+                    newExpr.range = newExpr.range.first..value.range.last
+                    newExpr.tokens = buildList {
+                        addAll(expr.tokens)
+                        addAll(tokens.subList(startPos, pos))
+                    }
+                    expr = newExpr
+                }
+
+                else -> {
+                    throw createParseException("Invalid assignment target")
+                }
             }
         }
 

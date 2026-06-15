@@ -483,6 +483,7 @@ class Interpreter {
 
             is CompoundAssignmentExpr -> evaluateCompoundAssignment(expression)
             is MemberAssignmentExpr -> evaluateMemberAssignment(expression)
+            is MemberCompoundAssignmentExpr -> evaluateMemberCompoundAssignment(expression)
             is CallExpr -> evaluateFunctionCall(expression)
             is NewExpr -> evaluateNewExpr(expression)
             is ConditionalExpr -> {
@@ -854,6 +855,44 @@ class Interpreter {
             }
             obj.setProperty(key, value)
             value
+        } else {
+            throw JSException(JSError("", ""))
+        }
+    }
+
+    private fun evaluateMemberCompoundAssignment(expr: MemberCompoundAssignmentExpr): JSValue {
+        val obj = evaluate(expr.obj)
+
+        return if (obj is JSObject) {
+            val key: String = if (expr.computed) {
+                val keyValue = evaluate(expr.property)
+                getPrimitiveString(keyValue)
+            } else {
+                (expr.property as Identifier).name
+            }
+            val currentValue = obj.getProperty(key)
+            val rightValue = evaluate(expr.value)
+
+            val result = when (expr.operator) {
+                "+=" -> when {
+                    currentValue is JSString || rightValue is JSString ->
+                        JSString(getPrimitiveString(currentValue) + getPrimitiveString(rightValue))
+
+                    else -> JSNumber(getPrimitiveNumber(currentValue) + getPrimitiveNumber(rightValue))
+                }
+
+                "-=" -> JSNumber(getPrimitiveNumber(currentValue) - getPrimitiveNumber(rightValue))
+                "*=" -> JSNumber(getPrimitiveNumber(currentValue) * getPrimitiveNumber(rightValue))
+                "/=" -> JSNumber(getPrimitiveNumber(currentValue) / getPrimitiveNumber(rightValue))
+                "%=" -> JSNumber(getPrimitiveNumber(currentValue) % getPrimitiveNumber(rightValue))
+                "^=" -> JSNumber((getPrimitiveNumber(currentValue).toLong() xor getPrimitiveNumber(rightValue).toLong()).toDouble())
+                "&=" -> JSNumber((getPrimitiveNumber(currentValue).toLong() and getPrimitiveNumber(rightValue).toLong()).toDouble())
+                "|=" -> JSNumber((getPrimitiveNumber(currentValue).toLong() or getPrimitiveNumber(rightValue).toLong()).toDouble())
+                else -> JSUndefined
+            }
+
+            obj.setProperty(key, result)
+            result
         } else {
             throw JSException(JSError("", ""))
         }

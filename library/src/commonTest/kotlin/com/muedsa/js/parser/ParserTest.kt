@@ -381,6 +381,33 @@ class ParserTest {
     }
 
     @Test
+    fun `test member compound assignment`() {
+        // obj.prop += 5 — 点号成员复合赋值
+        var expr = parseExpr("obj.prop += 5") as MemberCompoundAssignmentExpr
+        assertIs<Identifier>(expr.obj)
+        assertIs<Identifier>(expr.property)
+        assertEquals("+=", expr.operator)
+        assertIs<NumberLiteral>(expr.value)
+        assertEquals(false, expr.computed)
+
+        // arr[0] *= 2 — 计算属性成员复合赋值
+        expr = parseExpr("arr[0] *= 2") as MemberCompoundAssignmentExpr
+        assertIs<Identifier>(expr.obj)
+        assertIs<NumberLiteral>(expr.property)
+        assertEquals("*=", expr.operator)
+        assertIs<NumberLiteral>(expr.value)
+        assertEquals(true, expr.computed)
+
+        // obj[key] &= 3 — 位运算成员复合赋值
+        expr = parseExpr("obj[key] &= 3") as MemberCompoundAssignmentExpr
+        assertIs<Identifier>(expr.obj)
+        assertIs<Identifier>(expr.property)
+        assertEquals("&=", expr.operator)
+        assertIs<NumberLiteral>(expr.value)
+        assertEquals(true, expr.computed)
+    }
+
+    @Test
     fun `test unary operators`() {
         var expr = parseExpr("!a") as UnaryOp
         assertEquals("!", expr.operator)
