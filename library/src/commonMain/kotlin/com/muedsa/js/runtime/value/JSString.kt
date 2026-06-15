@@ -193,14 +193,19 @@ val StringPrototype = JSNativeFunction(
                 val thisString = convertJSValueToJSString(thisValue, "String.prototype.split")
                 val separator = args.getOrNull(0)?.let { interpreter.getPrimitiveString(it) } ?: "undefined"
                 val limit = args.getOrNull(1)?.let { interpreter.getPrimitiveNumber(it) }?.toInt()
-                
-                val resultList = thisString.value.split(separator)
+
+                // 空字符串分割符：JS 按字符拆分，Kotlin 默认 split 会多出首尾空串
+                val resultList = if (separator.isEmpty()) {
+                    thisString.value.map { it.toString() }
+                } else {
+                    thisString.value.split(separator)
+                }
                 val finalResult = if (limit != null && limit >= 0) {
                     resultList.take(limit)
                 } else {
                     resultList
                 }
-                
+
                 JSArray(finalResult.map { JSString(it) }.toMutableList())
             },
             "startsWith" to JSNativeFunction("String.prototype.startsWith") { interpreter, thisValue, args ->

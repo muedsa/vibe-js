@@ -285,6 +285,30 @@ class JSStringTest {
     }
 
     @Test
+    fun `String_prototype_split should split with empty separator`() {
+        val callee = StringPrototype.getProperty("split") as JSNativeFunction
+
+        // "hello".split("") → ["h", "e", "l", "l", "o"]
+        val result = callee.function(createRuntime(), JSString("hello"), listOf(JSString(""))) as JSArray
+        assertEquals(5, result.size)
+        assertEquals("h", result[0].toPrimitiveString())
+        assertEquals("e", result[1].toPrimitiveString())
+        assertEquals("l", result[2].toPrimitiveString())
+        assertEquals("l", result[3].toPrimitiveString())
+        assertEquals("o", result[4].toPrimitiveString())
+
+        // "".split("") → []
+        val emptyResult = callee.function(createRuntime(), JSString(""), listOf(JSString(""))) as JSArray
+        assertEquals(0, emptyResult.size)
+
+        // "abc".split("", 2) → ["a", "b"]
+        val limitResult = callee.function(createRuntime(), JSString("abc"), listOf(JSString(""), JSNumber(2.0))) as JSArray
+        assertEquals(2, limitResult.size)
+        assertEquals("a", limitResult[0].toPrimitiveString())
+        assertEquals("b", limitResult[1].toPrimitiveString())
+    }
+
+    @Test
     fun `String_prototype_startsWith should check prefix`() {
         val callee = StringPrototype.getProperty("startsWith") as JSNativeFunction
         val thisVal = JSString("Saturday")
