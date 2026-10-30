@@ -233,6 +233,9 @@ class BuiltinArrayStringAdvancedTest {
         assertEquals("a|1|b|2|", runtime.evalString("'a1b2'.split(/(\\d)/).join('|')"))
         assertEquals("a,b", runtime.evalString("'ab'.split(/(?:)/).join(',')"))
         assertEquals("a|1", runtime.evalString("'a1b2'.split(/(\\d)/, 2).join('|')"))
+        assertEquals("ab", runtime.evalString("'ab'.split(/$/).join(',')"))
+        assertEquals("ab", runtime.evalString("'ab'.split(/(?=$)/).join(',')"))
+        assertEquals("a,", runtime.evalString("'a1'.split(/1/).join(',')"))
     }
 
     @Test

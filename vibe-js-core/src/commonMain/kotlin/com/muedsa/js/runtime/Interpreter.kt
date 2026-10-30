@@ -818,24 +818,105 @@ class Interpreter(
     /**
      * 在进入作用域时预声明 let/const/class 绑定，实现暂时性死区。
      *
-     * 仅处理直接声明；解构声明中的绑定在初始化时创建。
+     * 同时检查同一语句列表中词法声明与 var/function 声明的同名冲突，
+     * 以及解构声明中的绑定名。
      */
     private fun predeclareLexical(statements: List<Statement>, environment: Environment) {
         val declarative = environment as? DeclarativeEnvironment ?: return
+        val lexicalBindings = LinkedHashMap<String, Boolean>()
         for (statement in statements) {
             when (statement) {
                 is VarDeclaration -> if (statement.kind != DeclarationKind.VAR) {
+                    val mutable = statement.kind == DeclarationKind.LET
                     for (declaration in statement.declarations) {
-                        val name = declaration.name ?: continue
-                        declarative.declareLexical(name, mutable = statement.kind == DeclarationKind.LET)
+                        val names = mutableListOf<String>()
+                        val pattern = declaration.pattern
+                        if (pattern != null) {
+                            collectPatternNames(pattern, names)
+                        } else {
+                            declaration.name?.let { names.add(it) }
+                        }
+                        for (name in names) {
+                            if (lexicalBindings.put(name, mutable) != null) {
+                                throw JSException(
+                                    JSError("SyntaxError", "Identifier '$name' has already been declared")
+                                )
+                            }
+                        }
                     }
                 }
 
-                is ClassDeclaration ->
-                    declarative.declareLexical(statement.name, mutable = false)
+                is ClassDeclaration -> {
+                    if (lexicalBindings.put(statement.name, false) != null) {
+                        throw JSException(
+                            JSError(
+                                "SyntaxError",
+                                "Identifier '${statement.name}' has already been declared",
+                            )
+                        )
+                    }
+                }
 
                 else -> Unit
             }
+        }
+        if (lexicalBindings.isEmpty()) return
+
+        for (statement in statements) {
+            val varNames = when (statement) {
+                is VarDeclaration -> if (statement.kind == DeclarationKind.VAR) {
+                    val names = mutableListOf<String>()
+                    for (declaration in statement.declarations) {
+                        val pattern = declaration.pattern
+                        if (pattern != null) {
+                            collectPatternNames(pattern, names)
+                        } else {
+                            declaration.name?.let { names.add(it) }
+                        }
+                    }
+                    names
+                } else {
+                    emptyList()
+                }
+
+                is FunctionDeclaration -> listOf(statement.name)
+                else -> emptyList()
+            }
+            for (name in varNames) {
+                if (lexicalBindings.containsKey(name)) {
+                    throw JSException(
+                        JSError("SyntaxError", "Identifier '$name' has already been declared")
+                    )
+                }
+            }
+        }
+
+        for ((name, mutable) in lexicalBindings) {
+            declarative.declareLexical(name, mutable)
+        }
+    }
+
+    /** 收集声明模式中的绑定名（解构、默认值、rest）。 */
+    private fun collectPatternNames(pattern: Expression, names: MutableList<String>) {
+        when (pattern) {
+            is Identifier -> names.add(pattern.name)
+            is AssignmentExpr -> collectPatternNames(pattern.target, names)
+            is ArrayLiteral -> for (element in pattern.elements) {
+                when (element) {
+                    null -> Unit
+                    is SpreadElement -> collectPatternNames(element.argument, names)
+                    else -> collectPatternNames(element, names)
+                }
+            }
+
+            is ObjectLiteral -> for (element in pattern.properties) {
+                when (element) {
+                    is ObjectProperty -> collectPatternNames(element.value, names)
+                    is ObjectSpreadProperty -> collectPatternNames(element.argument, names)
+                }
+            }
+
+            else -> Unit
         }
     }
 
@@ -1216,38 +1297,64 @@ class Interpreter(
      */
     private suspend fun executeSwitch(statement: SwitchStatement): Completion {
         val discriminant = evaluate(statement.discriminant)
-        var startIndex = -1
-        var defaultIndex = -1
+        // switch 的 case 块共享一个词法作用域
+        val switchEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+        val previousEnvironment = currentFrame.lexicalEnv
+        currentFrame.lexicalEnv = switchEnvironment
+        return try {
+            predeclareLexical(
+                statement.cases.flatMap { it.consequent },
+                switchEnvironment,
+            )
+            var startIndex = -1
+            var defaultIndex = -1
 
-        for ((index, switchCase) in statement.cases.withIndex()) {
-            val test = switchCase.test
-            if (test == null) {
-                defaultIndex = index
-            } else if (startIndex < 0) {
-                if (strictEquals(discriminant, evaluate(test))) {
-                    startIndex = index
-                }
-            }
-        }
-
-        if (startIndex < 0) startIndex = defaultIndex
-        if (startIndex < 0) return Completion.Normal(JSUndefined)
-
-        for (index in startIndex until statement.cases.size) {
-            for (inner in statement.cases[index].consequent) {
-                when (val completion = executeStatement(inner)) {
-                    is Completion.Normal -> Unit
-                    is Completion.Return -> return completion
-                    is Completion.Break -> {
-                        if (completion.label == null) return Completion.Normal(JSUndefined)
-                        return completion
+            for ((index, switchCase) in statement.cases.withIndex()) {
+                val test = switchCase.test
+                if (test == null) {
+                    defaultIndex = index
+                } else if (startIndex < 0) {
+                    if (strictEquals(discriminant, evaluate(test))) {
+                        startIndex = index
                     }
-
-                    is Completion.Continue -> return completion
                 }
             }
+
+            if (startIndex < 0) startIndex = defaultIndex
+            if (startIndex < 0) {
+                Completion.Normal(JSUndefined)
+            } else {
+                var result: Completion = Completion.Normal(JSUndefined)
+                execution@ for (index in startIndex until statement.cases.size) {
+                    for (inner in statement.cases[index].consequent) {
+                        when (val completion = executeStatement(inner)) {
+                            is Completion.Normal -> Unit
+                            is Completion.Return -> {
+                                result = completion
+                                break@execution
+                            }
+
+                            is Completion.Break -> {
+                                result = if (completion.label == null) {
+                                    Completion.Normal(JSUndefined)
+                                } else {
+                                    completion
+                                }
+                                break@execution
+                            }
+
+                            is Completion.Continue -> {
+                                result = completion
+                                break@execution
+                            }
+                        }
+                    }
+                }
+                result
+            }
+        } finally {
+            currentFrame.lexicalEnv = previousEnvironment
         }
-        return Completion.Normal(JSUndefined)
     }
 
     /** try-catch-finally 语句。 */
@@ -1842,11 +1949,17 @@ class Interpreter(
                         DeclarationKind.VAR ->
                             targetEnvironment.findVarScope().createVarBinding(pattern.name, value)
 
-                        DeclarationKind.LET ->
-                            targetEnvironment.createLetBinding(pattern.name, value)
+                        DeclarationKind.LET -> {
+                            if (!initializeLexicalIfDeclared(targetEnvironment, pattern.name, value)) {
+                                targetEnvironment.createLetBinding(pattern.name, value)
+                            }
+                        }
 
-                        DeclarationKind.CONST ->
-                            targetEnvironment.createConstBinding(pattern.name, value)
+                        DeclarationKind.CONST -> {
+                            if (!initializeLexicalIfDeclared(targetEnvironment, pattern.name, value)) {
+                                targetEnvironment.createConstBinding(pattern.name, value)
+                            }
+                        }
                     }
                 }
             }
@@ -2057,7 +2170,13 @@ class Interpreter(
             "void" -> JSUndefined
             "delete" -> evaluateDelete(expression.operand)
             "await" -> {
-                val value = if (operand is JSPromise) operand.awaitResult() else operand
+                val value = try {
+                    if (operand is JSPromise) operand.awaitResult() else operand
+                } catch (error: JSException) {
+                    // 拒绝同样要经过一个微任务周期后再抛给 JS 层
+                    context.eventLoop.awaitMicrotask()
+                    throw error
+                }
                 // await 至少让出一个微任务周期，即使等待值已就绪
                 context.eventLoop.awaitMicrotask()
                 value

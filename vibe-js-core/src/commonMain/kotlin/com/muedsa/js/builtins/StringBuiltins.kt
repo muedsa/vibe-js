@@ -637,6 +637,7 @@ object StringBuiltins {
         }
         var previousEnd = 0
         var searchIndex = 0
+        var lastZeroLengthAtEnd = false
         while (searchIndex < text.length) {
             val match = regex.find(text, searchIndex) ?: break
             val matchEnd = match.range.last + 1
@@ -651,10 +652,17 @@ object StringBuiltins {
                 result.add(if (group == null) JSUndefined else JSString(group.value))
             }
             if (result.size >= limit) return ArrayList(result.take(limit))
+            lastZeroLengthAtEnd = match.range.isEmpty() && match.range.first == text.length
             previousEnd = matchEnd
             searchIndex = matchEnd
         }
         result.add(JSString(text.substring(previousEnd)))
+        // 结尾的零长度匹配不应再产生额外的空串
+        if (lastZeroLengthAtEnd && result.size > 1 &&
+            (result.last() as? JSString)?.value == ""
+        ) {
+            result.removeAt(result.lastIndex)
+        }
         return if (result.size > limit) ArrayList(result.take(limit)) else result
     }
 

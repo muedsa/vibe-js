@@ -32,16 +32,16 @@ object WeakMapBuiltins {
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
                 for (entry in interpreter.iterateValues(iterable)) {
                     val pair = interpreter.iterateValues(entry)
-                    if (pair.size >= 2) {
-                        if (pair[0] !is JSObject) {
-                            interpreter.typeError("Invalid value used as WeakMap key")
-                        }
-                        val index = map.entries.indexOfFirst {
-                            interpreter.conversions.sameValueZero(it.first, pair[0])
-                        }
-                        if (index >= 0) map.entries[index] = pair[0] to pair[1]
-                        else map.entries.add(pair[0] to pair[1])
+                    val key = pair.getOrElse(0) { JSUndefined }
+                    val value = pair.getOrElse(1) { JSUndefined }
+                    if (key !is JSObject) {
+                        interpreter.typeError("Invalid value used as WeakMap key")
                     }
+                    val index = map.entries.indexOfFirst {
+                        interpreter.conversions.sameValueZero(it.first, key)
+                    }
+                    if (index >= 0) map.entries[index] = key to value
+                    else map.entries.add(key to value)
                 }
             }
             map

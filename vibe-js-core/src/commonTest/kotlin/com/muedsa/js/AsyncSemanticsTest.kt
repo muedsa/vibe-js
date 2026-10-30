@@ -297,6 +297,26 @@ class AsyncSemanticsTest {
     }
 
     @Test
+    fun `await 拒绝也在微任务周期后处理`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            async function f() {
+                try {
+                    await Promise.reject('x');
+                } catch (e) {
+                    log.push('c' + e);
+                }
+            }
+            f();
+            log.push('s');
+            """.trimIndent()
+        )
+        assertEquals("s,cx", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
     fun `async 中 try catch 捕获 await 拒绝`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(

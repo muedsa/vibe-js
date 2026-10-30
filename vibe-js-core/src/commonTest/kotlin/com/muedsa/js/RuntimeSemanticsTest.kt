@@ -64,6 +64,66 @@ class RuntimeSemanticsTest {
     }
 
     @Test
+    fun `解构词法声明同样具有暂时性死区`() = runTest {
+        val runtime = TestRuntime()
+        val arrayError = assertFailsWith<JSException> {
+            runtime.eval("typeof a; let [a] = [1];")
+        }
+        assertEquals("ReferenceError", (arrayError.value as JSError).errorName)
+
+        val objectError = assertFailsWith<JSException> {
+            runtime.eval("{ typeof b; let { b } = { b: 1 }; }")
+        }
+        assertEquals("ReferenceError", (objectError.value as JSError).errorName)
+
+        assertEquals("1:2", runtime.evalString("let [x, y] = [1, 2]; x + ':' + y"))
+        assertEquals("1", runtime.evalString("let { a: z } = { a: 1 }; '' + z"))
+    }
+
+    @Test
+    fun `词法声明与 var function 同名冲突`() = runTest {
+        val runtime = TestRuntime()
+        val topLevel = assertFailsWith<JSException> { runtime.eval("let c; var c;") }
+        assertEquals("SyntaxError", (topLevel.value as JSError).errorName)
+
+        val block = assertFailsWith<JSException> { runtime.eval("{ let d; var d; }") }
+        assertEquals("SyntaxError", (block.value as JSError).errorName)
+
+        val function = assertFailsWith<JSException> {
+            runtime.eval("function f() { let e; function e() {} } f();")
+        }
+        assertEquals("SyntaxError", (function.value as JSError).errorName)
+    }
+
+    @Test
+    fun `switch 拥有独立词法作用域`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "undefined",
+            runtime.evalString(
+                "function f() { switch (1) { case 1: let x = 1; break; } return typeof x; } f()"
+            )
+        )
+        assertEquals(
+            "SyntaxError",
+            runtime.evalString(
+                """
+                var name = '';
+                try {
+                    switch (1) {
+                        case 1: let dup = 1; break;
+                        case 2: let dup = 2;
+                    }
+                } catch (e) {
+                    name = e.name;
+                }
+                name;
+                """.trimIndent()
+            )
+        )
+    }
+
+    @Test
     fun `同一作用域重复声明词法变量抛 SyntaxError`() = runTest {
         val runtime = TestRuntime()
         val blockError = assertFailsWith<JSException> {

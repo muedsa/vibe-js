@@ -213,14 +213,16 @@ class BuiltinCollectionSymbolTest {
             runtime.evalString("var m = new WeakMap(); '' + m.get(1)")
         )
         assertEquals(
-            "TypeError:TypeError",
+            "TypeError:TypeError:TypeError",
             runtime.evalString(
                 """
                 var first = '';
                 var second = '';
+                var third = '';
                 try { new WeakMap([[1, 2]]); } catch (e) { first = e.name; }
                 try { new WeakSet([1]); } catch (e) { second = e.name; }
-                first + ':' + second;
+                try { new WeakMap([[]]); } catch (e) { third = e.name; }
+                first + ':' + second + ':' + third;
                 """.trimIndent()
             )
         )
