@@ -191,6 +191,30 @@ object ArrayBuiltins {
         )
 
         arrayPrototype.defineDataProperty(
+            key = PropertyKey.Str("lastIndexOf"),
+            value = BuiltinHelpers.method(intrinsics, "lastIndexOf", 1) { interpreter, thisValue, args ->
+                val array = requireArray(interpreter, thisValue, "Array.prototype.lastIndexOf")
+                val searchElement = args.getOrNull(0) ?: JSUndefined
+                var fromIndex = args.getOrNull(1)?.let { interpreter.toNumber(it).toInt() }
+                    ?: (array.length - 1)
+                if (fromIndex < 0) fromIndex += array.length
+                if (fromIndex >= array.length) fromIndex = array.length - 1
+
+                var result = -1
+                var index = fromIndex
+                while (index >= 0) {
+                    val element = array.getElement(index)
+                    if (element != null && interpreter.strictEquals(element, searchElement)) {
+                        result = index
+                        break
+                    }
+                    index--
+                }
+                JSNumber(result.toDouble())
+            },
+        )
+
+        arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("includes"),
             value = BuiltinHelpers.method(intrinsics, "includes", 1) { interpreter, thisValue, args ->
                 val array = requireArray(interpreter, thisValue, "Array.prototype.includes")
@@ -201,7 +225,8 @@ object ArrayBuiltins {
 
                 var result = false
                 for (index in fromIndex until array.length) {
-                    val element = array.getElement(index) ?: continue
+                    // 规范要求 includes 将数组空洞视为 undefined
+                    val element = array.getElement(index) ?: JSUndefined
                     if (interpreter.conversions.sameValueZero(element, searchElement)) {
                         result = true
                         break

@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSNull
+import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSSet
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
@@ -31,6 +32,9 @@ object WeakSetBuiltins {
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
                 for (value in interpreter.iterateValues(iterable)) {
+                    if (value !is JSObject) {
+                        interpreter.typeError("Invalid value used in WeakSet")
+                    }
                     if (set.values.none { interpreter.conversions.sameValueZero(it, value) }) {
                         set.values.add(value)
                     }
@@ -53,6 +57,9 @@ object WeakSetBuiltins {
                 val set = thisValue as? JSSet
                     ?: interpreter.typeError("WeakSet.prototype.add requires that 'this' be a WeakSet")
                 val value = args.getOrElse(0) { JSUndefined }
+                if (value !is JSObject) {
+                    interpreter.typeError("Invalid value used in WeakSet")
+                }
                 if (set.values.none { interpreter.conversions.sameValueZero(it, value) }) {
                     set.values.add(value)
                 }

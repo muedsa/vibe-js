@@ -2,6 +2,7 @@ package com.muedsa.js.runtime
 
 import com.muedsa.js.runtime.exception.JSException
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,6 +43,17 @@ class EventLoop(
                 // 微任务中的异常在阶段 C 会进入 Promise 拒绝回调
             }
         }
+    }
+
+    /**
+     * 让出一次微任务周期。
+     *
+     * 供 `await` 使用：即使等待值已经就绪，也必须在下一个微任务继续执行。
+     */
+    suspend fun awaitMicrotask() {
+        val deferred = CompletableDeferred<Unit>()
+        enqueueMicrotask { deferred.complete(Unit) }
+        deferred.await()
     }
 
     /** 排队一个宏任务（定时器）。 */

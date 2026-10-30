@@ -5,7 +5,7 @@ package com.muedsa.js.lexer
  */
 sealed class TemplatePart {
     /** 字面文本段。 */
-    data class Text(val value: String) : TemplatePart()
+    data class Text(val value: String, val raw: String = value) : TemplatePart()
 
     /** `${...}` 中的表达式源码（由 Parser 递归解析）。 */
     data class ExpressionSource(val source: String) : TemplatePart()

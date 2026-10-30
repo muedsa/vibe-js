@@ -260,10 +260,15 @@ object PromiseBuiltins {
                         prototype = intrinsics.functionPrototype,
                     ) { _, _, handlerArgs ->
                         val entry = JSObject(prototype = intrinsics.objectPrototype)
-                        entry.defineDataProperty(PropertyKey.Str("status"), JSString("fulfilled"))
+                        entry.defineDataProperty(
+                            PropertyKey.Str("status"),
+                            JSString("fulfilled"),
+                            enumerable = true,
+                        )
                         entry.defineDataProperty(
                             PropertyKey.Str("value"),
                             handlerArgs.getOrElse(0) { JSUndefined },
+                            enumerable = true,
                         )
                         results[index] = entry
                         remaining--
@@ -276,10 +281,15 @@ object PromiseBuiltins {
                         prototype = intrinsics.functionPrototype,
                     ) { _, _, handlerArgs ->
                         val entry = JSObject(prototype = intrinsics.objectPrototype)
-                        entry.defineDataProperty(PropertyKey.Str("status"), JSString("rejected"))
+                        entry.defineDataProperty(
+                            PropertyKey.Str("status"),
+                            JSString("rejected"),
+                            enumerable = true,
+                        )
                         entry.defineDataProperty(
                             PropertyKey.Str("reason"),
                             handlerArgs.getOrElse(0) { JSUndefined },
+                            enumerable = true,
                         )
                         results[index] = entry
                         remaining--

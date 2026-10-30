@@ -36,8 +36,42 @@ open class JSObject(
     /** 是否拥有指定自有属性（不查原型链）。 */
     open fun hasOwnProperty(key: PropertyKey): Boolean = ownProperties.containsKey(key)
 
-    /** 获取全部自有属性键（按插入顺序）。 */
-    open fun ownPropertyKeys(): List<PropertyKey> = ownProperties.keys.toList()
+    /**
+     * 获取全部自有属性键。
+     *
+     * 顺序遵循规范：数组索引升序，然后是其他字符串（插入顺序），最后是 Symbol。
+     */
+    open fun ownPropertyKeys(): List<PropertyKey> {
+        val indexKeys = ArrayList<Pair<Long, PropertyKey>>()
+        val stringKeys = ArrayList<PropertyKey>()
+        val symbolKeys = ArrayList<PropertyKey>()
+        for (key in ownProperties.keys) {
+            if (key is PropertyKey.Str) {
+                val index = canonicalArrayIndex(key.value)
+                if (index != null) indexKeys.add(index to key) else stringKeys.add(key)
+            } else {
+                symbolKeys.add(key)
+            }
+        }
+        indexKeys.sortBy { it.first }
+        val result = ArrayList<PropertyKey>(ownProperties.size)
+        for ((_, key) in indexKeys) result.add(key)
+        result.addAll(stringKeys)
+        result.addAll(symbolKeys)
+        return result
+    }
+
+    /** 解析规范数组索引（0..2^32-2，无前导零）。 */
+    private fun canonicalArrayIndex(text: String): Long? {
+        if (text.isEmpty() || text.length > 10) return null
+        if (text != "0" && text[0] == '0') return null
+        var value = 0L
+        for (c in text) {
+            if (c !in '0'..'9') return null
+            value = value * 10 + (c - '0')
+        }
+        return if (value <= 4294967294L) value else null
+    }
 
     /** 获取可枚举的自有属性键（可选定只取数据属性）。 */
     fun enumerableOwnPropertyKeys(): List<PropertyKey> =

@@ -96,9 +96,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 139 + 宿主 5 个测试 |
-| JS（Node） | ✅ | 核心 139 + 宿主 5 个测试 |
-| Wasm（Node） | ✅ | 核心 139 + 宿主 5 个测试 |
+| JVM | ✅ | 核心 280 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 280 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 280 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -129,4 +129,12 @@
 | `PhaseCPromiseTest` | Promise、async/await |
 | `PhaseCClassTest` | class/extends/super/new.target、标签模板 |
 | `PhaseCFinalTest` | 参数/catch 解构、Object 批量定义、Symbol.hasInstance、locale 别名 |
-| `HostModuleTest`（:vibe-js-host） | window/self、console、定时器、queueMicrotask、atob/btoa |
+| `BuiltinArrayStringAdvancedTest` | Array 补全/稀疏语义、String 边界与 Unicode、Number/Math 补全 |
+| `BuiltinObjectDateRegExpTest` | Object 描述符与原型 API、Date 分量/setter/序列化、RegExp 标志/lastIndex/捕获组 |
+| `BuiltinCollectionSymbolTest` | Symbol 描述与标签、自定义迭代器、Map/Set 遍历、WeakMap/WeakSet 键校验、Error 层级 |
+| `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
+| `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
+| `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
+| `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
+| `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
+| `HostModuleTest`（:vibe-js-host） | window/self、console、定时器/setInterval、queueMicrotask、atob/btoa、时钟注入 |

@@ -34,12 +34,17 @@ object RegExpBuiltins {
             when {
                 patternValue is JSRegExp && !hasFlags -> patternValue
                 else -> {
-                    val pattern = if (patternValue is JSUndefined) {
-                        ""
-                    } else {
-                        interpreter.toStringValue(patternValue)
+                    // 以 RegExp 为模板时使用其 source/flags，而不是 "/source/flags" 字符串形式
+                    val pattern = when {
+                        patternValue is JSUndefined -> ""
+                        patternValue is JSRegExp -> patternValue.pattern
+                        else -> interpreter.toStringValue(patternValue)
                     }
-                    val flags = if (hasFlags) interpreter.toStringValue(flagsValue) else ""
+                    val flags = when {
+                        hasFlags -> interpreter.toStringValue(flagsValue)
+                        patternValue is JSRegExp -> patternValue.flags
+                        else -> ""
+                    }
                     interpreter.createRegExp(pattern, flags)
                 }
             }
@@ -132,8 +137,11 @@ object RegExpBuiltins {
         }
 
         val values = ArrayList<JSValue?>(match.groupValues.size)
-        for (group in match.groupValues) {
-            values.add(JSString(group))
+        // 未参与匹配的捕获组按规范为 undefined
+        values.add(JSString(match.value))
+        for (index in 1 until match.groupValues.size) {
+            val group = match.groups[index]
+            values.add(if (group == null) JSUndefined else JSString(group.value))
         }
         val result = JSArray(values, prototype = interpreter.intrinsics.arrayPrototype)
         result.defineDataProperty(

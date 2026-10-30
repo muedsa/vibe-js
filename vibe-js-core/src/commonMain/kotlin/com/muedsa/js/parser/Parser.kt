@@ -335,6 +335,15 @@ class Parser(private val tokens: List<Token>) {
             if (match(TokenType.ASSIGN)) {
                 initializer = parseAssignment()
             }
+            if (initializer == null) {
+                // const 与解构声明必须有初始化表达式
+                if (kind == DeclarationKind.CONST) {
+                    throw error("Missing initializer in const declaration")
+                }
+                if (target !is Identifier) {
+                    throw error("Missing initializer in destructuring declaration")
+                }
+            }
             val end = initializer?.range?.end ?: target.range.end
             declarations.add(
                 if (target is Identifier) {
@@ -1168,6 +1177,7 @@ class Parser(private val tokens: List<Token>) {
                     expression = TaggedTemplate(
                         tag = expression,
                         quasis = template.quasis,
+                        rawQuasis = template.rawQuasis,
                         expressions = template.expressions,
                         range = SourceRange(expression.range.start, templateToken.range.end),
                     )
@@ -1340,11 +1350,15 @@ class Parser(private val tokens: List<Token>) {
     /** 模板字符串：解析 `${...}` 中的表达式源码。 */
     private fun parseTemplateLiteral(token: Token): Expression {
         val quasis = mutableListOf<String>()
+        val rawQuasis = mutableListOf<String>()
         val expressions = mutableListOf<Expression>()
 
         for (part in token.templateParts) {
             when (part) {
-                is TemplatePart.Text -> quasis.add(part.value)
+                is TemplatePart.Text -> {
+                    quasis.add(part.value)
+                    rawQuasis.add(part.raw)
+                }
                 is TemplatePart.ExpressionSource -> {
                     val subTokens = try {
                         Lexer(part.source).tokenize()
@@ -1362,10 +1376,9 @@ class Parser(private val tokens: List<Token>) {
         }
 
         // 保证 quasis 数量为 expressions + 1
-        if (quasis.size < expressions.size + 1) {
-            while (quasis.size < expressions.size + 1) quasis.add("")
-        }
-        return TemplateLiteral(quasis, expressions, token.range)
+        while (quasis.size < expressions.size + 1) quasis.add("")
+        while (rawQuasis.size < quasis.size) rawQuasis.add(quasis[rawQuasis.size])
+        return TemplateLiteral(quasis, rawQuasis, expressions, token.range)
     }
 
     /** 数组字面量（null 元素表示空洞，SpreadElement 表示展开）。 */
@@ -1413,6 +1426,15 @@ class Parser(private val tokens: List<Token>) {
             }
             val propertyStart = peek().range.start
 
+            // async 方法检测：`async m() {}`
+            var isAsync = false
+            if (peek().type == TokenType.IDENTIFIER && peek().value == "async" &&
+                canStartAccessorProperty(1)
+            ) {
+                isAsync = true
+                advance()
+            }
+
             // getter / setter 检测：`get x() {}`、`set x(v) {}`
             var kind = PropertyKind.INIT
             if (peek().type == TokenType.IDENTIFIER &&
@@ -1437,7 +1459,7 @@ class Parser(private val tokens: List<Token>) {
                         params = params,
                         body = bodyInfo.body,
                         strict = bodyInfo.strict,
-                        isAsync = false,
+                        isAsync = isAsync,
                         varDeclarations = bodyInfo.varDeclarations,
                         functionDeclarations = bodyInfo.functionDeclarations,
                         range = SourceRange(key.range.start, bodyInfo.body.range.end),

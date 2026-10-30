@@ -199,8 +199,9 @@ object ObjectBuiltins {
                     val source = args[index]
                     if (source is JSNull || source is JSUndefined) continue
                     val sourceObject = interpreter.toObject(source)
-                    for (key in enumerableOwnStringKeys(sourceObject)) {
-                        val propertyKey = PropertyKey.Str(key)
+                    // 复制所有可枚举自有属性，包括 Symbol 键（规范要求）
+                    for (propertyKey in sourceObject.ownPropertyKeys()) {
+                        if (sourceObject.getOwnProperty(propertyKey)?.enumerable != true) continue
                         val value = interpreter.getV(sourceObject, propertyKey)
                         interpreter.putV(target, propertyKey, value, strict = true)
                     }

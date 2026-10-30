@@ -9,10 +9,14 @@ package com.muedsa.js.runtime.value
 sealed class PropertyKey {
 
     /** 字符串键。 */
-    data class Str(val value: String) : PropertyKey()
+    data class Str(val value: String) : PropertyKey() {
+        override fun toString(): String = value
+    }
 
     /** Symbol 键（同一 Symbol 的引用相等）。 */
-    data class Sym(val symbol: JSSymbol) : PropertyKey()
+    data class Sym(val symbol: JSSymbol) : PropertyKey() {
+        override fun toString(): String = symbol.description ?: "Symbol()"
+    }
 
     override fun toString(): String = when (this) {
         is Str -> value

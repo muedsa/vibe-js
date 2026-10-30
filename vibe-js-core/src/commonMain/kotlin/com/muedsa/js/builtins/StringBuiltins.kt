@@ -258,13 +258,8 @@ object StringBuiltins {
                 } else if (separatorValue == null || separatorValue is JSUndefined) {
                     JSArray(mutableListOf<JSValue?>(JSString(text)), prototype = intrinsics.arrayPrototype)
                 } else if (separatorValue is JSRegExp) {
-                    val parts = if (limit == Int.MAX_VALUE) {
-                        separatorValue.regex.split(text)
-                    } else {
-                        separatorValue.regex.split(text, limit)
-                    }
                     JSArray(
-                        parts.map { JSString(it) as JSValue? }.toMutableList(),
+                        splitWithRegExp(text, separatorValue.regex, limit),
                         prototype = intrinsics.arrayPrototype,
                     )
                 } else {
@@ -428,7 +423,14 @@ object StringBuiltins {
                             )
                         }
 
-                        else -> JSString(text.replaceFirst(search, interpreter.toStringValue(replacement)))
+                        else -> {
+                            val replacementText = interpreter.toStringValue(replacement)
+                            JSString(
+                                text.substring(0, index) +
+                                    expandStringReplacement(replacementText, search, index, text) +
+                                    text.substring(index + search.length)
+                            )
+                        }
                     }
                 }
             },
@@ -449,7 +451,31 @@ object StringBuiltins {
                 } else {
                     val search = interpreter.toStringValue(searchValue)
                     when {
-                        search.isEmpty() -> JSString(text)
+                        search.isEmpty() -> {
+                            val builder = StringBuilder()
+                            for (position in 0..text.length) {
+                                val replacementValue = if (interpreter.isCallable(replacement)) {
+                                    interpreter.callFunction(
+                                        replacement,
+                                        JSUndefined,
+                                        listOf(JSString(""), JSNumber(position.toDouble()), JSString(text)),
+                                    )
+                                } else {
+                                    JSString(
+                                        expandStringReplacement(
+                                            interpreter.toStringValue(replacement),
+                                            "",
+                                            position,
+                                            text,
+                                        )
+                                    )
+                                }
+                                builder.append(interpreter.toStringValue(replacementValue))
+                                if (position < text.length) builder.append(text[position])
+                            }
+                            JSString(builder.toString())
+                        }
+
                         interpreter.isCallable(replacement) -> {
                             val builder = StringBuilder()
                             var cursor = 0
@@ -471,7 +497,22 @@ object StringBuiltins {
                             JSString(builder.toString())
                         }
 
-                        else -> JSString(text.replace(search, interpreter.toStringValue(replacement)))
+                        else -> {
+                            val builder = StringBuilder()
+                            val replacementText = interpreter.toStringValue(replacement)
+                            var cursor = 0
+                            while (true) {
+                                val index = text.indexOf(search, cursor)
+                                if (index < 0) {
+                                    builder.append(text.substring(cursor))
+                                    break
+                                }
+                                builder.append(text.substring(cursor, index))
+                                builder.append(expandStringReplacement(replacementText, search, index, text))
+                                cursor = index + search.length
+                            }
+                            JSString(builder.toString())
+                        }
                     }
                 }
             },
@@ -579,6 +620,44 @@ object StringBuiltins {
         )
     }
 
+    /**
+     * 按正则分割字符串，遵循 String.prototype.split 的语义：
+     * - 结果包含捕获组；
+     * - 分隔符命中结尾时保留结尾空串；
+     * - 零长度分隔符在字符之间分割。
+     */
+    private fun splitWithRegExp(text: String, regex: Regex, limit: Int): MutableList<JSValue?> {
+        val result = ArrayList<JSValue?>()
+        if (limit == 0) return result
+        if (text.isEmpty()) {
+            // 空串匹配零长度分隔符时结果为 []，否则为 [""]
+            val emptyMatch = regex.find(text)
+            if (emptyMatch == null) result.add(JSString(""))
+            return result
+        }
+        var previousEnd = 0
+        var searchIndex = 0
+        while (searchIndex < text.length) {
+            val match = regex.find(text, searchIndex) ?: break
+            val matchEnd = match.range.last + 1
+            if (matchEnd == previousEnd) {
+                // 上一位置已产生零长度匹配，前进一个字符避免死循环
+                searchIndex = previousEnd + 1
+                continue
+            }
+            result.add(JSString(text.substring(previousEnd, match.range.first)))
+            for (groupIndex in 1 until match.groups.size) {
+                val group = match.groups[groupIndex]
+                result.add(if (group == null) JSUndefined else JSString(group.value))
+            }
+            if (result.size >= limit) return ArrayList(result.take(limit))
+            previousEnd = matchEnd
+            searchIndex = matchEnd
+        }
+        result.add(JSString(text.substring(previousEnd)))
+        return if (result.size > limit) ArrayList(result.take(limit)) else result
+    }
+
     /** 字符串填充（支持多字符 padding 与空 padding）。 */
     private fun pad(text: String, targetLength: Int, padding: String, start: Boolean): String {
         if (targetLength <= text.length || padding.isEmpty()) return text
@@ -594,8 +673,10 @@ object StringBuiltins {
     /** 正则匹配结果 -> JS 数组（含 index/input）。 */
     private fun matchToArray(interpreter: Interpreter, match: MatchResult, input: String): JSArray {
         val values = ArrayList<JSValue?>(match.groupValues.size)
-        for (group in match.groupValues) {
-            values.add(JSString(group))
+        values.add(JSString(match.value))
+        for (index in 1 until match.groupValues.size) {
+            val group = match.groups[index]
+            values.add(if (group == null) JSUndefined else JSString(group.value))
         }
         val array = JSArray(values, prototype = interpreter.intrinsics.arrayPrototype)
         array.defineDataProperty(
@@ -643,7 +724,8 @@ object StringBuiltins {
                     val arguments = ArrayList<JSValue>()
                     arguments.add(JSString(match.value))
                     for (index in 1 until match.groupValues.size) {
-                        arguments.add(JSString(match.groupValues[index]))
+                        val group = match.groups[index]
+                        arguments.add(if (group == null) JSUndefined else JSString(group.value))
                     }
                     arguments.add(JSNumber(match.range.first.toDouble()))
                     arguments.add(JSString(text))
@@ -662,6 +744,56 @@ object StringBuiltins {
             cursor = cursor.coerceAtLeast(start)
         }
         builder.append(text.substring(cursor.coerceAtMost(text.length)))
+        return builder.toString()
+    }
+
+    /**
+     * 展开字符串查找路径下的替换模板：`$$`、`$&`、``$` ``、`$'`。
+     *
+     * 字符串查找没有捕获组，`$1` 等保持字面量。
+     */
+    private fun expandStringReplacement(
+        template: String,
+        matched: String,
+        position: Int,
+        input: String,
+    ): String {
+        val builder = StringBuilder()
+        var index = 0
+        while (index < template.length) {
+            val c = template[index]
+            if (c != '$' || index + 1 >= template.length) {
+                builder.append(c)
+                index++
+                continue
+            }
+            when (template[index + 1]) {
+                '$' -> {
+                    builder.append('$')
+                    index += 2
+                }
+
+                '&' -> {
+                    builder.append(matched)
+                    index += 2
+                }
+
+                '`' -> {
+                    builder.append(input.substring(0, position))
+                    index += 2
+                }
+
+                '\'' -> {
+                    builder.append(input.substring((position + matched.length).coerceAtMost(input.length)))
+                    index += 2
+                }
+
+                else -> {
+                    builder.append('$')
+                    index++
+                }
+            }
+        }
         return builder.toString()
     }
 

@@ -812,6 +812,7 @@ class Lexer(private val input: String) {
         advance() // '`'
         val parts = mutableListOf<TemplatePart>()
         val text = StringBuilder()
+        val rawText = StringBuilder()
 
         while (true) {
             if (pos >= input.length) {
@@ -820,7 +821,7 @@ class Lexer(private val input: String) {
             val c = peek()
             when {
                 c == '`' -> {
-                    parts.add(TemplatePart.Text(text.toString()))
+                    parts.add(TemplatePart.Text(text.toString(), rawText.toString()))
                     advance()
                     return Token(
                         type = TokenType.TEMPLATE,
@@ -835,13 +836,16 @@ class Lexer(private val input: String) {
                 }
 
                 c == '\\' -> {
+                    val rawStart = pos
                     advance()
                     readEscapeSequence(text)
+                    rawText.append(input, rawStart, pos)
                 }
 
                 c == '$' && peek(1) == '{' -> {
-                    parts.add(TemplatePart.Text(text.toString()))
+                    parts.add(TemplatePart.Text(text.toString(), rawText.toString()))
                     text.clear()
+                    rawText.clear()
                     advance() // '$'
                     advance() // '{'
                     val source = readTemplateExpressionSource()
@@ -850,6 +854,7 @@ class Lexer(private val input: String) {
 
                 else -> {
                     text.append(c)
+                    rawText.append(c)
                     advance()
                 }
             }

@@ -149,6 +149,7 @@ class Interpreter(
         pushStackFrame("<global>")
         try {
             hoistDeclarations(environment, program.functionDeclarations, program.varDeclarations)
+            predeclareLexical(program.body, environment)
             val completion = executeStatements(program.body)
             return when (completion) {
                 is Completion.Normal -> completion.value
@@ -471,9 +472,12 @@ class Interpreter(
         args: List<JSValue>,
     ): JSValue {
         val promise = JSPromise(intrinsics.promisePrototype)
+        // 每次 async 调用使用独立解释器实例：
+        // 协程挂起期间主解释器的 frame 会被外层脚本覆盖，独立实例可避免恢复时上下文错乱。
+        val asyncInterpreter = Interpreter(context)
         context.eventLoop.scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                val result = executeUserFunction(function, thisValue, args)
+                val result = asyncInterpreter.executeUserFunction(function, thisValue, args)
                 PromiseSupport.resolve(this@Interpreter, promise, result)
             } catch (error: JSException) {
                 PromiseSupport.reject(this@Interpreter, promise, error.value)
@@ -515,6 +519,7 @@ class Interpreter(
             }
 
             val body = function.body ?: return JSUndefined
+            predeclareLexical(body.statements, callEnv)
             val completion = executeStatements(body.statements)
             return when (completion) {
                 is Completion.Normal -> JSUndefined
@@ -765,7 +770,9 @@ class Interpreter(
             is ExpressionStatement -> Completion.Normal(evaluate(statement.expression))
             is ClassDeclaration -> {
                 val classValue = evaluateClass(statement.name, statement.superClass, statement.members)
-                currentFrame.lexicalEnv.createConstBinding(statement.name, classValue)
+                if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, statement.name, classValue)) {
+                    currentFrame.lexicalEnv.createConstBinding(statement.name, classValue)
+                }
                 Completion.Normal(JSUndefined)
             }
 
@@ -801,10 +808,49 @@ class Interpreter(
         val previousEnvironment = currentFrame.lexicalEnv
         currentFrame.lexicalEnv = environment
         return try {
+            predeclareLexical(statements, environment)
             executeStatements(statements)
         } finally {
             currentFrame.lexicalEnv = previousEnvironment
         }
+    }
+
+    /**
+     * 在进入作用域时预声明 let/const/class 绑定，实现暂时性死区。
+     *
+     * 仅处理直接声明；解构声明中的绑定在初始化时创建。
+     */
+    private fun predeclareLexical(statements: List<Statement>, environment: Environment) {
+        val declarative = environment as? DeclarativeEnvironment ?: return
+        for (statement in statements) {
+            when (statement) {
+                is VarDeclaration -> if (statement.kind != DeclarationKind.VAR) {
+                    for (declaration in statement.declarations) {
+                        val name = declaration.name ?: continue
+                        declarative.declareLexical(name, mutable = statement.kind == DeclarationKind.LET)
+                    }
+                }
+
+                is ClassDeclaration ->
+                    declarative.declareLexical(statement.name, mutable = false)
+
+                else -> Unit
+            }
+        }
+    }
+
+    /**
+     * 若当前作用域已预声明同名绑定，则完成初始化并返回 true。
+     */
+    private fun initializeLexicalIfDeclared(
+        environment: Environment,
+        name: String,
+        value: JSValue,
+    ): Boolean {
+        val declarative = environment as? DeclarativeEnvironment ?: return false
+        if (!declarative.hasUninitializedLocal(name)) return false
+        declarative.initializeLexical(name, value)
+        return true
     }
 
     /** 变量声明（支持解构）。 */
@@ -824,14 +870,19 @@ class Interpreter(
                     DeclarationKind.VAR ->
                         currentFrame.lexicalEnv.findVarScope().createVarBinding(name, value)
 
-                    DeclarationKind.LET ->
-                        currentFrame.lexicalEnv.createLetBinding(name, value)
+                    DeclarationKind.LET -> {
+                        if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, name, value)) {
+                            currentFrame.lexicalEnv.createLetBinding(name, value)
+                        }
+                    }
 
                     DeclarationKind.CONST -> {
                         if (declaration.initializer == null) {
                             throw syntaxError("Missing initializer in const declaration")
                         }
-                        currentFrame.lexicalEnv.createConstBinding(name, value)
+                        if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, name, value)) {
+                            currentFrame.lexicalEnv.createConstBinding(name, value)
+                        }
                     }
                 }
             }
@@ -1437,7 +1488,7 @@ class Interpreter(
     /** 标签模板求值。 */
     private suspend fun evaluateTaggedTemplate(expression: TaggedTemplate): JSValue {
         val cooked = expression.quasis.map { JSString(it) as JSValue? }.toMutableList()
-        val raw = expression.quasis.map { JSString(it) as JSValue? }.toMutableList()
+        val raw = expression.rawQuasis.map { JSString(it) as JSValue? }.toMutableList()
         val templateObject = JSArray(cooked, prototype = intrinsics.arrayPrototype)
         val rawObject = JSArray(raw, prototype = intrinsics.arrayPrototype)
         rawObject.freezeArray()
@@ -1626,7 +1677,15 @@ class Interpreter(
             }
 
             is JSNativeFunction -> {
-                callFunction(superConstructor, thisValue, args)
+                val result = callFunction(superConstructor, thisValue, args)
+                // 原生父构造器（如 Error）会返回新对象；把其自有属性合并到当前实例，
+                // 保证 class X extends Error 中 super(message) 后的 name/message 可用。
+                if (result is JSObject && thisValue is JSObject && result !== thisValue) {
+                    for (key in result.ownPropertyKeys()) {
+                        val descriptor = result.getOwnProperty(key) ?: continue
+                        thisValue.defineOwnProperty(key, descriptor)
+                    }
+                }
                 thisValue
             }
 
@@ -1835,7 +1894,7 @@ class Interpreter(
                     throw typeError("Cannot destructure '${typeOf(value)}' as an object")
                 }
                 val source = toObject(value)
-                val usedKeys = mutableSetOf<String>()
+                val usedKeys = mutableSetOf<PropertyKey>()
                 for (element in pattern.properties) {
                     when (element) {
                         is ObjectProperty -> {
@@ -1844,14 +1903,14 @@ class Interpreter(
                             } else {
                                 PropertyKey.Str(propertyName(element.key))
                             }
-                            usedKeys.add(key.toString())
+                            usedKeys.add(key)
                             bindPattern(element.value, getV(source, key), kind, environment)
                         }
 
                         is ObjectSpreadProperty -> {
                             val restObject = JSObject(prototype = intrinsics.objectPrototype)
                             for (key in source.ownPropertyKeys()) {
-                                if (key is PropertyKey.Str && key.value in usedKeys) continue
+                                if (key in usedKeys) continue
                                 if (source.getOwnProperty(key)?.enumerable != true) continue
                                 restObject.defineDataProperty(
                                     key = key,
@@ -1997,7 +2056,12 @@ class Interpreter(
             "~" -> JSNumber(toInt32(operand).inv().toDouble())
             "void" -> JSUndefined
             "delete" -> evaluateDelete(expression.operand)
-            "await" -> if (operand is JSPromise) operand.awaitResult() else operand
+            "await" -> {
+                val value = if (operand is JSPromise) operand.awaitResult() else operand
+                // await 至少让出一个微任务周期，即使等待值已就绪
+                context.eventLoop.awaitMicrotask()
+                value
+            }
             else -> throw syntaxError("Unsupported unary operator '$operator'")
         }
     }

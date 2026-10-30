@@ -156,6 +156,28 @@ class DeclarativeEnvironment(
         }
     }
 
+    /**
+     * 预先声明 let/const/class 绑定（暂时性死区）。
+     *
+     * 作用域内重复声明词法绑定属于语法错误。
+     */
+    fun declareLexical(name: String, mutable: Boolean) {
+        if (bindings.containsKey(name)) {
+            throw JSException(JSError("SyntaxError", "Identifier '$name' has already been declared"))
+        }
+        bindings[name] = Binding(JSUndefined, mutable = mutable, initialized = false)
+    }
+
+    /** 当前作用域是否存在尚未初始化的绑定。 */
+    fun hasUninitializedLocal(name: String): Boolean = bindings[name]?.initialized == false
+
+    /** 初始化通过 [declareLexical] 预声明的绑定。 */
+    fun initializeLexical(name: String, value: JSValue) {
+        val binding = bindings[name] ?: return
+        binding.value = value
+        binding.initialized = true
+    }
+
     /** 初始化之前通过 [declareUninitialized] 创建的绑定。 */
     fun initializeBinding(name: String, value: JSValue) {
         val binding = bindings[name]

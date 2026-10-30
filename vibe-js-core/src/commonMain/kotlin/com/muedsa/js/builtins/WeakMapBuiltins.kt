@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.value.JSMap
 import com.muedsa.js.runtime.value.JSNull
+import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSWeakMap
@@ -32,6 +33,9 @@ object WeakMapBuiltins {
                 for (entry in interpreter.iterateValues(iterable)) {
                     val pair = interpreter.iterateValues(entry)
                     if (pair.size >= 2) {
+                        if (pair[0] !is JSObject) {
+                            interpreter.typeError("Invalid value used as WeakMap key")
+                        }
                         val index = map.entries.indexOfFirst {
                             interpreter.conversions.sameValueZero(it.first, pair[0])
                         }
@@ -58,6 +62,9 @@ object WeakMapBuiltins {
                     ?: interpreter.typeError("WeakMap.prototype.set requires that 'this' be a WeakMap")
                 val key = args.getOrElse(0) { JSUndefined }
                 val value = args.getOrElse(1) { JSUndefined }
+                if (key !is JSObject) {
+                    interpreter.typeError("Invalid value used as WeakMap key")
+                }
                 val index = map.entries.indexOfFirst {
                     interpreter.conversions.sameValueZero(it.first, key)
                 }

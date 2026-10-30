@@ -25,10 +25,12 @@ class RegExpLiteral(
  * 模板字符串。
  *
  * @property quasis 文本段（长度 = expressions.size + 1）
+ * @property rawQuasis 文本段的原始源码（保留转义形式，供标签模板使用）
  * @property expressions `${...}` 中的表达式
  */
 class TemplateLiteral(
     val quasis: List<String>,
+    val rawQuasis: List<String>,
     val expressions: List<Expression>,
     override val range: SourceRange,
 ) : Expression()
@@ -240,6 +242,7 @@ class NewTargetExpr(
 class TaggedTemplate(
     val tag: Expression,
     val quasis: List<String>,
+    val rawQuasis: List<String>,
     val expressions: List<Expression>,
     override val range: SourceRange,
 ) : Expression()
