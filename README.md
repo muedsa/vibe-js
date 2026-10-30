@@ -1,55 +1,153 @@
-# Vibe JS - A Kotlin Multiplatform JavaScript Runtime
+# Vibe JS
 
-Vibe JS 是一个用 Kotlin 多平台实现的轻量级 JavaScript 运行时，支持多种平台（Android、iOS、JVM、LinuxX64）。
+Vibe JS 是一个使用 Kotlin 多平台从零实现的轻量级 JavaScript 运行时。
 
-## 已支持的 JavaScript 特性
+- 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 `async/await`）；
+- 定位：通用 Kotlin 库，核心不绑定任何浏览器/平台原生 API；
+- 构建目标：JVM、Android、JS、Wasm、Linux、Windows、macOS、iOS、tvOS、watchOS；
+- 宿主能力（console、定时器、window 等）位于独立的 `:vibe-js-host` 模块。
 
-### 数据类型
-- **基本类型**：Number、String、Boolean、Null、Undefined
-- **复合类型**：Array、Object、Function
+## 使用方式
 
-### 运算符
-- **算术运算符**：`+`、`-`、`*`、`/`、`%`、`**`
-- **比较运算符**：`<`、`<=`、`>`、`>=`、`==`、`!=`、`===`、`!==`
-- **逻辑运算符**：`&&`、`||`、`!`
-- **位运算符**：`&`、`|`、`^`、`~`、`<<`、`>>`、`>>>`
-- **赋值运算符**：`=`、`+=`、`-=`、`*=`、`/=`、`%=`、`^=`、`&=`、`|=`
-- **更新运算符**：`++`、`--`
-- **条件运算符**：`?:`
-- **空值合并运算符**：`??`
-- **逗号运算符**：`,`
+核心入口是 `Engine`，所有执行方法都是 `suspend`：
 
-### 控制流
-- **条件语句**：`if-else`
-- **循环语句**：`while`、`for`
-- **分支语句**：`switch`
-- **跳转语句**：`break`、`continue`
+```kotlin
+import com.muedsa.js.runtime.Engine
+import kotlinx.coroutines.runBlocking
 
-### 函数
-- **函数声明**：使用 `function` 关键字定义函数
-- **函数调用**：支持普通函数调用
-- **函数参数**：支持多个参数和默认参数
-- **闭包**：支持函数闭包
-- **返回值**：支持 `return` 语句
-- **构造函数**：支持 `new` 关键字创建对象
-- **原生函数**：支持注册和调用原生函数
+fun main() = runBlocking {
+    val engine = Engine()
+    val result = engine.run("""
+        class Person {
+            constructor(name) { this.name = name; }
+            greet() { return "hi " + this.name; }
+        }
+        new Person("vibe").greet();
+    """)
+    println(result.toPrimitiveString()) // hi vibe
+}
+```
 
-### 对象和数组
-- **对象字面量**：`{ key: value }`
-- **数组字面量**：`[element1, element2, ...]`
-- **成员访问**：支持点符号（`.property`）和括号符号（`[property]`）
-- **成员赋值**：支持直接赋值和计算属性赋值
-- **数组操作**：支持数组元素的访问和修改
-- **标准库方法**：
-    - **Array**: `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `reverse`, `sort`, `join`, `indexOf`, `includes`, `forEach`, `map`, `filter`, `reduce`, `reduceRight`, `every`, `some`, `find`, `findIndex`, `at`, `toString`, `from`, `isArray`, `of`
-    - **String**: `charAt`, `charCodeAt`, `codePointAt`, `concat`, `endsWith`, `includes`, `indexOf`, `lastIndexOf`, `padEnd`, `padStart`, `repeat`, `replace`, `replaceAll`, `slice`, `split`, `startsWith`, `substring`, `toLowerCase`, `toUpperCase`, `trim`, `trimEnd`, `trimStart`, `toString`, `at`, `fromCharCode`, `fromCodePoint`
-    - **Math**: `E`, `LN2`, `LN10`, `LOG2E`, `LOG10E`, `PI`, `SQRT1_2`, `SQRT2`, `abs`, `acos`, `acosh`, `asin`, `asinh`, `atan`, `atanh`, `atan2`, `cbrt`, `ceil`, `clz32`, `cos`, `cosh`, `exp`, `expm1`, `floor`, `fround`, `hypot`, `imul`, `log`, `log1p`, `log10`, `log2`, `max`, `min`, `pow`, `random`, `round`, `sign`, `sin`, `sinh`, `sqrt`, `tan`, `tanh`, `trunc`
+同一个 `Engine` 可以重复执行多段脚本，共享全局环境：
 
-### 变量
-- **变量声明**：支持 `var` `let` `const`关键字
-- **作用域**：支持词法作用域和作用域链
-- **变量操作**：支持变量的定义、获取和设置
+```kotlin
+engine.run("let count = 1;")
+engine.run("count += 1; count;") // 2
+```
 
-### 异常处理
-- **Error 对象**：支持创建和抛出错误
-- **异常处理**：支持异常的抛出和捕获
+### 安装宿主能力
+
+```kotlin
+import com.muedsa.js.host.HostModule
+
+val engine = Engine()
+engine.install(HostModule(engine.eventLoop, engine.host.console))
+engine.run("console.log('hello'); setTimeout(function () { console.log('later'); }, 10);")
+```
+
+`HostModule` 提供 `window`/`self`、`console`、`setTimeout`/`clearTimeout`、
+`setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`，
+全部由纯 Kotlin 实现，不绑定平台原生 API。
+
+## 已支持
+
+### 语法
+
+- 声明：`var` / `let` / `const`、函数声明、`class` 声明/表达式
+- 语句：块、`if/else`、`while`、`do-while`、`for`、`for-in`、`for-of`、`switch`、
+  `break`/`continue`（含标签）、`return`、`throw`、`try/catch/finally`、`with`（非严格）、`debugger`、空语句
+- 函数：箭头函数、默认参数、rest 参数、闭包、递归、`this`、构造函数、
+  `call/apply/bind`、`name/length`、`arguments`、`new.target`
+- 类：构造器、实例/静态方法、getter/setter、`extends`、`super()`、`super.method()`
+- 表达式：字面量、数组（含空洞/展开）、对象（简写/方法/getter/setter/计算键/展开）、
+  模板字符串/标签模板、正则字面量、解构声明与赋值（含函数参数/catch）、spread、
+  成员访问、调用、`new`、赋值/复合赋值/逻辑赋值、自增自减、一元/二元/三元、`??`、
+  逗号、`typeof`、`delete/void/in/instanceof`
+- 严格模式：`"use strict"` 脚本/函数级切换
+- 异步：`async` 函数/箭头函数、`await`、Promise 微任务
+
+### 标准内建
+
+- **全局**：`undefined`、`NaN`、`Infinity`、`globalThis`、`parseInt`、`parseFloat`、`isNaN`、`isFinite`
+- **Object**：构造器；`keys/values/entries/assign/create/getPrototypeOf/setPrototypeOf/
+  getOwnPropertyDescriptor/getOwnPropertyNames/getOwnPropertySymbols/defineProperty/
+  defineProperties/is/freeze/seal/preventExtensions/isFrozen/isSealed/isExtensible`
+- **Function**：`call/apply/bind/toString`、动态 `Function` 构造器
+- **Array**：常用迭代/查找/增删/排序方法，`fill/copyWithin/at/entries/keys/values`；
+  静态 `isArray/of/from`
+- **String**：常用字符/查找/切片/替换/填充方法，`String.raw`、`fromCharCode/fromCodePoint`
+- **Number**：常量、`toString(radix)/toFixed/toExponential/toPrecision`、
+  静态 `isNaN/isFinite/isInteger/parseInt/parseFloat`
+- **Boolean**、**Math**、**JSON**（`parse`/`stringify` 支持 reviver/replacer/space）
+- **RegExp**：字面量/构造器、`exec/test/toString`，字符串 `match/search/replace/replaceAll/split`
+- **Date**：构造、`Date.now/parse/UTC`、常用 getter/setter、`toISOString/toJSON`
+- **Error**：`Error`、`TypeError`、`RangeError`、`ReferenceError`、`SyntaxError`、`EvalError`、`URIError`
+- **Symbol**：`Symbol()`、`Symbol.for/keyFor`、知名 Symbol（iterator/toStringTag 等）
+- **集合**：`Map`、`Set`、`WeakMap`、`WeakSet`，配套迭代器协议
+- **Promise**：`resolve/reject/all/race/allSettled/any`、`then/catch/finally`
+
+### 尚未支持（明确排除或后续阶段）
+
+- Generator（`function*` / `yield`）
+- 模块系统（`import` / `export`）
+- `Proxy` / `Reflect`
+- BigInt、Intl、TypedArray/ArrayBuffer/DataView
+- DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）
+- 可选链 `?.`、类字段/私有字段、`String.prototype.normalize`
+- 完整 ASI 边界规则、`Date` 真实时区（当前本地时间按 UTC 实现）
+
+## 架构与扩展
+
+```
+lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
+                         |
+                         +-> Environment / Intrinsics / Builtins
+                         +-> EventLoop / Promise / async-await
+```
+
+- `Engine`：门面，持有全局对象、内建注册表、事件循环与解释器；
+- `Executor`：执行器接口，当前实现是 AST 解释器，后续可替换为编译执行器而不改语义；
+- `BuiltinModule`：内建模块注册接口；标准库（`CoreBuiltins`）与宿主模块（`HostModule`）都通过它安装；
+- `HostEnvironment`：宿主能力抽象（Console / Scheduler / Clock）；
+- `EventLoop`：微任务队列 + 宏任务调度，支撑 Promise 与定时器；
+- `PropertyDescriptor` + `JSObject`：属性描述符与原型链模型。
+
+详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，兼容性矩阵见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
+
+## 构建与测试
+
+```bash
+# 核心
+./gradlew :vibe-js-core:jvmTest
+./gradlew :vibe-js-core:jsNodeTest
+./gradlew :vibe-js-core:wasmJsNodeTest
+
+# 宿主模块
+./gradlew :vibe-js-host:jvmTest
+./gradlew :vibe-js-host:jsNodeTest
+./gradlew :vibe-js-host:wasmJsNodeTest
+
+# 基准测试编译
+./gradlew :vibe-js-core:jvmBenchmarkClasses
+```
+
+## 目录结构
+
+- `vibe-js-core/`（Gradle 模块 `:vibe-js-core`）
+  - `src/commonMain/kotlin/com/muedsa/js/`
+    - `lexer/`：词法分析、Token、源码范围
+    - `parser/`：递归下降解析器
+    - `ast/`：不可变 AST 节点
+    - `runtime/`：引擎、执行器、环境、类型转换、事件循环、Promise、扩展点
+    - `runtime/value/`：JS 值、对象、函数、数组、集合、Promise、属性描述符
+    - `builtins/`：ECMAScript 标准内建
+  - `src/commonTest/`：核心单元测试
+- `vibe-js-host/`（Gradle 模块 `:vibe-js-host`）
+  - `src/commonMain/kotlin/com/muedsa/js/host/`：宿主模块（console/timer/window 等）
+  - `src/commonTest/`：宿主模块测试
+
+## 说明
+
+- 核心模块不引用任何平台原生 API（不写 `@JsFun` / `external` 绑定）；
+  js/wasmJs 目标仅用于通用库的可移植性验证。
+- 宿主能力通过 `BuiltinModule` 注入，核心与浏览器/宿主概念解耦。
