@@ -709,7 +709,6 @@ private class Test262Runner(
             "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
             // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
             "test/language/expressions/optional-chaining/new-target-optional-call.js",
-            // 命名捕获组（(?<name>...)）尚未实现，跳过依赖其替换语义的生成用例
         )
 
         /** 当前范围外或尚未实现的特性。 */

@@ -1087,6 +1087,9 @@ class JsRegexEngine(
         }
     }
 
+    /** 集合项：值 + 是否为范围（范围不能直接作为 && / -- 的操作数）。 */
+    private class ClassSetTerm(val value: ClassSetValue, val isRange: Boolean)
+
     /** 集合操作数：单个字符（可构成范围）或已求值的集合。 */
     private sealed class SetOperand {
         data class CharAtom(val value: Int) : SetOperand()
@@ -1432,19 +1435,24 @@ class JsRegexEngine(
 
         /** ClassSetExpression：并集，或单个 && / -- 运算（不能与并集混用）。 */
         private fun parseClassSetExpression(): ClassSetValue {
-            var left = parseClassSetTerm()
+            val leftTerm = parseClassSetTerm()
+            var left = leftTerm.value
             when {
-                startsWith("&&") -> {
-                    position += 2
-                    left = left.intersect(parseClassSetTerm())
-                    if (startsWith("&&") || startsWith("--")) {
-                        throw IllegalArgumentException("Invalid class set operation chain")
+                startsWith("&&") || startsWith("--") -> {
+                    if (leftTerm.isRange) {
+                        throw IllegalArgumentException("Invalid range in class set operation")
                     }
-                }
-
-                startsWith("--") -> {
+                    val intersection = startsWith("&&")
                     position += 2
-                    left = left.subtract(parseClassSetTerm())
+                    val rightTerm = parseClassSetTerm()
+                    if (rightTerm.isRange) {
+                        throw IllegalArgumentException("Invalid range in class set operation")
+                    }
+                    left = if (intersection) {
+                        left.intersect(rightTerm.value)
+                    } else {
+                        left.subtract(rightTerm.value)
+                    }
                     if (startsWith("&&") || startsWith("--")) {
                         throw IllegalArgumentException("Invalid class set operation chain")
                     }
@@ -1454,7 +1462,7 @@ class JsRegexEngine(
                     while (position < pattern.length && peek() != ']' &&
                         !startsWith("&&") && !startsWith("--")
                     ) {
-                        left = left.union(parseClassSetTerm())
+                        left = left.union(parseClassSetTerm().value)
                     }
                     if (startsWith("&&") || startsWith("--")) {
                         throw IllegalArgumentException("Class set operation cannot follow union")
@@ -1465,7 +1473,7 @@ class JsRegexEngine(
         }
 
         /** 解析一个操作数，并在单个字符时按 `-` 合并范围。 */
-        private fun parseClassSetTerm(): ClassSetValue {
+        private fun parseClassSetTerm(): ClassSetTerm {
             val first = parseClassSetOperand()
             if (first is SetOperand.CharAtom && position < pattern.length && peek() == '-' &&
                 !startsWith("--")
@@ -1482,14 +1490,17 @@ class JsRegexEngine(
                 if (first.value > second.value) {
                     throw IllegalArgumentException("Range out of order in character class")
                 }
-                return ClassSetValue.ofCodePoints(
-                    CodePointSet.range(first.value, second.value)
+                return ClassSetTerm(
+                    ClassSetValue.ofCodePoints(CodePointSet.range(first.value, second.value)),
+                    isRange = true,
                 )
             }
             return when (first) {
-                is SetOperand.CharAtom ->
-                    ClassSetValue.ofCodePoints(CodePointSet.singleton(first.value))
-                is SetOperand.Value -> first.value
+                is SetOperand.CharAtom -> ClassSetTerm(
+                    ClassSetValue.ofCodePoints(CodePointSet.singleton(first.value)),
+                    isRange = false,
+                )
+                is SetOperand.Value -> ClassSetTerm(first.value, isRange = false)
             }
         }
 

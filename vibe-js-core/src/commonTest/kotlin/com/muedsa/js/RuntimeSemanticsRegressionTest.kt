@@ -2357,8 +2357,8 @@ class RuntimeSemanticsRegressionTest {
         val runtime = TestRuntime()
         // 交集与差集可嵌套普通字符类
         assertEquals(true, runtime.evalBoolean(
-            "/^[a-z&&[^aeiou]]$/v.test('b') && !/^[a-z&&[^aeiou]]$/v.test('a') &&" +
-                " /^[a-z--[aeiou]]$/v.test('z') && !/^[a-z--[aeiou]]$/v.test('e') &&" +
+            "/^[[a-z]&&[^aeiou]]$/v.test('b') && !/^[[a-z]&&[^aeiou]]$/v.test('a') &&" +
+                " /^[[a-z]--[aeiou]]$/v.test('z') && !/^[[a-z]--[aeiou]]$/v.test('e') &&" +
                 " /^[[a-c]&&[b-d]]$/v.test('b') && !/^[[a-c]&&[b-d]]$/v.test('a')"
         ))
         // 集合转义、属性转义、否定类与 astral 码点
@@ -2387,6 +2387,8 @@ class RuntimeSemanticsRegressionTest {
         assertFailsWith<LexerException> { runtime.eval("/[a&&b&&c]/v;") }
         assertFailsWith<LexerException> { runtime.eval("/[a&&b--c]/v;") }
         assertFailsWith<LexerException> { runtime.eval("/[!!]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[a-z&&b]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[a&&b-c]/v;") }
         assertFailsWith<LexerException> { runtime.eval("/[(]/v;") }
         assertFailsWith<JSException> { runtime.eval("new RegExp('[]', 'v')") }
     }

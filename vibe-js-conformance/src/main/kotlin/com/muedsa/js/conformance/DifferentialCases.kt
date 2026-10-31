@@ -177,4 +177,25 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("while-completion", "eval('var i = 0; while (i < 2) { i++; }')"),
     DifferentialCase("const-tdz", "(function () { try { x; let x = 1; } catch (e) { return e.name; } })()"),
     DifferentialCase("delete-with-object", "(function () { var o = { x: 1 }; with (o) { delete x; } return o.hasOwnProperty('x'); })()"),
+
+    // RegExp v 标志、Unicode 属性与代理项码元语义
+    DifferentialCase("regexp-v-intersection", "'abcdef'.match(/[[a-f]&&[^aeiou]]+/gv).join('')"),
+    DifferentialCase("regexp-v-difference", "'abcdef'.replace(/[[a-f]--[aeiou]]/gv, '_')"),
+    DifferentialCase("regexp-v-q", "'zab'.search(/[\\q{ab}]/v)"),
+    DifferentialCase("regexp-v-string-difference", "'0123456789'.replace(/[\\d--\\q{0|2|4}]+/gv, '')"),
+    DifferentialCase("regexp-basic-emoji", "/\\p{Basic_Emoji}/v.test('\\u231A')"),
+    DifferentialCase("regexp-rgi-emoji", "/\\p{RGI_Emoji}/v.test('\\u{1F1E7}\\u{1F1EA}')"),
+    DifferentialCase("regexp-property-i-fold", "/\\p{Lu}/iu.test('a')"),
+    DifferentialCase("regexp-property-P-i-fold", "/\\P{Lu}/iu.test('A')"),
+    DifferentialCase("regexp-unicode-space", "/\\s/u.test('\\u3000')"),
+    DifferentialCase("regexp-unicode-space-class", "/[\\s]/u.test('\\u1680')"),
+    DifferentialCase("regexp-surrogate-u", "/\\udf06/u.test('\\ud834\\udf06')"),
+    DifferentialCase("regexp-surrogate-nonu", "/\\udf06/.test('\\ud834\\udf06')"),
+    DifferentialCase("regexp-duplicate-named", "'b'.match(/(?<x>a)|(?<x>b)/).groups.x"),
+    DifferentialCase("regexp-modifier-i", "/(?i:a)/.test('A')"),
+    DifferentialCase("regexp-lookbehind-greedy", "'fooo'.match(/(?<=f(o+))o/)[1]"),
+
+    // Unicode 标识符与尾调用结果
+    DifferentialCase("ident-astral-escape", "(function () { var \\u{1D49C} = 1; return \\u{1D49C}; })()"),
+    DifferentialCase("tco-call-count", "(function () { var c = 0; function f(n) { 'use strict'; if (n === 0) { c++; return; } return f(n - 1); } f(1000); return c; })()"),
 )
