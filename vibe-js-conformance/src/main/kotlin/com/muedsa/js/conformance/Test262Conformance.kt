@@ -595,7 +595,7 @@ private class Test262Runner(
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
             "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
             "regexp-dotall", "class-static-block", "regexp-match-indices", "regexp-named-groups",
-            "regexp-modifiers", "__proto__", "AggregateError", "coalesce-expression",
+            "regexp-modifiers", "regexp-duplicate-named-groups", "__proto__", "AggregateError", "coalesce-expression",
             "u180e", "legacy-regexp", "caller", "well-formed-json-stringify",
             "class-fields-public", "class-static-fields-public",
             "class-fields-private", "class-methods-private", "class-static-fields-private",
@@ -654,10 +654,6 @@ private class Test262Runner(
             // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
             "test/language/expressions/optional-chaining/new-target-optional-call.js",
             // 命名捕获组（(?<name>...)）尚未实现，跳过依赖其替换语义的生成用例
-            // 重复命名捕获组（不相交分支）规则较复杂，暂不纳入基线
-            "test/built-ins/RegExp/named-groups/duplicate-names",
-            "test/built-ins/RegExp/prototype/exec/duplicate-named",
-            "test/built-ins/String/prototype/match/duplicate-named",
             // 标识符 Unicode 表为近似实现，跳过各 Unicode 版本的 ID_Start/ID_Continue 生成用例
             "test/language/identifiers/",
             // 方法 Function.prototype.toString 的源码片段保留尚未实现（私有方法用例需要精确源码）

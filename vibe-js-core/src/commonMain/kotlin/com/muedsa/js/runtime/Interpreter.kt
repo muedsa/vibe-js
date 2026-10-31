@@ -4382,7 +4382,7 @@ class Interpreter(
         val namedGroupNeedsFallback = namedAnalysis.hasForwardReference ||
             namedAnalysis.names.keys.any { !it.matches(Regex("[A-Za-z][A-Za-z0-9]*")) }
         fun buildFallback(): JsRegex = try {
-            JsRegexEngine(enginePattern, flags, namedAnalysis.names)
+            JsRegexEngine(enginePattern, flags, namedAnalysis.nameCandidates)
         } catch (fallbackError: Throwable) {
             val detail = fallbackError.message?.lineSequence()?.firstOrNull()?.trim()
             throw syntaxError(
@@ -4407,7 +4407,7 @@ class Interpreter(
                 null
             }
             if (kotlinRegex != null) {
-                KotlinJsRegex(kotlinRegex, namedAnalysis.names)
+                KotlinJsRegex(kotlinRegex, namedAnalysis.nameCandidates)
             } else {
                 // 仅在 Kotlin Regex 明确不支持、且是已知 JS-only 构造时启用回退，
                 // 避免错误接受非法正则。

@@ -10,7 +10,7 @@ package com.muedsa.js.runtime.regex
 class JsRegexEngine(
     pattern: String,
     flags: String = "",
-    initialNamedGroups: Map<String, Int> = emptyMap(),
+    initialNameCandidates: Map<String, List<Int>> = emptyMap(),
 ) : JsRegex {
 
     private val unicode = 'u' in flags
@@ -37,11 +37,11 @@ class JsRegexEngine(
     private val root: Node
     private var groupCount: Int = 0
 
-    /** 命名捕获组：解码后的名称 → 组索引。 */
-    private var namedGroupIndices: Map<String, Int> = initialNamedGroups
+    /** 命名捕获组：解码后的名称 → 候选组索引列表。 */
+    private var namedGroupIndices: Map<String, List<Int>> = initialNameCandidates
 
     init {
-        val parser = PatternParser(pattern, initialNamedGroups)
+        val parser = PatternParser(pattern, initialNameCandidates)
         root = parser.parse()
         groupCount = parser.groupCount
         namedGroupIndices = parser.namedGroupsSnapshot()
@@ -70,8 +70,16 @@ class JsRegexEngine(
                     ranges.add(range)
                 }
                 val namedValues = LinkedHashMap<String, String?>()
-                for ((name, groupIndex) in namedGroupIndices) {
-                    namedValues[name] = groups.getOrNull(groupIndex)
+                for ((name, indices) in namedGroupIndices) {
+                    var value: String? = null
+                    for (index in indices) {
+                        val candidate = groups.getOrNull(index)
+                        if (candidate != null) {
+                            value = candidate
+                            break
+                        }
+                    }
+                    namedValues[name] = value
                 }
                 return JsMatch(
                     index,
@@ -226,7 +234,15 @@ class JsRegexEngine(
             }
 
             is Node.BackReferenceNode -> {
-                val range = captures.getOrNull(node.index)
+                // 重复命名组：取首个参与匹配的候选组；均未参与时匹配空串
+                var range: IntRange? = null
+                for (index in node.indices) {
+                    val candidate = captures.getOrNull(index)
+                    if (candidate != null) {
+                        range = candidate
+                        break
+                    }
+                }
                 if (range == null) {
                     continuation(pos, captures)
                 } else {
@@ -382,7 +398,7 @@ class JsRegexEngine(
             val greedy: Boolean,
         ) : Node()
 
-        data class BackReferenceNode(val index: Int) : Node()
+        data class BackReferenceNode(val indices: List<Int>) : Node()
         data class LookaheadNode(val child: Node, val positive: Boolean) : Node()
         data class AnchorNode(val kind: AnchorKind, val positive: Boolean = true) : Node()
 
@@ -424,14 +440,20 @@ class JsRegexEngine(
 
     private inner class PatternParser(
         private val pattern: String,
-        initialNamedGroups: Map<String, Int> = emptyMap(),
+        initialNameCandidates: Map<String, List<Int>> = emptyMap(),
     ) {
         private var position = 0
         var groupCount: Int = 0
             private set
-        private val namedGroups = LinkedHashMap(initialNamedGroups)
+        private val namedGroups = LinkedHashMap<String, MutableList<Int>>()
+            .apply {
+                for ((name, indices) in initialNameCandidates) {
+                    put(name, indices.toMutableList())
+                }
+            }
 
-        fun namedGroupsSnapshot(): Map<String, Int> = LinkedHashMap(namedGroups)
+        fun namedGroupsSnapshot(): Map<String, List<Int>> =
+            namedGroups.mapValues { it.value.toList() }
 
         fun parse(): Node {
             val node = parseAlternation()
@@ -640,7 +662,8 @@ class JsRegexEngine(
             }
             val index = if (capturing && lookahead == null) ++groupCount else null
             if (index != null && groupName != null) {
-                namedGroups[groupName] = index
+                val list = namedGroups.getOrPut(groupName) { mutableListOf() }
+                if (index !in list) list.add(index)
             }
             val child = parseAlternation()
             if (position >= pattern.length || peek() != ')') {
@@ -806,7 +829,7 @@ class JsRegexEngine(
                         index = index * 10 + (peek() - '0')
                         position++
                     }
-                    Node.BackReferenceNode(index)
+                    Node.BackReferenceNode(listOf(index))
                 }
 
                 'k' -> {
@@ -819,9 +842,9 @@ class JsRegexEngine(
                         }
                         val name = pattern.substring(nameStart, position)
                         position++
-                        val index = namedGroups[name]
+                        val indices = namedGroups[name]
                             ?: throw IllegalArgumentException("Unknown group name '$name'")
-                        Node.BackReferenceNode(index)
+                        Node.BackReferenceNode(indices.toList())
                     } else {
                         Node.CharNode('k')
                     }

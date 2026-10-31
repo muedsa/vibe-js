@@ -2124,6 +2124,42 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp 重复命名捕获组仅允许互斥分支`() = runTest {
+        val runtime = TestRuntime()
+        // 同一分支中的重复组名是语法错误；不同备选分支合法
+        assertEquals(true, runtime.evalBoolean(
+            "try { new RegExp('(?<x>a)(?<x>b)'); false } catch (e) { e instanceof SyntaxError }"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "new RegExp('(?<x>a)|(?<x>b)') instanceof RegExp"
+        ))
+        // groups 取实际参与匹配的候选组
+        assertEquals(true, runtime.evalBoolean(
+            "var m1 = /(?<x>a)|(?<x>b)/.exec('bab');" +
+                "var m2 = /(?<x>b)|(?<x>a)/.exec('bab');" +
+                "m1[1] === undefined && m1[2] === 'b' && m1.groups.x === 'b' &&" +
+                "m2[1] === 'b' && m2.groups.x === 'b'"
+        ))
+        // 命名反向引用动态指向参与匹配的候选
+        assertEquals(true, runtime.evalBoolean(
+            "/(?:(?<x>a)|(?<x>b))\\k<x>/.exec('aa')[0] === 'aa' &&" +
+                " /(?:(?<x>a)|(?<x>b))\\k<x>/.exec('bb')[0] === 'bb' &&" +
+                " /(?:(?<x>a)|(?<x>b))\\k<x>/.exec('ab') === null"
+        ))
+        // d 标志下 indices.groups 对应参与匹配候选的区间
+        assertEquals(true, runtime.evalBoolean(
+            "var ind = /(?<x>a)|(?<x>b)/d.exec('b').indices.groups.x;" +
+                " ind[0] === 0 && ind[1] === 1"
+        ))
+        // groups 属性按首次声明顺序枚举
+        assertEquals(true, runtime.evalBoolean(
+            "var keys = []; var m = /(?<a>x)|(?<b>y)|(?<a>z)/.exec('z');" +
+                " for (var k in m.groups) keys.push(k);" +
+                " keys.join(',') === 'a,b' && m.groups.a === 'z' && m.groups.b === undefined"
+        ))
+    }
+
+    @Test
     fun `RegExp 命名捕获组与命名替换`() = runTest {
         val runtime = TestRuntime()
         assertEquals(true, runtime.evalBoolean(

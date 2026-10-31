@@ -12,9 +12,9 @@ class JsMatch(
     private val groupValues: List<String?>,
     /** 各组匹配区间（含组 0），与 [groupValues] 一一对应；未参与匹配的组为 null。 */
     private val groupRanges: List<IntRange?>,
-    /** 命名捕获组：解码后的名称 → 组索引（按声明顺序）。 */
-    val namedGroupIndices: Map<String, Int> = emptyMap(),
-    /** 命名捕获组匹配值（未参与匹配为 null）。 */
+    /** 命名捕获组：解码后的名称 → 全部候选组索引（重复命名组按声明顺序）。 */
+    val namedGroupIndices: Map<String, List<Int>> = emptyMap(),
+    /** 命名捕获组匹配值（取首个参与匹配的候选；均未参与为 null）。 */
     private val namedGroupValues: Map<String, String?> = emptyMap(),
 ) {
     val groupCount: Int get() = groupValues.size
@@ -31,6 +31,16 @@ class JsMatch(
 
     /** 命名捕获组的匹配值；未参与匹配的组为 null。 */
     fun namedGroupValue(name: String): String? = namedGroupValues[name]
+
+    /** 命名捕获组的匹配区间（取首个参与匹配的候选）。 */
+    fun namedGroupRange(name: String): IntRange? {
+        val indices = namedGroupIndices[name] ?: return null
+        for (index in indices) {
+            val range = groupRanges.getOrNull(index)
+            if (range != null) return range
+        }
+        return null
+    }
 }
 
 /**
@@ -50,7 +60,7 @@ interface JsRegex {
 /** Kotlin Regex 到 [JsRegex] 的适配器。 */
 class KotlinJsRegex(
     private val regex: Regex,
-    private val namedGroupIndices: Map<String, Int> = emptyMap(),
+    private val namedGroupIndices: Map<String, List<Int>> = emptyMap(),
 ) : JsRegex {
 
     /**

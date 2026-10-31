@@ -1240,10 +1240,10 @@ object RegExpBuiltins {
             val indicesArray = JSArray(indices, prototype = interpreter.intrinsics.arrayPrototype)
             val indicesGroups: JSValue = if (namedIndices.isNotEmpty()) {
                 val groupsObject = JSObject(prototype = null)
-                for ((name, groupIndex) in namedIndices) {
+                for (name in namedIndices.keys) {
                     groupsObject.defineDataProperty(
                         key = PropertyKey.Str(name),
-                        value = indexPair(match.groupRange(groupIndex)),
+                        value = indexPair(match.namedGroupRange(name)),
                         writable = true,
                         enumerable = true,
                         configurable = true,

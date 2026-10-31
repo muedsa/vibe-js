@@ -14,6 +14,8 @@ internal class RegexSyntaxError(message: String) : Exception(message)
  */
 internal class NamedGroupAnalysis(
     val names: Map<String, Int>,
+    /** 每个名字对应的全部捕获组索引（同名重复时按声明顺序）。 */
+    val nameCandidates: Map<String, List<Int>>,
     val enginePattern: String,
     val hasNamedGroups: Boolean,
     val hasForwardReference: Boolean,
@@ -61,8 +63,11 @@ internal object RegexNamedGroups {
 
     fun analyze(pattern: String, unicode: Boolean): NamedGroupAnalysis {
         val declarations = LinkedHashMap<String, Int>()
-        val declarationPositions = LinkedHashMap<String, Int>()
-        val referenceList = ArrayList<Triple<String, Int, Boolean>>() // name, pos, wellFormed
+        val candidates = LinkedHashMap<String, MutableList<Int>>()
+        val pathByGroup = HashMap<Int, Map<Int, Int>>()
+        val referenceList = ArrayList<Triple<String, Int, Boolean>>()
+        val frames = ArrayList<Frame>().apply { add(Frame(0)) }
+        var nextFrameId = 1
         var groupIndex = 0
         var index = 0
         var inClass = false
@@ -100,7 +105,13 @@ internal object RegexNamedGroups {
                     index++
                 }
 
+                c == '|' -> {
+                    frames.last().branch++
+                    index++
+                }
+
                 c == '(' -> {
+                    frames.add(Frame(nextFrameId++))
                     if (pattern.getOrNull(index + 1) == '?') {
                         if (pattern.getOrNull(index + 2) == '<') {
                             val marker = pattern.getOrNull(index + 3)
@@ -111,11 +122,22 @@ internal object RegexNamedGroups {
                                 val decoded = decodeName(raw, unicode)
                                     ?: throw RegexSyntaxError("Invalid group name")
                                 groupIndex++
-                                if (decoded in declarations) {
-                                    throw RegexSyntaxError("Duplicate group name '$decoded'")
+                                val path = frames.associate { it.id to it.branch }
+                                val existing = candidates.getOrPut(decoded) { mutableListOf() }
+                                // 同名捕获组必须两两处于互斥的备选分支
+                                for (previous in existing) {
+                                    val previousPath = pathByGroup[previous]
+                                    if (previousPath != null && !isDisjoint(previousPath, path)) {
+                                        throw RegexSyntaxError(
+                                            "Duplicate group name '$decoded'"
+                                        )
+                                    }
                                 }
-                                declarations[decoded] = groupIndex
-                                declarationPositions[decoded] = index
+                                existing.add(groupIndex)
+                                if (decoded !in declarations) {
+                                    declarations[decoded] = groupIndex
+                                }
+                                pathByGroup[groupIndex] = path
                                 index = close + 1
                                 continue
                             }
@@ -138,6 +160,11 @@ internal object RegexNamedGroups {
                     }
                 }
 
+                c == ')' -> {
+                    if (frames.size > 1) frames.removeAt(frames.lastIndex)
+                    index++
+                }
+
                 else -> index++
             }
         }
@@ -145,20 +172,15 @@ internal object RegexNamedGroups {
         val hasNamedGroups = declarations.isNotEmpty()
         var hasForwardReference = false
         for ((name, position, wellFormed) in referenceList) {
-            if (!hasNamedGroups) {
-                // Annex B：无命名组时 \k 是 IdentityEscape（u 模式另行判错）
-                continue
-            }
+            if (!hasNamedGroups) continue
             if (!wellFormed) throw RegexSyntaxError("Invalid named backreference")
-            val declaration = declarationPositions[name]
-                ?: throw RegexSyntaxError("Unknown group name '$name'")
-            if (declaration > position) hasForwardReference = true
+            if (name !in declarations) throw RegexSyntaxError("Unknown group name '$name'")
+            val firstDeclaration = candidates[name]?.firstOrNull() ?: continue
+            if (firstDeclaration > position) hasForwardReference = true
         }
-        if (!hasNamedGroups && unicode) {
+        if (!hasNamedGroups && unicode && patternWithAnyNamedRef(pattern)) {
             // u 模式不允许把 k 作为 IdentityEscape
-            if (patternWithAnyNamedRef(pattern)) {
-                throw RegexSyntaxError("Invalid named backreference")
-            }
+            throw RegexSyntaxError("Invalid named backreference")
         }
 
         val enginePattern = buildEnginePattern(
@@ -170,11 +192,26 @@ internal object RegexNamedGroups {
         )
         return NamedGroupAnalysis(
             names = declarations,
+            nameCandidates = candidates.mapValues { it.value.toList() },
             enginePattern = enginePattern,
             hasNamedGroups = hasNamedGroups,
             hasForwardReference = hasForwardReference,
             hasModifiers = hasModifiers,
         )
+    }
+
+    /** 正则分组层级的一层：帧 id 用于识别共同祖先，branch 为当前备选分支序号。 */
+    private class Frame(val id: Int) {
+        var branch: Int = 0
+    }
+
+    /** 两组是否位于某个共同祖先交替结构的不同分支（互斥）。 */
+    private fun isDisjoint(left: Map<Int, Int>, right: Map<Int, Int>): Boolean {
+        for ((id, branch) in left) {
+            val other = right[id] ?: continue
+            if (branch != other) return true
+        }
+        return false
     }
 
     /**
