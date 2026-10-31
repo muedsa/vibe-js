@@ -60,12 +60,14 @@ internal object JsRegexSyntax {
                         lastWasLazy = false
                         continue
                     }
-                    // \p{...} / \P{...} 在字符类内外都允许（u 模式）
+                    // \p{...} / \P{...} 在字符类内外都允许（u 模式），属性名/取值必须合法
                     if ((escaped == 'p' || escaped == 'P') &&
                         index + 2 < pattern.length && pattern[index + 2] == '{'
                     ) {
                         val close = pattern.indexOf('}', index + 3)
                         if (close < 0) return invalid(pattern)
+                        val expression = pattern.substring(index + 3, close)
+                        if (UnicodePropertyData.resolve(expression) == null) return invalid(pattern)
                         index = close
                     } else if (escaped == 'x') {
                         if (index + 3 >= pattern.length ||
@@ -115,6 +117,8 @@ internal object JsRegexSyntax {
                 inClass -> if (c == ']') inClass = false
 
                 c == '[' -> {
+                    // 字符类整体校验：属性转义与范围端点规则
+                    if (classEnd(pattern, index) < 0) return invalid(pattern)
                     inClass = true
                     lastAtomQuantifiable = true
                     lastWasLazy = false
@@ -187,6 +191,116 @@ internal object JsRegexSyntax {
             index++
         }
         return null
+    }
+
+    /**
+     * 校验字符类并返回结束 ']' 之后的索引；出错返回 -1。
+     *
+     * 重点覆盖：类内 `\p{...}` 的属性解析、范围端点不得是字符类转义、
+     * 字面量范围起点不得大于终点。
+     */
+    private fun classEnd(pattern: String, start: Int): Int {
+        var index = start + 1
+        if (index < pattern.length && pattern[index] == '^') index++
+        if (index < pattern.length && pattern[index] == ']') return index + 1
+        while (index < pattern.length && pattern[index] != ']') {
+            val first = readClassAtom(pattern, index) ?: return -1
+            index = first.next
+            if (index < pattern.length && pattern[index] == '-' &&
+                index + 1 < pattern.length && pattern[index + 1] != ']'
+            ) {
+                val second = readClassAtom(pattern, index + 1) ?: return -1
+                if (first.isCharacterClass || second.isCharacterClass) return -1
+                if (first.codePoint > second.codePoint) return -1
+                index = second.next
+            }
+        }
+        if (index >= pattern.length) return -1
+        return index + 1
+    }
+
+    /** 字符类原子：下一个读取位置、是否为字符类转义、字面量码点。 */
+    private class ClassAtom(
+        val next: Int,
+        val isCharacterClass: Boolean,
+        val codePoint: Int,
+    )
+
+    private fun readClassAtom(pattern: String, index: Int): ClassAtom? {
+        if (index >= pattern.length) return null
+        val c = pattern[index]
+        if (c == ']') return null
+        if (c != '\\') {
+            if (c.isHighSurrogate() && index + 1 < pattern.length &&
+                pattern[index + 1].isLowSurrogate()
+            ) {
+                val codePoint = 0x10000 + ((c.code - 0xD800) shl 10) +
+                    (pattern[index + 1].code - 0xDC00)
+                return ClassAtom(index + 2, false, codePoint)
+            }
+            return ClassAtom(index + 1, false, c.code)
+        }
+        if (index + 1 >= pattern.length) return null
+        val escaped = pattern[index + 1]
+        val bodyStart = index + 2
+        when (escaped) {
+            'd', 'D', 'w', 'W', 's', 'S' -> return ClassAtom(bodyStart, true, 0)
+            'p', 'P' -> {
+                if (bodyStart >= pattern.length || pattern[bodyStart] != '{') return null
+                val close = pattern.indexOf('}', bodyStart + 1)
+                if (close < 0) return null
+                val expression = pattern.substring(bodyStart + 1, close)
+                if (UnicodePropertyData.resolve(expression) == null) return null
+                return ClassAtom(close + 1, true, 0)
+            }
+            'u' -> {
+                if (bodyStart < pattern.length && pattern[bodyStart] == '{') {
+                    val close = pattern.indexOf('}', bodyStart + 1)
+                    if (close < 0) return null
+                    val digits = pattern.substring(bodyStart + 1, close)
+                    if (digits.isEmpty() || digits.any { !isHexChar(it) }) return null
+                    val codePoint = digits.toLongOrNull(16) ?: return null
+                    if (codePoint > 0x10FFFF) return null
+                    return ClassAtom(close + 1, false, codePoint.toInt())
+                }
+                val value = readHexValue(pattern, bodyStart, 4) ?: 0
+                // u 模式下相邻的高/低代理项转义合并为一个码点（如 \uD834\uDF06）
+                var next = bodyStart + 4
+                if (value in 0xD800..0xDBFF && next + 5 < pattern.length &&
+                    pattern[next] == '\\' && pattern[next + 1] == 'u'
+                ) {
+                    val low = readHexValue(pattern, next + 2, 4)
+                    if (low != null && low in 0xDC00..0xDFFF) {
+                        val combined = 0x10000 + ((value - 0xD800) shl 10) + (low - 0xDC00)
+                        return ClassAtom(next + 6, false, combined)
+                    }
+                }
+                return ClassAtom(next, false, value)
+            }
+            'x' -> return ClassAtom(bodyStart + 2, false, readHexValue(pattern, bodyStart, 2) ?: 0)
+            'c' -> {
+                val control = pattern.getOrNull(bodyStart) ?: return null
+                return ClassAtom(bodyStart + 1, false, control.code and 0x1F)
+            }
+            'b' -> return ClassAtom(bodyStart, false, 0x08)
+            'n' -> return ClassAtom(bodyStart, false, 0x0A)
+            'r' -> return ClassAtom(bodyStart, false, 0x0D)
+            't' -> return ClassAtom(bodyStart, false, 0x09)
+            'f' -> return ClassAtom(bodyStart, false, 0x0C)
+            'v' -> return ClassAtom(bodyStart, false, 0x0B)
+            '0' -> return ClassAtom(bodyStart, false, 0)
+            else -> return ClassAtom(bodyStart, false, escaped.code)
+        }
+    }
+
+    private fun readHexValue(pattern: String, start: Int, length: Int): Int? {
+        if (start + length > pattern.length) return null
+        var value = 0
+        for (offset in 0 until length) {
+            val digit = pattern[start + offset].digitToIntOrNull(16) ?: return null
+            value = value * 16 + digit
+        }
+        return value
     }
 
     /** 若 index 处是合法的 {m} / {m,} / {m,n}，返回 '}' 之后的索引。 */

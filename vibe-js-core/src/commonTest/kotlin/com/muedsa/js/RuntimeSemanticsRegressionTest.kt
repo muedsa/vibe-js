@@ -2351,4 +2351,51 @@ class RuntimeSemanticsRegressionTest {
                 "count === 1"
         ))
     }
+
+    @Test
+    fun `Unicode 属性转义支持二进制属性 通用类别 脚本与码点级匹配`() = runTest {
+        val runtime = TestRuntime()
+        // 字母属性跨 BMP 与 astral 码点，非字母不匹配
+        assertEquals(true, runtime.evalBoolean(
+            "/\\p{Letter}/u.test('A') && /\\p{L}/u.test('\\u00E9') &&" +
+                " /\\p{Letter}/u.test('\\u{10400}') && !/\\p{Letter}/u.test('0')"
+        ))
+        // 通用类别支持短别名；i 模式对有效集合做大小写折叠（含 \P 的补集）
+        assertEquals(true, runtime.evalBoolean(
+            "/\\p{General_Category=Uppercase_Letter}/u.test('A')"
+        ), "General_Category=Uppercase_Letter")
+        assertEquals(true, runtime.evalBoolean("!/\\p{gc=Lu}/u.test('a')"), "gc=Lu")
+        assertEquals(true, runtime.evalBoolean("/\\p{Lu}/iu.test('a')"), "Lu+iu")
+        assertEquals(true, runtime.evalBoolean("/\\P{Lu}/iu.test('A')"), "PLu+iu")
+        assertEquals(true, runtime.evalBoolean("!/\\p{ASCII}/iu.test('\\u00E9')"), "ASCII+iu")
+        // 脚本与 Script_Extensions 值别名；\P 取补集并匹配完整码点
+        assertEquals(true, runtime.evalBoolean(
+            "/\\p{Script=Greek}/u.test('\\u03B1') && !/\\p{Script=Greek}/u.test('a') &&" +
+                " /\\p{scx=Latn}/u.test('a') && /\\P{ASCII}/u.test('\\u{1F600}')"
+        ))
+        // Emoji、ASCII、Any、Assigned 等二进制属性
+        assertEquals(true, runtime.evalBoolean(
+            "/\\p{Emoji}/u.test('\\u{1F600}') && /\\p{ASCII}/u.test('\\u007F') &&" +
+                " !/\\p{ASCII}/u.test('\\u0080') && /\\p{Any}/u.test('\\u{10FFFF}') &&" +
+                " /\\p{Assigned}/u.test('A') && !/\\p{Assigned}/u.test('\\u{10FFFF}')"
+        ))
+        // 字符类内组合属性与补集，末尾连字符按字面量处理
+        assertEquals(true, runtime.evalBoolean(
+            "/[\\p{Hex}\\P{Hex}]/u.test('\\u{1D306}') && /[\\p{L}-]/u.test('-')"
+        ))
+        // 非法属性名、带值的二进制属性、空白与字符类范围端点均为早期错误
+        assertFailsWith<LexerException> { runtime.eval("/\\p{NoSuchProperty}/u;") }
+        assertFailsWith<LexerException> { runtime.eval("/\\p{ASCII=F}/u;") }
+        assertFailsWith<LexerException> { runtime.eval("/\\p{ Letter }/u;") }
+        assertFailsWith<LexerException> { runtime.eval("/\\p{General_Category}/u;") }
+        assertFailsWith<LexerException> { runtime.eval("/[\\p{L}-z]/u;") }
+        assertFailsWith<LexerException> { runtime.eval("/[z-\\p{L}]/u;") }
+        // 构造器路径同样校验，并在运行时抛出 SyntaxError
+        assertEquals(true, runtime.evalBoolean(
+            "new RegExp('\\\\p{Letter}', 'u').test('A')"
+        ))
+        assertFailsWith<JSException> { runtime.eval("new RegExp('\\\\p{NoSuch}', 'u')") }
+        // 非 u 模式下 \p 是 IdentityEscape：整体按字面量 p{L} 匹配
+        assertEquals(true, runtime.evalBoolean("/\\p{L}/.test('p{L}')"))
+    }
 }

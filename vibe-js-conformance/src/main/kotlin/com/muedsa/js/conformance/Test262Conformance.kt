@@ -126,6 +126,11 @@ private class Test262Runner(
                             "  }",
                     )
                 }
+                if (file.name == "regExpUtils.js") {
+                    // 属性转义语料需要构造上百万码点的字符串；解释执行原实现过慢，
+                    // 改为调用 runner 注入的宿主实现（语义保持一致）
+                    source += "\nfunction buildString(args) { return __buildTest262String(args); }\n"
+                }
                 file.name to source
             }
             ?: emptyMap()
@@ -455,6 +460,8 @@ private class Test262Runner(
         }
 
         val engine = Engine()
+        // 属性转义语料的 buildString 由宿主实现，避免在解释器中逐码点构造字符串
+        registerBuildString(engine)
         // flags: [async] 的用例通过 $DONE 报告结果；runner 注入最小实现
         val asyncDone = if ("async" in test.metadata.flags) CompletableDeferred<JSValue>() else null
         if (asyncDone != null) {
@@ -527,6 +534,62 @@ private class Test262Runner(
         }
     }
 
+    private fun registerBuildString(engine: Engine) {
+        engine.globalObject.defineDataProperty(
+            key = PropertyKey.Str("__buildTest262String"),
+            value = JSNativeFunction(
+                name = "__buildTest262String",
+                length = 1,
+                prototype = engine.intrinsics.functionPrototype,
+            ) { interpreter, _, args ->
+                val options = interpreter.toObject(args.getOrElse(0) { JSUndefined })
+                val builder = StringBuilder()
+                val loneCodePoints = interpreter.getV(options, PropertyKey.Str("loneCodePoints"))
+                val loneCount = interpreter.toNumber(
+                    interpreter.getV(loneCodePoints, PropertyKey.Str("length"))
+                ).toInt()
+                for (index in 0 until loneCount) {
+                    val codePoint = interpreter.toNumber(
+                        interpreter.getV(loneCodePoints, PropertyKey.Str(index.toString()))
+                    ).toInt()
+                    appendCodePoint(builder, codePoint)
+                }
+                val ranges = interpreter.getV(options, PropertyKey.Str("ranges"))
+                val rangeCount = interpreter.toNumber(
+                    interpreter.getV(ranges, PropertyKey.Str("length"))
+                ).toInt()
+                for (index in 0 until rangeCount) {
+                    val range = interpreter.getV(ranges, PropertyKey.Str(index.toString()))
+                    val start = interpreter.toNumber(
+                        interpreter.getV(range, PropertyKey.Str("0"))
+                    ).toLong()
+                    val end = interpreter.toNumber(
+                        interpreter.getV(range, PropertyKey.Str("1"))
+                    ).toLong()
+                    var codePoint = start
+                    while (codePoint <= end) {
+                        appendCodePoint(builder, codePoint.toInt())
+                        codePoint++
+                    }
+                }
+                JSString(builder.toString())
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+    }
+
+    private fun appendCodePoint(builder: StringBuilder, codePoint: Int) {
+        if (codePoint <= 0xFFFF) {
+            builder.append(codePoint.toChar())
+        } else {
+            val value = codePoint - 0x10000
+            builder.append(((value shr 10) + 0xD800).toChar())
+            builder.append(((value and 0x3FF) + 0xDC00).toChar())
+        }
+    }
+
     private fun parse(source: String) {
         Parser(Lexer(source).tokenize()).parseProgram()
     }
@@ -595,7 +658,8 @@ private class Test262Runner(
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
             "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
             "regexp-dotall", "class-static-block", "regexp-match-indices", "regexp-named-groups",
-            "regexp-modifiers", "regexp-duplicate-named-groups", "regexp-lookbehind", "__proto__", "AggregateError", "coalesce-expression",
+            "regexp-modifiers", "regexp-duplicate-named-groups", "regexp-lookbehind",
+            "regexp-unicode-property-escapes", "__proto__", "AggregateError", "coalesce-expression",
             "u180e", "legacy-regexp", "caller", "well-formed-json-stringify",
             "class-fields-public", "class-static-fields-public",
             "class-fields-private", "class-methods-private", "class-static-fields-private",
@@ -646,11 +710,6 @@ private class Test262Runner(
             "test/built-ins/RegExp/prototype/Symbol.match/builtin-infer-unicode.js",
             // V8/最新规范允许子类实例调用 RegExp.prototype.compile，测试基于旧草案
             "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
-            // 依赖 Unicode 属性转义（\p{...} 与 (?i) 折叠），属性转义整体尚未实现
-            "test/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-p.js",
-            "test/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-p.js",
-            "test/built-ins/RegExp/regexp-modifiers/remove-ignoreCase-affects-slash-lower-p.js",
-            "test/built-ins/RegExp/regexp-modifiers/remove-ignoreCase-affects-slash-upper-p.js",
             // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
             "test/language/expressions/optional-chaining/new-target-optional-call.js",
             // 命名捕获组（(?<name>...)）尚未实现，跳过依赖其替换语义的生成用例

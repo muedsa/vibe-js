@@ -4398,6 +4398,8 @@ class Interpreter(
         val matcher = if ('d' in flags || namedAnalysis.hasNamedGroups ||
             namedAnalysis.hasModifiers || namedGroupNeedsFallback ||
             hasLookbehind(pattern) || hasNumericBackReference(pattern) ||
+            ('u' in flags && hasUnicodePropertyEscape(pattern)) ||
+            hasLiteralBrace(enginePattern) ||
             hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
         ) {
             buildFallback()
@@ -4457,6 +4459,59 @@ class Interpreter(
     /** 是否包含后向断言（变长语义由回退引擎实现）。 */
     private fun hasLookbehind(pattern: String): Boolean =
         pattern.contains("(?<=") || pattern.contains("(?<!")
+
+    /**
+     * 是否存在非量词的字面量花括号。
+     *
+     * JS 允许 `a{b}`、`}` 等作为字面量，但 Java 正则会把它们视为非法重复，
+     * 因此这类模式统一交给回退引擎，保证跨平台一致。
+     */
+    private fun hasLiteralBrace(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> index += 2
+                c == '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                c == ']' -> {
+                    inClass = false
+                    index++
+                }
+
+                inClass -> index++
+                c == '{' -> {
+                    val end = validBraceQuantifierEnd(pattern, index) ?: return true
+                    index = end
+                }
+
+                c == '}' -> return true
+                else -> index++
+            }
+        }
+        return false
+    }
+
+    /** 是否包含 Unicode 属性转义 `\p{...}` / `\P{...}`（各平台属性数据不一致，统一回退）。 */
+    private fun hasUnicodePropertyEscape(pattern: String): Boolean {
+        var index = 0
+        while (index < pattern.length) {
+            if (pattern[index] == '\\') {
+                val next = pattern.getOrNull(index + 1)
+                if ((next == 'p' || next == 'P') && pattern.getOrNull(index + 2) == '{') {
+                    return true
+                }
+                index += 2
+            } else {
+                index++
+            }
+        }
+        return false
+    }
 
     /** 是否存在字符类之外的 `.`（Kotlin/Java 引擎按码点匹配，与 JS 码元语义不同）。 */
     private fun hasDotOutsideClass(pattern: String): Boolean {
