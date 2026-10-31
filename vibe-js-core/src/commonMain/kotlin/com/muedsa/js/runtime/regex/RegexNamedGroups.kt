@@ -121,7 +121,9 @@ internal object RegexNamedGroups {
                             }
                         }
                         val marker = pattern.getOrNull(index + 2)
-                        if (marker != null && marker != ':' && marker != '=' && marker != '!') {
+                        if (marker != null && marker != ':' && marker != '=' &&
+                            marker != '!' && marker != '<'
+                        ) {
                             // 作用域修饰符组 (?ims:...) / (?-i:...)
                             val colon = validateModifiers(pattern, index + 2)
                             hasModifiers = true
