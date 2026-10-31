@@ -429,6 +429,48 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Promise withResolvers try 与 finally`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            "var resolvedWith = Promise.withResolvers(); var wrValue = 0;" +
+                " resolvedWith.promise.then(function (v) { wrValue = v; });" +
+                " resolvedWith.resolve(42);"
+        )
+        assertEquals(42.0, runtime.evalNumber("wrValue"))
+        assertEquals(true, runtime.evalBoolean(
+            "Promise.withResolvers().resolve.name === '' &&" +
+                " Promise.withResolvers().reject.length === 1"
+        ))
+        runtime.eval(
+            "var tryValue = 0; Promise.try(function (a, b) { return a + b; }, 1, 2)" +
+                ".then(function (v) { tryValue = v; });"
+        )
+        assertEquals(3.0, runtime.evalNumber("tryValue"))
+        runtime.eval(
+            "var sentinelPromise = Promise.resolve(1);" +
+                " var trySame = Promise.try(function () { return sentinelPromise; });"
+        )
+        assertEquals(true, runtime.evalBoolean("trySame === sentinelPromise"))
+        // finally 透传值 / 回调抛错 / 回调返回拒绝
+        runtime.eval(
+            "var passValue = 0; Promise.resolve(7).finally(function () {})" +
+                ".then(function (v) { passValue = v; });"
+        )
+        assertEquals(7.0, runtime.evalNumber("passValue"))
+        runtime.eval(
+            "var thrownReason = ''; Promise.resolve(1).finally(function () { throw 'x'; })" +
+                ".catch(function (e) { thrownReason = e; });"
+        )
+        assertEquals("x", runtime.evalString("thrownReason"))
+        runtime.eval(
+            "var finLog = ''; Promise.resolve('v').finally(function () {" +
+                " finLog += 'f'; return Promise.reject('bad'); })" +
+                ".catch(function (e) { finLog += ':' + e; });"
+        )
+        assertEquals("f:bad", runtime.evalString("finLog"))
+    }
+
+    @Test
     fun `Object groupBy 与 Map groupBy`() = runTest {
         val runtime = TestRuntime()
         assertEquals(true, runtime.evalBoolean(

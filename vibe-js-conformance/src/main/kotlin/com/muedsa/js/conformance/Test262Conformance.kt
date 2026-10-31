@@ -546,6 +546,7 @@ private class Test262Runner(
             "array-find-from-last", "change-array-by-copy",
             "Map", "Set", "WeakMap", "WeakSet", "Promise", "async-functions",
             "Promise.allSettled", "Promise.any",
+            "Promise.prototype.finally", "promise-with-resolvers", "promise-try",
             // 已在解析器/运行时实现的后续版本语法
             "exponentiation", "logical-assignment-operators", "globalThis",
             "object-rest", "object-spread", "optional-chaining",

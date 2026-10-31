@@ -104,29 +104,62 @@ object PromiseBuiltins {
         prototype.defineDataProperty(
             key = PropertyKey.Str("finally"),
             value = BuiltinHelpers.method(intrinsics, "finally", 1) { interpreter, thisValue, args ->
-                val promise = requirePromise(interpreter, thisValue, "Promise.prototype.finally")
-                val callback = args.getOrNull(0) ?: JSUndefined
-                val onFulfilled = JSNativeFunction(
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("Promise.prototype.finally called on non-object")
+                }
+                val promise = thisValue
+                val onFinally = args.getOrElse(0) { JSUndefined }
+                val species = interpreter.speciesConstructor(promise, intrinsics.promiseConstructor)
+                val thenMethod = interpreter.getV(promise, PropertyKey.Str("then"))
+                if (!interpreter.isCallable(thenMethod)) {
+                    interpreter.typeError("Promise.prototype.finally requires 'then' to be callable")
+                }
+                val callableFinally = interpreter.isCallable(onFinally)
+
+                val thenFinally = JSNativeFunction(
                     name = "",
                     length = 1,
                     prototype = intrinsics.functionPrototype,
                 ) { inner, _, handlerArgs ->
-                    if (inner.isCallable(callback)) {
-                        inner.callFunction(callback, JSUndefined, emptyList())
+                    val value = handlerArgs.getOrElse(0) { JSUndefined }
+                    val result = inner.callFunction(onFinally, JSUndefined, emptyList())
+                    val settled = promiseResolve(inner, species, result)
+                    val settledThen = inner.getV(settled, PropertyKey.Str("then"))
+                    if (!inner.isCallable(settledThen)) {
+                        inner.typeError("Promise.prototype.then is not a function")
                     }
-                    handlerArgs.getOrElse(0) { JSUndefined }
+                    val valueThunk = JSNativeFunction(
+                        name = "",
+                        length = 1,
+                        prototype = intrinsics.functionPrototype,
+                    ) { _, _, _ -> value }
+                    inner.callFunction(settledThen, settled, listOf(valueThunk))
                 }
-                val onRejected = JSNativeFunction(
+                val catchFinally = JSNativeFunction(
                     name = "",
                     length = 1,
                     prototype = intrinsics.functionPrototype,
                 ) { inner, _, handlerArgs ->
-                    if (inner.isCallable(callback)) {
-                        inner.callFunction(callback, JSUndefined, emptyList())
+                    val reason = handlerArgs.getOrElse(0) { JSUndefined }
+                    val result = inner.callFunction(onFinally, JSUndefined, emptyList())
+                    val settled = promiseResolve(inner, species, result)
+                    val settledThen = inner.getV(settled, PropertyKey.Str("then"))
+                    if (!inner.isCallable(settledThen)) {
+                        inner.typeError("Promise.prototype.then is not a function")
                     }
-                    throw JSException(handlerArgs.getOrElse(0) { JSUndefined })
+                    val thrower = JSNativeFunction(
+                        name = "",
+                        length = 1,
+                        prototype = intrinsics.functionPrototype,
+                    ) { _, _, _ -> throw JSException(reason) }
+                    inner.callFunction(settledThen, settled, listOf(thrower))
                 }
-                PromiseSupport.then(interpreter, promise, onFulfilled, onRejected)
+                // 非可调用 onFinally 按规范原样传入两个 then 参数
+                if (callableFinally) {
+                    interpreter.callFunction(thenMethod, promise, listOf(thenFinally, catchFinally))
+                } else {
+                    interpreter.callFunction(thenMethod, promise, listOf(onFinally, onFinally))
+                }
             },
         )
 
@@ -342,6 +375,63 @@ object PromiseBuiltins {
                             ),
                         )
                     }
+                } catch (error: JSException) {
+                    rejectCapability(interpreter, capability, error.value)
+                }
+                capability.promise
+            },
+        )
+
+        promiseConstructor.defineDataProperty(
+            key = PropertyKey.Str("withResolvers"),
+            value = BuiltinHelpers.method(intrinsics, "withResolvers", 0) { interpreter, thisValue, _ ->
+                if (!interpreter.isConstructor(thisValue)) {
+                    interpreter.typeError("Promise.withResolvers requires a constructor as this")
+                }
+                val capability = PromiseSupport.newPromiseCapability(interpreter, thisValue)
+                val result = JSObject(prototype = intrinsics.objectPrototype)
+                result.defineDataProperty(
+                    PropertyKey.Str("promise"), capability.promise,
+                    writable = true, enumerable = true, configurable = true,
+                )
+                result.defineDataProperty(
+                    PropertyKey.Str("resolve"), capability.resolve,
+                    writable = true, enumerable = true, configurable = true,
+                )
+                result.defineDataProperty(
+                    PropertyKey.Str("reject"), capability.reject,
+                    writable = true, enumerable = true, configurable = true,
+                )
+                result
+            },
+        )
+
+        promiseConstructor.defineDataProperty(
+            key = PropertyKey.Str("try"),
+            value = BuiltinHelpers.method(intrinsics, "try", 1) { interpreter, thisValue, args ->
+                if (!interpreter.isConstructor(thisValue)) {
+                    interpreter.typeError("Promise.try requires a constructor as this")
+                }
+                val capability = PromiseSupport.newPromiseCapability(interpreter, thisValue)
+                val callback = args.getOrElse(0) { JSUndefined }
+                val callbackArgs = if (args.size > 1) {
+                    args.subList(1, args.size).toList()
+                } else {
+                    emptyList()
+                }
+                try {
+                    val value = interpreter.callFunction(callback, JSUndefined, callbackArgs)
+                    // PromiseResolve 的同构造器短路：直接返回已有的 Promise
+                    if (value is JSPromise) {
+                        val valueConstructor = interpreter.getV(
+                            value,
+                            PropertyKey.CONSTRUCTOR,
+                        )
+                        if (valueConstructor === thisValue) {
+                            return@method value
+                        }
+                    }
+                    resolveCapability(interpreter, capability, value)
                 } catch (error: JSException) {
                     rejectCapability(interpreter, capability, error.value)
                 }
@@ -582,6 +672,21 @@ object PromiseBuiltins {
         reason: JSValue,
     ) {
         interpreter.callFunction(capability.reject, JSUndefined, listOf(reason))
+    }
+
+    /** PromiseResolve(C, x)：同构造器的 Promise 原样返回，否则通过 capability 包装。 */
+    private suspend fun promiseResolve(
+        interpreter: Interpreter,
+        constructor: JSValue,
+        value: JSValue,
+    ): JSValue {
+        if (value is JSPromise) {
+            val valueConstructor = interpreter.getV(value, PropertyKey.CONSTRUCTOR)
+            if (valueConstructor === constructor) return value
+        }
+        val capability = PromiseSupport.newPromiseCapability(interpreter, constructor)
+        resolveCapability(interpreter, capability, value)
+        return capability.promise
     }
 
     private fun requirePromise(interpreter: Interpreter, thisValue: JSValue, name: String): JSPromise =

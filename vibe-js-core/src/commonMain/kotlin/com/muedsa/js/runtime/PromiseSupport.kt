@@ -83,18 +83,8 @@ object PromiseSupport {
             return
         }
 
-        if (value is JSPromise) {
-            when (value.state) {
-                JSPromise.State.FULFILLED -> fulfill(interpreter, promise, value.result)
-                JSPromise.State.REJECTED -> reject(interpreter, promise, value.result)
-                JSPromise.State.PENDING -> {
-                    val resolving = createResolvingFunctions(interpreter, promise)
-                    then(interpreter, value, resolving.first, resolving.second)
-                }
-            }
-            return
-        }
-
+        // 规范：对象（含原生 Promise）一律通过 NewPromiseResolveThenableJob 采纳，
+        // 保证 then 的访问/调用次序与可观察的构造器调用一致
         if (value is JSObject) {
             val thenValue = try {
                 interpreter.getV(value, PropertyKey.Str("then"))
@@ -248,7 +238,7 @@ object PromiseSupport {
     ): Pair<JSNativeFunction, JSNativeFunction> {
         val alreadyResolved = booleanArrayOf(false)
         val resolveFunction = JSNativeFunction(
-            name = "resolve",
+            name = "",
             length = 1,
             prototype = interpreter.intrinsics.functionPrototype,
         ) { _, _, args ->
@@ -259,7 +249,7 @@ object PromiseSupport {
             JSUndefined
         }
         val rejectFunction = JSNativeFunction(
-            name = "reject",
+            name = "",
             length = 1,
             prototype = interpreter.intrinsics.functionPrototype,
         ) { _, _, args ->
