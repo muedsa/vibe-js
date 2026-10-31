@@ -154,7 +154,7 @@ Unicode 数据表（`\p{...}` 属性、属性字符串与标识符 ID_Start/ID_C
 ./gradlew :vibe-js-conformance:differentialConformance
 ```
 
-真实库基线（lodash 4.17.21 / mustache 4.2.0 / dayjs 1.11.10 / qs 6.12.3 / validator 13.12.0 / underscore 1.13.6 / moment 2.30.1 / semver 4.3.6 / punycode 1.4.1 / json5 2.2.3 / big.js 6.2.1 / diff 5.1.0 / lz-string 1.5.0 / marked 4.3.0）：
+真实库基线（lodash 4.17.21 / mustache 4.2.0 / dayjs 1.11.10 / qs 6.12.3 / validator 13.12.0 / underscore 1.13.6 / moment 2.30.1 / semver 4.3.6 / punycode 1.4.1 / json5 2.2.3 / big.js 6.2.1 / diff 5.1.0 / lz-string 1.5.0 / marked 4.3.0 / bignumber.js 9.1.2 / decimal.js 10.4.3 / crypto-js 4.2.0）：
 
 | 库 | 状态 | 用例 |
 |---|---|---|
@@ -172,8 +172,11 @@ Unicode 数据表（`\p{...}` 属性、属性字符串与标识符 ID_Start/ID_C
 | diff | 可加载 | 3/3 |
 | lz-string | 可加载 | 4/4 |
 | marked | 可加载 | 4/4 |
+| bignumber.js | 可加载 | 4/4 |
+| decimal.js | 可加载 | 4/4 |
+| crypto-js | 可加载 | 4/4 |
 
-合计：**58/58 用例通过，0 失败**。
+合计：**70/70 用例通过，0 失败**。
 
 Node 差分基线：**176 个用例**（数字格式化/转换、字符串 Unicode、数组空洞与写方法、对象描述符/枚举、RegExp 捕获与 lastIndex、Date、JSON reviver/replacer、Map/Set、函数 bind/arguments、eval 完成值与相等转换等）**全部一致**。
 

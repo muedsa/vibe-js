@@ -382,6 +382,91 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "bignumber.js",
+        url = "https://unpkg.com/bignumber.js@9.1.2/bignumber.js",
+        globalName = "BigNumber",
+        cases = listOf(
+            SmokeCase(
+                "plus",
+                assertion("new BigNumber('0.1').plus('0.2').toString() === '0.3'"),
+            ),
+            SmokeCase(
+                "div toFixed",
+                assertion("BigNumber('1e9').dividedBy(3).toFixed(3) === '333333333.333'"),
+            ),
+            SmokeCase(
+                "pow and isBigNumber",
+                assertion(
+                    "new BigNumber(255).exponentiatedBy(2).isEqualTo(65025) && " +
+                        "BigNumber.isBigNumber(new BigNumber(1))"
+                ),
+            ),
+            SmokeCase(
+                "max decimalPlaces",
+                assertion(
+                    "BigNumber.max('1.2', '3.4', '0.5').toString() === '3.4' && " +
+                        "new BigNumber('123.456').decimalPlaces() === 3"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "decimal.js",
+        url = "https://unpkg.com/decimal.js@10.4.3/decimal.js",
+        globalName = "Decimal",
+        cases = listOf(
+            SmokeCase(
+                "plus",
+                assertion("new Decimal('0.1').plus('0.2').toString() === '0.3'"),
+            ),
+            SmokeCase(
+                "div toFixed",
+                assertion("Decimal.div(1, 3).toFixed(5) === '0.33333'"),
+            ),
+            SmokeCase(
+                "pow toNumber",
+                assertion("new Decimal(2).pow(10).toNumber() === 1024"),
+            ),
+            SmokeCase(
+                "max",
+                assertion("Decimal.max(1, 5, 3).toString() === '5'"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "crypto-js",
+        url = "https://unpkg.com/crypto-js@4.2.0/crypto-js.js",
+        globalName = "CryptoJS",
+        cases = listOf(
+            SmokeCase(
+                "sha256",
+                assertion(
+                    "CryptoJS.SHA256('abc').toString() === " +
+                        "'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'"
+                ),
+            ),
+            SmokeCase(
+                "md5",
+                assertion(
+                    "CryptoJS.MD5('abc').toString() === '900150983cd24fb0d6963f7d28e17f72'"
+                ),
+            ),
+            SmokeCase(
+                "hmac sha1",
+                assertion(
+                    "CryptoJS.HmacSHA1('message', 'key').toString() === " +
+                        "'2088df74d5f2146b48146caf4965377e9d0be3a4'"
+                ),
+            ),
+            SmokeCase(
+                "base64",
+                assertion(
+                    "CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse('hello')) === 'aGVsbG8='"
+                ),
+            ),
+        ),
+    ),
 )
 
 
