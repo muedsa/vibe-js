@@ -4368,7 +4368,9 @@ class Interpreter(
         // 因为 Kotlin/Java 的语义与 JS 不同或无法编译；
         // d 标志需要每个捕获组的精确区间，Kotlin 公共 MatchGroup 不暴露位置，
         // 因此同样统一使用回退引擎
-        val matcher = if ('d' in flags || namedAnalysis.hasNamedGroups || namedGroupNeedsFallback || requiresJsRegexEngine(pattern)) {
+        val matcher = if ('d' in flags || namedAnalysis.hasNamedGroups ||
+            namedAnalysis.hasModifiers || namedGroupNeedsFallback || requiresJsRegexEngine(pattern)
+        ) {
             buildFallback()
         } else {
             val kotlinRegex = try {

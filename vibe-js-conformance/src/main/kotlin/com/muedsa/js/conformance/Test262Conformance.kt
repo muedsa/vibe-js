@@ -595,6 +595,7 @@ private class Test262Runner(
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
             "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
             "regexp-dotall", "class-static-block", "regexp-match-indices", "regexp-named-groups",
+            "regexp-modifiers",
             "class-fields-public", "class-static-fields-public",
             "class-fields-private", "class-methods-private", "class-static-fields-private",
             "class-static-methods-private", "class-fields-private-in", "nonextensible-applies-to-private",
@@ -644,6 +645,11 @@ private class Test262Runner(
             "test/built-ins/RegExp/prototype/Symbol.match/builtin-infer-unicode.js",
             // Kotlin/Java 引擎的非 u 模式 `.` 按码点匹配 astral 字符，与 JS 的码元语义有差异
             "test/built-ins/RegExp/match-indices/indices-array-non-unicode-match.js",
+            // 依赖 Unicode 属性转义（\p{...} 与 (?i) 折叠），属性转义整体尚未实现
+            "test/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-p.js",
+            "test/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-p.js",
+            "test/built-ins/RegExp/regexp-modifiers/remove-ignoreCase-affects-slash-lower-p.js",
+            "test/built-ins/RegExp/regexp-modifiers/remove-ignoreCase-affects-slash-upper-p.js",
             // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
             "test/language/expressions/optional-chaining/new-target-optional-call.js",
             // 命名捕获组（(?<name>...)）尚未实现，跳过依赖其替换语义的生成用例

@@ -13,10 +13,26 @@ class JsRegexEngine(
     initialNamedGroups: Map<String, Int> = emptyMap(),
 ) : JsRegex {
 
-    private val ignoreCase = 'i' in flags
-    private val multiline = 'm' in flags
-    private val dotAll = 's' in flags
     private val unicode = 'u' in flags
+
+    /** 匹配期生效的标志（修饰符组可局部覆盖）。 */
+    private class MatchFlags(
+        val ignoreCase: Boolean,
+        val multiline: Boolean,
+        val dotAll: Boolean,
+    )
+
+    private val baseFlags = MatchFlags(
+        ignoreCase = 'i' in flags,
+        multiline = 'm' in flags,
+        dotAll = 's' in flags,
+    )
+
+    private companion object {
+        const val FLAG_IGNORE_CASE = 1
+        const val FLAG_MULTILINE = 2
+        const val FLAG_DOT_ALL = 4
+    }
 
     private val root: Node
     private var groupCount: Int = 0
@@ -36,7 +52,7 @@ class JsRegexEngine(
         inputForMatch = input
         for (index in startIndex..input.length) {
             var resultCaps: Array<IntRange?>? = null
-            val matched = matchNode(root, index, arrayOfNulls(groupCount + 1)) { end, captures ->
+            val matched = matchNode(root, index, arrayOfNulls(groupCount + 1), baseFlags) { end, captures ->
                 resultCaps = captures
                 internalMatchEnd = end
                 true
@@ -87,19 +103,20 @@ class JsRegexEngine(
         node: Node,
         pos: Int,
         captures: Array<IntRange?>,
+        flags: MatchFlags,
         continuation: (Int, Array<IntRange?>) -> Boolean,
     ): Boolean {
         return when (node) {
             is Node.CharNode -> {
                 if (pos >= inputForMatch.length) false
-                else if (!charEquals(inputForMatch[pos], node.character)) false
+                else if (!charEquals(inputForMatch[pos], node.character, flags.ignoreCase)) false
                 else continuation(pos + 1, captures)
             }
 
             is Node.AnyNode -> {
                 if (pos >= inputForMatch.length) {
                     false
-                } else if (!dotAll && isLineTerminator(inputForMatch[pos])) {
+                } else if (!flags.dotAll && isLineTerminator(inputForMatch[pos])) {
                     false
                 } else {
                     // u 模式下 . 匹配完整码点（代理项对整体消耗）
@@ -118,22 +135,22 @@ class JsRegexEngine(
             is Node.ClassNode -> {
                 if (pos >= inputForMatch.length) false
                 else {
-                    val matched = node.items.any { it.matches(inputForMatch[pos], ignoreCase) }
+                    val matched = node.items.any { it.matches(inputForMatch[pos], flags.ignoreCase) }
                     if (matched != node.negated) continuation(pos + 1, captures) else false
                 }
             }
 
-            is Node.SequenceNode -> matchSequence(node.nodes, 0, pos, captures, continuation)
+            is Node.SequenceNode -> matchSequence(node.nodes, 0, pos, captures, flags, continuation)
 
             is Node.AlternationNode -> {
                 for (branch in node.branches) {
-                    if (matchNode(branch, pos, captures.copyOf(), continuation)) return true
+                    if (matchNode(branch, pos, captures.copyOf(), flags, continuation)) return true
                 }
                 false
             }
 
             is Node.GroupNode -> {
-                matchNode(node.child, pos, captures) { end, innerCaptures ->
+                matchNode(node.child, pos, captures, flags) { end, innerCaptures ->
                     val updated = innerCaptures.copyOf()
                     if (node.index != null) {
                         updated[node.index] = pos until end
@@ -142,11 +159,33 @@ class JsRegexEngine(
                 }
             }
 
-            is Node.QuantifierNode -> matchQuantifier(node, 0, pos, captures, continuation)
+            // 修饰符组：按 add/remove 位掩码局部覆盖 i/m/s
+            is Node.FlagGroupNode -> {
+                val nested = MatchFlags(
+                    ignoreCase = when {
+                        node.add and FLAG_IGNORE_CASE != 0 -> true
+                        node.remove and FLAG_IGNORE_CASE != 0 -> false
+                        else -> flags.ignoreCase
+                    },
+                    multiline = when {
+                        node.add and FLAG_MULTILINE != 0 -> true
+                        node.remove and FLAG_MULTILINE != 0 -> false
+                        else -> flags.multiline
+                    },
+                    dotAll = when {
+                        node.add and FLAG_DOT_ALL != 0 -> true
+                        node.remove and FLAG_DOT_ALL != 0 -> false
+                        else -> flags.dotAll
+                    },
+                )
+                matchNode(node.child, pos, captures, nested, continuation)
+            }
+
+            is Node.QuantifierNode -> matchQuantifier(node, 0, pos, captures, flags, continuation)
 
             is Node.LookaheadNode -> {
                 var lookedCaptures: Array<IntRange?>? = null
-                val matched = matchNode(node.child, pos, captures.copyOf()) { _, inner ->
+                val matched = matchNode(node.child, pos, captures.copyOf(), flags) { _, inner ->
                     lookedCaptures = inner
                     true
                 }
@@ -159,7 +198,9 @@ class JsRegexEngine(
 
             is Node.AnchorNode -> when (node.kind) {
                 Node.AnchorKind.START ->
-                    if (pos == 0 || (multiline && pos > 0 && isLineTerminator(inputForMatch[pos - 1]))) {
+                    if (pos == 0 ||
+                        (flags.multiline && pos > 0 && isLineTerminator(inputForMatch[pos - 1]))
+                    ) {
                         continuation(pos, captures)
                     } else {
                         false
@@ -167,7 +208,8 @@ class JsRegexEngine(
 
                 Node.AnchorKind.END ->
                     if (pos == inputForMatch.length ||
-                        (multiline && pos < inputForMatch.length && isLineTerminator(inputForMatch[pos]))
+                        (flags.multiline && pos < inputForMatch.length &&
+                            isLineTerminator(inputForMatch[pos]))
                     ) {
                         continuation(pos, captures)
                     } else {
@@ -175,8 +217,9 @@ class JsRegexEngine(
                     }
 
                 Node.AnchorKind.WORD_BOUNDARY -> {
-                    val previousIsWord = pos > 0 && isWord(inputForMatch[pos - 1])
-                    val currentIsWord = pos < inputForMatch.length && isWord(inputForMatch[pos])
+                    val previousIsWord = pos > 0 && isWord(inputForMatch[pos - 1], flags.ignoreCase)
+                    val currentIsWord = pos < inputForMatch.length &&
+                        isWord(inputForMatch[pos], flags.ignoreCase)
                     val boundary = previousIsWord != currentIsWord
                     if (boundary == node.positive) continuation(pos, captures) else false
                 }
@@ -188,7 +231,11 @@ class JsRegexEngine(
                     continuation(pos, captures)
                 } else {
                     val expected = inputForMatch.substring(range.first, range.last + 1)
-                    if (matchesAt(pos, expected)) continuation(pos + expected.length, captures) else false
+                    if (matchesAt(pos, expected, flags.ignoreCase)) {
+                        continuation(pos + expected.length, captures)
+                    } else {
+                        false
+                    }
                 }
             }
         }
@@ -199,11 +246,12 @@ class JsRegexEngine(
         index: Int,
         pos: Int,
         captures: Array<IntRange?>,
+        flags: MatchFlags,
         continuation: (Int, Array<IntRange?>) -> Boolean,
     ): Boolean {
         if (index >= nodes.size) return continuation(pos, captures)
-        return matchNode(nodes[index], pos, captures) { nextPos, nextCaptures ->
-            matchSequence(nodes, index + 1, nextPos, nextCaptures, continuation)
+        return matchNode(nodes[index], pos, captures, flags) { nextPos, nextCaptures ->
+            matchSequence(nodes, index + 1, nextPos, nextCaptures, flags, continuation)
         }
     }
 
@@ -212,6 +260,7 @@ class JsRegexEngine(
         count: Int,
         pos: Int,
         captures: Array<IntRange?>,
+        flags: MatchFlags,
         continuation: (Int, Array<IntRange?>) -> Boolean,
     ): Boolean {
         // 规范：量词每次迭代前清除其内部捕获组的值
@@ -228,18 +277,23 @@ class JsRegexEngine(
 
         fun repeat(nextPos: Int, nextCaptures: Array<IntRange?>): Boolean {
             if (nextPos == pos) return false
-            return matchQuantifier(node, count + 1, nextPos, nextCaptures, continuation)
+            return matchQuantifier(node, count + 1, nextPos, nextCaptures, flags, continuation)
         }
 
         if (count < node.min) {
-            return matchNode(node.child, pos, iterationCaptures(captures)) { nextPos, nextCaptures ->
+            return matchNode(node.child, pos, iterationCaptures(captures), flags) { nextPos, nextCaptures ->
                 repeat(nextPos, nextCaptures)
             }
         }
 
         if (node.greedy) {
             if (count < node.max) {
-                val matched = matchNode(node.child, pos, iterationCaptures(captures)) { nextPos, nextCaptures ->
+                val matched = matchNode(
+                    node.child,
+                    pos,
+                    iterationCaptures(captures),
+                    flags,
+                ) { nextPos, nextCaptures ->
                     repeat(nextPos, nextCaptures)
                 }
                 if (matched) return true
@@ -249,7 +303,7 @@ class JsRegexEngine(
 
         if (continuation(pos, captures)) return true
         if (count < node.max) {
-            return matchNode(node.child, pos, iterationCaptures(captures)) { nextPos, nextCaptures ->
+            return matchNode(node.child, pos, iterationCaptures(captures), flags) { nextPos, nextCaptures ->
                 repeat(nextPos, nextCaptures)
             }
         }
@@ -267,23 +321,39 @@ class JsRegexEngine(
             is Node.AlternationNode -> node.branches.forEach { collectGroupIndices(it, result) }
             is Node.QuantifierNode -> collectGroupIndices(node.child, result)
             is Node.LookaheadNode -> collectGroupIndices(node.child, result)
+            is Node.FlagGroupNode -> collectGroupIndices(node.child, result)
             else -> Unit
         }
     }
 
-    private fun matchesAt(pos: Int, expected: String): Boolean {
+    private fun matchesAt(pos: Int, expected: String, ignoreCase: Boolean): Boolean {
         if (pos + expected.length > inputForMatch.length) return false
         for (index in expected.indices) {
-            if (!charEquals(inputForMatch[pos + index], expected[index])) return false
+            if (!charEquals(inputForMatch[pos + index], expected[index], ignoreCase)) return false
         }
         return true
     }
 
-    private fun charEquals(left: Char, right: Char): Boolean =
+    private fun charEquals(left: Char, right: Char, ignoreCase: Boolean): Boolean =
         left == right || (ignoreCase && left.equals(right, ignoreCase = true))
 
-    private fun isWord(character: Char): Boolean =
-        character in 'a'..'z' || character in 'A'..'Z' || character in '0'..'9' || character == '_'
+    /**
+     * 单词字符判定（ASCII \w）；i 模式下 ς/ſ/K 等会大小写折叠到 ASCII 字母，
+     * 与非 u 模式 JS 的 Canonicalize 语义一致。
+     */
+    private fun isWord(character: Char, ignoreCase: Boolean): Boolean {
+        if (character in 'a'..'z' || character in 'A'..'Z' ||
+            character in '0'..'9' || character == '_'
+        ) {
+            return true
+        }
+        if (!ignoreCase) return false
+        return isAsciiWord(character.lowercaseChar()) || isAsciiWord(character.uppercaseChar())
+    }
+
+    private fun isAsciiWord(character: Char): Boolean =
+        character in 'a'..'z' || character in 'A'..'Z' ||
+            character in '0'..'9' || character == '_'
 
     private fun isLineTerminator(character: Char): Boolean =
         character == '\n' || character == '\r' || character == '\u2028' || character == '\u2029'
@@ -302,6 +372,9 @@ class JsRegexEngine(
         data class SequenceNode(val nodes: List<Node>) : Node()
         data class AlternationNode(val branches: List<Node>) : Node()
         data class GroupNode(val index: Int?, val child: Node) : Node()
+
+        /** 作用域修饰符组：(?ims-ims:child)。 */
+        data class FlagGroupNode(val add: Int, val remove: Int, val child: Node) : Node()
         data class QuantifierNode(
             val child: Node,
             val min: Int,
@@ -483,12 +556,59 @@ class JsRegexEngine(
             var capturing = true
             var lookahead: Boolean? = null
             var groupName: String? = null
+            var modifierAdd = 0
+            var modifierRemove = 0
             if (position < pattern.length && peek() == '?') {
                 position++
                 when {
                     position < pattern.length && peek() == ':' -> {
                         capturing = false
                         position++
+                    }
+
+                    position < pattern.length && (peek() in "ims-") -> {
+                        // 作用域修饰符：(?ims:...) / (?-i:...) / (?im-s:...)
+                        capturing = false
+                        var inRemove = false
+                        while (position < pattern.length && peek() != ':') {
+                            val c = peek()
+                            if (c == '-') {
+                                if (inRemove) {
+                                    throw IllegalArgumentException("Duplicate '-' in modifiers")
+                                }
+                                inRemove = true
+                                position++
+                                continue
+                            }
+                            val bit = when (c) {
+                                'i' -> FLAG_IGNORE_CASE
+                                'm' -> FLAG_MULTILINE
+                                's' -> FLAG_DOT_ALL
+                                else -> throw IllegalArgumentException("Invalid modifier '$c'")
+                            }
+                            if (inRemove) {
+                                if (modifierRemove and bit != 0) {
+                                    throw IllegalArgumentException("Duplicate modifier '$c'")
+                                }
+                                modifierRemove = modifierRemove or bit
+                            } else {
+                                if (modifierAdd and bit != 0) {
+                                    throw IllegalArgumentException("Duplicate modifier '$c'")
+                                }
+                                modifierAdd = modifierAdd or bit
+                            }
+                            position++
+                        }
+                        if (position >= pattern.length || peek() != ':') {
+                            throw IllegalArgumentException("Unterminated modifiers")
+                        }
+                        if (modifierAdd == 0 && modifierRemove == 0) {
+                            throw IllegalArgumentException("Empty modifiers")
+                        }
+                        if (modifierAdd and modifierRemove != 0) {
+                            throw IllegalArgumentException("Modifier both added and removed")
+                        }
+                        position++ // ':'
                     }
 
                     position < pattern.length && peek() == '=' -> {
@@ -539,6 +659,8 @@ class JsRegexEngine(
                     // lookahead 节点需要额外标记，使用专用节点
                     Node.LookaheadNode(child, lookahead)
                 }
+            } else if (modifierAdd != 0 || modifierRemove != 0) {
+                Node.FlagGroupNode(modifierAdd, modifierRemove, child)
             } else {
                 Node.GroupNode(index, child)
             }
@@ -621,10 +743,10 @@ class JsRegexEngine(
             (character in '0'..'9') != negated
         }
 
-        private fun wordPredicate(negated: Boolean): ClassItem = ClassItem.Predicate("word") { character, _ ->
-            (character in 'a'..'z' || character in 'A'..'Z' ||
-                character in '0'..'9' || character == '_') != negated
-        }
+        private fun wordPredicate(negated: Boolean): ClassItem =
+            ClassItem.Predicate("word") { character, ignoreCase ->
+                isWord(character, ignoreCase) != negated
+            }
 
         private fun spacePredicate(negated: Boolean): ClassItem = ClassItem.Predicate("space") { character, _ ->
             (character == ' ' || character == '\t' || character == '\n' ||

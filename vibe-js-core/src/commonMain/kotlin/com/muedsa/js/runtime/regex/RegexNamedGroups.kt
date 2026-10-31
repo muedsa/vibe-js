@@ -17,6 +17,7 @@ internal class NamedGroupAnalysis(
     val enginePattern: String,
     val hasNamedGroups: Boolean,
     val hasForwardReference: Boolean,
+    val hasModifiers: Boolean,
 )
 
 /**
@@ -65,6 +66,7 @@ internal object RegexNamedGroups {
         var groupIndex = 0
         var index = 0
         var inClass = false
+        var hasModifiers = false
         while (index < pattern.length) {
             val c = pattern[index]
             when {
@@ -118,6 +120,14 @@ internal object RegexNamedGroups {
                                 continue
                             }
                         }
+                        val marker = pattern.getOrNull(index + 2)
+                        if (marker != null && marker != ':' && marker != '=' && marker != '!') {
+                            // 作用域修饰符组 (?ims:...) / (?-i:...)
+                            val colon = validateModifiers(pattern, index + 2)
+                            hasModifiers = true
+                            index = colon + 1
+                            continue
+                        }
                         // (?: (?= (?! (?<= (?<! 等非捕获组
                         index += 2
                     } else {
@@ -161,7 +171,58 @@ internal object RegexNamedGroups {
             enginePattern = enginePattern,
             hasNamedGroups = hasNamedGroups,
             hasForwardReference = hasForwardReference,
+            hasModifiers = hasModifiers,
         )
+    }
+
+    /**
+     * 校验作用域修饰符并返回冒号索引。
+     *
+     * 规则：仅 i/m/s；add 与 remove 各自不得重复、不得同时包含同一标志，
+     * '-' 后必须至少有一个标志，且至少启用或禁用一个标志。
+     */
+    private fun validateModifiers(pattern: String, start: Int): Int {
+        var index = start
+        var add = 0
+        var remove = 0
+        var inRemove = false
+        while (index < pattern.length && pattern[index] != ':') {
+            when (val c = pattern[index]) {
+                '-' -> {
+                    if (inRemove) throw RegexSyntaxError("Duplicate '-' in modifiers")
+                    inRemove = true
+                    index++
+                }
+
+                'i', 'm', 's' -> {
+                    val bit = when (c) {
+                        'i' -> 1
+                        'm' -> 2
+                        else -> 4
+                    }
+                    if (inRemove) {
+                        if (remove and bit != 0) {
+                            throw RegexSyntaxError("Duplicate modifier '$c'")
+                        }
+                        remove = remove or bit
+                    } else {
+                        if (add and bit != 0) {
+                            throw RegexSyntaxError("Duplicate modifier '$c'")
+                        }
+                        add = add or bit
+                    }
+                    index++
+                }
+
+                else -> throw RegexSyntaxError("Invalid modifier '$c'")
+            }
+        }
+        if (index >= pattern.length) throw RegexSyntaxError("Unterminated modifiers")
+        if (add == 0 && remove == 0) throw RegexSyntaxError("Empty modifiers")
+        if (add and remove != 0) {
+            throw RegexSyntaxError("Modifier both added and removed")
+        }
+        return index
     }
 
     /** 是否存在任意 \k 转义（含字符类内）。 */

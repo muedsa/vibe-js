@@ -132,6 +132,14 @@ internal object JsRegexSyntax {
                             val close = pattern.indexOf('>', index + 3)
                             if (close < 0) return invalid(pattern)
                             index = close
+                        } else if (index + 2 < pattern.length &&
+                            pattern[index + 2] != ':' && pattern[index + 2] != '=' &&
+                            pattern[index + 2] != '!'
+                        ) {
+                            // 作用域修饰符：跳过到冒号
+                            val colon = pattern.indexOf(':', index + 2)
+                            if (colon < 0) return invalid(pattern)
+                            index = colon
                         } else {
                             index += 2
                         }

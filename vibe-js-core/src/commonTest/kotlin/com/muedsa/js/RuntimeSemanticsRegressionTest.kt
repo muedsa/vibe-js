@@ -2003,6 +2003,39 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp 作用域修饰符按组生效并可嵌套覆盖`() = runTest {
+        val runtime = TestRuntime()
+        // i/m/s 仅在组内生效
+        assertEquals(true, runtime.evalBoolean(
+            "/(?i:a)b/.test('Ab') && !/(?i:a)b/.test('aB')"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "/(?s:.)/.test('\\n') && !/./.test('\\n') && !/(?-s:.)/s.test('\\n')"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "/(?s:.)x/.test('\\nx') && !/.(?-s:.)x/s.test('\\nx')"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "/(?m:^a)/.test('b\\na') && !/(?-m:^a)/m.test('b\\na')"
+        ))
+        // 嵌套覆盖：内层 (?-i:) 恢复区分大小写
+        assertEquals(true, runtime.evalBoolean(
+            "/(?i:(?-i:a))/.test('a') && !/(?i:(?-i:a))/.test('A')"
+        ))
+        // i 修饰符影响 \w/\b 的 Canonicalize
+        assertEquals(true, runtime.evalBoolean(
+            "/(?i:\\w)/.test('\u017F') && !/\\w/.test('\u017F')"
+        ))
+        // 语法错误在求值时抛 SyntaxError
+        assertEquals(true, runtime.evalBoolean(
+            "var bad = ['(?ii:a)', '(?i-i:a)', '(?-:a)', '(?d:a)', '(?i:a']; var ok = true;" +
+                "for (var i = 0; i < bad.length; i++) {" +
+                "  try { new RegExp(bad[i]); ok = false; } catch (e) { if (!(e instanceof SyntaxError)) ok = false; }" +
+                "} ok"
+        ))
+    }
+
+    @Test
     fun `RegExp 命名捕获组与命名替换`() = runTest {
         val runtime = TestRuntime()
         assertEquals(true, runtime.evalBoolean(
