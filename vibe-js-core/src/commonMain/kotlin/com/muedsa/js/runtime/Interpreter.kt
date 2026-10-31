@@ -147,6 +147,9 @@ class Interpreter(
     /** using 资源释放作用域栈（语句列表/循环作用域）。 */
     private val disposalScopes = ArrayList<DisposalScope>()
 
+    /** 当前嵌套的 try 语句深度：try 内的返回不参与尾调用优化。 */
+    private var tryDepth = 0
+
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
 
@@ -746,8 +749,63 @@ class Interpreter(
         return wrapper
     }
 
-    /** 调用用户函数。 */
+    /**
+     * 调用用户函数；尾调用通过 [TailCallSignal] 回到此循环，避免持续增长调用栈。
+     */
     private suspend fun callUserFunction(
+        function: JSFunction,
+        thisValue: JSValue,
+        args: List<JSValue>,
+        callRange: SourceRange? = null,
+    ): JSValue {
+        var target = function
+        var targetThis = thisValue
+        var targetArgs = args
+        var targetRange = callRange
+        while (true) {
+            try {
+                return callUserFunctionOnce(target, targetThis, targetArgs, targetRange)
+            } catch (signal: TailCallSignal) {
+                target = signal.callee
+                targetThis = signal.thisValue
+                targetArgs = signal.args
+                targetRange = signal.callRange
+            }
+        }
+    }
+
+    /** 尾调用信号：携带被调用函数与参数，由调用循环重新进入。 */
+    private class TailCallSignal(
+        val callee: JSFunction,
+        val thisValue: JSValue,
+        val args: List<JSValue>,
+        val callRange: SourceRange?,
+    ) : RuntimeException(null, null, false, false)
+
+    /** 当前返回表达式是否处于可优化的尾位置。 */
+    private fun canUseTailCall(): Boolean {
+        if (tryDepth > 0) return false
+        val active = frame ?: return false
+        if (!active.strict || active.isConstructor) return false
+        return active.function?.isAsync != true
+    }
+
+    /** 非尾调用路径直接执行；尾位置且被调用者是用户函数时抛出信号。 */
+    private suspend fun invokeOrTail(
+        callee: JSValue,
+        thisValue: JSValue,
+        args: List<JSValue>,
+        callRange: SourceRange?,
+        tail: Boolean,
+    ): JSValue {
+        if (tail && callee is JSFunction && !callee.isAsync && !callee.isClassConstructor) {
+            throw TailCallSignal(callee, thisValue, args, callRange)
+        }
+        return callFunction(callee, thisValue, args, callRange)
+    }
+
+    /** 调用用户函数（单次执行）。 */
+    private suspend fun callUserFunctionOnce(
         function: JSFunction,
         thisValue: JSValue,
         args: List<JSValue>,
@@ -948,6 +1006,7 @@ class Interpreter(
             function,
             newTarget = function,
             thisInitialized = !derived,
+            isConstructor = true,
         )
         pushStackFrame(function.name.ifEmpty { "anonymous" })
         val activeFrame = frame!!
@@ -1344,9 +1403,12 @@ class Interpreter(
             is SwitchStatement -> executeSwitch(statement)
             is BreakStatement -> Completion.Break(statement.label)
             is ContinueStatement -> Completion.Continue(statement.label)
-            is ReturnStatement -> Completion.Return(
-                statement.value?.let { evaluate(it) } ?: JSUndefined
-            )
+            is ReturnStatement -> {
+                val value = statement.value?.let {
+                    evaluate(it, tail = canUseTailCall())
+                } ?: JSUndefined
+                Completion.Return(value)
+            }
 
             is ThrowStatement -> throw JSException(
                 value = evaluate(statement.argument),
@@ -2067,8 +2129,17 @@ class Interpreter(
         }
     }
 
-    /** try-catch-finally 语句。 */
+    /** try-catch-finally 语句；try 区域内禁用尾调用以保证 catch/finally 语义。 */
     private suspend fun executeTry(statement: TryStatement): Completion {
+        tryDepth++
+        try {
+            return executeTryBody(statement)
+        } finally {
+            tryDepth--
+        }
+    }
+
+    private suspend fun executeTryBody(statement: TryStatement): Completion {
         var pending: Completion = Completion.Normal(JSUndefined)
         var thrown: JSException? = null
 
@@ -2128,7 +2199,7 @@ class Interpreter(
     // 表达式求值
     // ================================================================
 
-    private suspend fun evaluate(expression: Expression): JSValue {
+    private suspend fun evaluate(expression: Expression, tail: Boolean = false): JSValue {
         return when (expression) {
             is Identifier -> currentFrame.lexicalEnv.getBinding(expression.name)
                 ?: throw referenceError("${expression.name} is not defined")
@@ -2147,7 +2218,7 @@ class Interpreter(
 
             is RegExpLiteral -> createRegExp(expression.pattern, expression.flags)
             is TemplateLiteral -> evaluateTemplateLiteral(expression)
-            is TaggedTemplate -> evaluateTaggedTemplate(expression)
+            is TaggedTemplate -> evaluateTaggedTemplate(expression, tail)
             is ClassExpression -> evaluateClass(expression.name, expression.superClass, expression.members)
             is SuperExpr -> throw syntaxError("'super' keyword unexpected here")
             is NewTargetExpr -> currentFrame.newTarget ?: JSUndefined
@@ -2246,7 +2317,7 @@ class Interpreter(
                 throw syntaxError("Unexpected private name")
 
             is OptionalChainExpr -> evaluateOptionalChain(expression)
-            is CallExpr -> evaluateCall(expression)
+            is CallExpr -> evaluateCall(expression, tail)
             is NewExpr -> construct(
                 constructor = evaluate(expression.constructor),
                 args = evaluateArguments(expression.arguments),
@@ -2255,23 +2326,24 @@ class Interpreter(
             is AssignmentExpr -> evaluateAssignment(expression)
             is UpdateExpr -> evaluateUpdate(expression)
             is UnaryOp -> evaluateUnary(expression)
-            is BinaryOp -> evaluateBinary(expression)
+            is BinaryOp -> evaluateBinary(expression, tail)
 
             is ConditionalExpr -> if (toBoolean(evaluate(expression.condition))) {
-                evaluate(expression.thenBranch)
+                evaluate(expression.thenBranch, tail)
             } else {
-                evaluate(expression.elseBranch)
+                evaluate(expression.elseBranch, tail)
             }
 
             is CoalesceExpr -> {
                 val left = evaluate(expression.left)
-                if (left is JSNull || left is JSUndefined) evaluate(expression.right) else left
+                if (left is JSNull || left is JSUndefined) evaluate(expression.right, tail) else left
             }
 
             is SequenceExpr -> {
                 var result: JSValue = JSUndefined
-                for (item in expression.expressions) {
-                    result = evaluate(item)
+                val lastIndex = expression.expressions.lastIndex
+                for (index in expression.expressions.indices) {
+                    result = evaluate(expression.expressions[index], tail && index == lastIndex)
                 }
                 result
             }
@@ -2571,7 +2643,7 @@ class Interpreter(
     }
 
     /** 标签模板求值。 */
-    private suspend fun evaluateTaggedTemplate(expression: TaggedTemplate): JSValue {
+    private suspend fun evaluateTaggedTemplate(expression: TaggedTemplate, tail: Boolean = false): JSValue {
         val cooked = expression.quasis.map { JSString(it) as JSValue? }.toMutableList()
         val raw = expression.rawQuasis.map { JSString(it) as JSValue? }.toMutableList()
         val templateObject = JSArray(cooked, prototype = intrinsics.arrayPrototype)
@@ -2591,7 +2663,7 @@ class Interpreter(
         for (item in expression.expressions) {
             arguments.add(evaluate(item))
         }
-        return callFunction(evaluate(expression.tag), JSUndefined, arguments)
+        return invokeOrTail(evaluate(expression.tag), JSUndefined, arguments, null, tail)
     }
 
     /**
@@ -3110,7 +3182,7 @@ class Interpreter(
         }
     }
 
-    private suspend fun evaluateCall(expression: CallExpr): JSValue {
+    private suspend fun evaluateCall(expression: CallExpr, tail: Boolean = false): JSValue {
         val calleeExpression = expression.callee
 
         // super(...)：调用父构造器（使用当前 this）
@@ -3154,19 +3226,19 @@ class Interpreter(
             val key = memberKey(calleeExpression)
             val function = getV(superBase, key)
             val arguments = evaluateArguments(expression.arguments)
-            return callFunction(function, currentFrame.thisValue, arguments, expression.range)
+            return invokeOrTail(function, currentFrame.thisValue, arguments, expression.range, tail)
         }
 
         // 直接 eval：只有与全局 %eval% 是同一函数时才按直接求值处理
         if (calleeExpression is Identifier && calleeExpression.name == "eval") {
             val function = evaluate(calleeExpression)
             val arguments = evaluateArguments(expression.arguments)
-            val globalEval = context.globalObject.getOwnDataValue(PropertyKey.Str("eval"))
-            if (globalEval != null && function === globalEval) {
+            // 规范：与 %eval% 内建函数同一才按直接 eval 处理（全局 eval 可被覆盖）
+            if (function === intrinsics.evalFunction) {
                 val value = arguments.getOrElse(0) { JSUndefined }
                 return if (value is JSString) evaluateEvalSource(value.value) else value
             }
-            return callFunction(function, JSUndefined, arguments, expression.range)
+            return invokeOrTail(function, JSUndefined, arguments, expression.range, tail)
         }
 
         if (calleeExpression is OptionalChainExpr) {
@@ -3177,7 +3249,7 @@ class Interpreter(
             )
             val arguments = evaluateArguments(expression.arguments)
             val thisValue = if (chain.hasReceiver) chain.receiver ?: JSUndefined else JSUndefined
-            return callFunction(chain.value, thisValue, arguments, expression.range)
+            return invokeOrTail(chain.value, thisValue, arguments, expression.range, tail)
         }
 
         if (calleeExpression is MemberExpr) {
@@ -3195,7 +3267,7 @@ class Interpreter(
                     "${describeValue(function)} is not a function (at ${calleeExpression.range})"
                 )
             }
-            return callFunction(function, base, arguments, expression.range)
+            return invokeOrTail(function, base, arguments, expression.range, tail)
         }
 
         val function = evaluate(calleeExpression)
@@ -3205,7 +3277,7 @@ class Interpreter(
                 "${describeValue(function)} is not a function (at ${calleeExpression.range})"
             )
         }
-        return callFunction(function, JSUndefined, arguments, expression.range)
+        return invokeOrTail(function, JSUndefined, arguments, expression.range, tail)
     }
 
     /**
@@ -4030,15 +4102,15 @@ class Interpreter(
         }
     }
 
-    private suspend fun evaluateBinary(expression: BinaryOp): JSValue {
-        // 逻辑运算短路
+    private suspend fun evaluateBinary(expression: BinaryOp, tail: Boolean = false): JSValue {
+        // 逻辑运算短路；右操作数在尾位置时参与尾调用优化
         if (expression.operator == "&&") {
             val left = evaluate(expression.left)
-            return if (!toBoolean(left)) left else evaluate(expression.right)
+            return if (!toBoolean(left)) left else evaluate(expression.right, tail)
         }
         if (expression.operator == "||") {
             val left = evaluate(expression.left)
-            return if (toBoolean(left)) left else evaluate(expression.right)
+            return if (toBoolean(left)) left else evaluate(expression.right, tail)
         }
 
         val left = evaluate(expression.left)

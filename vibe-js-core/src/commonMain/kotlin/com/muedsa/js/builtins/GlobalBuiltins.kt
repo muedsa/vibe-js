@@ -56,16 +56,18 @@ object GlobalBuiltins {
         )
 
         // eval：字符串原样返回，否则在当前上下文执行源码
+        val evalFunction = BuiltinHelpers.method(intrinsics, "eval", length = 1) { interpreter, _, args ->
+            val value = args.getOrElse(0) { JSUndefined }
+            if (value is JSString) {
+                interpreter.evaluateIndirectEval(value.value)
+            } else {
+                value
+            }
+        }
+        intrinsics.evalFunction = evalFunction
         registry.defineGlobal(
             name = "eval",
-            value = BuiltinHelpers.method(intrinsics, "eval", length = 1) { interpreter, _, args ->
-                val value = args.getOrElse(0) { JSUndefined }
-                if (value is JSString) {
-                    interpreter.evaluateIndirectEval(value.value)
-                } else {
-                    value
-                }
-            },
+            value = evalFunction,
         )
 
         // Annex B escape/unescape

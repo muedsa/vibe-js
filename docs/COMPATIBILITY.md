@@ -52,6 +52,7 @@
 | import / export | ❌ | 明确排除（单脚本目标） |
 | Proxy / Reflect | ❌ | 明确排除 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
+| 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板）；try 区域暂不优化 |
 
 ## 3. 标准内建
 
@@ -100,9 +101,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 436 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 436 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 436 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 437 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 437 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 437 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

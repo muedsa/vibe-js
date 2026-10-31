@@ -11,6 +11,7 @@ import com.muedsa.js.runtime.value.ThisBindingSource
  * @property thisValue 当前 this
  * @property strict 当前是否严格模式
  * @property function 当前执行的函数（全局脚本为 null）
+ * @property isConstructor 当前是否在构造器调用中（构造器返回不做尾调用优化）
  */
 class ExecutionContext(
     var lexicalEnv: Environment,
@@ -20,6 +21,7 @@ class ExecutionContext(
     val newTarget: JSValue? = null,
     /** 派生类构造器在 super() 之前 this 未初始化 */
     var thisInitialized: Boolean = true,
+    val isConstructor: Boolean = false,
 ) : ThisBindingSource {
 
     override var boundThis: JSValue

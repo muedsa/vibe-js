@@ -2392,6 +2392,30 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `严格模式尾调用在十万级递归下不增长调用栈`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(0.0, runtime.evalNumber(
+            "(function f(n) { 'use strict'; if (n === 0) return 0; return f(n - 1); })(100000)"
+        ))
+        // 互递归与条件/逻辑/逗号表达式中的尾位置
+        assertEquals(1.0, runtime.evalNumber(
+            "var count = 0;" +
+                "function even(n) { 'use strict'; if (n === 0) { count++; return 0; } return odd(n - 1); }" +
+                "function odd(n) { 'use strict'; if (n === 0) { count++; return 0; } return even(n - 1); }" +
+                "even(100000); count"
+        ))
+        assertEquals(1.0, runtime.evalNumber(
+            "(function f(n) { 'use strict'; if (n === 0) return 1; " +
+                "return true ? f(n - 1) : 0; })(3)"
+        ))
+        // 直接 eval 的判定基于内建 %eval%，全局 eval 被覆盖后调用新函数
+        assertEquals(3.0, runtime.evalNumber(
+            "var originalEval = eval; eval = function () { return 1; };" +
+                "originalEval('1 + 1') + eval(0)"
+        ))
+    }
+
+    @Test
     fun `标识符按 Unicode 17 表支持 astral 字面量与转义`() = runTest {
         val runtime = TestRuntime()
         assertEquals(1.0, runtime.evalNumber("var \\u{1D49C} = 1; \\u{1D49C}"))

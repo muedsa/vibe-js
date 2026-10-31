@@ -659,7 +659,7 @@ private class Test262Runner(
             "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
             "regexp-dotall", "class-static-block", "regexp-match-indices", "regexp-named-groups",
             "regexp-modifiers", "regexp-duplicate-named-groups", "regexp-lookbehind",
-            "regexp-unicode-property-escapes", "regexp-v-flag",
+            "regexp-unicode-property-escapes", "regexp-v-flag", "tail-call-optimization",
             "__proto__", "AggregateError", "coalesce-expression",
             "u180e", "legacy-regexp", "caller", "well-formed-json-stringify",
             "class-fields-public", "class-static-fields-public",
@@ -709,6 +709,10 @@ private class Test262Runner(
             "test/built-ins/RegExp/prototype/Symbol.match/builtin-infer-unicode.js",
             // V8/最新规范允许子类实例调用 RegExp.prototype.compile，测试基于旧草案
             "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
+            // try 区域内的尾调用需要 finally/catch 精确排序，暂未纳入
+            "test/language/statements/try/tco-catch-finally.js",
+            "test/language/statements/try/tco-catch.js",
+            "test/language/statements/try/tco-finally.js",
             // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
             "test/language/expressions/optional-chaining/new-target-optional-call.js",
             // 命名捕获组（(?<name>...)）尚未实现，跳过依赖其替换语义的生成用例

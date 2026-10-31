@@ -23,6 +23,9 @@ class Intrinsics(val globalObject: GlobalObject) {
     lateinit var objectPrototype: JSObject
     lateinit var functionPrototype: JSNativeFunction
 
+    /** %eval% 内建函数：直接 eval 判定使用，不受全局属性被覆盖影响。 */
+    var evalFunction: JSValue? = null
+
     /** Array.prototype.values（arguments 的 @@iterator 复用同一函数）。 */
     var arrayValuesFunction: JSValue? = null
     lateinit var arrayPrototype: JSArray
