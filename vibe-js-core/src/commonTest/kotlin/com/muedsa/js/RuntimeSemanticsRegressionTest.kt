@@ -1213,6 +1213,23 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `可选 catch 绑定、稳定排序与 JSON 超集`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("caught", runtime.evalString(
+            "var out = '';" +
+                "try { throw new Error('x'); } catch { out = 'caught'; }" +
+                "out"
+        ))
+        assertEquals("BDEAC", runtime.evalString(
+            "var a = [{ n: 'A', r: 2 }, { n: 'B', r: 3 }, { n: 'C', r: 2 }," +
+                " { n: 'D', r: 3 }, { n: 'E', r: 3 }];" +
+                "a.sort(function (x, y) { return y.r - x.r; });" +
+                "a.map(function (e) { return e.n; }).join('')"
+        ))
+        assertEquals(2.0, runtime.evalNumber("'\u2028'.length + '\u2029'.length"))
+    }
+
+    @Test
     fun `hashbang 注释仅允许位于源文件开头`() = runTest {
         val runtime = TestRuntime()
         assertEquals(1.0, runtime.evalNumber("#! /usr/bin/env node\n1"))

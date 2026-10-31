@@ -33,7 +33,7 @@
 | for-in / for-of | ✅ | 支持 var/let/const、解构左值、标签 break/continue |
 | switch（default 任意位置） | ✅ | |
 | 标签语句、带标签 break/continue | ✅ | |
-| try/catch/finally、throw | ✅ | |
+| try/catch/finally、throw | ✅ | 支持可选 catch 绑定 `catch { }` | |
 | 函数声明/表达式、闭包、arguments | ✅ | 命名函数表达式内部名、参数映射（sloppy）均已支持 |
 | 箭头函数（块体/表达式体、词法 this、词法 arguments） | ✅ | |
 | 默认参数、rest 参数（含解构 rest）、函数 length | ✅ | |
@@ -61,12 +61,12 @@
 | Object | ✅ | 构造器；keys/values/entries/assign/create/getPrototypeOf/setPrototypeOf/getOwnPropertyDescriptor/getOwnPropertyNames/getOwnPropertySymbols/defineProperty/defineProperties/is/freeze/seal/preventExtensions/isFrozen/isSealed/isExtensible |
 | Object.prototype | ✅ | hasOwnProperty、isPrototypeOf、propertyIsEnumerable、valueOf、toString、toLocaleString、`__proto__`、Annex B `__defineGetter__`/`__defineSetter__`/`__lookupGetter__`/`__lookupSetter__` |
 | Function | ✅ | call/apply/bind/toString、动态 Function 构造器 |
-| Array | ✅ | 常用迭代/查找/增删/排序、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；array-like 支持 2^53-1 长度边界 |
+| Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；array-like 支持 2^53-1 长度边界 |
 | String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 暂缺 |
 | Number | ✅ | 常量、toString(radix)、toFixed/toExponential/toPrecision、静态判断与解析 |
 | Boolean | ✅ | 构造器、toString、valueOf |
 | Math | ✅ | 常量与 ES5/ES2015 常用函数；sumPrecise 精确求和 |
-| JSON | ✅ | parse（reviver）、stringify（replacer/space） |
+| JSON | ✅ | parse（reviver）、stringify（replacer/space）；字符串字面量允许 U+2028/U+2029（JSON 超集） |
 | Error | ✅ | Error/TypeError/RangeError/ReferenceError/SyntaxError/EvalError/URIError、SuppressedError（error/suppressed/可选 message）、`Error.isError` |
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex；`s`/`u` 标志与命名组有限 |
 | Date | ⚠️ | 构造、now/parse/UTC、常用 getter/setter、toISOString/toJSON；本地时间按 UTC 处理 |
@@ -99,9 +99,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 404 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 404 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 404 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 405 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 405 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 405 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -138,7 +138,7 @@
 | `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
 | `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
-| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
+| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、可选 catch 绑定、稳定排序、JSON 超集、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `HostModuleTest`（:vibe-js-host） | window/self、console、定时器/setInterval、queueMicrotask、atob/btoa、时钟注入 |
