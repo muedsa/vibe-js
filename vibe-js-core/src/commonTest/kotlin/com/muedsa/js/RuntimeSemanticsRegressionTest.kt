@@ -1213,6 +1213,44 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Math sumPrecise 精确求和与特殊值`() = runTest {
+        val runtime = TestRuntime()
+        // 中间溢出后相互抵消仍返回精确舍入结果
+        assertEquals("0.30000000000000004", runtime.evalString(
+            "String(Math.sumPrecise([1e308, 1e308, 0.1, 0.1, 1e30, 0.1," +
+                " -1e30, -1e308, -1e308]))"
+        ))
+        // 两条超大半和相减的临界舍入
+        assertEquals(true, runtime.evalBoolean(
+            "var r = Math.sumPrecise([8.98846567431158e+307, 8.988465674311579e+307," +
+                " -1.7976931348623157e+308]);" +
+                "r === 9.9792015476736e+291"
+        ))
+        // 空输入与全 -0 返回 -0；-0 与 +0 混合返回 +0
+        assertEquals(true, runtime.evalBoolean(
+            "Object.is(Math.sumPrecise([]), -0) &&" +
+                " Object.is(Math.sumPrecise([-0, -0]), -0) &&" +
+                " Object.is(Math.sumPrecise([-0, 0]), 0)"
+        ))
+        // NaN / 无穷
+        assertEquals(true, runtime.evalBoolean(
+            "Number.isNaN(Math.sumPrecise([Infinity, -Infinity])) &&" +
+                " Math.sumPrecise([1e308, 1e308]) === Infinity &&" +
+                " Number.isNaN(Math.sumPrecise([NaN]))"
+        ))
+        // 非 Number 元素抛 TypeError 并关闭迭代器（不做隐式转换）
+        assertEquals(true, runtime.evalBoolean(
+            "var closed = false;" +
+                "var iter = { [Symbol.iterator]: function () { return this; }," +
+                " next: function () { return { done: false, value: {} }; }," +
+                " return: function () { closed = true; return {}; } };" +
+                "var threw = false;" +
+                "try { Math.sumPrecise(iter); } catch (e) { threw = e instanceof TypeError; }" +
+                "threw && closed"
+        ))
+    }
+
+    @Test
     fun `BigInt 字面量可被解析但求值抛出 TypeError`() = runTest {
         val runtime = TestRuntime()
         // 保留语法识别以便解析包含 BigInt 字面量的宿主脚本
