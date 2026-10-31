@@ -133,6 +133,43 @@ object MapBuiltins {
             },
         )
         mapPrototype.defineDataProperty(
+            key = PropertyKey.Str("getOrInsert"),
+            value = BuiltinHelpers.method(intrinsics, "getOrInsert", 2) { interpreter, thisValue, args ->
+                val map = requireMap(interpreter, thisValue, "Map.prototype.getOrInsert")
+                val rawKey = args.getOrElse(0) { JSUndefined }
+                val key = if (rawKey is JSNumber && rawKey.value == 0.0) JSNumber.ZERO else rawKey
+                val value = args.getOrElse(1) { JSUndefined }
+                val index = findEntryIndex(interpreter, map, key)
+                if (index >= 0) {
+                    map.entries[index].second
+                } else {
+                    setEntry(interpreter, map, key, value)
+                    value
+                }
+            },
+        )
+        mapPrototype.defineDataProperty(
+            key = PropertyKey.Str("getOrInsertComputed"),
+            value = BuiltinHelpers.method(intrinsics, "getOrInsertComputed", 2) { interpreter, thisValue, args ->
+                val map = requireMap(interpreter, thisValue, "Map.prototype.getOrInsertComputed")
+                val rawKey = args.getOrElse(0) { JSUndefined }
+                // 规范：先规范化键（-0 → +0），回调接收规范化后的键
+                val key = if (rawKey is JSNumber && rawKey.value == 0.0) JSNumber.ZERO else rawKey
+                val callback = args.getOrElse(1) { JSUndefined }
+                if (!interpreter.isCallable(callback)) {
+                    interpreter.typeError("Map.prototype.getOrInsertComputed requires a callable")
+                }
+                val index = findEntryIndex(interpreter, map, key)
+                if (index >= 0) {
+                    map.entries[index].second
+                } else {
+                    val computed = interpreter.callFunction(callback, JSUndefined, listOf(key))
+                    setEntry(interpreter, map, key, computed)
+                    computed
+                }
+            },
+        )
+        mapPrototype.defineDataProperty(
             key = PropertyKey.Str("forEach"),
             value = BuiltinHelpers.method(intrinsics, "forEach", 1) { interpreter, thisValue, args ->
                 val map = requireMap(interpreter, thisValue, "Map.prototype.forEach")
@@ -238,11 +275,13 @@ object MapBuiltins {
         map.entries.indexOfFirst { interpreter.conversions.sameValueZero(it.first, key) }
 
     private fun setEntry(interpreter: Interpreter, map: JSMap, key: JSValue, value: JSValue) {
-        val index = findEntryIndex(interpreter, map, key)
+        // 规范：Map 中的 -0 键归一化为 +0
+        val normalizedKey = if (key is JSNumber && key.value == 0.0) JSNumber.ZERO else key
+        val index = findEntryIndex(interpreter, map, normalizedKey)
         if (index >= 0) {
-            map.entries[index] = key to value
+            map.entries[index] = normalizedKey to value
         } else {
-            map.entries.add(key to value)
+            map.entries.add(normalizedKey to value)
         }
     }
 }

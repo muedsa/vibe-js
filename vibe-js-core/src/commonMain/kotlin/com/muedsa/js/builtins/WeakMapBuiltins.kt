@@ -111,6 +111,69 @@ object WeakMapBuiltins {
             },
         )
 
+        prototype.defineDataProperty(
+            PropertyKey.Str("getOrInsert"),
+            value = BuiltinHelpers.method(intrinsics, "getOrInsert", 2) { interpreter, thisValue, args ->
+                val map = thisValue as? JSWeakMap
+                    ?: interpreter.typeError("WeakMap.prototype.getOrInsert requires that 'this' be a WeakMap")
+                val key = args.getOrElse(0) { JSUndefined }
+                val value = args.getOrElse(1) { JSUndefined }
+                if (key !is JSObject) {
+                    interpreter.typeError("Invalid value used as WeakMap key")
+                }
+                val index = map.entries.indexOfFirst {
+                    interpreter.conversions.sameValueZero(it.first, key)
+                }
+                if (index >= 0) {
+                    map.entries[index].second
+                } else {
+                    map.entries.add(key to value)
+                    value
+                }
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        prototype.defineDataProperty(
+            PropertyKey.Str("getOrInsertComputed"),
+            value = BuiltinHelpers.method(intrinsics, "getOrInsertComputed", 2) { interpreter, thisValue, args ->
+                val map = thisValue as? JSWeakMap
+                    ?: interpreter.typeError(
+                        "WeakMap.prototype.getOrInsertComputed requires that 'this' be a WeakMap"
+                    )
+                val key = args.getOrElse(0) { JSUndefined }
+                val callback = args.getOrElse(1) { JSUndefined }
+                if (key !is JSObject) {
+                    interpreter.typeError("Invalid value used as WeakMap key")
+                }
+                if (!interpreter.isCallable(callback)) {
+                    interpreter.typeError("WeakMap.prototype.getOrInsertComputed requires a callable")
+                }
+                val index = map.entries.indexOfFirst {
+                    interpreter.conversions.sameValueZero(it.first, key)
+                }
+                if (index >= 0) {
+                    map.entries[index].second
+                } else {
+                    val computed = interpreter.callFunction(callback, JSUndefined, listOf(key))
+                    // 回调期间可能插入同键，按规范覆盖该值
+                    val updatedIndex = map.entries.indexOfFirst {
+                        interpreter.conversions.sameValueZero(it.first, key)
+                    }
+                    if (updatedIndex >= 0) {
+                        map.entries[updatedIndex] = key to computed
+                    } else {
+                        map.entries.add(key to computed)
+                    }
+                    computed
+                }
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+
         registry.defineGlobal("WeakMap", constructor)
     }
 }

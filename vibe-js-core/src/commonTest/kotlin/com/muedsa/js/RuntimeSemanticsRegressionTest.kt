@@ -429,6 +429,31 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Map WeakMap upsert 与 Error cause`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("1:3:2", runtime.evalString(
+            "var upsertMap = new Map(); upsertMap.set('a', 1);" +
+                " [upsertMap.getOrInsert('a', 2), upsertMap.getOrInsert('b', 3)," +
+                " upsertMap.size].join(':')"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var computedMap = new Map(); var calls = 0;" +
+                " var got = computedMap.getOrInsertComputed(-0, function (k) { calls++; return Object.is(k, 0); });" +
+                " got === true && calls === 1 && computedMap.has(0)"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var upsertWeak = new WeakMap(); var weakKey = {}; upsertWeak.set(weakKey, 1);" +
+                " upsertWeak.getOrInsert(weakKey, 2) === 1 && upsertWeak.getOrInsert({}, 3) === 3"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var causeValue = { c: 1 }; var causedError = new Error('m', { cause: causeValue });" +
+                " causedError.cause === causeValue &&" +
+                " Object.getOwnPropertyDescriptor(causedError, 'cause').enumerable === false &&" +
+                " !('cause' in new Error('m'))"
+        ))
+    }
+
+    @Test
     fun `RegExp escape 字面量转义规则`() = runTest {
         val runtime = TestRuntime()
         // 首字符为 ASCII 字母/数字时使用 \xHH

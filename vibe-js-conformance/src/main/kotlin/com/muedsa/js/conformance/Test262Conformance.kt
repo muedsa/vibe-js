@@ -545,6 +545,7 @@ private class Test262Runner(
             "Object.is", "Object.hasOwn", "Object.fromEntries", "array-grouping",
             "array-find-from-last", "change-array-by-copy",
             "Map", "Set", "WeakMap", "WeakSet", "Promise", "async-functions",
+            "upsert", "error-cause",
             "Promise.allSettled", "Promise.any",
             "Promise.prototype.finally", "promise-with-resolvers", "promise-try",
             // 已在解析器/运行时实现的后续版本语法

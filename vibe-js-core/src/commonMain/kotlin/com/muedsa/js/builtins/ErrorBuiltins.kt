@@ -139,7 +139,24 @@ object ErrorBuiltins {
             } else {
                 interpreter.toStringValue(args[0])
             }
-            JSError(name, message, prototype)
+            val error = JSError(name, message, prototype)
+            // options.cause：存在该属性时复制到错误实例（不可枚举）
+            val options = args.getOrNull(1)
+            if (options != null && options !is JSUndefined) {
+                val optionsObject = interpreter.toObject(options)
+                val causeKey = PropertyKey.Str("cause")
+                if (interpreter.hasProperty(optionsObject, causeKey)) {
+                    val cause = interpreter.getV(optionsObject, causeKey)
+                    error.defineDataProperty(
+                        key = causeKey,
+                        value = cause,
+                        writable = true,
+                        enumerable = false,
+                        configurable = true,
+                    )
+                }
+            }
+            error
         }
     }
 }
