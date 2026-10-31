@@ -998,7 +998,7 @@ class Lexer(private val input: String) {
         val flagText = flags.toString()
         val seenFlags = mutableSetOf<Char>()
         for (flag in flagText) {
-            if (flag !in "gimsuy" || !seenFlags.add(flag)) {
+            if (flag !in "dgimsuy" || !seenFlags.add(flag)) {
                 throw lexerError("Invalid regular expression flags", startLine, startColumn, startOffset)
             }
         }

@@ -3707,6 +3707,8 @@ class Interpreter(
                 // Kotlin/JS 等平台的公共 RegexOption 不提供 DOT_MATCHES_ALL，'s' 暂按普通模式处理
                 's' -> Unit
                 'u' -> Unit
+                // d 标志只影响匹配结果（indices 数组），不影响匹配语义
+                'd' -> Unit
                 else -> throw syntaxError("Invalid regular expression flags")
             }
         }
@@ -3721,8 +3723,10 @@ class Interpreter(
         }
 
         // 已知 JS 专属语法（空字符类、\0、前向反向引用等）直接使用回退引擎，
-        // 因为 Kotlin/Java 的语义与 JS 不同或无法编译
-        val matcher = if (requiresJsRegexEngine(pattern)) {
+        // 因为 Kotlin/Java 的语义与 JS 不同或无法编译；
+        // d 标志需要每个捕获组的精确区间，Kotlin 公共 MatchGroup 不暴露位置，
+        // 因此同样统一使用回退引擎
+        val matcher = if ('d' in flags || requiresJsRegexEngine(pattern)) {
             buildFallback()
         } else {
             val kotlinRegex = try {

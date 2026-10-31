@@ -190,6 +190,29 @@ object RegExpBuiltins {
             enumerable = false,
             configurable = true,
         )
+        // ES2022 hasIndices 访问器：非对象或普通对象抛 TypeError，
+        // 仅 RegExp.prototype 自身返回 undefined
+        regexpPrototype.defineAccessorProperty(
+            key = PropertyKey.Str("hasIndices"),
+            get = JSNativeFunction(
+                name = "get hasIndices",
+                length = 0,
+                prototype = intrinsics.functionPrototype,
+            ) { interpreter, thisValue, _ ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("RegExp.prototype.hasIndices getter called on non-object")
+                }
+                if (thisValue === intrinsics.regexpPrototype) return@JSNativeFunction JSUndefined
+                val regexp = thisValue as? JSRegExp
+                    ?: interpreter.typeError(
+                        "RegExp.prototype.hasIndices getter called on incompatible receiver"
+                    )
+                JSBoolean.getJsBoolean(regexp.hasIndices)
+            },
+            set = null,
+            enumerable = false,
+            configurable = true,
+        )
         // dotAll 访问器要求接收者具有 RegExp 内部槽
         regexpPrototype.defineAccessorProperty(
             key = PropertyKey.Str("dotAll"),
@@ -216,8 +239,11 @@ object RegExpBuiltins {
                 if (thisValue !is JSObject) {
                     interpreter.typeError("RegExp.prototype.flags getter called on non-object")
                 }
-                // 规范顺序：d g i m s u v y（引擎支持 g i m s u y）
-                val builder = StringBuilder(6)
+                // 规范顺序：d g i m s u v y（引擎支持 d g i m s u y）
+                val builder = StringBuilder(7)
+                if (interpreter.toBoolean(interpreter.getV(thisValue, PropertyKey.Str("hasIndices")))) {
+                    builder.append('d')
+                }
                 if (interpreter.toBoolean(interpreter.getV(thisValue, PropertyKey.Str("global")))) {
                     builder.append('g')
                 }
@@ -1074,6 +1100,42 @@ object RegExpBuiltins {
             enumerable = false,
             configurable = true,
         )
+        // d 标志：indices 数组保存每个组 [start, end]，未参与匹配的组为 undefined
+        if (regexp.hasIndices) {
+            fun indexPair(range: IntRange?): JSValue =
+                if (range == null) {
+                    JSUndefined
+                } else {
+                    JSArray(
+                        mutableListOf(
+                            JSNumber(range.first.toDouble()),
+                            JSNumber((range.last + 1).toDouble()),
+                        ),
+                        prototype = interpreter.intrinsics.arrayPrototype,
+                    )
+                }
+            val indices = ArrayList<JSValue?>(match.groupCount)
+            indices.add(indexPair(match.groupRange(0) ?: (match.start until match.end)))
+            for (index in 1 until match.groupCount) {
+                indices.add(indexPair(match.groupRange(index)))
+            }
+            val indicesArray = JSArray(indices, prototype = interpreter.intrinsics.arrayPrototype)
+            // 命名捕获组尚未支持：groups 恒为 undefined，但仍作为自有属性存在
+            indicesArray.defineDataProperty(
+                key = PropertyKey.Str("groups"),
+                value = JSUndefined,
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+            result.defineDataProperty(
+                key = PropertyKey.Str("indices"),
+                value = indicesArray,
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+        }
         return result
     }
 }

@@ -40,12 +40,15 @@ class JsRegexEngine(
                 val end = internalMatchEnd
                 val captures = resultCaps ?: arrayOfNulls(groupCount + 1)
                 val groups = ArrayList<String?>(groupCount + 1)
+                val ranges = ArrayList<IntRange?>(groupCount + 1)
                 groups.add(input.substring(index, end))
+                ranges.add(index until end)
                 for (groupIndex in 1..groupCount) {
                     val range = captures[groupIndex]
                     groups.add(if (range == null) null else input.substring(range.first, range.last + 1))
+                    ranges.add(range)
                 }
-                return JsMatch(index, end, input.substring(index, end), groups)
+                return JsMatch(index, end, input.substring(index, end), groups, ranges)
             }
         }
         return null

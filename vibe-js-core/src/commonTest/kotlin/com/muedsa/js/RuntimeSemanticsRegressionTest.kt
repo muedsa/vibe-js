@@ -1707,6 +1707,34 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp d 标志生成 indices 数组与 hasIndices 访问器`() = runTest {
+        val runtime = TestRuntime()
+        // exec 结果：indices 元素为 [start, end]，未参与匹配的组为 undefined
+        assertEquals(true, runtime.evalBoolean(
+            "var m = /b(c)?/d.exec('abd');" +
+                "m.indices.length === m.length && m.indices[0][0] === 1 &&" +
+                " m.indices[0][1] === 2 && m.indices[1] === undefined"
+        ))
+        // indices 与 indices.groups 的属性描述符（CreateDataProperty 语义）
+        assertEquals(true, runtime.evalBoolean(
+            "var m = /a(d)?/d.exec('a');" +
+                "var desc = Object.getOwnPropertyDescriptor(m, 'indices');" +
+                "desc.writable && desc.enumerable && desc.configurable &&" +
+                " m.indices.hasOwnProperty('groups') && m.indices.groups === undefined"
+        ))
+        // hasIndices 访问器与 flags 的 dgimsuy 顺序
+        assertEquals(true, runtime.evalBoolean(
+            "/a/d.hasIndices === true && /a/.hasIndices === false &&" +
+                " new RegExp('', 'yusmigd').flags === 'dgimsuy'"
+        ))
+        // 无 d 标志不产生 indices；重复标志抛 SyntaxError
+        assertEquals(false, runtime.evalBoolean("'indices' in /a/.exec('a')"))
+        assertEquals(true, runtime.evalBoolean(
+            "try { new RegExp('a', 'dd'); false } catch (e) { e instanceof SyntaxError }"
+        ))
+    }
+
+    @Test
     fun `BigInt 字面量可被解析但求值抛出 TypeError`() = runTest {
         val runtime = TestRuntime()
         // 保留语法识别以便解析包含 BigInt 字面量的宿主脚本
