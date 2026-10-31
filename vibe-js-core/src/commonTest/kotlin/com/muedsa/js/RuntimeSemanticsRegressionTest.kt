@@ -429,6 +429,46 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Set 方法集结果与顺序`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("1,2,3", runtime.evalString(
+            "Array.from(new Set([1, 2]).union(new Set([2, 3]))).join(',')"
+        ))
+        // this.size <= other.size 时按接收者顺序，否则按参数 keys 顺序
+        assertEquals("2,3", runtime.evalString(
+            "Array.from(new Set([1, 2, 3]).intersection(new Set([3, 2, 9]))).join(',')"
+        ))
+        assertEquals("1,3", runtime.evalString(
+            "Array.from(new Set([1, 2, 3]).difference(new Set([2]))).join(',')"
+        ))
+        assertEquals("1,3", runtime.evalString(
+            "Array.from(new Set([1, 2]).symmetricDifference(new Set([2, 3]))).join(',')"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "new Set([1, 2]).isSubsetOf(new Set([1, 2, 3])) &&" +
+                " new Set([1, 2, 3]).isSupersetOf(new Set([1, 2])) &&" +
+                " new Set([1, 2]).isDisjointFrom(new Set([3, 4]))"
+        ))
+        // set-like 对象（非生成器迭代器）与 -0 归一化
+        assertEquals("1,2,3", runtime.evalString(
+            "var setLike = { size: 2, has: function (v) { return v === 2; }," +
+                " keys: function () { return [2, 3].values(); } };" +
+                " Array.from(new Set([1, 2]).union(setLike)).join(',')"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var zero = Array.from(new Set([-0]).union(new Set([1])))[0];" +
+                " Object.is(zero, 0) && 1 / zero === Infinity"
+        ))
+        // 子类接收者返回普通 Set，且不读取 Symbol.species
+        assertEquals(true, runtime.evalBoolean(
+            "var speciesCalls = 0;" +
+                " class MySet extends Set { static get [Symbol.species]() { speciesCalls++; return Set; } }" +
+                " var combined = new MySet([1]).union(new Set([2]));" +
+                " combined instanceof Set && !(combined instanceof MySet) && speciesCalls === 0"
+        ))
+    }
+
+    @Test
     fun `数字分隔符词法规则`() = runTest {
         val runtime = TestRuntime()
         assertEquals(1234567.0, runtime.evalNumber("1_234_567"))

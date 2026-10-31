@@ -347,6 +347,7 @@ private class Test262Runner(
                 test.source.contains("async *") ||
                 test.source.contains("async*") ||
                 test.source.contains("for await") ||
+                generatorMethodPattern.containsMatchIn(test.source) ||
                 bigIntLiteralPattern.containsMatchIn(test.source))
         ) {
             return "unsupported BigInt/Proxy/Generator"
@@ -511,6 +512,11 @@ private class Test262Runner(
 
     companion object {
         /** BigInt 字面量检测（项目明确排除 BigInt）。 */
+        /** 生成器方法语法（`*keys() {}` / `*[Symbol.iterator]() {}`），项目未实现。 */
+        private val generatorMethodPattern = Regex(
+            """(?m)^\s*\*\s*(?:[A-Za-z_$][A-Za-z0-9_$]*|\[[^\]]*\])\s*\("""
+        )
+
         private val bigIntLiteralPattern = Regex(
             """(?<![A-Za-z0-9_$])(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*)n\b"""
         )
@@ -527,7 +533,7 @@ private class Test262Runner(
             "Symbol.species", "Symbol.isConcatSpreadable",
             "Symbol.match", "Symbol.replace", "Symbol.search", "Symbol.split",
             "Symbol.matchAll", "String.prototype.matchAll",
-            "Symbol.unscopables",
+            "Symbol.unscopables", "set-methods",
             "Symbol.prototype.description",
             "Array.prototype.flat", "Array.prototype.flatMap",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",
@@ -607,7 +613,6 @@ private class Test262Runner(
             "Intl", "WeakRef", "FinalizationRegistry", "class-fields-public",
             "class-fields-private", "class-static-block", "regexp-match-indices",
             "decorators", "explicit-resource-management", "iterator-helpers",
-            "set-methods",
             "Symbol.asyncIterator", "generator", "async-iteration",
             "dynamic-import", "import-attributes", "top-level-await",
             "resizable-arraybuffer", "arraybuffer-transfer", "Float16Array",
