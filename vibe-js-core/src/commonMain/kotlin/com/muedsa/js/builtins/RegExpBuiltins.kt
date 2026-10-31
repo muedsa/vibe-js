@@ -146,6 +146,18 @@ object RegExpBuiltins {
                     )
                 }
             }
+        fun strictFlagAccessor(name: String, read: (JSRegExp) -> JSValue): JSNativeFunction =
+            JSNativeFunction(name = "get $name", length = 0, prototype = intrinsics.functionPrototype) { interpreter, thisValue, _ ->
+                when (thisValue) {
+                    is JSRegExp -> read(thisValue)
+                    is JSObject -> interpreter.typeError(
+                        "RegExp.prototype.$name getter called on incompatible receiver"
+                    )
+                    else -> interpreter.typeError(
+                        "RegExp.prototype.$name getter called on non-object"
+                    )
+                }
+            }
         regexpPrototype.defineAccessorProperty(
             key = PropertyKey.Str("source"),
             get = flagAccessor("source") { regexp ->
@@ -178,14 +190,14 @@ object RegExpBuiltins {
         )
         regexpPrototype.defineAccessorProperty(
             key = PropertyKey.Str("sticky"),
-            get = flagAccessor("sticky") { regexp -> JSBoolean.getJsBoolean(regexp.sticky) },
+            get = strictFlagAccessor("sticky") { regexp -> JSBoolean.getJsBoolean(regexp.sticky) },
             set = null,
             enumerable = false,
             configurable = true,
         )
         regexpPrototype.defineAccessorProperty(
             key = PropertyKey.Str("unicode"),
-            get = flagAccessor("unicode") { regexp -> JSBoolean.getJsBoolean(regexp.unicode) },
+            get = strictFlagAccessor("unicode") { regexp -> JSBoolean.getJsBoolean(regexp.unicode) },
             set = null,
             enumerable = false,
             configurable = true,
@@ -1132,20 +1144,14 @@ object RegExpBuiltins {
         // 内建执行使用 [[OriginalFlags]]，不受 global/unicode 等属性覆盖影响
         val useLastIndex = regexp.global || regexp.sticky
         val lastIndexKey = PropertyKey.Str("lastIndex")
-        // lastIndex 需要通过 ToNumber 转换（可能触发 valueOf 并抛错）
-        val start = if (useLastIndex) {
-            val lastIndexValue = interpreter.getV(regexp, lastIndexKey)
-            val number = interpreter.toNumber(lastIndexValue)
-            // ToLength：NaN/负数按 0 处理
-            if (number.isNaN() || number <= 0.0) {
-                0
-            } else if (number >= Int.MAX_VALUE.toDouble()) {
-                Int.MAX_VALUE
-            } else {
-                kotlin.math.truncate(number).toInt()
-            }
-        } else {
-            0
+        // 规范：无论是否 global/sticky，都读取并转换 lastIndex（可能触发 valueOf 并抛错）
+        val lastIndexValue = interpreter.getV(regexp, lastIndexKey)
+        val lastIndexNumber = interpreter.toNumber(lastIndexValue)
+        val start = when {
+            !useLastIndex -> 0
+            lastIndexNumber.isNaN() || lastIndexNumber <= 0.0 -> 0
+            lastIndexNumber >= Int.MAX_VALUE.toDouble() -> Int.MAX_VALUE
+            else -> kotlin.math.truncate(lastIndexNumber).toInt()
         }
         if (start < 0 || start > input.length) {
             if (useLastIndex) {

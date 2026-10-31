@@ -1323,10 +1323,31 @@ object ArrayBuiltins {
 
         arrayConstructor.defineDataProperty(
             key = PropertyKey.Str("of"),
-            value = BuiltinHelpers.method(intrinsics, "of", 0) { _, _, args ->
-                val elements = ArrayList<JSValue?>(args.size)
-                elements.addAll(args)
-                JSArray(elements, prototype = arrayPrototype)
+            value = BuiltinHelpers.method(intrinsics, "of", 0) { interpreter, thisValue, args ->
+                val length = args.size
+                val array: JSObject = if (interpreter.isConstructor(thisValue)) {
+                    interpreter.construct(thisValue, listOf(JSNumber(length.toDouble())))
+                        as? JSObject ?: interpreter.typeError("Array.of: constructor result is not an object")
+                } else {
+                    JSArray(emptyList(), prototype = arrayPrototype)
+                }
+                for (index in args.indices) {
+                    array.defineDataProperty(
+                        key = PropertyKey.Str(index.toString()),
+                        value = args[index],
+                        writable = true,
+                        enumerable = true,
+                        configurable = true,
+                    )
+                }
+                array.defineDataProperty(
+                    key = PropertyKey.Str("length"),
+                    value = JSNumber(length.toDouble()),
+                    writable = true,
+                    enumerable = false,
+                    configurable = false,
+                )
+                array
             },
         )
 

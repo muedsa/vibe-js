@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.value.JSBoxedPrimitive
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.UnicodeNormalizer
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSNull
@@ -64,6 +65,7 @@ object StringBuiltins {
         )
 
         installPrototypeMethods(registry)
+        installAnnexBHtmlMethods(registry)
         installStaticMethods(registry, stringConstructor)
 
         registry.defineGlobal("String", stringConstructor)
@@ -108,6 +110,9 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("codePointAt"),
             value = BuiltinHelpers.method(intrinsics, "codePointAt", 1) { interpreter, thisValue, args ->
+                if (thisValue is JSNull || thisValue is JSUndefined) {
+                    interpreter.typeError("String.prototype.codePointAt called on null or undefined")
+                }
                 val text = interpreter.toStringValue(thisValue)
                 val index = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
                 if (index !in text.indices) {
@@ -134,6 +139,29 @@ object StringBuiltins {
                 var index = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
                 if (index < 0) index += text.length
                 if (index in text.indices) JSString(text[index].toString()) else JSUndefined
+            },
+        )
+
+        stringPrototype.defineDataProperty(
+            key = PropertyKey.Str("normalize"),
+            value = BuiltinHelpers.method(intrinsics, "normalize", 0) { interpreter, thisValue, args ->
+                // 规范顺序：RequireObjectCoercible(this) → ToString(this) → ToString(form)
+                if (thisValue is JSNull || thisValue is JSUndefined) {
+                    interpreter.typeError("String.prototype.normalize called on null or undefined")
+                }
+                val text = interpreter.toStringValue(thisValue)
+                val formArgument = args.getOrElse(0) { JSUndefined }
+                val form = if (formArgument is JSUndefined) {
+                    "NFC"
+                } else {
+                    interpreter.toStringValue(formArgument)
+                }
+                if (form != "NFC" && form != "NFD" && form != "NFKC" && form != "NFKD") {
+                    interpreter.rangeError(
+                        "The normalization form should be one of NFC, NFD, NFKC, NFKD."
+                    )
+                }
+                JSString(UnicodeNormalizer.normalize(text, form))
             },
         )
 
@@ -273,6 +301,9 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("substr"),
             value = BuiltinHelpers.method(intrinsics, "substr", 2) { interpreter, thisValue, args ->
+                if (thisValue is JSNull || thisValue is JSUndefined) {
+                    interpreter.typeError("String.prototype.substr called on null or undefined")
+                }
                 val text = interpreter.toStringValue(thisValue)
                 val size = text.length
                 var start = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
@@ -427,34 +458,46 @@ object StringBuiltins {
             },
         )
 
-        stringPrototype.getOwnDataValue(PropertyKey.Str("toLowerCase"))?.let { lower ->
-            stringPrototype.defineDataProperty(
-                key = PropertyKey.Str("toLocaleLowerCase"),
-                value = lower,
-                writable = true,
-                enumerable = false,
-                configurable = true,
-            )
-        }
-        stringPrototype.getOwnDataValue(PropertyKey.Str("toUpperCase"))?.let { upper ->
-            stringPrototype.defineDataProperty(
-                key = PropertyKey.Str("toLocaleUpperCase"),
-                value = upper,
-                writable = true,
-                enumerable = false,
-                configurable = true,
-            )
-        }
+        stringPrototype.defineDataProperty(
+            key = PropertyKey.Str("toLocaleLowerCase"),
+            value = BuiltinHelpers.method(intrinsics, "toLocaleLowerCase", 0) { interpreter, thisValue, _ ->
+                if (thisValue is JSNull || thisValue is JSUndefined) {
+                    interpreter.typeError("String.prototype.toLocaleLowerCase called on null or undefined")
+                }
+                JSString(jsLowercase(interpreter.toStringValue(thisValue)))
+            },
+        )
+
+        stringPrototype.defineDataProperty(
+            key = PropertyKey.Str("toLocaleUpperCase"),
+            value = BuiltinHelpers.method(intrinsics, "toLocaleUpperCase", 0) { interpreter, thisValue, _ ->
+                if (thisValue is JSNull || thisValue is JSUndefined) {
+                    interpreter.typeError("String.prototype.toLocaleUpperCase called on null or undefined")
+                }
+                JSString(interpreter.toStringValue(thisValue).uppercase())
+            },
+        )
 
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("repeat"),
             value = BuiltinHelpers.method(intrinsics, "repeat", 1) { interpreter, thisValue, args ->
+                if (thisValue is JSNull || thisValue is JSUndefined) {
+                    interpreter.typeError("String.prototype.repeat called on null or undefined")
+                }
                 val text = interpreter.toStringValue(thisValue)
-                val count = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
-                if (count < 0 || count == Int.MAX_VALUE) {
+                val number = args.getOrNull(0)?.let { interpreter.toNumber(it) } ?: 0.0
+                if (number < 0 || number.isInfinite()) {
                     interpreter.rangeError("Invalid count value")
                 }
-                JSString(text.repeat(count))
+                val count = if (number.isNaN()) 0L else number.toLong()
+                if (text.isEmpty() || count == 0L) {
+                    JSString("")
+                } else {
+                    if (count > Int.MAX_VALUE / text.length) {
+                        interpreter.rangeError("Invalid string length")
+                    }
+                    JSString(text.repeat(count.toInt()))
+                }
             },
         )
 
@@ -806,6 +849,67 @@ object StringBuiltins {
         )
     }
 
+    /**
+     * Annex B 的 String.prototype HTML 包装方法（B.2.3）。
+     *
+     * 这些方法只做 ToString 与属性转义，不提供 HTML 解析语义。
+     */
+    private fun installAnnexBHtmlMethods(registry: BuiltinRegistry) {
+        val intrinsics = registry.intrinsics
+        val stringPrototype = intrinsics.stringPrototype
+        data class HtmlMethod(
+            val name: String,
+            val tag: String,
+            val attribute: String?,
+            val length: Int,
+        )
+
+        val methods = listOf(
+            HtmlMethod("anchor", "a", "name", 1),
+            HtmlMethod("big", "big", null, 0),
+            HtmlMethod("blink", "blink", null, 0),
+            HtmlMethod("bold", "b", null, 0),
+            HtmlMethod("fixed", "tt", null, 0),
+            HtmlMethod("fontcolor", "font", "color", 1),
+            HtmlMethod("fontsize", "font", "size", 1),
+            HtmlMethod("italics", "i", null, 0),
+            HtmlMethod("link", "a", "href", 1),
+            HtmlMethod("small", "small", null, 0),
+            HtmlMethod("strike", "strike", null, 0),
+            HtmlMethod("sub", "sub", null, 0),
+            HtmlMethod("sup", "sup", null, 0),
+        )
+        for (method in methods) {
+            stringPrototype.defineDataProperty(
+                key = PropertyKey.Str(method.name),
+                value = BuiltinHelpers.method(intrinsics, method.name, method.length) { interpreter, thisValue, args ->
+                    if (thisValue is JSNull || thisValue is JSUndefined) {
+                        interpreter.typeError(
+                            "String.prototype." + method.name + " called on null or undefined"
+                        )
+                    }
+                    val text = interpreter.toStringValue(thisValue)
+                    val builder = StringBuilder()
+                    builder.append('<').append(method.tag)
+                    if (method.attribute != null) {
+                        val attributeValue = args.getOrNull(0)
+                        if (attributeValue != null && attributeValue !is JSUndefined) {
+                            val escaped = interpreter.toStringValue(attributeValue)
+                                .replace("\"", "&quot;")
+                            builder.append(' ')
+                                .append(method.attribute)
+                                .append("=\"")
+                                .append(escaped)
+                                .append('"')
+                        }
+                    }
+                    builder.append('>').append(text).append("</").append(method.tag).append('>')
+                    JSString(builder.toString())
+                },
+            )
+        }
+    }
+
     private fun installStaticMethods(registry: BuiltinRegistry, stringConstructor: com.muedsa.js.runtime.value.JSNativeFunction) {
         val intrinsics = registry.intrinsics
 
@@ -855,14 +959,28 @@ object StringBuiltins {
             key = PropertyKey.Str("raw"),
             value = BuiltinHelpers.method(intrinsics, "raw", 1) { interpreter, _, args ->
                 val template = interpreter.toObject(args.getOrElse(0) { JSUndefined })
-                val raw = interpreter.getV(template, PropertyKey.Str("raw"))
-                val segments = interpreter.iterateValues(raw)
+                val raw = interpreter.toObject(
+                    interpreter.getV(template, PropertyKey.Str("raw"))
+                )
+                val lengthNumber = interpreter.toNumber(
+                    interpreter.getV(raw, PropertyKey.Str("length"))
+                )
+                val length = when {
+                    lengthNumber.isNaN() || lengthNumber <= 0 -> 0L
+                    lengthNumber >= 9.007199254740991E15 -> 9007199254740991L
+                    else -> lengthNumber.toLong()
+                }
                 val builder = StringBuilder()
-                for (index in segments.indices) {
-                    builder.append(interpreter.toStringValue(segments[index]))
-                    if (index + 1 < segments.size && index + 1 < args.size) {
-                        builder.append(interpreter.toStringValue(args[index + 1]))
+                var index = 0L
+                while (index < length) {
+                    val segment = interpreter.getV(raw, PropertyKey.Str(index.toString()))
+                    builder.append(interpreter.toStringValue(segment))
+                    if (index + 1 == length) break
+                    val substitution = args.getOrNull((index + 1).toInt())
+                    if (substitution != null) {
+                        builder.append(interpreter.toStringValue(substitution))
                     }
+                    index++
                 }
                 JSString(builder.toString())
             },

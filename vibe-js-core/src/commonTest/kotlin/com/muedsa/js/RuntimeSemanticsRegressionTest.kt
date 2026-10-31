@@ -2497,4 +2497,208 @@ class RuntimeSemanticsRegressionTest {
         // 非 u 模式下 \p 是 IdentityEscape：整体按字面量 p{L} 匹配
         assertEquals(true, runtime.evalBoolean("/\\p{L}/.test('p{L}')"))
     }
+
+    @Test
+    fun `class 构造器原型描述符 静态 prototype 限制与类名 TDZ`() = runTest {
+        val runtime = TestRuntime()
+        // class 构造器的 prototype 是不可写属性
+        assertEquals(false, runtime.evalBoolean(
+            "class A {}; Object.getOwnPropertyDescriptor(A, 'prototype').writable"
+        ))
+        // 构造器内部 [[Prototype]] 指向父构造器，原型对象 [[Prototype]] 指向父原型
+        assertEquals(true, runtime.evalBoolean(
+            "class Base {} class Derived extends Base {}" +
+                " Object.getPrototypeOf(Derived) === Base &&" +
+                " Object.getPrototypeOf(Derived.prototype) === Base.prototype"
+        ))
+        // 静态成员不得命名为 prototype：字面量键是早期错误，计算键是运行时 TypeError
+        assertFailsWith<ParseException> {
+            runtime.eval("class BadLiteral { static prototype() {} }")
+        }
+        assertEquals("TypeError", runtime.evalString(
+            "try { class BadComputed { static ['prototype']() {} } 'none' } catch (e) { e.name }"
+        ))
+        // Get(superclass, 'prototype') 必须为对象或 null
+        assertEquals("TypeError", runtime.evalString(
+            "function F() {} F.prototype = 1;" +
+                " try { class G extends F {} 'none' } catch (e) { e.name }"
+        ))
+        // 类名在 heritage 求值时处于 TDZ
+        assertEquals("ReferenceError", runtime.evalString(
+            "try { class Self extends Self {} 'none' } catch (e) { e.name }"
+        ))
+        // class 声明的绑定可重新赋值
+        assertEquals(true, runtime.evalBoolean("class Mutable {} Mutable = 5; Mutable === 5"))
+    }
+
+    @Test
+    fun `super 属性读取使用实际 this 且构造器 super 调用受 this 限制`() = runTest {
+        val runtime = TestRuntime()
+        // super getter 的 this 为实例
+        assertEquals(42.0, runtime.evalNumber(
+            "class Base { get value() { return this.stored; } }" +
+                " class Sub extends Base {" +
+                "   constructor() { super(); this.stored = 42; }" +
+                "   read() { return super.value; }" +
+                " } new Sub().read()"
+        ))
+        // 派生构造器在 super() 前访问 super 属性抛 ReferenceError
+        val restricted = TestRuntime()
+        assertEquals("ReferenceError", restricted.evalString(
+            "class Base { static m() {} }" +
+                " class Sub extends Base { constructor() { super.m(); super(); } }" +
+                " try { new Sub(); 'none' } catch (e) { e.name }"
+        ))
+    }
+
+    @Test
+    fun `块级函数声明按块作用域实例化并遵循 sloppy Annex B`() = runTest {
+        val runtime = TestRuntime()
+        // sloppy：块外 var 绑定在块执行前为 undefined，块执行后指向块级函数
+        assertEquals(true, runtime.evalBoolean(
+            "var before = typeof hoisted;" +
+                " { function hoisted() { return 7; } }" +
+                " before === 'undefined' && hoisted() === 7"
+        ))
+        // 块级函数闭包捕获块环境（可访问块内 let）
+        assertEquals(3.0, runtime.evalNumber(
+            "var result;" +
+                " function outer() { var x = 1; { let y = 2; function inner() { return x + y; } result = inner(); } }" +
+                " outer(); result"
+        ))
+        // sloppy 下同名块级函数后者生效
+        assertEquals(2.0, runtime.evalNumber(
+            "var value; { function pick() { return 1; } function pick() { return 2; } value = pick(); } value"
+        ))
+        // strict：块级函数不外泄到外围作用域
+        assertEquals("ReferenceError", runtime.evalString(
+            "'use strict'; try { { function hidden() {} } hidden; 'none' } catch (e) { e.name }"
+        ))
+    }
+
+    @Test
+    fun `with 环境中的调用接收者与 var 初始化引用解析`() = runTest {
+        val runtime = TestRuntime()
+        // 标识符调用以 with 绑定对象作为 this
+        assertEquals(true, runtime.evalBoolean(
+            "var obj = { m: function () { return this === obj; } };" +
+                " var callResult; with (obj) { callResult = m(); } callResult"
+        ))
+        // var 初始化先解析引用再求值初始化器
+        assertEquals(true, runtime.evalBoolean(
+            "var holder = { test262id: 1 };" +
+                " with (holder) { var test262id = delete holder.test262id; }" +
+                " holder.test262id === true && typeof test262id === 'undefined'"
+        ))
+    }
+
+    @Test
+    fun `标签模板保留成员接收者并支持 new 构造链`() = runTest {
+        val runtime = TestRuntime()
+        // obj.method`...` 的 this 为 obj
+        assertEquals(3.0, runtime.evalNumber(
+            "var o = { v: 3, f: function () { return this.v; } }; o.f`x`"
+        ))
+        // new tag`...` 构造的是标签返回的函数
+        assertEquals(true, runtime.evalBoolean(
+            "function C(x) { this.arg = x; }" +
+                " var tag = function () { return C; };" +
+                " var instance = new tag`t`('a');" +
+                " instance instanceof C && instance.arg === 'a'"
+        ))
+    }
+
+    @Test
+    fun `模板字面量行延续的 TRV 保留反斜杠与 U2028`() = runTest {
+        val runtime = TestRuntime()
+        // 源码中构造 `\` + U+2028 + 反引号：cooked 为空串，raw 为反斜杠加行分隔符
+        val source = "(function (cs) {" +
+            " return cs[0] === '' && cs.raw[0].charCodeAt(0) === 0x5C &&" +
+            " cs.raw[0].charCodeAt(1) === 0x2028; })`\\" + "\u2028" + "`"
+        assertEquals(true, runtime.evalBoolean(source))
+    }
+
+    @Test
+    fun `条件表达式 +In 分支可用于普通 for 初始化`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var condCount = 0; var elseCount = 0;" +
+                " function makeObject() { condCount++; return {}; }" +
+                " function makeElse() { elseCount++; }" +
+                " for (true ? '' in makeObject() : makeElse(); false; ) { }" +
+                " condCount === 1 && elseCount === 0"
+        ))
+    }
+
+    @Test
+    fun `非简单参数列表允许函数体词法声明同名且保留 arguments 对象`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var captured;" +
+                " function f(x = (captured = arguments, 1)) { let arguments; }" +
+                " f(); typeof captured === 'object' && captured.length === 0"
+        ))
+    }
+
+    @Test
+    fun `catch 参数同名 var 的 for-in 写入更新 catch 绑定`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var before, during, after;" +
+                " try { throw 'exception'; } catch (err) {" +
+                "   before = err;" +
+                "   for (var err in { propertyName: null }) { during = err; }" +
+                "   after = err;" +
+                " }" +
+                " before === 'exception' && during === 'propertyName' && after === 'propertyName'"
+        ))
+    }
+
+    @Test
+    fun `全局词法声明限制与 eval 全局声明可定义性检查`() = runTest {
+        // 全局 let 不得遮蔽不可配置的全局属性（GlobalDeclarationInstantiation）
+        val restricted = TestRuntime()
+        val restrictedError = assertFailsWith<JSException> { restricted.eval("let undefined;") }
+        val restrictedValue = restrictedError.value
+        assertEquals(
+            true,
+            restrictedValue is com.muedsa.js.runtime.value.JSError &&
+                restrictedValue.errorName == "SyntaxError"
+        )
+        // 非扩展全局对象上间接 eval 的 var 声明抛 TypeError
+        val nonExtensible = TestRuntime()
+        assertEquals("TypeError", nonExtensible.evalString(
+            "Object.preventExtensions(globalThis);" +
+                " try { (0, eval)('var unlikelyVariableName;'); 'none' } catch (e) { e.name }"
+        ))
+        // 函数声明与不可配置全局函数冲突时先抛 TypeError，且不创建后续 var 绑定
+        val evalRuntime = TestRuntime()
+        assertEquals(true, evalRuntime.evalBoolean(
+            "try { eval('var shouldNotBeDefined; function NaN() {}'); } catch (e) { }" +
+                " Object.getOwnPropertyDescriptor(this, 'shouldNotBeDefined') === undefined"
+        ))
+    }
+
+    @Test
+    fun `String prototype normalize 支持四种规范化形式`() = runTest {
+        val runtime = TestRuntime()
+        // NFD 完全分解；NFC 重新组合；NFKC/NFKD 使用兼容分解
+        assertEquals(true, runtime.evalBoolean(
+            "var s = '\\u00C5\\u2126';" +
+                " s.normalize('NFD') === 'A\\u030A\\u03A9' &&" +
+                " s.normalize('NFC') === '\\u00C5\\u03A9'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "'\\u1E9B\\u0323'.normalize('NFKD') === 's\\u0323\\u0307' &&" +
+                " '\\u1E9B\\u0323'.normalize('NFKC') === '\\u1E69'"
+        ))
+        // 非法形式抛 RangeError；this 先做 ToString
+        assertEquals("RangeError", runtime.evalString(
+            "try { 'foo'.normalize('bar'); 'none' } catch (e) { e.name }"
+        ))
+        assertEquals("Test262Error", runtime.evalString(
+            "var o = { toString: function () { var e = new Error('x'); e.name = 'Test262Error'; throw e; } };" +
+                " try { String.prototype.normalize.call(o); 'none' } catch (e) { e.name }"
+        ))
+    }
 }

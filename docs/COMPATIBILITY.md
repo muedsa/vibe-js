@@ -39,7 +39,9 @@
 | 默认参数、rest 参数（含解构 rest）、函数 length | ✅ | |
 | 解构：声明/赋值/for-of/函数参数/catch、默认值、嵌套、数组 rest、对象 rest | ✅ | |
 | spread：数组/调用/new/对象 | ✅ | |
-| class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、静态初始化块 `static { }`、公有/私有实例与静态字段（含计算键与字段初始化器）、私有方法与访问器、`#x in obj`、默认派生构造器 |
+| class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、静态初始化块 `static { }`、公有/私有实例与静态字段（含计算键与字段初始化器）、私有方法与访问器、`#x in obj`、默认派生构造器；类名 TDZ、`Get(superclass, "prototype")` 校验、构造器 prototype 不可写、静态 `prototype` 成员拒绝、super 访问器以实际 this 为接收者 |
+| 块级函数声明 / Annex B | ✅ | strict 下仅在块作用域可见；sloppy 在块入口实例化并同步包围 var 绑定（块外执行前为 undefined） |
+| 全局声明实例化 | ✅ | 顶层 let/const/class 不得遮蔽不可配置全局属性；重复词法声明与 var 冲突为早期错误 |
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
 | 模板字符串 / 标签模板 | ✅ | |
 | 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器 |
@@ -63,7 +65,7 @@
 | Object.prototype | ✅ | hasOwnProperty、isPrototypeOf、propertyIsEnumerable、valueOf、toString、toLocaleString、`__proto__`、Annex B `__defineGetter__`/`__defineSetter__`/`__lookupGetter__`/`__lookupSetter__` |
 | Function | ✅ | call/apply/bind/toString（动态函数源码，其余 NativeFunction 形式）、动态 Function 构造器 |
 | Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；array-like 支持 2^53-1 长度边界 |
-| String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 暂缺 |
+| String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表） |
 | Number | ✅ | 常量、toString(radix)、toFixed/toExponential/toPrecision、静态判断与解析 |
 | Boolean | ✅ | 构造器、toString、valueOf |
 | Math | ✅ | 常量与 ES5/ES2015 常用函数；sumPrecise 精确求和 |
@@ -101,9 +103,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 437 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 437 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 437 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 448 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 448 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 448 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -111,9 +113,8 @@
 
 - `Date` 的本地时间方法按 UTC 实现（common 代码无法获取时区），`getTimezoneOffset()` 恒为 0；
 - `JSON.parse` 使用独立严格 JSON 语法，不再复用宽松的 JS Parser；
-- 类字段、可选链未实现；
-- RegExp 的 `s`/`u` 标志暂不生效，命名捕获组有限；纯 Kotlin 回退引擎按 JS-only 构造启用（空字符类、`\0`/`\c`、前向反向引用、量词组捕获重置等）；
-- `String.prototype.normalize` 未实现；
+- RegExp 使用 Kotlin Regex 主路径 + 纯 Kotlin 回退引擎；回退路径按 JS-only 构造精确启用（空字符类、`\0`/`\c`、前向反向引用、lookbehind、量词组捕获重置、码元级 `.` 等），Kotlin 路径对少数高级构造的 Unicode 折叠细节仍有差异；
+- `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；
 - Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷），未实现未处理拒绝上报；
 - 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度。
 

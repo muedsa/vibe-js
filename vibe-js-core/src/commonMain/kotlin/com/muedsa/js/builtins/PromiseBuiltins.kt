@@ -44,7 +44,8 @@ object PromiseBuiltins {
             try {
                 interpreter.callFunction(executor, JSUndefined, listOf(resolveFunction, rejectFunction))
             } catch (error: JSException) {
-                PromiseSupport.reject(interpreter, promise, error.value)
+                // 使用带 [[AlreadyResolved]] 守卫的拒绝函数：已解析后的异常被忽略
+                interpreter.callFunction(rejectFunction, JSUndefined, listOf(error.value))
             }
             promise
         }
@@ -255,38 +256,30 @@ object PromiseBuiltins {
                         val index = results.size
                         results.add(JSUndefined)
                         remaining++
+                        val alreadyCalled = booleanArrayOf(false)
                         val onFulfilled = JSNativeFunction(
                             name = "",
                             length = 1,
                             prototype = intrinsics.functionPrototype,
                         ) { _, _, handlerArgs ->
-                            results[index] = handlerArgs.getOrElse(0) { JSUndefined }
-                            remaining--
-                            if (remaining == 0) {
-                                resolveCapability(
-                                    interpreter,
-                                    capability,
-                                    JSArray(results.toMutableList(), prototype = intrinsics.arrayPrototype),
-                                )
+                            if (!alreadyCalled[0]) {
+                                alreadyCalled[0] = true
+                                results[index] = handlerArgs.getOrElse(0) { JSUndefined }
+                                remaining--
+                                if (remaining == 0) {
+                                    resolveCapability(
+                                        interpreter,
+                                        capability,
+                                        JSArray(results.toMutableList(), prototype = intrinsics.arrayPrototype),
+                                    )
+                                }
                             }
-                            JSUndefined
-                        }
-                        val onRejected = JSNativeFunction(
-                            name = "",
-                            length = 1,
-                            prototype = intrinsics.functionPrototype,
-                        ) { _, _, handlerArgs ->
-                            rejectCapability(
-                                interpreter,
-                                capability,
-                                handlerArgs.getOrElse(0) { JSUndefined },
-                            )
                             JSUndefined
                         }
                         interpreter.callFunction(
                             thenMethod,
                             itemPromise,
-                            listOf(onFulfilled, onRejected),
+                            listOf(onFulfilled, capability.reject),
                         )
                     }
                 } catch (error: JSException) {
@@ -301,7 +294,7 @@ object PromiseBuiltins {
                         resolveCapability(
                             interpreter,
                             capability,
-                            JSArray(mutableListOf(), prototype = intrinsics.arrayPrototype),
+                            JSArray(results.toMutableList(), prototype = intrinsics.arrayPrototype),
                         )
                     } catch (error: JSException) {
                         rejectCapability(interpreter, capability, error.value)
@@ -347,32 +340,7 @@ object PromiseBuiltins {
                         interpreter.callFunction(
                             thenMethod,
                             itemPromise,
-                            listOf(
-                                JSNativeFunction(
-                                    name = "",
-                                    length = 1,
-                                    prototype = intrinsics.functionPrototype,
-                                ) { _, _, handlerArgs ->
-                                    resolveCapability(
-                                        interpreter,
-                                        capability,
-                                        handlerArgs.getOrElse(0) { JSUndefined },
-                                    )
-                                    JSUndefined
-                                },
-                                JSNativeFunction(
-                                    name = "",
-                                    length = 1,
-                                    prototype = intrinsics.functionPrototype,
-                                ) { _, _, handlerArgs ->
-                                    rejectCapability(
-                                        interpreter,
-                                        capability,
-                                        handlerArgs.getOrElse(0) { JSUndefined },
-                                    )
-                                    JSUndefined
-                                },
-                            ),
+                            listOf(capability.resolve, capability.reject),
                         )
                     }
                 } catch (error: JSException) {

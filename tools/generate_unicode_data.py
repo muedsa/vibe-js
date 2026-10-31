@@ -34,6 +34,9 @@ FILES = {
         UCD_BASE + "extracted/DerivedBinaryProperties.txt",
     "emoji/emoji-data.txt": UCD_BASE + "emoji/emoji-data.txt",
     "emoji-test.txt": EMOJI_BASE + "emoji-test.txt",
+    # String.prototype.normalize 所需数据
+    "UnicodeData.txt": UCD_BASE + "UnicodeData.txt",
+    "CompositionExclusions.txt": UCD_BASE + "CompositionExclusions.txt",
 }
 
 
@@ -59,6 +62,7 @@ def main() -> None:
         "gen_unicode_properties.py",
         "gen_emoji_properties.py",
         "gen_identifier_data.py",
+        "gen_normalization_data.py",
     ):
         print(f"run {script}")
         runpy.run_path(str(tools / script), run_name="__main__")

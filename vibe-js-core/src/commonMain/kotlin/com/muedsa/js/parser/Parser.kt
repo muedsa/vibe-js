@@ -1469,7 +1469,15 @@ class Parser(
         labelScopes.clear()
         inLabelChain = false
 
-        val parameterNames = collectParameterNames(params).toSet()
+        // 非简单参数列表会创建独立的参数环境：函数体词法声明可与形参同名；
+        // 简单参数列表下 LexicallyDeclaredNames 与形参冲突属于早期错误
+        val hasParameterExpressions =
+            params.any { it.rest || it.defaultValue != null || it.pattern != null }
+        val parameterNames = if (hasParameterExpressions) {
+            emptySet()
+        } else {
+            collectParameterNames(params).toSet()
+        }
         pushDeclScope(DeclScopeKind.FUNCTION_BODY, parameterNames)
         val body = try {
             parseBlockStatement(trackScope = false)
@@ -1493,7 +1501,7 @@ class Parser(
         strict = outerStrict
         asyncContext = outerAsync
 
-        val hoist = collectHoisted(body.statements)
+        val hoist = collectHoisted(body.statements, innerStrict)
         return FunctionBodyInfo(
             body = body,
             strict = innerStrict,
@@ -1844,10 +1852,13 @@ class Parser(
      * 判断 `for (` 之后是普通 for、for-in 还是 for-of。
      *
      * 在括号深度 0 处、遇到分号之前出现 `in` / `of` 即为对应形式。
+     * 条件表达式的第一个分支是 [+In] 语境，其中的 `in` 不算 for-in 分隔符
+     * （例如 `for (true ? '' in f() : g(); ;)`）。
      */
     private fun forHeaderKind(): ForHeaderKind {
         var index = pos
         var depth = 0
+        var conditionalDepth = 0
         while (index < tokens.size) {
             when (tokens[index].type) {
                 TokenType.LPAREN, TokenType.LBRACKET, TokenType.LBRACE -> depth++
@@ -1857,7 +1868,9 @@ class Parser(
                 }
 
                 TokenType.SEMICOLON -> if (depth == 0) return ForHeaderKind.NONE
-                TokenType.IN -> if (depth == 0) return ForHeaderKind.IN
+                TokenType.QUESTION -> if (depth == 0) conditionalDepth++
+                TokenType.COLON -> if (depth == 0 && conditionalDepth > 0) conditionalDepth--
+                TokenType.IN -> if (depth == 0 && conditionalDepth == 0) return ForHeaderKind.IN
                 TokenType.IDENTIFIER -> if (depth == 0 && !tokens[index].containsEscape &&
                     tokens[index].value == "of"
                 ) {
@@ -2771,6 +2784,19 @@ class Parser(
                     )
                 }
 
+                // new tag`...`：标签模板属于 MemberExpression，构造发生在其结果上
+                check(TokenType.TEMPLATE) -> {
+                    val templateToken = advance()
+                    val template = parseTemplateLiteral(templateToken) as TemplateLiteral
+                    constructor = TaggedTemplate(
+                        tag = constructor,
+                        quasis = template.quasis,
+                        rawQuasis = template.rawQuasis,
+                        expressions = template.expressions,
+                        range = SourceRange(constructor.range.start, templateToken.range.end),
+                    )
+                }
+
                 else -> break
             }
         }
@@ -3057,7 +3083,17 @@ class Parser(
                         throw ParseException(error.message ?: "Invalid template expression", error.range)
                     }
                     // 模板嵌入的是表达式，不能按 Program 解析（对象字面量会被当作块）
-                    expressions.add(Parser(subTokens).parseExpressionInput())
+                    expressions.add(
+                        Parser(
+                            subTokens,
+                            strictContext = strict,
+                            superPropertyContext = superPropertyAllowed,
+                            superCallContext = superCallAllowed,
+                            newTargetContext = newTargetAllowed,
+                            argumentsForbiddenContext = argumentsForbidden,
+                            evalPrivateNames = externalPrivateNames,
+                        ).parseExpressionInput()
+                    )
                 }
             }
         }
@@ -3339,14 +3375,19 @@ class Parser(
     /**
      * 收集当前作用域内需要提升的声明：
      * - var 声明会穿透普通块；
-     * - 函数声明提升到当前作用域；
+     * - 只有直接位于当前作用域语句列表中的函数声明提升到当前作用域；
+     *   块/switch/catch 内的函数声明属于块级声明，由运行时在块入口实例化；
+     * - sloppy 模式下块级函数同时在包围 var 作用域建立同名 var 绑定（Annex B.3.3）；
      * - 不进入嵌套函数体（嵌套函数有自己的作用域）。
      */
-    private fun collectHoisted(statements: List<Statement>): HoistInfo {
+    private fun collectHoisted(
+        statements: List<Statement>,
+        strictMode: Boolean = strict,
+    ): HoistInfo {
         val varNames = LinkedHashSet<String>()
         val functions = mutableListOf<FunctionDeclaration>()
 
-        fun scan(statement: Statement) {
+        fun scan(statement: Statement, inBlockScope: Boolean) {
             when (statement) {
                 is VarDeclaration -> {
                     if (statement.kind == DeclarationKind.VAR) {
@@ -3357,18 +3398,26 @@ class Parser(
                     }
                 }
 
-                is FunctionDeclaration -> functions.add(statement)
-                is BlockStatement -> statement.statements.forEach { scan(it) }
-                is IfStatement -> {
-                    scan(statement.consequent)
-                    statement.alternate?.let { scan(it) }
+                is FunctionDeclaration -> {
+                    if (inBlockScope) {
+                        // Annex B：sloppy 下块级函数在包围 var 作用域建立同名的未初始化 var
+                        if (!strictMode) varNames.add(statement.name)
+                    } else {
+                        functions.add(statement)
+                    }
                 }
 
-                is WhileStatement -> scan(statement.body)
-                is DoWhileStatement -> scan(statement.body)
+                is BlockStatement -> statement.statements.forEach { scan(it, true) }
+                is IfStatement -> {
+                    scan(statement.consequent, inBlockScope)
+                    statement.alternate?.let { scan(it, inBlockScope) }
+                }
+
+                is WhileStatement -> scan(statement.body, inBlockScope)
+                is DoWhileStatement -> scan(statement.body, inBlockScope)
                 is ForStatement -> {
-                    statement.init?.let { scan(it) }
-                    scan(statement.body)
+                    statement.init?.let { scan(it, inBlockScope) }
+                    scan(statement.body, inBlockScope)
                 }
 
                 is ForInStatement -> {
@@ -3376,7 +3425,7 @@ class Parser(
                         statement.variableName?.let { varNames.add(it) }
                         statement.pattern?.let { collectPatternNames(it, varNames) }
                     }
-                    scan(statement.body)
+                    scan(statement.body, inBlockScope)
                 }
 
                 is ForOfStatement -> {
@@ -3384,27 +3433,28 @@ class Parser(
                         statement.variableName?.let { varNames.add(it) }
                         statement.pattern?.let { collectPatternNames(it, varNames) }
                     }
-                    scan(statement.body)
+                    scan(statement.body, inBlockScope)
                 }
 
-                is LabeledStatement -> scan(statement.body)
-                is WithStatement -> scan(statement.body)
+                is LabeledStatement -> scan(statement.body, inBlockScope)
+                is WithStatement -> scan(statement.body, inBlockScope)
 
                 is SwitchStatement -> statement.cases.forEach { case ->
-                    case.consequent.forEach { scan(it) }
+                    case.consequent.forEach { scan(it, true) }
                 }
 
                 is TryStatement -> {
-                    scan(statement.block)
-                    statement.handler?.let { scan(it.body) }
-                    statement.finalizer?.let { scan(it) }
+                    // try/catch/finally 都是独立块作用域
+                    scan(statement.block, true)
+                    statement.handler?.let { scan(it.body, true) }
+                    statement.finalizer?.let { scan(it, true) }
                 }
 
                 else -> Unit
             }
         }
 
-        statements.forEach { scan(it) }
+        statements.forEach { scan(it, false) }
         return HoistInfo(varNames.toList(), functions)
     }
 

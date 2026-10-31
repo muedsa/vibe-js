@@ -853,8 +853,21 @@ class JsRegexEngine(
         return true
     }
 
-    private fun charEquals(left: Char, right: Char, ignoreCase: Boolean): Boolean =
-        left == right || (ignoreCase && left.equals(right, ignoreCase = true))
+    private fun charEquals(left: Char, right: Char, ignoreCase: Boolean): Boolean {
+        if (!ignoreCase) return left == right
+        if (left == right) return true
+        return if (unicode) {
+            left.equals(right, ignoreCase = true)
+        } else {
+            // 非 u 模式：非 ASCII 字符转为 ASCII 大写时保持原字符（如 U+212A）
+            canonicalizeNonUnicode(left) == canonicalizeNonUnicode(right)
+        }
+    }
+
+    private fun canonicalizeNonUnicode(character: Char): Char {
+        val upper = character.uppercaseChar()
+        return if (character.code >= 128 && upper.code < 128) character else upper
+    }
 
     /**
      * 单词字符判定（ASCII \w）；i 模式下 ς/ſ/K 等会大小写折叠到 ASCII 字母，
@@ -1584,6 +1597,9 @@ class JsRegexEngine(
                 'c' -> {
                     position++
                     val control = peek()
+                    if (control !in 'a'..'z' && control !in 'A'..'Z') {
+                        throw IllegalArgumentException("Invalid control escape")
+                    }
                     position++
                     control.code and 0x1F
                 }
@@ -1838,6 +1854,21 @@ class JsRegexEngine(
                             ClassItem.Single(combined ?: value)
                         }
                     }
+
+                    'c' -> {
+                        val control = peek()
+                        val validControl = control in 'a'..'z' || control in 'A'..'Z' ||
+                            (!unicode && (control in '0'..'9' || control == '_'))
+                        if (validControl) {
+                            position++
+                            ClassItem.Single(control.code and 0x1F)
+                        } else if (unicode) {
+                            throw IllegalArgumentException("Invalid control escape")
+                        } else {
+                            ClassItem.Single('c'.code)
+                        }
+                    }
+
                     else -> ClassItem.Single(character.code)
                 }
             }
@@ -1946,8 +1977,19 @@ class JsRegexEngine(
 
                 'c' -> {
                     val control = peek()
-                    position++
-                    Node.CharNode((control.code and 0x1F).toChar())
+                    if (unicode) {
+                        if (control !in 'a'..'z' && control !in 'A'..'Z') {
+                            throw IllegalArgumentException("Invalid control escape")
+                        }
+                        position++
+                        Node.CharNode((control.code and 0x1F).toChar())
+                    } else if (control in 'a'..'z' || control in 'A'..'Z') {
+                        position++
+                        Node.CharNode((control.code and 0x1F).toChar())
+                    } else {
+                        // Annex B：非字母控制转义按 IdentityEscape 'c' 处理
+                        Node.CharNode('c')
+                    }
                 }
 
                 in '1'..'9' -> {

@@ -852,6 +852,9 @@ class Lexer(private val input: String) {
                 if (peek() == '\n') advance()
             }
 
+            // LineContinuation：\ 后接 U+2028/U+2029，TV 为空（TRV 保留反斜杠与换行）
+            '\u2028', '\u2029' -> advance()
+
             'x' -> {
                 advance()
                 sb.append(readHexDigits(2).toChar())
@@ -1022,6 +1025,10 @@ class Lexer(private val input: String) {
                 startOffset,
             )
         }
+        val commonError = JsRegexSyntax.patternError(pattern.toString())
+        if (commonError != null) {
+            throw lexerError(commonError, startLine, startColumn, startOffset)
+        }
         if ('u' in flagText) {
             val error = JsRegexSyntax.unicodeError(pattern.toString())
             if (error != null) {
@@ -1099,7 +1106,11 @@ class Lexer(private val input: String) {
                     if (legacyOctalEscape) {
                         throw lexerError("Octal escape sequences are not allowed in template literals", line, column, pos)
                     }
-                    rawText.append(input, rawStart, pos)
+                    // TRV 中的行终止符规范化为 LF（CRLF/CR -> LF）
+                    val rawSlice = input.substring(rawStart, pos)
+                        .replace("\r\n", "\n")
+                        .replace('\r', '\n')
+                    rawText.append(rawSlice)
                 }
 
                 c == '$' && peek(1) == '{' -> {
@@ -1113,9 +1124,17 @@ class Lexer(private val input: String) {
                 }
 
                 else -> {
-                    text.append(c)
-                    rawText.append(c)
-                    advance()
+                    if (c == '\r') {
+                        // LineTerminatorSequence 规范化为 LF
+                        text.append('\n')
+                        rawText.append('\n')
+                        advance()
+                        if (peek() == '\n') advance()
+                    } else {
+                        text.append(c)
+                        rawText.append(c)
+                        advance()
+                    }
                 }
             }
         }

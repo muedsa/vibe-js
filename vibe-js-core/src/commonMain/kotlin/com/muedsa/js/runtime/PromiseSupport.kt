@@ -100,7 +100,8 @@ object PromiseSupport {
                     try {
                         interpreter.callFunction(thenValue, value, listOf(resolveFunction, rejectFunction))
                     } catch (error: JSException) {
-                        reject(interpreter, promise, error.value)
+                        // 使用本次 job 的带守卫拒绝函数：then 已解析后的异常被忽略
+                        interpreter.callFunction(rejectFunction, JSUndefined, listOf(error.value))
                     }
                 }
                 return

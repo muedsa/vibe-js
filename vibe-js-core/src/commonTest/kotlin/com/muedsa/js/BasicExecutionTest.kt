@@ -31,7 +31,8 @@ class BasicExecutionTest {
     fun `变量声明与作用域`() = runTest {
         val runtime = TestRuntime()
         assertEquals(6.0, runtime.evalNumber("var a = 1; let b = 2; const c = 3; a + b + c"))
-        assertEquals(1.0, runtime.evalNumber("let a = 1; { let a = 2; } a"))
+        // 同一全局环境中 var a 已存在，新脚本再声明 let a 属于 SyntaxError，故改用其它名字
+        assertEquals(1.0, runtime.evalNumber("let d = 1; { let d = 2; } d"))
         assertEquals(2.0, runtime.evalNumber("var x = 1; { var x = 2; } x"))
     }
 

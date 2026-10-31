@@ -132,12 +132,12 @@ object ObjectBuiltins {
                 if (thisValue is JSNull || thisValue is JSUndefined) {
                     interpreter.typeError("Object.prototype.toLocaleString called on null or undefined")
                 }
-                val objectValue = interpreter.toObject(thisValue)
-                val method = interpreter.getV(objectValue, PropertyKey.Str("toString"))
+                // 规范 Invoke(this, "toString")：this 为原始值时保持原始 this 传入
+                val method = interpreter.getV(thisValue, PropertyKey.Str("toString"))
                 if (!interpreter.isCallable(method)) {
                     interpreter.typeError("toString is not a function")
                 }
-                interpreter.callFunction(method, objectValue, emptyList())
+                interpreter.callFunction(method, thisValue, emptyList())
             },
             writable = true,
             enumerable = false,

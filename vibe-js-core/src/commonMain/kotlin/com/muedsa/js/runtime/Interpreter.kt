@@ -191,6 +191,8 @@ class Interpreter(
         )
         pushStackFrame("<global>")
         try {
+            // 全局词法声明不得遮蔽不可配置的全局属性（如 undefined/NaN/Infinity）
+            checkGlobalLexicalRestrictedNames(environment, program.body)
             hoistDeclarations(environment, program.functionDeclarations, program.varDeclarations)
             predeclareLexical(program.body, environment)
             val completion = executeStatements(program.body)
@@ -285,6 +287,10 @@ class Interpreter(
                 }
                 checkEvalVarNameConflicts(caller.lexicalEnv, varNames)
             }
+            // 全局作用域下的直接 eval：函数/var 声明先做可定义性检查
+            if (caller.lexicalEnv.findVarScope() === context.globalEnvironment.findVarScope()) {
+                checkEvalGlobalDeclarations(program)
+            }
         }
         // 直接 eval 始终拥有独立词法环境；sloppy 的 var/function 提升到调用方 var 作用域
         val lexicalEnvironment = DeclarativeEnvironment(parent = caller.lexicalEnv)
@@ -352,6 +358,8 @@ class Interpreter(
             val varNames = program.varDeclarations +
                 program.functionDeclarations.map { it.name }
             checkEvalVarNameConflicts(context.globalEnvironment, varNames)
+            // 全局作用域的间接 eval：函数/var 声明先做可定义性检查
+            checkEvalGlobalDeclarations(program)
         }
         // 间接 eval 同样拥有独立词法环境；sloppy 的 var/function 写入全局 var 作用域
         val lexicalEnvironment = DeclarativeEnvironment(parent = context.globalEnvironment)
@@ -921,7 +929,10 @@ class Interpreter(
                 )
             }
             bindParameters(function, args, callEnv)
-            hoistDeclarations(callEnv, function.functionDeclarations, function.varDeclarations)
+            // 规范：函数体词法环境位于 var/参数环境之上，词法声明不与之冲突
+            val bodyEnv = DeclarativeEnvironment(parent = callEnv)
+            currentFrame.lexicalEnv = bodyEnv
+            hoistDeclarations(bodyEnv, function.functionDeclarations, function.varDeclarations)
 
             val expressionBody = function.expressionBody
             if (expressionBody != null) {
@@ -931,7 +942,7 @@ class Interpreter(
             }
 
             val body = function.body ?: return JSUndefined
-            predeclareLexical(body.statements, callEnv)
+            predeclareLexical(body.statements, bodyEnv)
             val completion = executeStatements(body.statements)
             return when (completion) {
                 is Completion.Normal -> JSUndefined
@@ -1028,7 +1039,10 @@ class Interpreter(
         try {
             callEnv.createVarBinding("arguments", createArgumentsObject(args, function))
             bindParameters(function, args, callEnv)
-            hoistDeclarations(callEnv, function.functionDeclarations, function.varDeclarations)
+            // 函数体词法环境位于 var/参数环境之上
+            val bodyEnv = DeclarativeEnvironment(parent = callEnv)
+            activeFrame.lexicalEnv = bodyEnv
+            hoistDeclarations(bodyEnv, function.functionDeclarations, function.varDeclarations)
 
             // 基类构造器：this 已初始化，先按源码顺序初始化实例字段
             if (!derived) {
@@ -1326,6 +1340,75 @@ class Interpreter(
     }
 
     /**
+     * GlobalDeclarationInstantiation：顶层 let/const/class/using 名称
+     * 不得遮蔽全局对象上的不可配置属性（HasRestrictedGlobalProperty）。
+     */
+    private fun checkGlobalLexicalRestrictedNames(
+        environment: Environment,
+        body: List<Statement>,
+    ) {
+        val varScope = environment.findVarScope() as? ObjectEnvironment ?: return
+        val globalObject = varScope.bindingObject
+        val names = mutableListOf<String>()
+        for (statement in body) {
+            when (statement) {
+                is VarDeclaration -> if (statement.kind != DeclarationKind.VAR) {
+                    for (declaration in statement.declarations) {
+                        declaration.name?.let { names.add(it) }
+                        declaration.pattern?.let { collectPatternNames(it, names) }
+                    }
+                }
+
+                is ClassDeclaration -> names.add(statement.name)
+                is UsingDeclaration -> statement.declarations.forEach { names.add(it.name) }
+                else -> Unit
+            }
+        }
+        for (name in names) {
+            val own = globalObject.getOwnProperty(PropertyKey.Str(name)) ?: continue
+            if (!own.configurable) {
+                throw syntaxError("Identifier '$name' has already been declared")
+            }
+        }
+    }
+
+    /** CanDeclareGlobalFunction：全局函数声明是否允许（不可配置且不可写/可枚举时拒绝）。 */
+    private fun canDeclareGlobalFunction(globalObject: JSObject, name: String): Boolean {
+        val descriptor = globalObject.getOwnProperty(PropertyKey.Str(name))
+            ?: return globalObject.extensible
+        if (descriptor.isAccessor) return false
+        return !(!descriptor.configurable && (!descriptor.writable || descriptor.enumerable))
+    }
+
+    /** CanDeclareGlobalVar：已有自有属性或全局对象可扩展时允许。 */
+    private fun canDeclareGlobalVar(globalObject: JSObject, name: String): Boolean =
+        globalObject.getOwnProperty(PropertyKey.Str(name)) != null || globalObject.extensible
+
+    /**
+     * EvalDeclarationInstantiation 的全局声明检查：
+     * 函数声明与 var 声明在创建任何绑定前先验证可定义性，失败抛 TypeError。
+     */
+    private fun checkEvalGlobalDeclarations(program: Program) {
+        val globalObject = (context.globalEnvironment.findVarScope() as? ObjectEnvironment)
+            ?.bindingObject ?: return
+        val functionNames = LinkedHashSet<String>()
+        for (declaration in program.functionDeclarations.asReversed()) {
+            functionNames.add(declaration.name)
+        }
+        for (name in functionNames) {
+            if (!canDeclareGlobalFunction(globalObject, name)) {
+                throw typeError("Cannot declare global function '$name'")
+            }
+        }
+        for (name in program.varDeclarations) {
+            if (name in functionNames) continue
+            if (!canDeclareGlobalVar(globalObject, name)) {
+                throw typeError("Cannot declare global variable '$name'")
+            }
+        }
+    }
+
+    /**
      * 变量提升：函数声明优先，其次 var。
      */
     private fun hoistDeclarations(
@@ -1366,16 +1449,21 @@ class Interpreter(
         var hasValue = false
         for (statement in statements) {
             when (val completion = executeStatement(statement)) {
-                is Completion.Normal -> {
-                    // only value-producing statements overwrite the accumulated value
-                    if (completion.hasValue) {
-                        if (completion.hasValue) lastValue = completion.value
-                        hasValue = true
-                    }
+                is Completion.Normal -> if (completion.hasValue) {
+                    lastValue = completion.value
+                    hasValue = true
                 }
-                // 规范：break/continue 携带所在语句列表已累积的完成值
-                is Completion.Break -> return Completion.Break(completion.label, lastValue)
-                is Completion.Continue -> return Completion.Continue(completion.label, lastValue)
+                // 规范 UpdateEmpty：break/continue 的空完成值由语句列表的 V 填充
+                is Completion.Break -> return Completion.Break(
+                    completion.label,
+                    if (completion.hasValue) completion.value else lastValue,
+                    hasValue = true,
+                )
+                is Completion.Continue -> return Completion.Continue(
+                    completion.label,
+                    if (completion.hasValue) completion.value else lastValue,
+                    hasValue = true,
+                )
                 else -> return completion
             }
         }
@@ -1394,7 +1482,8 @@ class Interpreter(
             is ClassDeclaration -> {
                 val classValue = evaluateClass(statement.name, statement.superClass, statement.members)
                 if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, statement.name, classValue)) {
-                    currentFrame.lexicalEnv.createConstBinding(statement.name, classValue)
+                    // class 声明的绑定是可变词法绑定（可重新赋值）
+                    currentFrame.lexicalEnv.createLetBinding(statement.name, classValue)
                 }
                 Completion.Normal(JSUndefined, hasValue = false)
             }
@@ -1440,9 +1529,38 @@ class Interpreter(
         currentFrame.lexicalEnv = environment
         return try {
             predeclareLexical(statements, environment)
+            instantiateBlockFunctions(statements, environment)
             executeStatements(statements)
         } finally {
             currentFrame.lexicalEnv = previousEnvironment
+        }
+    }
+
+    /**
+     * 块级函数声明在块入口实例化（BlockDeclarationInstantiation）。
+     *
+     * sloppy 模式下按 Annex B.3.3 同步包围 var 作用域的同名绑定，
+     * 使块外也能看到最近一次执行的块级函数。
+     */
+    private fun instantiateBlockFunctions(statements: List<Statement>, environment: Environment) {
+        val declarative = environment as? DeclarativeEnvironment ?: return
+        for (statement in statements) {
+            if (statement !is FunctionDeclaration) continue
+            val function = createFunction(
+                name = statement.name,
+                params = statement.params,
+                body = statement.body,
+                closure = environment,
+                strict = statement.strict,
+                varDeclarations = statement.varDeclarations,
+                functionDeclarations = statement.functionDeclarations,
+                isAsync = statement.isAsync,
+                privateEnvironment = frame?.function?.privateEnvironment,
+            )
+            declarative.initializeBinding(statement.name, function)
+            if (!statement.strict) {
+                environment.findVarScope().createVarBinding(statement.name, function)
+            }
         }
     }
 
@@ -1491,7 +1609,8 @@ class Interpreter(
                 }
 
                 is ClassDeclaration -> {
-                    if (lexicalBindings.put(statement.name, false) != null) {
+                    // class 绑定可变（let 语义），只做 TDZ 预声明
+                    if (lexicalBindings.put(statement.name, true) != null) {
                         throw JSException(
                             JSError(
                                 "SyntaxError",
@@ -1597,9 +1716,11 @@ class Interpreter(
                             // 重复的 var 声明不得把已有值重置为 undefined
                             currentFrame.lexicalEnv.findVarScope().ensureVarBinding(name)
                         } else {
-                            // 初始化器是赋值语义：在 with 作用域内应优先写入 with 对象
+                            // 规范 13.3.2.4：先 ResolveBinding 捕获引用基环境，再求值初始化器；
+                            // with 作用域内删除同名属性后仍写入原对象
+                            val owner = findBindingOwner(name)
                             val value = evaluateNamed(initializer, name)
-                            writeIdentifierReference(findBindingOwner(name), name, value)
+                            writeIdentifierReference(owner, name, value)
                         }
                     }
 
@@ -1627,10 +1748,16 @@ class Interpreter(
 
     /** if 语句。 */
     private suspend fun executeIf(statement: IfStatement): Completion {
-        return if (toBoolean(evaluate(statement.condition))) {
+        val completion = if (toBoolean(evaluate(statement.condition))) {
             executeStatement(statement.consequent)
         } else {
             statement.alternate?.let { executeStatement(it) } ?: Completion.Normal(JSUndefined)
+        }
+        // 规范：分支的正常空完成值转为 undefined，覆盖语句列表的累积值
+        return if (completion is Completion.Normal && !completion.hasValue) {
+            Completion.Normal(JSUndefined)
+        } else {
+            completion
         }
     }
 
@@ -1644,14 +1771,14 @@ class Interpreter(
                 is Completion.Return -> return completion
                 is Completion.Break -> {
                     if (completion.label == null || completion.label in labels) {
-                        return Completion.Normal(completion.value)
+                        return Completion.Normal(if (completion.hasValue) completion.value else lastValue)
                     }
                     return completion
                 }
 
                 is Completion.Continue -> {
                     if (completion.label != null && completion.label !in labels) return completion
-                    lastValue = completion.value
+                    if (completion.hasValue) lastValue = completion.value
                 }
             }
         }
@@ -1667,14 +1794,14 @@ class Interpreter(
                 is Completion.Return -> return completion
                 is Completion.Break -> {
                     if (completion.label == null || completion.label in labels) {
-                        return Completion.Normal(completion.value)
+                        return Completion.Normal(if (completion.hasValue) completion.value else lastValue)
                     }
                     return completion
                 }
 
                 is Completion.Continue -> {
                     if (completion.label != null && completion.label !in labels) return completion
-                    lastValue = completion.value
+                    if (completion.hasValue) lastValue = completion.value
                 }
             }
         } while (toBoolean(evaluate(statement.condition)))
@@ -1755,14 +1882,14 @@ class Interpreter(
                     is Completion.Return -> return completion
                     is Completion.Break -> {
                         if (completion.label == null || completion.label in labels) {
-                            return Completion.Normal(completion.value)
+                            return Completion.Normal(if (completion.hasValue) completion.value else lastValue)
                         }
                         return completion
                     }
 
                     is Completion.Continue -> {
                         if (completion.label != null && completion.label !in labels) return completion
-                        lastValue = completion.value
+                        if (completion.hasValue) lastValue = completion.value
                     }
                 }
 
@@ -1840,8 +1967,12 @@ class Interpreter(
                     when {
                         pattern != null -> bindPattern(pattern, JSString(key), kind, targetEnvironment)
                         variableName != null -> when (kind) {
-                            DeclarationKind.VAR -> forEnvironment!!.findVarScope()
-                                .createVarBinding(variableName, JSString(key))
+                            // var 绑定按引用解析写入：catch 参数同名时更新 catch 绑定
+                            DeclarationKind.VAR -> writeIdentifierReference(
+                                findBindingOwner(variableName),
+                                variableName,
+                                JSString(key),
+                            )
 
                             DeclarationKind.LET -> targetEnvironment
                                 .createLetBinding(variableName, JSString(key))
@@ -1862,14 +1993,14 @@ class Interpreter(
                     is Completion.Return -> return completion
                     is Completion.Break -> {
                         if (completion.label == null || completion.label in labels) {
-                            return Completion.Normal(completion.value)
+                            return Completion.Normal(if (completion.hasValue) completion.value else lastValue)
                         }
                         return completion
                     }
 
                     is Completion.Continue -> {
                         if (completion.label != null && completion.label !in labels) return completion
-                        lastValue = completion.value
+                        if (completion.hasValue) lastValue = completion.value
                     }
                 }
             }
@@ -1941,8 +2072,12 @@ class Interpreter(
                     when {
                         pattern != null -> bindPattern(pattern, value, kind, targetEnvironment)
                         variableName != null -> when (kind) {
-                            DeclarationKind.VAR -> forEnvironment!!.findVarScope()
-                                .createVarBinding(variableName, value)
+                            // var 绑定按引用解析写入（catch 参数同名时更新 catch 绑定）
+                            DeclarationKind.VAR -> writeIdentifierReference(
+                                findBindingOwner(variableName),
+                                variableName,
+                                value,
+                            )
 
                             DeclarationKind.LET -> targetEnvironment
                                 .createLetBinding(variableName, value)
@@ -1998,7 +2133,7 @@ class Interpreter(
                     is Completion.Break -> {
                         iteratorClose(records, throwCompletion = false)
                         if (completion.label == null || completion.label in labels) {
-                            return Completion.Normal(completion.value)
+                            return Completion.Normal(if (completion.hasValue) completion.value else lastValue)
                         }
                         return completion
                     }
@@ -2008,7 +2143,7 @@ class Interpreter(
                             iteratorClose(records, throwCompletion = false)
                             return completion
                         }
-                        lastValue = completion.value
+                        if (completion.hasValue) lastValue = completion.value
                     }
                 }
             }
@@ -2066,7 +2201,12 @@ class Interpreter(
         val previousEnvironment = currentFrame.lexicalEnv
         currentFrame.lexicalEnv = withEnvironment
         return try {
-            executeStatement(statement.body)
+            val completion = executeStatement(statement.body)
+            if (completion is Completion.Normal && !completion.hasValue) {
+                Completion.Normal(JSUndefined)
+            } else {
+                completion
+            }
         } finally {
             currentFrame.lexicalEnv = previousEnvironment
         }
@@ -2088,6 +2228,11 @@ class Interpreter(
                 statement.cases.flatMap { it.consequent },
                 switchEnvironment,
             )
+            // case 子句中的函数声明在 switch 块入口实例化
+            instantiateBlockFunctions(
+                statement.cases.flatMap { it.consequent },
+                switchEnvironment,
+            )
             var startIndex = -1
             var defaultIndex = -1
 
@@ -2106,14 +2251,13 @@ class Interpreter(
             if (startIndex < 0) {
                 Completion.Normal(JSUndefined)
             } else {
-                var result: Completion = Completion.Normal(JSUndefined)
                 var lastValue: JSValue = JSUndefined
+                var result: Completion? = null
                 execution@ for (index in startIndex until statement.cases.size) {
                     for (inner in statement.cases[index].consequent) {
                         when (val completion = executeStatement(inner)) {
                             is Completion.Normal -> {
                                 if (completion.hasValue) lastValue = completion.value
-                                result = completion
                             }
 
                             is Completion.Return -> {
@@ -2122,22 +2266,27 @@ class Interpreter(
                             }
 
                             is Completion.Break -> {
+                                if (completion.hasValue) lastValue = completion.value
                                 result = if (completion.label == null) {
                                     Completion.Normal(lastValue)
                                 } else {
-                                    completion
+                                    Completion.Break(completion.label, lastValue, hasValue = true)
                                 }
                                 break@execution
                             }
 
                             is Completion.Continue -> {
-                                result = completion
+                                result = Completion.Continue(
+                                    completion.label,
+                                    if (completion.hasValue) completion.value else lastValue,
+                                    hasValue = true,
+                                )
                                 break@execution
                             }
                         }
                     }
                 }
-                result
+                result ?: Completion.Normal(lastValue)
             }
         } finally {
             currentFrame.lexicalEnv = previousEnvironment
@@ -2221,7 +2370,18 @@ class Interpreter(
 
         val error = thrown
         if (error != null) throw error
-        return pending
+        // 规范：try 语句把空完成值归一为 undefined
+        return when (val completion = pending) {
+            is Completion.Normal ->
+                if (completion.hasValue) completion else Completion.Normal(JSUndefined)
+            is Completion.Break ->
+                if (completion.hasValue) completion
+                else Completion.Break(completion.label, JSUndefined, hasValue = true)
+            is Completion.Continue ->
+                if (completion.hasValue) completion
+                else Completion.Continue(completion.label, JSUndefined, hasValue = true)
+            else -> completion
+        }
     }
 
     // ================================================================
@@ -2327,7 +2487,12 @@ class Interpreter(
                     if (!currentFrame.thisInitialized) {
                         throw referenceError("Must call super constructor before accessing 'super'")
                     }
-                    getV(superPropertyBase(), memberKey(expression))
+                    // 访问器以当前 this 为接收者（super getter 的 this 是实例/类）
+                    getPropertyFrom(
+                        superPropertyBase(),
+                        memberKey(expression),
+                        currentFrame.thisValue,
+                    )
                 } else {
                     val base = evaluate(expression.obj)
                     getV(base, memberKey(expression))
@@ -2673,6 +2838,44 @@ class Interpreter(
 
     /** 标签模板求值。 */
     private suspend fun evaluateTaggedTemplate(expression: TaggedTemplate, tail: Boolean = false): JSValue {
+        // 先求值标签引用：成员访问形式保留接收者作为 this（obj.fn`...` 的 this 为 obj）
+        val tagExpression = expression.tag
+        val tagValue: JSValue
+        var thisValue: JSValue = JSUndefined
+        when {
+            tagExpression is MemberExpr && tagExpression.obj is SuperExpr -> {
+                if (!currentFrame.thisInitialized) {
+                    throw referenceError("Must call super constructor before accessing 'super'")
+                }
+                thisValue = currentFrame.thisValue
+                tagValue = getPropertyFrom(
+                    superPropertyBase(),
+                    memberKey(tagExpression),
+                    currentFrame.thisValue,
+                )
+            }
+
+            tagExpression is MemberExpr -> {
+                val base = evaluate(tagExpression.obj)
+                thisValue = base
+                val privateName = (tagExpression.property as? PrivateIdentifier)?.name
+                tagValue = if (privateName != null) {
+                    getPrivateMember(base, resolvePrivateName(privateName))
+                } else {
+                    getV(base, memberKey(tagExpression))
+                }
+            }
+
+            // 标识符标签：this 取 with 绑定对象（与普通调用一致）
+            tagExpression is Identifier && tagExpression.name != "eval" -> {
+                val owner = findBindingOwner(tagExpression.name)
+                tagValue = readIdentifierReference(owner, tagExpression.name)
+                thisValue = (owner as? ObjectEnvironment)?.withBaseObject() ?: JSUndefined
+            }
+
+            else -> tagValue = evaluate(tagExpression)
+        }
+
         val cooked = expression.quasis.map { JSString(it) as JSValue? }.toMutableList()
         val raw = expression.rawQuasis.map { JSString(it) as JSValue? }.toMutableList()
         val templateObject = JSArray(cooked, prototype = intrinsics.arrayPrototype)
@@ -2692,7 +2895,7 @@ class Interpreter(
         for (item in expression.expressions) {
             arguments.add(evaluate(item))
         }
-        return invokeOrTail(evaluate(expression.tag), JSUndefined, arguments, null, tail)
+        return invokeOrTail(tagValue, thisValue, arguments, expression.range, tail)
     }
 
     /**
@@ -2707,26 +2910,47 @@ class Interpreter(
         // 需要在静态初始化之前就带上名称
         val inferredName = if (name == null) classNameHints.removeLastOrNull() else null
         val effectiveName = name ?: inferredName
-        val superClassValue = superClassExpression?.let { evaluate(it) }
+        // class 环境先于 heritage 求值建立：类名在 heritage 中处于 TDZ
+        // （class C extends C {} 必须抛 ReferenceError）
+        val classEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+        if (name != null) classEnvironment.declareLexical(name, mutable = false)
+        val outerEnv = currentFrame.lexicalEnv
+        val superClassValue = if (superClassExpression != null) {
+            currentFrame.lexicalEnv = classEnvironment
+            try {
+                evaluate(superClassExpression)
+            } finally {
+                currentFrame.lexicalEnv = outerEnv
+            }
+        } else {
+            null
+        }
         if (superClassValue != null && superClassValue !is JSNull &&
             !isConstructor(superClassValue)
         ) {
             throw typeError("Class extends value is not a constructor or null")
         }
 
-        val superPrototype = when (superClassValue) {
-            is JSFunction -> superClassValue.functionPrototypeObject
-            is JSNativeFunction -> superClassValue.functionPrototypeObject
-            else -> null
+        // Get(superclass, "prototype")：可能是访问器，且必须为对象或 null，
+        // 否则 GetPrototypeFromConstructor 语义下抛 TypeError（如 bound function）
+        val protoParent: JSObject? = when (superClassValue) {
+            null -> intrinsics.objectPrototype
+            is JSNull -> null
+            else -> when (val parentValue = getV(superClassValue, PropertyKey.PROTOTYPE)) {
+                is JSObject -> parentValue
+                is JSNull -> null
+                else -> throw typeError(
+                    "Class extends value does not have valid prototype property"
+                )
+            }
+        }
+        // class 的 [[Prototype]]：非 null 父类时为父构造器，否则为 %FunctionPrototype%
+        val constructorParent: JSObject = when (superClassValue) {
+            is JSObject -> superClassValue
+            else -> intrinsics.functionPrototype
         }
         // extends null 时类原型对象的 [[Prototype]] 为 null
-        val prototype = JSObject(
-            prototype = when {
-                superClassValue is JSNull -> null
-                else -> superPrototype ?: intrinsics.objectPrototype
-            }
-        )
-        val classEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+        val prototype = JSObject(prototype = protoParent)
         // class 私有名环境：成员函数与嵌套 class 通过闭包捕获
         val privateEnvironment = PrivateEnvironment(parent = currentFrame.function?.privateEnvironment)
 
@@ -2742,7 +2966,8 @@ class Interpreter(
                 functionDeclarations = constructorMember.value.functionDeclarations,
                 isClassConstructor = true,
                 superConstructor = superClassValue,
-                superBase = superPrototype,
+                superBase = protoParent,
+                homeObject = prototype,
                 functionPrototypeObject = prototype,
                 privateEnvironment = privateEnvironment,
             )
@@ -2756,18 +2981,28 @@ class Interpreter(
                 isClassConstructor = true,
                 isDefaultDerivedConstructor = superClassValue != null,
                 superConstructor = superClassValue,
-                superBase = superPrototype,
+                superBase = protoParent,
+                homeObject = prototype,
                 functionPrototypeObject = prototype,
                 privateEnvironment = privateEnvironment,
             )
         }
 
         if (name != null) {
-            classEnvironment.createConstBinding(name, constructor)
+            classEnvironment.initializeLexical(name, constructor)
         }
-        if (superClassValue is JSObject) {
-            constructor.prototype = superClassValue
-        }
+        // 构造器的内部 [[Prototype]] 为父构造器（extends null / 无 heritage 为 %FunctionPrototype%）
+        constructor.prototype = constructorParent
+        // class 构造器的 .prototype 是不可写、不可枚举、不可配置的数据属性
+        constructor.defineOwnProperty(
+            PropertyKey.PROTOTYPE,
+            PropertyDescriptor.data(
+                prototype,
+                writable = false,
+                enumerable = false,
+                configurable = false,
+            ),
+        )
 
         // 静态字段与静态块按源码顺序执行；实例字段在构造时按源码顺序初始化
         val staticElements = ArrayList<StaticElement>()
@@ -2800,10 +3035,14 @@ class Interpreter(
                 PropertyKey.Str(propertyName(member.key))
             }
             val target: JSObject = if (member.isStatic) constructor else prototype
+            // 静态成员不得命名为 prototype（ClassElementEvaluation 的早期错误）
+            if (member.isStatic && privateName == null && key == PropertyKey.PROTOTYPE) {
+                throw typeError("Classes may not have a static property named 'prototype'")
+            }
             val superBase = if (member.isStatic) {
                 superClassValue as? JSObject
             } else {
-                superPrototype
+                protoParent
             }
             val nameHint = if (privateName != null) {
                 "#${privateName.description}"
@@ -3144,8 +3383,11 @@ class Interpreter(
                 try {
                     callEnv.createVarBinding("arguments", createArgumentsObject(args, superConstructor))
                     bindParameters(superConstructor, args, callEnv)
+                    // 函数体词法环境位于 var/参数环境之上
+                    val bodyEnv = DeclarativeEnvironment(parent = callEnv)
+                    activeFrame.lexicalEnv = bodyEnv
                     hoistDeclarations(
-                        callEnv,
+                        bodyEnv,
                         superConstructor.functionDeclarations,
                         superConstructor.varDeclarations,
                     )
@@ -3197,14 +3439,17 @@ class Interpreter(
                 } finally {
                     nativeConstructCall = previousConstructCall
                 }
-                if (result is JSObject) {
-                    if (thisValue is JSObject) {
-                        result.prototype = thisValue.prototype
-                    }
-                    result
-                } else {
-                    thisValue
+                // 原始值结果按构造语义包装（Boolean/Number/String/Symbol 的实例）；
+                // undefined 表示构造函数未返回对象，沿用预创建的 this
+                val objectResult = when (result) {
+                    is JSObject -> result
+                    is JSUndefined -> thisValue as? JSObject ?: wrapPrimitive(result)
+                    else -> wrapPrimitive(result)
                 }
+                if (thisValue is JSObject) {
+                    objectResult.prototype = thisValue.prototype
+                }
+                objectResult
             }
 
             else -> throw typeError("Super constructor is not a constructor")
@@ -3231,14 +3476,14 @@ class Interpreter(
                 currentFrame
             }
             // 规范顺序：先求值参数并调用父构造器，BindThisValue 发现 this 已初始化时才抛错
-            val alreadyInitialized = thisBinding.thisBound
+            // （super(super()) 中内层调用先绑定 this，外层再绑定应抛 ReferenceError）
             val arguments = evaluateArguments(expression.arguments)
             val superConstructorValue: JSValue = function.prototype ?: intrinsics.functionPrototype
             if (!isConstructor(superConstructorValue)) {
                 throw typeError("Super constructor is not a constructor")
             }
             val result = callSuperConstructor(superConstructorValue, thisBinding.boundThis, arguments)
-            if (alreadyInitialized) {
+            if (thisBinding.thisBound) {
                 throw referenceError("Super constructor may only be called once")
             }
             thisBinding.boundThis = result
@@ -3250,10 +3495,14 @@ class Interpreter(
 
         // super.method(...)：在父类原型上查找方法，this 保持当前对象
         if (calleeExpression is MemberExpr && calleeExpression.obj is SuperExpr) {
-            val superBase = currentFrame.function?.superBase
-                ?: throw syntaxError("'super' keyword unexpected here")
+            if (!currentFrame.thisInitialized) {
+                throw referenceError("Must call super constructor before accessing 'super'")
+            }
+            // 方法使用 HomeObject 的动态原型（对象可被 setPrototypeOf 修改）
+            val superBase = superPropertyBase()
             val key = memberKey(calleeExpression)
-            val function = getV(superBase, key)
+            // 访问器以当前 this 为接收者
+            val function = getPropertyFrom(superBase, key, currentFrame.thisValue)
             val arguments = evaluateArguments(expression.arguments)
             return invokeOrTail(function, currentFrame.thisValue, arguments, expression.range, tail)
         }
@@ -3268,6 +3517,20 @@ class Interpreter(
                 return if (value is JSString) evaluateEvalSource(value.value) else value
             }
             return invokeOrTail(function, JSUndefined, arguments, expression.range, tail)
+        }
+
+        // 标识符调用：this 取引用基环境的 WithBaseObject（with 绑定对象），否则 undefined
+        if (calleeExpression is Identifier) {
+            val owner = findBindingOwner(calleeExpression.name)
+            val function = readIdentifierReference(owner, calleeExpression.name)
+            val thisValue = (owner as? ObjectEnvironment)?.withBaseObject() ?: JSUndefined
+            val arguments = evaluateArguments(expression.arguments)
+            if (!isCallable(function)) {
+                throw typeError(
+                    "${describeValue(function)} is not a function (at ${expression.range})"
+                )
+            }
+            return invokeOrTail(function, thisValue, arguments, expression.range, tail)
         }
 
         if (calleeExpression is OptionalChainExpr) {
@@ -3356,7 +3619,7 @@ class Interpreter(
                     }
                     receiver = currentFrame.thisValue
                     hasReceiver = true
-                    getV(superPropertyBase(), memberKey(base))
+                    getPropertyFrom(superPropertyBase(), memberKey(base), currentFrame.thisValue)
                 } else {
                     val baseValue = evaluate(base.obj)
                     receiver = baseValue
@@ -4462,6 +4725,7 @@ class Interpreter(
                 error.message ?: "Invalid regular expression: /$pattern/$flags"
             )
         }
+        JsRegexSyntax.patternError(pattern)?.let { throw syntaxError(it) }
         validateJsRegexSyntax(pattern)
         if ('u' in flags) {
             validateUnicodeRegexSyntax(pattern)
@@ -4507,6 +4771,8 @@ class Interpreter(
             hasLookbehind(pattern) || hasNumericBackReference(pattern) ||
             ('u' in flags && hasUnicodePropertyEscape(pattern)) ||
             hasWhitespaceEscape(pattern) || hasSurrogatePattern(pattern) ||
+            hasClassEscapeRange(pattern) ||
+            ('i' in flags && hasNonAsciiCasePattern(pattern)) ||
             hasLiteralBrace(enginePattern) ||
             hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
         ) {
@@ -4598,6 +4864,76 @@ class Interpreter(
                 }
 
                 c == '}' -> return true
+                else -> index++
+            }
+        }
+        return false
+    }
+
+    /** 是否包含需要按非 u 规则做大小写折叠的非 ASCII 字符/转义。 */
+    private fun hasNonAsciiCasePattern(pattern: String): Boolean {
+        var index = 0
+        while (index < pattern.length) {
+            val c = pattern[index]
+            if (c == '\\') {
+                val next = pattern.getOrNull(index + 1)
+                if (next == 'u') {
+                    if (pattern.getOrNull(index + 2) == '{') {
+                        val close = pattern.indexOf('}', index + 3)
+                        if (close < 0) return false
+                        val codePoint = pattern.substring(index + 3, close).toIntOrNull(16)
+                        if (codePoint != null && codePoint > 127) return true
+                        index = close + 1
+                        continue
+                    }
+                    if (index + 5 < pattern.length) {
+                        val codePoint = pattern.substring(index + 2, index + 6).toIntOrNull(16)
+                        if (codePoint != null && codePoint > 127) return true
+                        index += 6
+                        continue
+                    }
+                }
+                index += 2
+                continue
+            }
+            if (c.code > 127) return true
+            index++
+        }
+        return false
+    }
+
+    /**
+     * 字符类中是否存在以类转义（\d/\w/\s 等）为端点的范围。
+     *
+     * 非 u 模式按 Annex B 把 `-` 当作字面量，而 Java 会拒绝此类模式。
+     */
+    private fun hasClassEscapeRange(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            when (pattern[index]) {
+                '\\' -> index += 2
+                '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                ']' -> {
+                    inClass = false
+                    index++
+                }
+
+                '-' -> {
+                    if (inClass) {
+                        val previousEscape = index >= 2 && pattern[index - 2] == '\\' &&
+                            pattern[index - 1] in "dDwWsS"
+                        val nextEscape = index + 2 < pattern.length &&
+                            pattern[index + 1] == '\\' && pattern[index + 2] in "dDwWsS"
+                        if (previousEscape || nextEscape) return true
+                    }
+                    index++
+                }
+
                 else -> index++
             }
         }

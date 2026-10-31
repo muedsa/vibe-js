@@ -117,7 +117,6 @@ object FunctionBuiltins {
                 val argumentArray = args.getOrNull(1)
                 val callArguments = when (argumentArray) {
                     null, is JSUndefined, is JSNull -> emptyList()
-                    is JSArray -> argumentArray.presentValues()
                     is JSObject -> {
                         val length = interpreter.toNumber(
                             interpreter.getV(argumentArray, PropertyKey.LENGTH)
@@ -151,8 +150,9 @@ object FunctionBuiltins {
                     emptyList()
                 }
                 val targetObject = thisValue as? JSObject
-                // 规范：目标 name 不是字符串时按空串处理
-                val targetName = (targetObject?.getOwnDataValue(PropertyKey.NAME) as? JSString)?.value ?: ""
+                // 规范：Get(Target, "name") 可能触发访问器并传播异常；非字符串按空串处理
+                val targetNameValue = interpreter.getV(thisValue, PropertyKey.NAME)
+                val targetName = (targetNameValue as? JSString)?.value ?: ""
                 // 绑定函数 length = max(0, 目标 length - 已绑定参数个数)
                 val targetLength = (targetObject?.getOwnDataValue(PropertyKey.LENGTH) as? JSNumber)?.value ?: 0.0
                 val boundLength = (targetLength - boundArguments.size).coerceAtLeast(0.0).toInt()

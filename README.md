@@ -77,7 +77,8 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - **Function**：`call/apply/bind/toString`、动态 `Function` 构造器
 - **Array**：常用迭代/查找/增删/排序方法，`fill/copyWithin/at/entries/keys/values`；
   静态 `isArray/of/from`
-- **String**：常用字符/查找/切片/替换/填充方法，`String.raw`、`fromCharCode/fromCodePoint`
+- **String**：常用字符/查找/切片/替换/填充方法，`String.raw`、`fromCharCode/fromCodePoint`、
+  `normalize`（NFC/NFD/NFKC/NFKD）
 - **Number**：常量、`toString(radix)/toFixed/toExponential/toPrecision`、
   静态 `isNaN/isFinite/isInteger/parseInt/parseFloat`
 - **Boolean**、**Math**、**JSON**（`parse`/`stringify` 支持 reviver/replacer/space）
@@ -98,7 +99,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - `Proxy` / `Reflect`
 - BigInt、Intl、TypedArray/ArrayBuffer/DataView
 - DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）
-- `String.prototype.normalize`、`ShadowRealm`、`Atomics`
+- `ShadowRealm`、`Atomics`
 - 完整 ASI 边界规则、`Date` 真实时区（当前本地时间按 UTC 实现）
 
 Unicode 属性/标识符数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。

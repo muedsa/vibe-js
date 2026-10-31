@@ -103,7 +103,25 @@ object MathBuiltins {
         unary("asinh") { value -> asinh(value) }
         unary("atan") { value -> atan(value) }
         unary("atanh") { value -> atanh(value) }
-        unary("cbrt") { value -> if (value < 0) -(-value).pow(1.0 / 3.0) else value.pow(1.0 / 3.0) }
+        unary("cbrt") { value ->
+            when {
+                value.isNaN() || value.isInfinite() || value == 0.0 -> value
+                else -> {
+                    val magnitude = kotlin.math.abs(value)
+                    val root = kotlin.math.exp(kotlin.math.ln(magnitude) / 3.0)
+                    val signed = if (value < 0) -root else root
+                    // exp/ln 近似对完美立方体会产生 1 ulp 误差，回退到整数根
+                    val nearest = kotlin.math.round(signed)
+                    if (kotlin.math.abs(nearest) <= 9007199254740992.0 &&
+                        nearest * nearest * nearest == value
+                    ) {
+                        nearest
+                    } else {
+                        signed
+                    }
+                }
+            }
+        }
         unary("ceil") { value -> kotlin.math.ceil(value) }
         unary("cos") { value -> kotlin.math.cos(value) }
         unary("cosh") { value -> cosh(value) }
@@ -135,13 +153,14 @@ object MathBuiltins {
                 var sum = 0.0
                 for (argument in args) {
                     val value = interpreter.toNumber(argument)
+                    // 任一参数为 ±Infinity 时结果恒为 Infinity，即使同时存在 NaN
                     if (value.isInfinite()) {
                         infinite = true
-                        break
+                        continue
                     }
                     if (value.isNaN()) {
                         hasNaN = true
-                        break
+                        continue
                     }
                     sum += value * value
                 }

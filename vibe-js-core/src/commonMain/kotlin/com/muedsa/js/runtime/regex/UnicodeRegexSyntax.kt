@@ -8,6 +8,153 @@ package com.muedsa.js.runtime.regex
  */
 internal object JsRegexSyntax {
 
+    /**
+     * 非 u 模式的通用早期错误：
+     * - 量词出现在无原子位置（如 `/{2}/`、`/^{2}/`）；
+     * - `{m,n}` 中 m > n。
+     *
+     * 返回错误消息（null 表示通过）。u 模式的额外规则由 [unicodeError] 处理。
+     */
+    fun patternError(pattern: String): String? {
+        var index = 0
+        var lastAtom = false
+        var lastQuantifier = false
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> {
+                    if (index + 1 >= pattern.length) return invalid(pattern)
+                    val escaped = pattern[index + 1]
+                    lastAtom = escaped != 'b' && escaped != 'B'
+                    lastQuantifier = false
+                    index += 2
+                }
+
+                c == '[' -> {
+                    index = plainClassEnd(pattern, index)
+                    if (index < 0) return invalid(pattern)
+                    lastAtom = true
+                    lastQuantifier = false
+                }
+
+                c == '(' -> {
+                    lastAtom = false
+                    lastQuantifier = false
+                    if (index + 1 < pattern.length && pattern[index + 1] == '?') {
+                        when (pattern.getOrNull(index + 2)) {
+                            ':' -> index += 3
+                            '=', '!' -> index += 3
+                            '<' -> {
+                                val marker = pattern.getOrNull(index + 3)
+                                if (marker == '=' || marker == '!') {
+                                    index += 4
+                                } else {
+                                    val close = pattern.indexOf('>', index + 3)
+                                    if (close < 0) return invalid(pattern)
+                                    index = close + 1
+                                }
+                            }
+
+                            else -> {
+                                val colon = pattern.indexOf(':', index + 2)
+                                if (colon < 0) return invalid(pattern)
+                                index = colon + 1
+                            }
+                        }
+                    } else {
+                        index++
+                    }
+                }
+
+                c == ')' -> {
+                    lastAtom = true
+                    lastQuantifier = false
+                    index++
+                }
+
+                c == '|' || c == '^' || c == '$' -> {
+                    lastAtom = false
+                    lastQuantifier = false
+                    index++
+                }
+
+                c == '*' || c == '+' || c == '?' -> {
+                    if (c == '?' && lastQuantifier) {
+                        // 惰性修饰符
+                        lastQuantifier = false
+                        lastAtom = false
+                        index++
+                    } else {
+                        if (!lastAtom || lastQuantifier) return invalid(pattern)
+                        lastAtom = false
+                        lastQuantifier = true
+                        index++
+                        if (index < pattern.length && pattern[index] == '?') {
+                            lastQuantifier = false
+                            index++
+                        }
+                    }
+                }
+
+                c == '{' -> {
+                    val end = braceQuantifierEnd(pattern, index)
+                    if (end == null) {
+                        lastAtom = true
+                        lastQuantifier = false
+                        index++
+                    } else {
+                        if (!lastAtom || lastQuantifier) return invalid(pattern)
+                        if (!orderedBraceQuantifier(pattern, index, end)) return invalid(pattern)
+                        lastAtom = false
+                        lastQuantifier = true
+                        index = end
+                    }
+                }
+
+                else -> {
+                    lastAtom = true
+                    lastQuantifier = false
+                    index++
+                }
+            }
+        }
+        return null
+    }
+
+    /** 非 u 模式的字符类扫描：仅查找结束 ']'，不应用 u 模式范围规则。 */
+    private fun plainClassEnd(pattern: String, start: Int): Int {
+        var index = start + 1
+        if (index < pattern.length && pattern[index] == '^') index++
+        if (index < pattern.length && pattern[index] == ']') return index + 1
+        while (index < pattern.length) {
+            when (pattern[index]) {
+                '\\' -> index += 2
+                ']' -> return index + 1
+                else -> index++
+            }
+        }
+        return -1
+    }
+
+    /** 校验 {m}/{m,}/{m,n} 的上下界顺序（m <= n）。 */
+    private fun orderedBraceQuantifier(pattern: String, start: Int, end: Int): Boolean {
+        var cursor = start + 1
+        val minStart = cursor
+        while (cursor < end && pattern[cursor] in '0'..'9') cursor++
+        val minText = pattern.substring(minStart, cursor)
+        var maxText = minText
+        if (cursor < end - 1 && pattern[cursor] == ',') {
+            val maxStart = cursor + 1
+            var probe = maxStart
+            while (probe < end - 1 && pattern[probe] in '0'..'9') probe++
+            maxText = pattern.substring(maxStart, probe)
+        }
+        if (minText.isEmpty() || maxText.isEmpty()) return true
+        val min = minText.toLongOrNull() ?: return true
+        val max = maxText.toLongOrNull() ?: return true
+        return min <= max
+    }
+
     /** 校验 `u` 标志下的额外早期错误。 */
     fun unicodeError(pattern: String): String? {
         // 统计捕获组数量（跳过字符类与转义）
@@ -115,6 +262,8 @@ internal object JsRegexSyntax {
                 }
 
                 inClass -> if (c == ']') inClass = false
+
+                c == ']' -> return invalid(pattern)
 
                 c == '[' -> {
                     // 字符类整体校验：属性转义与范围端点规则

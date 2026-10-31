@@ -256,6 +256,10 @@ class ObjectEnvironment(
     override fun hasBinding(name: String): Boolean =
         bindingObject.hasProperty(PropertyKey.Str(name)) || super.hasBinding(name)
 
+    /** WithBaseObject：with 环境的绑定对象（全局对象环境返回 null）。 */
+    fun withBaseObject(): JSObject? =
+        if (unscopablesKey != null) bindingObject else null
+
     override fun hasOwnBinding(name: String): Boolean =
         bindingObject.hasProperty(PropertyKey.Str(name))
 

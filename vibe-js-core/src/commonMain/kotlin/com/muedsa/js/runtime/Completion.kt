@@ -21,16 +21,18 @@ sealed class Completion {
     /** return 结束。 */
     class Return(val value: JSValue) : Completion()
 
-    /** break 结束（label 为 null 表示普通 break；value 为语句列表已累积的完成值）。 */
+    /** break 结束（label 为 null 表示普通 break；hasValue 区分空完成值）。 */
     data class Break(
         val label: String? = null,
         val value: JSValue = com.muedsa.js.runtime.value.JSUndefined,
+        val hasValue: Boolean = false,
     ) : Completion()
 
-    /** continue 结束（label 为 null 表示普通 continue；value 同上）。 */
+    /** continue 结束（label 为 null 表示普通 continue；hasValue 同上）。 */
     data class Continue(
         val label: String? = null,
         val value: JSValue = com.muedsa.js.runtime.value.JSUndefined,
+        val hasValue: Boolean = false,
     ) : Completion()
 
     companion object {

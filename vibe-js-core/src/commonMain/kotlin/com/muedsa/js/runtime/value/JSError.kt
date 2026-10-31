@@ -15,6 +15,8 @@ open class JSError(
     val errorName: String,
     val messageText: String,
     prototype: JSObject? = null,
+    /** 是否创建自有 message 属性（new Error() 无参时沿用原型的 message） */
+    defineMessage: Boolean = true,
 ) : JSObject(prototype) {
 
     init {
@@ -27,13 +29,15 @@ open class JSError(
             enumerable = false,
             configurable = true,
         )
-        defineDataProperty(
-            PropertyKey.MESSAGE,
-            JSString(messageText),
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
+        if (defineMessage) {
+            defineDataProperty(
+                PropertyKey.MESSAGE,
+                JSString(messageText),
+                writable = true,
+                enumerable = false,
+                configurable = true,
+            )
+        }
     }
 
     override fun toPrimitiveString(): String =

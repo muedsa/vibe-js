@@ -273,12 +273,11 @@ object ErrorBuiltins {
             length = 1,
             prototypeObject = prototype,
         ) { interpreter, _, args ->
-            val message = if (args.isEmpty() || args[0] is JSUndefined) {
-                ""
-            } else {
-                interpreter.toStringValue(args[0])
-            }
-            val error = JSError(name, message, prototype)
+            // 规范：message 仅在传入非 undefined 时定义为自有属性
+            val messageArg = args.getOrElse(0) { JSUndefined }
+            val hasMessage = messageArg !is JSUndefined
+            val message = if (hasMessage) interpreter.toStringValue(messageArg) else ""
+            val error = JSError(name, message, prototype, defineMessage = hasMessage)
             // options.cause：存在该属性时复制到错误实例（不可枚举）
             val options = args.getOrNull(1)
             if (options != null && options !is JSUndefined) {

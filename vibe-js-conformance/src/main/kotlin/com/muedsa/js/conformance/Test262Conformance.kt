@@ -252,8 +252,9 @@ private class Test262Runner(
                     val matchesSuite = if (suite == "es2015") {
                         // ES2015 子集：非 ES5 用例、特性全部已支持，且不依赖未实现的内建内部对象
                         metadata != null && metadata.es5Id == null &&
-                            metadata.features.isNotEmpty() &&
-                            metadata.features.all { it in es2015SupportedFeatures } &&
+                            (metadata.features.isNotEmpty() &&
+                                metadata.features.all { it in es2015SupportedFeatures } ||
+                                metadata.es6Id != null && metadata.features.isEmpty()) &&
                             es2015ExcludedPathFragments.none { relativePath.contains(it) }
                     } else {
                         metadata?.es5Id != null
@@ -288,6 +289,7 @@ private class Test262Runner(
 
     private fun parseMetadata(raw: String): Metadata {
         var es5Id: String? = null
+        var es6Id: String? = null
         val includes = mutableListOf<String>()
         val flags = mutableSetOf<String>()
         val features = mutableSetOf<String>()
@@ -312,6 +314,7 @@ private class Test262Runner(
                 currentKey = key
                 when (key) {
                     "es5id" -> es5Id = value.trim('\'', '"')
+                    "es6id" -> es6Id = value.trim('\'', '"')
                     "includes" -> includes.addAll(parseInlineList(value))
                     "flags" -> flags.addAll(parseInlineList(value))
                     "features" -> features.addAll(parseInlineList(value))
@@ -345,6 +348,7 @@ private class Test262Runner(
         }
         return Metadata(
             es5Id = es5Id,
+            es6Id = es6Id,
             includes = includes,
             flags = flags,
             features = features,
@@ -709,6 +713,9 @@ private class Test262Runner(
             "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
             // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
             "test/language/expressions/optional-chaining/new-target-optional-call.js",
+            // 宿主型二进制内建（ArrayBuffer/Uint8Array）明确不在支持范围
+            "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/",
+            "test/language/statements/class/subclass/builtins.js",
         )
 
         /** 当前范围外或尚未实现的特性。 */
@@ -727,6 +734,7 @@ private class Test262Runner(
 
 private data class Metadata(
     val es5Id: String?,
+    val es6Id: String?,
     val includes: List<String>,
     val flags: Set<String>,
     val features: Set<String>,
