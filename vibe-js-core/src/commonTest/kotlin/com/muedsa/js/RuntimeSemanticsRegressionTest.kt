@@ -1213,6 +1213,27 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp dotAll 与空非捕获组编译`() = runTest {
+        val runtime = TestRuntime()
+        // s 标志下 . 匹配行终止符
+        assertEquals(true, runtime.evalBoolean("/a.b/s.test('a\\nb') && !/a.b/.test('a\\nb')"))
+        // 空非捕获组在字面量与 compile 中都可编译
+        assertEquals("(?:)", runtime.evalString("/(?:)/.source"))
+        assertEquals("gimsuy", runtime.evalString(
+            "var re = /(?:)/; re.compile('(?:)', 'imsuyg'); re.flags"
+        ))
+        // dotAll 访问器：RegExp.prototype 返回 undefined，其他普通对象抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "var desc = Object.getOwnPropertyDescriptor(RegExp.prototype, 'dotAll');" +
+                " desc.get.call(RegExp.prototype) === undefined"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var get = Object.getOwnPropertyDescriptor(RegExp.prototype, 'dotAll').get;" +
+                "try { get.call({}); false } catch (e) { e instanceof TypeError }"
+        ))
+    }
+
+    @Test
     fun `Annex B RegExp compile 与 escape-unescape`() = runTest {
         val runtime = TestRuntime()
         assertEquals(true, runtime.evalBoolean(

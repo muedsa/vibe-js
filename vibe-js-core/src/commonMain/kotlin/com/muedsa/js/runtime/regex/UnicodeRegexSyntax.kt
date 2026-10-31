@@ -99,6 +99,16 @@ internal object JsRegexSyntax {
                     groupStack.add(!isLookahead)
                     lastAtomQuantifiable = false
                     lastWasLazy = false
+                    // 跳过组前缀中的 '?'/'?'+标记，避免被当作量词
+                    if (index + 1 < pattern.length && pattern[index + 1] == '?') {
+                        if (index + 2 < pattern.length && pattern[index + 2] == '<') {
+                            val close = pattern.indexOf('>', index + 3)
+                            if (close < 0) return invalid(pattern)
+                            index = close
+                        } else {
+                            index += 2
+                        }
+                    }
                 }
 
                 c == ')' -> {

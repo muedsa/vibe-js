@@ -3630,6 +3630,43 @@ class Interpreter(
      * Kotlin Regex 与 JS RegExp 存在少量差异（如命名组语法），
      * 这里覆盖 ES5 常用的匹配、捕获与全局搜索行为。
      */
+    /**
+     * s 标志：把字符类外的 `.` 展开为 `[\s\S]`。
+     * 公共 RegexOption 不提供 DOT_MATCHES_ALL，回退引擎则自行处理 s 标志。
+     */
+    private fun expandDotAll(pattern: String): String {
+        val builder = StringBuilder(pattern.length)
+        var inClass = false
+        var escaped = false
+        for (c in pattern) {
+            if (escaped) {
+                builder.append(c)
+                escaped = false
+                continue
+            }
+            when (c) {
+                '\\' -> {
+                    builder.append(c)
+                    escaped = true
+                }
+
+                '[' -> {
+                    inClass = true
+                    builder.append(c)
+                }
+
+                ']' -> {
+                    inClass = false
+                    builder.append(c)
+                }
+
+                '.' -> builder.append(if (inClass) "." else "[\\s\\S]")
+                else -> builder.append(c)
+            }
+        }
+        return builder.toString()
+    }
+
     fun createRegExp(pattern: String, flags: String): JSValue {
         validateJsRegexSyntax(pattern)
         if ('u' in flags) {
@@ -3665,7 +3702,7 @@ class Interpreter(
             buildFallback()
         } else {
             val kotlinRegex = try {
-                Regex(pattern, options)
+                Regex(if ('s' in flags) expandDotAll(pattern) else pattern, options)
             } catch (_: Throwable) {
                 null
             }
@@ -3702,6 +3739,7 @@ class Interpreter(
     private fun requiresJsRegexEngine(pattern: String): Boolean {
         val hasJsClassSyntax = pattern.contains("[]") || pattern.contains("[^]") ||
             pattern.contains("\\0") || pattern.contains("\\c") || pattern.contains("\\u{") ||
+            pattern.contains("(?:)") ||
             hasBackspaceInsideClass(pattern) || hasBracketInsideClass(pattern)
         if (hasJsClassSyntax) return true
         if (hasLookaheadBackReference(pattern)) return true

@@ -190,9 +190,22 @@ object RegExpBuiltins {
             enumerable = false,
             configurable = true,
         )
+        // dotAll 访问器要求接收者具有 RegExp 内部槽
         regexpPrototype.defineAccessorProperty(
             key = PropertyKey.Str("dotAll"),
-            get = flagAccessor("dotAll") { regexp -> JSBoolean.getJsBoolean(regexp.dotAll) },
+            get = JSNativeFunction(
+                name = "get dotAll",
+                length = 0,
+                prototype = intrinsics.functionPrototype,
+            ) { interpreter, thisValue, _ ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("RegExp.prototype.dotAll getter called on non-object")
+                }
+                if (thisValue === intrinsics.regexpPrototype) return@JSNativeFunction JSUndefined
+                val regexp = thisValue as? JSRegExp
+                    ?: interpreter.typeError("RegExp.prototype.dotAll getter called on incompatible receiver")
+                JSBoolean.getJsBoolean(regexp.dotAll)
+            },
             set = null,
             enumerable = false,
             configurable = true,
