@@ -51,6 +51,8 @@ import com.muedsa.js.ast.ReturnStatement
 import com.muedsa.js.ast.SequenceExpr
 import com.muedsa.js.ast.SpreadElement
 import com.muedsa.js.ast.Statement
+import com.muedsa.js.ast.UsingDeclaration
+import com.muedsa.js.ast.UsingMode
 import com.muedsa.js.ast.StringLiteral
 import com.muedsa.js.ast.SuperExpr
 import com.muedsa.js.ast.SwitchStatement
@@ -139,6 +141,9 @@ class Interpreter(
 
     /** 类求值期间生效的私有名环境（计算属性名求值等场景）。 */
     private val privateEnvironmentOverrides = ArrayList<PrivateEnvironment>()
+
+    /** using 资源释放作用域栈（语句列表/循环作用域）。 */
+    private val disposalScopes = ArrayList<DisposalScope>()
 
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
@@ -1250,16 +1255,19 @@ class Interpreter(
     // 语句执行
     // ================================================================
 
-    private suspend fun executeStatements(statements: List<Statement>): Completion {
+    private suspend fun executeStatements(statements: List<Statement>): Completion =
+        withDisposalScope { executeStatementsInternal(statements) }
+
+    private suspend fun executeStatementsInternal(statements: List<Statement>): Completion {
         var lastValue: JSValue = JSUndefined
+        var hasValue = false
         for (statement in statements) {
             when (val completion = executeStatement(statement)) {
                 is Completion.Normal -> {
-                    // 空语句与声明语句产生 empty completion，不覆盖 eval 完成值
-                    if (statement !is EmptyStatement && statement !is ClassDeclaration &&
-                        statement !is FunctionDeclaration && statement !is VarDeclaration
-                    ) {
-                        lastValue = completion.value
+                    // only value-producing statements overwrite the accumulated value
+                    if (completion.hasValue) {
+                        if (completion.hasValue) lastValue = completion.value
+                        hasValue = true
                     }
                 }
                 // 规范：break/continue 携带所在语句列表已累积的完成值
@@ -1268,12 +1276,12 @@ class Interpreter(
                 else -> return completion
             }
         }
-        return Completion.Normal(lastValue)
+        return Completion.Normal(lastValue, hasValue)
     }
 
     private suspend fun executeStatement(statement: Statement): Completion {
         return when (statement) {
-            is EmptyStatement -> Completion.Normal(JSUndefined)
+            is EmptyStatement -> Completion.Normal(JSUndefined, hasValue = false)
             is BlockStatement -> executeBlock(
                 statement.statements,
                 DeclarativeEnvironment(parent = currentFrame.lexicalEnv),
@@ -1285,11 +1293,16 @@ class Interpreter(
                 if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, statement.name, classValue)) {
                     currentFrame.lexicalEnv.createConstBinding(statement.name, classValue)
                 }
-                Completion.Normal(JSUndefined)
+                Completion.Normal(JSUndefined, hasValue = false)
             }
 
             is VarDeclaration -> executeVarDeclaration(statement)
-            is FunctionDeclaration -> Completion.Normal(JSUndefined) // 已提升
+            is UsingDeclaration -> {
+                executeUsingDeclaration(statement)
+                Completion.Normal(JSUndefined, hasValue = false)
+            }
+            // 已提升
+            is FunctionDeclaration -> Completion.Normal(JSUndefined, hasValue = false)
             is IfStatement -> executeIf(statement)
             is WhileStatement -> executeWhile(statement)
             is DoWhileStatement -> executeDoWhile(statement)
@@ -1354,6 +1367,19 @@ class Interpreter(
                                     JSError("SyntaxError", "Identifier '$name' has already been declared")
                                 )
                             }
+                        }
+                    }
+                }
+
+                is UsingDeclaration -> {
+                    for (declarator in statement.declarations) {
+                        if (lexicalBindings.put(declarator.name, false) != null) {
+                            throw JSException(
+                                JSError(
+                                    "SyntaxError",
+                                    "Identifier '${declarator.name}' has already been declared",
+                                )
+                            )
                         }
                     }
                 }
@@ -1490,7 +1516,7 @@ class Interpreter(
                 }
             }
         }
-        return Completion.Normal(JSUndefined)
+        return Completion.Normal(JSUndefined, hasValue = false)
     }
 
     /** if 语句。 */
@@ -1508,7 +1534,7 @@ class Interpreter(
         var lastValue: JSValue = JSUndefined
         while (toBoolean(evaluate(statement.condition))) {
             when (val completion = executeStatement(statement.body)) {
-                is Completion.Normal -> lastValue = completion.value
+                is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                 is Completion.Return -> return completion
                 is Completion.Break -> {
                     if (completion.label == null || completion.label in labels) {
@@ -1531,7 +1557,7 @@ class Interpreter(
         var lastValue: JSValue = JSUndefined
         do {
             when (val completion = executeStatement(statement.body)) {
-                is Completion.Normal -> lastValue = completion.value
+                is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                 is Completion.Return -> return completion
                 is Completion.Break -> {
                     if (completion.label == null || completion.label in labels) {
@@ -1550,7 +1576,15 @@ class Interpreter(
     }
 
     /** for 语句（支持 let/const 每迭代作用域）。 */
-    private suspend fun executeFor(statement: ForStatement, labels: List<String> = emptyList()): Completion {
+    private suspend fun executeFor(
+        statement: ForStatement,
+        labels: List<String> = emptyList(),
+    ): Completion = withDisposalScope { executeForInternal(statement, labels) }
+
+    private suspend fun executeForInternal(
+        statement: ForStatement,
+        labels: List<String>,
+    ): Completion {
         val forEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
         val previousEnvironment = currentFrame.lexicalEnv
         currentFrame.lexicalEnv = forEnvironment
@@ -1611,7 +1645,7 @@ class Interpreter(
                 }
 
                 when (completion) {
-                    is Completion.Normal -> lastValue = completion.value
+                    is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                     is Completion.Return -> return completion
                     is Completion.Break -> {
                         if (completion.label == null || completion.label in labels) {
@@ -1718,7 +1752,7 @@ class Interpreter(
                 }
 
                 when (completion) {
-                    is Completion.Normal -> lastValue = completion.value
+                    is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                     is Completion.Return -> return completion
                     is Completion.Break -> {
                         if (completion.label == null || completion.label in labels) {
@@ -1785,6 +1819,13 @@ class Interpreter(
                     currentFrame.lexicalEnv = iterationEnvironment
                 }
 
+                // for (using x of ...)：每次迭代拥有独立的释放作用域
+                val usingMode = statement.usingMode
+                val usingScope = if (usingMode != null) DisposalScope() else null
+                if (usingScope != null) {
+                    usingScope.hasAsyncResource = usingMode == UsingMode.ASYNC
+                    disposalScopes.add(usingScope)
+                }
                 var completion: Completion = Completion.Normal(JSUndefined)
                 try {
                     val pattern = statement.pattern
@@ -1806,16 +1847,43 @@ class Interpreter(
 
                         else -> statement.target?.let { assignTarget(it, value) }
                     }
+                    if (usingScope != null && value !is JSNull && value !is JSUndefined) {
+                        val method = resolveDisposeMethod(value, usingMode == UsingMode.ASYNC)
+                        usingScope.resources.add(
+                            DisposalResource(value, method, usingMode == UsingMode.ASYNC)
+                        )
+                    }
                     completion = executeStatement(statement.body)
                 } catch (error: JSException) {
+                    val failure = if (usingScope != null) {
+                        disposeScope(usingScope, error.value)
+                    } else {
+                        null
+                    }
                     iteratorClose(records, throwCompletion = true)
+                    if (usingScope != null && failure != null) throw JSException(failure)
                     throw error
                 } finally {
+                    if (usingScope != null) {
+                        // 异常路径已释放；正常/控制流路径在下方释放
+                        if (disposalScopes.lastOrNull() === usingScope) {
+                            disposalScopes.removeAt(disposalScopes.lastIndex)
+                        }
+                    }
                     currentFrame.lexicalEnv = if (lexical) headEnvironment!! else forEnvironment!!
                 }
 
+                if (usingScope != null) {
+                    val failure = disposeScope(usingScope, null)
+                    if (failure != null) {
+                        iteratorClose(records, throwCompletion = true)
+                        throw JSException(failure)
+                    }
+                    if (usingScope.hasAsyncResource) awaitPromiseValue(JSUndefined)
+                }
+
                 when (completion) {
-                    is Completion.Normal -> lastValue = completion.value
+                    is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                     is Completion.Return -> {
                         iteratorClose(records, throwCompletion = false)
                         return completion
@@ -1938,7 +2006,7 @@ class Interpreter(
                     for (inner in statement.cases[index].consequent) {
                         when (val completion = executeStatement(inner)) {
                             is Completion.Normal -> {
-                                lastValue = completion.value
+                                if (completion.hasValue) lastValue = completion.value
                                 result = completion
                             }
 
@@ -2758,6 +2826,21 @@ class Interpreter(
         return constructor
     }
 
+    /** 一个 using 资源：接收者、初始化时读取的释放方法与是否异步释放。 */
+    private class DisposalResource(
+        val value: JSValue,
+        val method: JSValue,
+        val isAsync: Boolean,
+    )
+
+    /** 一个释放作用域内的资源列表（按声明顺序保存，释放时逆序）。 */
+    private class DisposalScope {
+        val resources = ArrayList<DisposalResource>()
+
+        /** 是否存在 await using 声明（即使资源为空也需要让出微任务）。 */
+        var hasAsyncResource: Boolean = false
+    }
+
     /** 类求值时的静态元素（静态字段或静态初始化块）；字段携带属性键或私有名。 */
     private class StaticElement(
         val member: ClassMember,
@@ -2781,6 +2864,124 @@ class Interpreter(
                 addPrivateFieldOrThrow(receiver, field.privateName!!, value)
             }
         }
+    }
+
+    /**
+     * 在释放作用域内执行语句列表：正常/控制流完成与异常完成都先逆序释放资源。
+     */
+    private suspend fun <T> withDisposalScope(block: suspend () -> T): T {
+        val scope = DisposalScope()
+        disposalScopes.add(scope)
+        try {
+            val result = try {
+                block()
+            } catch (error: JSException) {
+                disposeScope(scope, error.value)?.let { throw JSException(it) }
+                throw error
+            }
+            disposeScope(scope, null)?.let { throw JSException(it) }
+            if (scope.hasAsyncResource) awaitPromiseValue(JSUndefined)
+            return result
+        } finally {
+            disposalScopes.removeAt(disposalScopes.lastIndex)
+        }
+    }
+
+    /** 执行 using 声明：求值初始化器、读取释放方法并初始化不可变绑定。 */
+    private suspend fun executeUsingDeclaration(statement: UsingDeclaration) {
+        val scope = disposalScopes.lastOrNull()
+            ?: throw syntaxError("using declaration is not allowed here")
+        if (statement.isAwait) scope.hasAsyncResource = true
+        for (declarator in statement.declarations) {
+            val value = evaluateNamed(declarator.initializer, declarator.name)
+            if (value !is JSNull && value !is JSUndefined) {
+                val method = resolveDisposeMethod(value, statement.isAwait)
+                scope.resources.add(DisposalResource(value, method, statement.isAwait))
+            }
+            if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, declarator.name, value)) {
+                currentFrame.lexicalEnv.createConstBinding(declarator.name, value)
+            }
+        }
+    }
+
+    /** GetDisposeMethod：同步使用 @@dispose；异步优先 @@asyncDispose 再回退。 */
+    private suspend fun resolveDisposeMethod(value: JSValue, isAsync: Boolean): JSValue {
+        val method = if (isAsync) {
+            val asyncMethod = getV(value, PropertyKey.Sym(intrinsics.symbolAsyncDispose))
+            if (asyncMethod is JSUndefined || asyncMethod is JSNull) {
+                getV(value, PropertyKey.Sym(intrinsics.symbolDispose))
+            } else {
+                asyncMethod
+            }
+        } else {
+            getV(value, PropertyKey.Sym(intrinsics.symbolDispose))
+        }
+        if (method is JSUndefined || method is JSNull) {
+            throw typeError("Object is not disposable")
+        }
+        if (!isCallable(method)) {
+            throw typeError("Dispose method is not a function")
+        }
+        return method
+    }
+
+    /** DisposeResources：逆序调用释放方法，多个错误按 SuppressedError 嵌套。 */
+    private suspend fun disposeScope(scope: DisposalScope, pending: JSValue?): JSValue? {
+        var failure = pending
+        for (index in scope.resources.indices.reversed()) {
+            val resource = scope.resources[index]
+            try {
+                val result = callFunction(resource.method, resource.value, emptyList())
+                if (resource.isAsync) awaitPromiseValue(result)
+            } catch (error: JSException) {
+                failure = if (failure == null) {
+                    error.value
+                } else {
+                    createSuppressedErrorValue(error.value, failure)
+                }
+            }
+        }
+        scope.resources.clear()
+        return failure
+    }
+
+    /** Await：至少让出一个微任务周期（与 AsyncDisposableStack 的释放语义一致）。 */
+    private suspend fun awaitPromiseValue(value: JSValue): JSValue {
+        val promise = if (value is JSPromise) {
+            value
+        } else {
+            val created = JSPromise(intrinsics.promisePrototype)
+            PromiseSupport.resolve(this, created, value)
+            created
+        }
+        val result = try {
+            promise.awaitResult()
+        } catch (error: JSException) {
+            context.eventLoop.awaitMicrotask()
+            throw error
+        }
+        context.eventLoop.awaitMicrotask()
+        return result
+    }
+
+    /** 构造 SuppressedError 值（error 为新的主错误，suppressed 为先前累积错误）。 */
+    private fun createSuppressedErrorValue(error: JSValue, suppressed: JSValue): JSValue {
+        val objectValue = JSObject(prototype = intrinsics.suppressedErrorPrototype)
+        objectValue.defineDataProperty(
+            key = PropertyKey.Str("error"),
+            value = error,
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        objectValue.defineDataProperty(
+            key = PropertyKey.Str("suppressed"),
+            value = suppressed,
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        return objectValue
     }
 
     /**

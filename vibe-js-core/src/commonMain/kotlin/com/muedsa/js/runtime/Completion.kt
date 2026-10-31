@@ -12,8 +12,11 @@ import com.muedsa.js.runtime.value.JSValue
  */
 sealed class Completion {
 
-    /** 正常结束，携带语句的完成值（通常是 undefined）。 */
-    class Normal(val value: JSValue) : Completion()
+    /**
+     * 正常结束，携带语句的完成值（通常是 undefined）。
+     * hasValue 为 false 表示 empty completion（声明语句等不产生完成值）。
+     */
+    class Normal(val value: JSValue, val hasValue: Boolean = true) : Completion()
 
     /** return 结束。 */
     class Return(val value: JSValue) : Completion()

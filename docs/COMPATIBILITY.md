@@ -74,7 +74,8 @@
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；Weak 版本不可迭代，支持非注册 Symbol 键 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
 | Promise | ✅ | then/catch/finally、resolve/reject/all/race/allSettled/any、allKeyed/allSettledKeyed、withResolvers/try、thenable 与循环检测 |
-| DisposableStack | ✅ | DisposableStack/AsyncDisposableStack、use/adopt/defer/move/dispose/disposeAsync、Symbol.dispose/asyncDispose 与 SuppressedError；using 声明语法暂缺 |
+| DisposableStack | ✅ | DisposableStack/AsyncDisposableStack、use/adopt/defer/move/dispose/disposeAsync、Symbol.dispose/asyncDispose 与 SuppressedError |
+| using / await using 声明 | ✅ | 块/函数/for 头部资源作用域、逆序释放与 SuppressedError 聚合、for-of 每轮释放、异步释放 Await |
 | Generator | ❌ | 明确排除 |
 | TypedArray / ArrayBuffer / DataView | ❌ | 后续阶段 |
 | Intl | ❌ | 后续阶段 |
@@ -99,9 +100,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 419 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 419 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 419 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 423 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 423 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 423 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

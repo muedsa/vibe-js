@@ -1882,6 +1882,127 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `using 声明在块结束时逆序释放资源`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var log = [];" +
+                "var r1 = { [Symbol.dispose]() { log.push(this) } };" +
+                "var r2 = { [Symbol.dispose]() { log.push(this) } };" +
+                "{ using a = r1, b = r2; }" +
+                "log.length === 2 && log[0] === r2 && log[1] === r1"
+        ))
+        // 初始化时读取释放方法一次，且以资源为 this 调用
+        assertEquals(true, runtime.evalBoolean(
+            "var reads = 0; var self = false;" +
+                "var resource = { get [Symbol.dispose]() { reads++; return function () { self = this === resource } } };" +
+                "{ using x = resource; } reads === 1 && self"
+        ))
+        // null/undefined 初始化器合法；释放方法为 null/undefined 时初始化即抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "{ using a = null; using b = undefined; } true"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "try { { using x = { [Symbol.dispose]: null }; } false } catch (e) { e instanceof TypeError }"
+        ))
+        // 绑定不可变
+        assertEquals(true, runtime.evalBoolean(
+            "{ using x = null; try { x = 1; false } catch (e) { e instanceof TypeError } }"
+        ))
+        // 语句完成值为空，不影响 eval 完成值
+        assertEquals(4.0, runtime.evalNumber("4; { using x = null; }"))
+    }
+
+    @Test
+    fun `using 异常释放按 SuppressedError 聚合`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "class MyError extends Error {}" +
+                "var e1 = new MyError(), e2 = new MyError(), e3 = new MyError();" +
+                "try {" +
+                "  using a = { [Symbol.dispose]() { throw e1 } };" +
+                "  using b = { [Symbol.dispose]() { throw e2 } };" +
+                "  throw e3;" +
+                "} catch (e) {" +
+                "  e instanceof SuppressedError && e.error === e1 &&" +
+                "  e.suppressed instanceof SuppressedError &&" +
+                "  e.suppressed.error === e2 && e.suppressed.suppressed === e3" +
+                "}"
+        ))
+        // 仅一个错误时按原样抛出
+        assertEquals(true, runtime.evalBoolean(
+            "class E2 extends Error {} var single = new E2();" +
+                "try { using a = { [Symbol.dispose]() { throw single } }; } catch (e) { e === single }"
+        ))
+        // 后续初始化器抛错时，已声明的资源仍会释放
+        assertEquals(true, runtime.evalBoolean(
+            "var disposed = false;" +
+                "try { { using a = { [Symbol.dispose]() { disposed = true } }; using b = (() => { throw 1 })(); } } catch (e) {}" +
+                "disposed"
+        ))
+    }
+
+    @Test
+    fun `await using 释放与 for-of using 每轮释放`() = runTest {
+        val runtime = TestRuntime()
+        // await using：优先 @@asyncDispose，并 Await 返回值
+        assertEquals(true, runtime.evalBoolean(
+            "var order = [];" +
+                "async function f() {" +
+                "  using a = { [Symbol.dispose]() { order.push('sync') } };" +
+                "  await using b = { [Symbol.asyncDispose]() { order.push('async-start'); return Promise.resolve().then(() => order.push('async-end')) } };" +
+                "}" +
+                "f().then(() => { order.push('done') }); true"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var log2 = [];" +
+                "async function g() {" +
+                "  { await using x = { [Symbol.dispose]() { log2.push('disposed') } }; log2.push('body'); }" +
+                "  log2.push('after');" +
+                "}" +
+                "g().then(() => log2.push('done')); true"
+        ))
+        // for-of using：每轮结束释放
+        assertEquals(true, runtime.evalBoolean(
+            "var seen = [];" +
+                "for (using r of [{ [Symbol.dispose]() { seen.push('a') } }, { [Symbol.dispose]() { seen.push('b') } }]) { seen.push('body') }" +
+                "seen.join(',') === 'body,a,body,b'"
+        ))
+        // for (using ...; ...) 资源在循环结束时释放
+        assertEquals(true, runtime.evalBoolean(
+            "var items = [];" +
+                "for (using r = { [Symbol.dispose]() { items.push('disposed') } }; items.length < 2; ) { items.push('body') }" +
+                "items.join(',') === 'body,body,disposed'"
+        ))
+    }
+
+    @Test
+    fun `using 语法与早期错误`() = runTest {
+        val runtime = TestRuntime()
+        assertFailsWith<ParseException> { runtime.eval("using x = null;") }
+        assertFailsWith<ParseException> { runtime.eval("{ using x; }") }
+        assertFailsWith<ParseException> { runtime.eval("{ using [] = null; }") }
+        assertFailsWith<ParseException> { runtime.eval("{ using {} = null; }") }
+        assertFailsWith<ParseException> { runtime.eval("for (using x in []) { }") }
+        assertFailsWith<ParseException> { runtime.eval("{ if (true) using x = null; }") }
+        assertFailsWith<ParseException> { runtime.eval("switch (1) { case 1: using x = null; }") }
+        // using 在模块/函数/块/for 头允许
+        runtime.eval("function f() { using x = null; } f();")
+        runtime.eval("for (using x = null; false; ) { }")
+        // 绑定 TDZ（使用前未初始化）
+        assertEquals(true, runtime.evalBoolean(
+            "{ var ok = false; try { x; using x = null; } catch (e) { ok = e instanceof ReferenceError } ok }"
+        ))
+        // 匿名函数命名推断
+        assertEquals("fn,arrow", runtime.evalString(
+            "var names = [];" +
+                "Function.prototype[Symbol.dispose] = function () {};" +
+                "{ using fn = function () {}; names.push(fn.name) }" +
+                "{ using arrow = () => {}; names.push(arrow.name) }" +
+                "names.join(',')"
+        ))
+    }
+
+    @Test
     fun `RegExp d 标志生成 indices 数组与 hasIndices 访问器`() = runTest {
         val runtime = TestRuntime()
         // exec 结果：indices 元素为 [start, end]，未参与匹配的组为 undefined

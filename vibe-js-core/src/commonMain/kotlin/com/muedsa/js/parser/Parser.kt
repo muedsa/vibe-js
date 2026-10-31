@@ -32,6 +32,9 @@ class Parser(
     evalPrivateNames: Set<String>? = null,
 ) {
 
+    /** 当前语句列表是否允许 using 声明（脚本体、eval 顶层与 case 子句不允许）。 */
+    private var usingDeclarationAllowed = false
+
     /** 当前解析位置（tokens 下标）。 */
     private var pos = 0
 
@@ -307,6 +310,14 @@ class Parser(
      * 语句分发。
      */
     private fun parseStatement(): Statement {
+        if (usingDeclarationAllowed) {
+            if (isAwaitUsingDeclarationStart()) {
+                return parseUsingDeclaration(isAwait = true, requireTerminator = true)
+            }
+            if (isUsingDeclarationStart()) {
+                return parseUsingDeclaration(isAwait = false, requireTerminator = true)
+            }
+        }
         var annexBFunction = false
         var singleStatementAtStart = false
         if (singleStatementContext) {
@@ -315,6 +326,9 @@ class Parser(
             if ((tokenType == TokenType.LET && isLetDeclarationStart()) ||
                 tokenType == TokenType.CONST || tokenType == TokenType.CLASS
             ) {
+                throw error("Lexical declaration cannot appear in a single-statement context")
+            }
+            if (isAwaitUsingDeclarationStart() || isUsingDeclarationStart()) {
                 throw error("Lexical declaration cannot appear in a single-statement context")
             }
             if (tokenType == TokenType.FUNCTION && (!allowFunctionInSingleStatement || strict)) {
@@ -682,9 +696,12 @@ class Parser(
         val previousAllowFunction = allowFunctionInSingleStatement
         singleStatementContext = true
         allowFunctionInSingleStatement = allowFunctionDeclaration
+        val previousUsingAllowed = usingDeclarationAllowed
+        usingDeclarationAllowed = false
         return try {
             parseStatement()
         } finally {
+            usingDeclarationAllowed = previousUsingAllowed
             singleStatementContext = previousContext
             allowFunctionInSingleStatement = previousAllowFunction
         }
@@ -1648,15 +1665,92 @@ class Parser(
     }
 
     /** 块语句 `{ ... }`；函数体/catch 块复用外层声明作用域时传 trackScope = false。 */
+    /**
+     * 判断当前位置是否是 `using BindingIdentifier`（不含换行，且后随绑定起始）。
+     *
+     * allowOf=false 用于 for-of 头部：`for (using of of [..])` 中的 using 应视为
+     * 普通标识符左值（lookahead 限制），而不是 using 声明。
+     */
+    private fun isUsingDeclarationStart(offset: Int = 0, allowOf: Boolean = true): Boolean {
+        val token = peek(offset)
+        if (token.type != TokenType.IDENTIFIER || token.containsEscape || token.value != "using") {
+            return false
+        }
+        val next = peek(offset + 1)
+        if (next.precededByNewline) return false
+        if (next.type != TokenType.IDENTIFIER && next.type != TokenType.LET) return false
+        if (!allowOf && next.type == TokenType.IDENTIFIER && !next.containsEscape &&
+            next.value == "of"
+        ) {
+            return false
+        }
+        return true
+    }
+
+    /** 判断当前位置是否是 `await using ...`（仅 async 语境）。 */
+    private fun isAwaitUsingDeclarationStart(offset: Int = 0): Boolean {
+        if (!asyncContext) return false
+        val awaitToken = peek(offset)
+        if (awaitToken.type != TokenType.IDENTIFIER || awaitToken.containsEscape ||
+            awaitToken.value != "await"
+        ) {
+            return false
+        }
+        val usingToken = peek(offset + 1)
+        if (usingToken.precededByNewline) return false
+        return isUsingDeclarationStart(offset + 1)
+    }
+
+    /**
+     * 解析 using / await using 声明。
+     *
+     * 绑定必须是标识符（不允许解构模式），且每个绑定都必须有初始化表达式。
+     */
+    private fun parseUsingDeclaration(isAwait: Boolean, requireTerminator: Boolean): UsingDeclaration {
+        val start = peek().range.start
+        if (isAwait) advance() // await
+        advance() // using
+        val declarations = mutableListOf<UsingDeclarator>()
+        do {
+            if (check(TokenType.LBRACKET) || check(TokenType.LBRACE)) {
+                throw error("using declarations may not use binding patterns")
+            }
+            val nameToken = consumeBindingIdentifier("Expected binding identifier in using declaration")
+            validateIdentifierName(nameToken.value, strict)
+            declareLexicalBinding(nameToken.value)
+            if (!match(TokenType.ASSIGN)) {
+                throw error("Missing initializer in using declaration")
+            }
+            val initializer = parseAssignment()
+            declarations.add(
+                UsingDeclarator(
+                    name = nameToken.value,
+                    initializer = initializer,
+                    range = SourceRange(nameToken.range.start, initializer.range.end),
+                )
+            )
+        } while (match(TokenType.COMMA))
+        if (requireTerminator) consumeSemicolon()
+        return UsingDeclaration(
+            declarations = declarations,
+            isAwait = isAwait,
+            range = SourceRange(start, previous().range.end),
+        )
+    }
+
     private fun parseBlockStatement(trackScope: Boolean = true): BlockStatement {
         val start = consume(TokenType.LBRACE, "Expected '{'").range.start
         if (trackScope) pushDeclScope(DeclScopeKind.BLOCK)
         val statements = mutableListOf<Statement>()
+        // 块语句列表允许 using 声明（函数体同样复用该方法）
+        val previousUsingAllowed = usingDeclarationAllowed
+        usingDeclarationAllowed = true
         try {
             while (!check(TokenType.RBRACE) && !isAtEnd()) {
                 statements.add(parseStatement())
             }
         } finally {
+            usingDeclarationAllowed = previousUsingAllowed
             if (trackScope) popDeclScope()
         }
         val end = consume(TokenType.RBRACE, "Expected '}'").range.end
@@ -1705,7 +1799,11 @@ class Parser(
             var init: Statement? = null
             if (!match(TokenType.SEMICOLON)) {
                 val letIsExpression = check(TokenType.LET) && allowLetAsIdentifier() && !isLetDeclarationStart()
-                init = if ((check(TokenType.VAR) || check(TokenType.CONST) ||
+                init = if (isAwaitUsingDeclarationStart()) {
+                    parseUsingDeclaration(isAwait = true, requireTerminator = false)
+                } else if (isUsingDeclarationStart()) {
+                    parseUsingDeclaration(isAwait = false, requireTerminator = false)
+                } else if ((check(TokenType.VAR) || check(TokenType.CONST) ||
                         (check(TokenType.LET) && !letIsExpression))
                 ) {
                     parseVarDeclaration(requireSemicolon = false)
@@ -1763,6 +1861,14 @@ class Parser(
                 TokenType.IDENTIFIER -> if (depth == 0 && !tokens[index].containsEscape &&
                     tokens[index].value == "of"
                 ) {
+                    // `for (using of ...)` 的第一个 of 是绑定名，不是 for-of 运算符
+                    val previous = tokens.getOrNull(index - 1)
+                    if (previous != null && previous.type == TokenType.IDENTIFIER &&
+                        !previous.containsEscape && previous.value == "using"
+                    ) {
+                        index++
+                        continue
+                    }
                     return ForHeaderKind.OF
                 }
 
@@ -1793,12 +1899,36 @@ class Parser(
         var variableName: String? = null
         var pattern: Expression? = null
         var target: Expression? = null
+        var usingMode: UsingMode? = null
+
+        val usingHead = isUsingDeclarationStart(allowOf = false)
+        if (isAwaitUsingDeclarationStart() || usingHead) {
+            if (!isOf) {
+                throw error("using declarations are not allowed in for-in statements")
+            }
+            val isAwait = isAwaitUsingDeclarationStart()
+            if (isAwait) advance() // await
+            advance() // using
+            if (check(TokenType.LBRACKET) || check(TokenType.LBRACE)) {
+                throw error("using declarations may not use binding patterns")
+            }
+            val nameToken = consumeBindingIdentifier("Expected binding identifier after 'using'")
+            validateIdentifierName(nameToken.value, strict)
+            variableName = nameToken.value
+            declarationKind = DeclarationKind.CONST
+            usingMode = if (isAwait) UsingMode.ASYNC else UsingMode.SYNC
+            if (match(TokenType.ASSIGN)) {
+                throw error("for-of loop variable declaration may not have an initializer")
+            }
+        }
 
         val letIsExpressionInHeader = check(TokenType.LET) && allowLetAsIdentifier() && when (peek(1).type) {
             TokenType.IDENTIFIER, TokenType.LET, TokenType.LBRACKET, TokenType.LBRACE -> false
             else -> true
         }
-        if (check(TokenType.VAR) || check(TokenType.CONST) ||
+        if (usingMode != null) {
+            // using 头部已在上方解析，跳过普通声明/左值分支
+        } else if (check(TokenType.VAR) || check(TokenType.CONST) ||
             (check(TokenType.LET) && !letIsExpressionInHeader)
         ) {
             val kindToken = advance()
@@ -1888,6 +2018,7 @@ class Parser(
                 right = right,
                 body = body,
                 range = range,
+                usingMode = usingMode,
             )
         } else {
             ForInStatement(
@@ -1914,6 +2045,9 @@ class Parser(
         // switch 各 case 共享同一词法作用域
         pushDeclScope(DeclScopeKind.SWITCH)
         switchDepth++
+        // case 子句的 StatementList 不允许 using 声明
+        val previousUsingAllowed = usingDeclarationAllowed
+        usingDeclarationAllowed = false
         try {
             var sawDefault = false
             while (!check(TokenType.RBRACE) && !isAtEnd()) {
@@ -1951,6 +2085,7 @@ class Parser(
                 }
             }
         } finally {
+            usingDeclarationAllowed = previousUsingAllowed
             switchDepth--
             popDeclScope()
         }

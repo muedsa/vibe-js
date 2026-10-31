@@ -171,7 +171,29 @@ class ForOfStatement(
     val right: Expression,
     val body: Statement,
     override val range: SourceRange,
+    /** for (using x of ...) / for (await using x of ...) 的资源模式。 */
+    val usingMode: UsingMode? = null,
 ) : Statement()
+
+/** using / await using 的资源释放模式。 */
+enum class UsingMode {
+    SYNC,
+    ASYNC,
+}
+
+/** using / await using 声明（每个绑定必须有初始化表达式）。 */
+class UsingDeclaration(
+    val declarations: List<UsingDeclarator>,
+    val isAwait: Boolean,
+    override val range: SourceRange,
+) : Statement()
+
+/** using 声明的单个绑定。 */
+class UsingDeclarator(
+    val name: String,
+    val initializer: Expression,
+    override val range: SourceRange,
+) : ASTNode()
 
 /**
  * 标签语句：`label: statement`。

@@ -636,13 +636,6 @@ private class Test262Runner(
             "large-typed-array.js",
             "small-typed-array.js",
             "test/built-ins/AsyncIteratorPrototype/",
-            // using / await using 声明语法暂未实现（后续阶段）
-            "language/statements/using/",
-            "language/statements/await-using/",
-            "language/statements/for-of/head-using-",
-            "language/statements/for-of/head-await-using-",
-            "language/statements/for-await-of/head-using-",
-            "language/statements/for-await-of/head-await-using-",
             "-from-generator-function-declaration.js",
             "-from-yield-expression.js",
             // ES2024 v 标志正则语料（引擎尚未支持 v 标志）
