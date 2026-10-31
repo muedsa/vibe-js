@@ -77,6 +77,8 @@ import com.muedsa.js.runtime.regex.JsRegex
 import com.muedsa.js.runtime.regex.JsRegexSyntax
 import com.muedsa.js.runtime.regex.JsRegexEngine
 import com.muedsa.js.runtime.regex.KotlinJsRegex
+import com.muedsa.js.runtime.regex.RegexNamedGroups
+import com.muedsa.js.runtime.regex.RegexSyntaxError
 import com.muedsa.js.runtime.value.InstanceField
 import com.muedsa.js.runtime.value.JSArguments
 import com.muedsa.js.runtime.value.JSArray
@@ -4320,6 +4322,14 @@ class Interpreter(
     }
 
     fun createRegExp(pattern: String, flags: String): JSValue {
+        // 命名捕获组：校验组名/反向引用，并得到规范化后的引擎模式
+        val namedAnalysis = try {
+            RegexNamedGroups.analyze(pattern, 'u' in flags)
+        } catch (error: RegexSyntaxError) {
+            throw syntaxError(
+                error.message ?: "Invalid regular expression: /$pattern/$flags"
+            )
+        }
         validateJsRegexSyntax(pattern)
         if ('u' in flags) {
             validateUnicodeRegexSyntax(pattern)
@@ -4340,8 +4350,12 @@ class Interpreter(
                 else -> throw syntaxError("Invalid regular expression flags")
             }
         }
+        val enginePattern = namedAnalysis.enginePattern
+        // 回退引擎支持前向命名引用与任意 Unicode 组名；Java 仅接受 ASCII 组名
+        val namedGroupNeedsFallback = namedAnalysis.hasForwardReference ||
+            namedAnalysis.names.keys.any { !it.matches(Regex("[A-Za-z][A-Za-z0-9]*")) }
         fun buildFallback(): JsRegex = try {
-            JsRegexEngine(pattern, flags)
+            JsRegexEngine(enginePattern, flags, namedAnalysis.names)
         } catch (fallbackError: Throwable) {
             val detail = fallbackError.message?.lineSequence()?.firstOrNull()?.trim()
             throw syntaxError(
@@ -4354,16 +4368,16 @@ class Interpreter(
         // 因为 Kotlin/Java 的语义与 JS 不同或无法编译；
         // d 标志需要每个捕获组的精确区间，Kotlin 公共 MatchGroup 不暴露位置，
         // 因此同样统一使用回退引擎
-        val matcher = if ('d' in flags || requiresJsRegexEngine(pattern)) {
+        val matcher = if ('d' in flags || namedAnalysis.hasNamedGroups || namedGroupNeedsFallback || requiresJsRegexEngine(pattern)) {
             buildFallback()
         } else {
             val kotlinRegex = try {
-                Regex(if ('s' in flags) expandDotAll(pattern) else pattern, options)
+                Regex(if ('s' in flags) expandDotAll(enginePattern) else enginePattern, options)
             } catch (_: Throwable) {
                 null
             }
             if (kotlinRegex != null) {
-                KotlinJsRegex(kotlinRegex)
+                KotlinJsRegex(kotlinRegex, namedAnalysis.names)
             } else {
                 // 仅在 Kotlin Regex 明确不支持、且是已知 JS-only 构造时启用回退，
                 // 避免错误接受非法正则。

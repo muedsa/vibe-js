@@ -12,6 +12,10 @@ class JsMatch(
     private val groupValues: List<String?>,
     /** 各组匹配区间（含组 0），与 [groupValues] 一一对应；未参与匹配的组为 null。 */
     private val groupRanges: List<IntRange?>,
+    /** 命名捕获组：解码后的名称 → 组索引（按声明顺序）。 */
+    val namedGroupIndices: Map<String, Int> = emptyMap(),
+    /** 命名捕获组匹配值（未参与匹配为 null）。 */
+    private val namedGroupValues: Map<String, String?> = emptyMap(),
 ) {
     val groupCount: Int get() = groupValues.size
 
@@ -24,6 +28,9 @@ class JsMatch(
      * d 标志（hasIndices）据此生成 `[start, end]` 数组。
      */
     fun groupRange(index: Int): IntRange? = groupRanges.getOrNull(index)
+
+    /** 命名捕获组的匹配值；未参与匹配的组为 null。 */
+    fun namedGroupValue(name: String): String? = namedGroupValues[name]
 }
 
 /**
@@ -41,7 +48,10 @@ interface JsRegex {
 }
 
 /** Kotlin Regex 到 [JsRegex] 的适配器。 */
-class KotlinJsRegex(private val regex: Regex) : JsRegex {
+class KotlinJsRegex(
+    private val regex: Regex,
+    private val namedGroupIndices: Map<String, Int> = emptyMap(),
+) : JsRegex {
 
     /**
      * Kotlin/JS 等平台的 MatchGroup 不暴露捕获位置，
@@ -55,13 +65,30 @@ class KotlinJsRegex(private val regex: Regex) : JsRegex {
         return ranges
     }
 
+    private fun namedValues(match: MatchResult): Map<String, String?> {
+        if (namedGroupIndices.isEmpty()) return emptyMap()
+        val values = LinkedHashMap<String, String?>()
+        for (name in namedGroupIndices.keys) {
+            values[name] = match.groups[name]?.value
+        }
+        return values
+    }
+
     override fun find(input: String, startIndex: Int): JsMatch? {
         val match = regex.find(input, startIndex) ?: return null
         val groups = ArrayList<String?>(match.groupValues.size)
         for (index in match.groupValues.indices) {
             groups.add(if (index == 0) match.value else match.groups[index]?.value)
         }
-        return JsMatch(match.range.first, match.range.last + 1, match.value, groups, ranges(match))
+        return JsMatch(
+            match.range.first,
+            match.range.last + 1,
+            match.value,
+            groups,
+            ranges(match),
+            namedGroupIndices,
+            namedValues(match),
+        )
     }
 
     override fun findAll(input: String): Sequence<JsMatch> = sequence {
@@ -70,7 +97,17 @@ class KotlinJsRegex(private val regex: Regex) : JsRegex {
             for (index in match.groupValues.indices) {
                 groups.add(if (index == 0) match.value else match.groups[index]?.value)
             }
-            yield(JsMatch(match.range.first, match.range.last + 1, match.value, groups, ranges(match)))
+            yield(
+                JsMatch(
+                    match.range.first,
+                    match.range.last + 1,
+                    match.value,
+                    groups,
+                    ranges(match),
+                    namedGroupIndices,
+                    namedValues(match),
+                )
+            )
         }
     }
 }

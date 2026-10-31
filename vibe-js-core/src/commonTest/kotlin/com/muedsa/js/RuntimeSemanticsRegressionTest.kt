@@ -2003,6 +2003,59 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp 命名捕获组与命名替换`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var m = /(?<year>\\d{4})-(?<month>\\d{2})/.exec('2024-05');" +
+                "Object.getPrototypeOf(m.groups) === null && m.groups.year === '2024' &&" +
+                " Object.keys(m.groups).join(',') === 'year,month'"
+        ))
+        // 无命名组时 groups 为自有 undefined 属性
+        assertEquals(true, runtime.evalBoolean(
+            "var m = /a/.exec('a'); m.hasOwnProperty('groups') && m.groups === undefined"
+        ))
+        // 未参与匹配的命名组为 undefined
+        assertEquals(true, runtime.evalBoolean(
+            "/(?<a>x)?(?<b>y)/.exec('y').groups.a === undefined"
+        ))
+        // 前向引用、自引用与命名反向引用
+        assertEquals(true, runtime.evalBoolean(
+            "/\\k<a>(?<a>x)/.test('x') &&" +
+                " /(?<a>\\k<a>\\w)../.exec('bab').groups.a === 'b' &&" +
+                " /(?<b>.).\\k<b>/.test('bab')"
+        ))
+        // $<name> 替换与函数替换参数
+        assertEquals("05/2024", runtime.evalString(
+            "'2024-05'.replace(/(?<year>\\d{4})-(?<month>\\d{2})/, '$<month>/$<year>')"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var seen; 'ab'.replace(/(?<first>a)(?<second>b)/, function () {" +
+                "  seen = arguments[arguments.length - 1];" +
+                "  return seen.first + seen.second;" +
+                "}); seen.first === 'a' && seen.second === 'b'"
+        ))
+        // 无命名组时 $<name> 保持字面量；\\k 为 IdentityEscape
+        assertEquals("$<a>", runtime.evalString("'x'.replace(/x/, '$<a>')"))
+        assertEquals(true, runtime.evalBoolean("/\\k<a>/.test('k<a>')"))
+        // d 标志下 indices.groups
+        assertEquals(true, runtime.evalBoolean(
+            "var ind = /(?<a>.)/d.exec('x').indices;" +
+                " ind.groups.a[0] === 0 && ind.groups.a[1] === 1"
+        ))
+        // 非法组名/悬挂引用在表达式求值时抛 SyntaxError
+        assertEquals(true, runtime.evalBoolean(
+            "try { new RegExp('(?<>a)'); false } catch (e) { e instanceof SyntaxError }"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "try { new RegExp('(?<a>.)\\\\k<b>'); false } catch (e) { e instanceof SyntaxError }"
+        ))
+        // u 模式禁止 IdentityEscape
+        assertEquals(true, runtime.evalBoolean(
+            "try { new RegExp('(?<a>\\\\a)', 'u'); false } catch (e) { e instanceof SyntaxError }"
+        ))
+    }
+
+    @Test
     fun `RegExp d 标志生成 indices 数组与 hasIndices 访问器`() = runTest {
         val runtime = TestRuntime()
         // exec 结果：indices 元素为 [start, end]，未参与匹配的组为 undefined

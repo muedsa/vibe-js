@@ -456,20 +456,22 @@ object RegExpBuiltins {
                             else JSString(interpreter.toStringValue(capture))
                         )
                     }
-                    val namedCaptures = interpreter.getV(result, PropertyKey.Str("groups"))
+                    val groupsValue = interpreter.getV(result, PropertyKey.Str("groups"))
                     val replacementValue: JSValue = if (functionalReplace) {
                         val replacerArgs = ArrayList<JSValue>()
                         replacerArgs.add(JSString(matched))
                         replacerArgs.addAll(captures.map { it ?: JSUndefined })
                         replacerArgs.add(JSNumber(position.toDouble()))
                         replacerArgs.add(JSString(input))
-                        if (namedCaptures !is JSUndefined) replacerArgs.add(namedCaptures)
+                        // 函数替换直接把 groups 原值作为最后一个参数（null 也传入）
+                        if (groupsValue !is JSUndefined) replacerArgs.add(groupsValue)
                         interpreter.callFunction(replaceValue, JSUndefined, replacerArgs)
                     } else {
-                        val namedObject = if (namedCaptures is JSUndefined || namedCaptures is JSNull) {
+                        // 字符串替换：groups 不是 undefined 时执行 ToObject（null 抛 TypeError）
+                        val namedObject = if (groupsValue is JSUndefined) {
                             null
                         } else {
-                            interpreter.toObject(namedCaptures)
+                            interpreter.toObject(groupsValue)
                         }
                         JSString(
                             getSubstitution(
@@ -1100,6 +1102,35 @@ object RegExpBuiltins {
             enumerable = false,
             configurable = true,
         )
+        // 命名捕获组：groups 为 null 原型对象；无命名组时为自有 undefined 属性
+        val namedIndices = match.namedGroupIndices
+        if (namedIndices.isNotEmpty()) {
+            val groupsObject = JSObject(prototype = null)
+            for (name in namedIndices.keys) {
+                groupsObject.defineDataProperty(
+                    key = PropertyKey.Str(name),
+                    value = match.namedGroupValue(name)?.let { JSString(it) } ?: JSUndefined,
+                    writable = true,
+                    enumerable = true,
+                    configurable = true,
+                )
+            }
+            result.defineDataProperty(
+                key = PropertyKey.Str("groups"),
+                value = groupsObject,
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+        } else {
+            result.defineDataProperty(
+                key = PropertyKey.Str("groups"),
+                value = JSUndefined,
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+        }
         // d 标志：indices 数组保存每个组 [start, end]，未参与匹配的组为 undefined
         if (regexp.hasIndices) {
             fun indexPair(range: IntRange?): JSValue =
@@ -1120,10 +1151,24 @@ object RegExpBuiltins {
                 indices.add(indexPair(match.groupRange(index)))
             }
             val indicesArray = JSArray(indices, prototype = interpreter.intrinsics.arrayPrototype)
-            // 命名捕获组尚未支持：groups 恒为 undefined，但仍作为自有属性存在
+            val indicesGroups: JSValue = if (namedIndices.isNotEmpty()) {
+                val groupsObject = JSObject(prototype = null)
+                for ((name, groupIndex) in namedIndices) {
+                    groupsObject.defineDataProperty(
+                        key = PropertyKey.Str(name),
+                        value = indexPair(match.groupRange(groupIndex)),
+                        writable = true,
+                        enumerable = true,
+                        configurable = true,
+                    )
+                }
+                groupsObject
+            } else {
+                JSUndefined
+            }
             indicesArray.defineDataProperty(
                 key = PropertyKey.Str("groups"),
-                value = JSUndefined,
+                value = indicesGroups,
                 writable = true,
                 enumerable = true,
                 configurable = true,

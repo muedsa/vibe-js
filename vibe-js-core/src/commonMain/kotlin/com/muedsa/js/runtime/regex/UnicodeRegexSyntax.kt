@@ -20,7 +20,14 @@ internal object JsRegexSyntax {
                 c == '\\' -> scan++
                 scanInClass -> if (c == ']') scanInClass = false
                 c == '[' -> scanInClass = true
-                c == '(' && (scan + 1 >= pattern.length || pattern[scan + 1] != '?') -> groupCount++
+                c == '(' -> {
+                    val named = scan + 3 < pattern.length && pattern[scan + 1] == '?' &&
+                        pattern[scan + 2] == '<' && pattern[scan + 3] != '=' &&
+                        pattern[scan + 3] != '!'
+                    if (scan + 1 >= pattern.length || pattern[scan + 1] != '?' || named) {
+                        groupCount++
+                    }
+                }
             }
             scan++
         }
@@ -53,32 +60,52 @@ internal object JsRegexSyntax {
                         lastWasLazy = false
                         continue
                     }
-                    if (!inClass) {
-                        if ((escaped == 'p' || escaped == 'P') &&
-                            index + 2 < pattern.length && pattern[index + 2] == '{'
+                    // \p{...} / \P{...} 在字符类内外都允许（u 模式）
+                    if ((escaped == 'p' || escaped == 'P') &&
+                        index + 2 < pattern.length && pattern[index + 2] == '{'
+                    ) {
+                        val close = pattern.indexOf('}', index + 3)
+                        if (close < 0) return invalid(pattern)
+                        index = close
+                    } else if (escaped == 'x') {
+                        if (index + 3 >= pattern.length ||
+                            !isHexChar(pattern[index + 2]) || !isHexChar(pattern[index + 3])
                         ) {
-                            val close = pattern.indexOf('}', index + 3)
-                            if (close < 0) return invalid(pattern)
-                            index = close + 1
-                            lastAtomQuantifiable = true
-                            lastWasLazy = false
-                            continue
-                        }
-                        if (escaped in '1'..'9') {
-                            var reference = escaped - '0'
-                            var cursor = index + 2
-                            while (cursor < pattern.length && pattern[cursor] in '0'..'9' &&
-                                reference * 10 + (pattern[cursor] - '0') <= groupCount
-                            ) {
-                                reference = reference * 10 + (pattern[cursor] - '0')
-                                cursor++
-                            }
-                            if (reference > groupCount) return invalid(pattern)
-                            index = cursor - 1
-                        } else if (escaped == ' ' || escaped == '\t' || escaped == '\n' || escaped == '\r') {
-                            // u 模式不允许 IdentityEscape 空白
                             return invalid(pattern)
                         }
+                        index += 3
+                    } else if (escaped == 'c') {
+                        val control = pattern.getOrNull(index + 2)
+                        if (control == null || control !in 'a'..'z' && control !in 'A'..'Z') {
+                            return invalid(pattern)
+                        }
+                        index += 2
+                    } else if (escaped == 'k') {
+                        // 命名反向引用由 RegexNamedGroups 校验
+                    } else if (escaped in '1'..'9') {
+                        if (inClass) return invalid(pattern)
+                        var reference = escaped - '0'
+                        var cursor = index + 2
+                        while (cursor < pattern.length && pattern[cursor] in '0'..'9' &&
+                            reference * 10 + (pattern[cursor] - '0') <= groupCount
+                        ) {
+                            reference = reference * 10 + (pattern[cursor] - '0')
+                            cursor++
+                        }
+                        if (reference > groupCount) return invalid(pattern)
+                        index = cursor - 1
+                    } else if (escaped == '0') {
+                        // u 模式下 \0 后不得跟数字
+                        if (pattern.getOrNull(index + 2)?.isDigit() == true) return invalid(pattern)
+                    } else if (escaped == 'B') {
+                        if (inClass) return invalid(pattern)
+                    } else if (escaped in "bdfnrstuvwDSW^$\\.*+?()[]{}|/") {
+                        // 允许的字符类转义 / 控制字符 / SyntaxCharacter
+                    } else if (escaped == '-') {
+                        if (!inClass) return invalid(pattern)
+                    } else {
+                        // u 模式不允许其余 IdentityEscape（如 \a、空白）
+                        return invalid(pattern)
                     }
                     lastAtomQuantifiable = true
                     lastWasLazy = false
@@ -161,6 +188,9 @@ internal object JsRegexSyntax {
         if (cursor < pattern.length && pattern[cursor] == '}') return cursor + 1
         return null
     }
+
+    private fun isHexChar(c: Char): Boolean =
+        c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
 
     private fun invalid(pattern: String): String = "Invalid regular expression: /$pattern/"
 }

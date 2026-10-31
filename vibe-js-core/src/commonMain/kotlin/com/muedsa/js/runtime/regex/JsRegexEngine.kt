@@ -10,6 +10,7 @@ package com.muedsa.js.runtime.regex
 class JsRegexEngine(
     pattern: String,
     flags: String = "",
+    initialNamedGroups: Map<String, Int> = emptyMap(),
 ) : JsRegex {
 
     private val ignoreCase = 'i' in flags
@@ -20,10 +21,14 @@ class JsRegexEngine(
     private val root: Node
     private var groupCount: Int = 0
 
+    /** 命名捕获组：解码后的名称 → 组索引。 */
+    private var namedGroupIndices: Map<String, Int> = initialNamedGroups
+
     init {
-        val parser = PatternParser(pattern)
+        val parser = PatternParser(pattern, initialNamedGroups)
         root = parser.parse()
         groupCount = parser.groupCount
+        namedGroupIndices = parser.namedGroupsSnapshot()
     }
 
     override fun find(input: String, startIndex: Int): JsMatch? {
@@ -48,7 +53,19 @@ class JsRegexEngine(
                     groups.add(if (range == null) null else input.substring(range.first, range.last + 1))
                     ranges.add(range)
                 }
-                return JsMatch(index, end, input.substring(index, end), groups, ranges)
+                val namedValues = LinkedHashMap<String, String?>()
+                for ((name, groupIndex) in namedGroupIndices) {
+                    namedValues[name] = groups.getOrNull(groupIndex)
+                }
+                return JsMatch(
+                    index,
+                    end,
+                    input.substring(index, end),
+                    groups,
+                    ranges,
+                    namedGroupIndices,
+                    namedValues,
+                )
             }
         }
         return null
@@ -80,9 +97,22 @@ class JsRegexEngine(
             }
 
             is Node.AnyNode -> {
-                if (pos >= inputForMatch.length) false
-                else if (!dotAll && isLineTerminator(inputForMatch[pos])) false
-                else continuation(pos + 1, captures)
+                if (pos >= inputForMatch.length) {
+                    false
+                } else if (!dotAll && isLineTerminator(inputForMatch[pos])) {
+                    false
+                } else {
+                    // u 模式下 . 匹配完整码点（代理项对整体消耗）
+                    val next = if (unicode && inputForMatch[pos].isHighSurrogate() &&
+                        pos + 1 < inputForMatch.length &&
+                        inputForMatch[pos + 1].isLowSurrogate()
+                    ) {
+                        pos + 2
+                    } else {
+                        pos + 1
+                    }
+                    continuation(next, captures)
+                }
             }
 
             is Node.ClassNode -> {
@@ -321,11 +351,14 @@ class JsRegexEngine(
 
     private inner class PatternParser(
         private val pattern: String,
+        initialNamedGroups: Map<String, Int> = emptyMap(),
     ) {
         private var position = 0
         var groupCount: Int = 0
             private set
-        private val namedGroups = mutableMapOf<String, Int>()
+        private val namedGroups = LinkedHashMap(initialNamedGroups)
+
+        fun namedGroupsSnapshot(): Map<String, Int> = LinkedHashMap(namedGroups)
 
         fun parse(): Node {
             val node = parseAlternation()

@@ -1,6 +1,8 @@
 package com.muedsa.js.lexer
 
 import com.muedsa.js.runtime.regex.JsRegexSyntax
+import com.muedsa.js.runtime.regex.RegexNamedGroups
+import com.muedsa.js.runtime.regex.RegexSyntaxError
 
 /**
  * 词法分析器：把 JavaScript 源码转换为 [Token] 序列。
@@ -1004,6 +1006,16 @@ class Lexer(private val input: String) {
             if (flag !in "dgimsuy" || !seenFlags.add(flag)) {
                 throw lexerError("Invalid regular expression flags", startLine, startColumn, startOffset)
             }
+        }
+        try {
+            RegexNamedGroups.analyze(pattern.toString(), 'u' in flagText)
+        } catch (error: RegexSyntaxError) {
+            throw lexerError(
+                error.message ?: "Invalid regular expression: /${pattern}/$flagText",
+                startLine,
+                startColumn,
+                startOffset,
+            )
         }
         if ('u' in flagText) {
             val error = JsRegexSyntax.unicodeError(pattern.toString())
