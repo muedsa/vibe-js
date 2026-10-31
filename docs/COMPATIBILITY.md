@@ -20,7 +20,7 @@
 | 未闭合字符串/模板/正则 | ✅ | 抛出 `LexerException` |
 | 标识符：Unicode 字母、`\uXXXX`、`\u{...}` 与 astral | ✅ | astral 范围采用近似表 |
 | 自动分号插入（ASI） | ⚠️ | 覆盖 return/throw/break/continue/++/-- 换行与常规语句分隔；极少数边界未覆盖 |
-| BigInt 字面量 | ❌ | 后续阶段 |
+| BigInt 字面量 | ⚠️ | 仅语法识别（含 0x/0o/0b 后缀），求值抛 TypeError；BigInt 运行时明确排除 |
 
 ## 2. 语法
 
@@ -45,7 +45,8 @@
 | 正则字面量、String 正则方法 | ✅ | `s`/`u` 标志暂按普通模式处理，命名组有限 |
 | 赋值/复合赋值/逻辑赋值（`??=`/`&&=`/`||=`/`**=` 等） | ✅ | |
 | typeof、delete、void、in、instanceof | ✅ | 自定义 `Symbol.hasInstance` 未支持 |
-| 可选链 `?.` | ❌ | ES2020，后续阶段 |
+| 可选链 `?.` | ✅ | 含短路、this 保留与 delete |
+| Iterator helpers | ✅ | `Iterator.from`、map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find；内建迭代器独立原型与访问器 |
 | class 字段 / 私有字段 | ❌ | 后续阶段 |
 | Generator（`function*` / `yield`） | ❌ | 明确排除 |
 | import / export | ❌ | 明确排除（单脚本目标） |
@@ -70,8 +71,9 @@
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex；`s`/`u` 标志与命名组有限 |
 | Date | ⚠️ | 构造、now/parse/UTC、常用 getter/setter、toISOString/toJSON；本地时间按 UTC 处理 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
-| Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议；Weak 版本不可迭代 |
-| Promise | ✅ | then/catch/finally、resolve/reject/all/race/allSettled/any、thenable 与循环检测 |
+| Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；Weak 版本不可迭代 |
+| Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`、helpers、独立迭代器原型与 constructor/@@toStringTag 访问器 |
+| Promise | ✅ | then/catch/finally、resolve/reject/all/race/allSettled/any、withResolvers/try、thenable 与循环检测 |
 | Generator | ❌ | 明确排除 |
 | TypedArray / ArrayBuffer / DataView | ❌ | 后续阶段 |
 | Intl | ❌ | 后续阶段 |
@@ -90,15 +92,15 @@
 | class 构造器调用限制、super、new.target | ✅ |
 | Symbol.toPrimitive | ✅ |
 | Symbol.hasInstance | ✅ |
-| Symbol.isConcatSpreadable / species | ❌ |
+| Symbol.isConcatSpreadable / species | ✅ | |
 
 ## 5. 平台
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 384 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 384 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 384 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 390 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 390 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 390 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -135,7 +137,7 @@
 | `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
 | `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
-| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界与 Object 接收者 |
+| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、Iterator helpers 顺序/关闭/原型访问器与 Object 接收者 |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `HostModuleTest`（:vibe-js-host） | window/self、console、定时器/setInterval、queueMicrotask、atob/btoa、时钟注入 |

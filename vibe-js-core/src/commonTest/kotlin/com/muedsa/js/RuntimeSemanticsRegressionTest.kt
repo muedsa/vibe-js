@@ -1,6 +1,7 @@
 package com.muedsa.js
 
 import com.muedsa.js.lexer.LexerException
+import com.muedsa.js.runtime.exception.JSException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -908,5 +909,133 @@ class RuntimeSemanticsRegressionTest {
         assertEquals("async function anonymous(a\n) {\nreturn a;\n}", runtime.evalString(
             "(async function () {}).constructor('a', 'return a;').toString()"
         ))
+    }
+
+    @Test
+    fun `模板表达式中的正则字面量不影响花括号配对`() = runTest {
+        val runtime = TestRuntime()
+        // 正则内的引号曾被当作字符串起点，导致 ${...} 扫描越界
+        assertEquals("preapost", runtime.evalString(
+            "var s = `pre\${'a'.replace(/'/g, 'b')}post`; s"
+        ))
+        // 除号不应被误判为正则起点
+        assertEquals("3", runtime.evalString("var s = `\${6 / 2}`; s"))
+    }
+
+    @Test
+    fun `Iterator helpers 先校验参数再读取 next 并在失败时关闭`() = runTest {
+        val runtime = TestRuntime()
+        // 非可调用 mapper：参数校验失败，调用 return 关闭，且不读取 next
+        assertEquals("return", runtime.evalString(
+            "var effects = [];" +
+                "var o = Object.create(Iterator.prototype);" +
+                "Object.defineProperty(o, 'next', { get: function () {" +
+                " effects.push('next'); return function () { return { done: true }; }; } });" +
+                "o.return = function () { effects.push('return'); return {}; };" +
+                "try { o.map(); } catch (e) { e instanceof TypeError; }" +
+                "effects.join(',')"
+        ))
+        // take 先 ToNumber(limit)，再读取 next
+        assertEquals("limit,next", runtime.evalString(
+            "var effects = [];" +
+                "var o = { get next() { effects.push('next');" +
+                " return function () { return { done: true }; }; } };" +
+                "Iterator.prototype.take.call(o, { valueOf: function () {" +
+                " effects.push('limit'); return 0; } });" +
+                "effects.join(',')"
+        ))
+        // next 不可调用在构造 helper 时不报错，首次 next() 才抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "var it = Iterator.prototype.map.call({ next: 0 }, function (v) { return v; });" +
+                "try { it.next(); false } catch (e) { e instanceof TypeError }"
+        ))
+        // helper 重入（生成器运行中）抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "var entered = 0;" +
+                "var iter = { next: function () { entered++; it.next(); return { done: false }; } };" +
+                "var it = Iterator.prototype.take.call(iter, 10);" +
+                "try { it.next(); false } catch (e) { e instanceof TypeError && entered === 1 }"
+        ))
+    }
+
+    @Test
+    fun `flatMap 内层 step 抛错只关闭外层迭代器`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("outer:1,inner:0", runtime.evalString(
+            "var outerReturns = 0, innerReturns = 0;" +
+                "var outer = { next: function () { return { done: false, value: 1 }; }," +
+                " return: function () { outerReturns++; return {}; } };" +
+                "var inner = { next: function () { throw new Error('x'); }," +
+                " return: function () { innerReturns++; return {}; } };" +
+                "var it = Iterator.prototype.flatMap.call(outer, function () { return inner; });" +
+                "try { it.next(); } catch (e) {}" +
+                "'outer:' + outerReturns + ',inner:' + innerReturns"
+        ))
+    }
+
+    @Test
+    fun `内建迭代器原型与 Iterator 访问器遵循规范`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var ai = [][Symbol.iterator]();" +
+                "var ap = Object.getPrototypeOf(ai);" +
+                "ap[Symbol.toStringTag] === 'Array Iterator' &&" +
+                "Object.getPrototypeOf(ap) === Iterator.prototype &&" +
+                "Object.prototype.toString.call(ai) === '[object Array Iterator]'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var mi = new Map([[1, 2]])[Symbol.iterator]();" +
+                "var si = new Set([1])[Symbol.iterator]();" +
+                "var sti = 'ab'[Symbol.iterator]();" +
+                "Object.getPrototypeOf(mi)[Symbol.toStringTag] === 'Map Iterator' &&" +
+                "Object.getPrototypeOf(si)[Symbol.toStringTag] === 'Set Iterator' &&" +
+                "Object.getPrototypeOf(sti)[Symbol.toStringTag] === 'String Iterator'"
+        ))
+        // constructor 与 @@toStringTag 是访问器，setter 忽略原型属性
+        assertEquals(true, runtime.evalBoolean(
+            "var c = Object.getOwnPropertyDescriptor(Iterator.prototype, 'constructor');" +
+                "var t = Object.getOwnPropertyDescriptor(Iterator.prototype, Symbol.toStringTag);" +
+                "typeof c.get === 'function' && typeof c.set === 'function' &&" +
+                " c.value === undefined &&" +
+                "typeof t.get === 'function' && typeof t.set === 'function' &&" +
+                " t.value === undefined &&" +
+                "Iterator.prototype.constructor === Iterator &&" +
+                "Iterator.prototype[Symbol.toStringTag] === 'Iterator'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var o = Object.create(Iterator.prototype);" +
+                "o[Symbol.toStringTag] = 'Custom';" +
+                "o[Symbol.toStringTag] === 'Custom'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "try { Iterator.prototype[Symbol.toStringTag] = 'x'; false }" +
+                " catch (e) { e instanceof TypeError }"
+        ))
+    }
+
+    @Test
+    fun `Iterator from 包装非迭代器且延迟校验 next`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var w = Iterator.from({ next: function () {" +
+                " return { done: true, value: undefined }; } });" +
+                "var r = w.return();" +
+                "r.done === true && r.value === undefined &&" +
+                "Object.getPrototypeOf(w) === Object.getPrototypeOf(Iterator.from({}))"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var w = Iterator.from({ next: 0 });" +
+                "try { w.next(); false } catch (e) { e instanceof TypeError }"
+        ))
+    }
+
+    @Test
+    fun `BigInt 字面量可被解析但求值抛出 TypeError`() = runTest {
+        val runtime = TestRuntime()
+        // 保留语法识别以便解析包含 BigInt 字面量的宿主脚本
+        assertEquals("function", runtime.evalString(
+            "var f = function () { return 2n; }; typeof f"
+        ))
+        assertFailsWith<JSException> { runtime.eval("1n;") }
     }
 }

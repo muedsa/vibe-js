@@ -144,7 +144,7 @@ object SetBuiltins {
             val method = BuiltinHelpers.method(intrinsics, name, 0) { interpreter, thisValue, _ ->
                 val set = requireSet(interpreter, thisValue, "Set.prototype.$name")
                 var index = 0
-                IteratorBuiltins.createIteratorWithNext(intrinsics, "Set Iterator") { _, _, _ ->
+                IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.setIteratorPrototype) { _, _, _ ->
                     val result = JSObject(prototype = intrinsics.objectPrototype)
                     val done = index >= set.values.size
                     val value = if (done) {

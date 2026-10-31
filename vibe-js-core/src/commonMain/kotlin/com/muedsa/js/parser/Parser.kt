@@ -950,7 +950,7 @@ class Parser(
             token.type in setOf(
                 TokenType.IDENTIFIER, TokenType.STRING,
                 TokenType.NUMBER, TokenType.NUMBER_HEX,
-                TokenType.NUMBER_OCT, TokenType.NUMBER_BIN,
+                TokenType.NUMBER_OCT, TokenType.NUMBER_BIN, TokenType.BIGINT,
                 TokenType.LBRACKET,
             ) -> true
 
@@ -2401,6 +2401,11 @@ class Parser(
                 NumberLiteral(parseNumberLiteral(token), token.range)
             }
 
+            TokenType.BIGINT -> {
+                advance()
+                BigIntLiteral(token.value, token.range)
+            }
+
             TokenType.STRING -> {
                 if (strict && token.legacyOctal) {
                     throw error("Octal escape sequences are not allowed in strict mode")
@@ -2725,7 +2730,7 @@ class Parser(
             token.type in setOf(
                 TokenType.IDENTIFIER, TokenType.STRING,
                 TokenType.NUMBER, TokenType.NUMBER_HEX,
-                TokenType.NUMBER_OCT, TokenType.NUMBER_BIN,
+                TokenType.NUMBER_OCT, TokenType.NUMBER_BIN, TokenType.BIGINT,
                 TokenType.LBRACKET,
             ) -> true
 
@@ -2757,6 +2762,11 @@ class Parser(
                 }
                 advance()
                 StringLiteral(token.value, token.range) to false
+            }
+
+            token.type == TokenType.BIGINT -> {
+                advance()
+                BigIntLiteral(token.value, token.range) to false
             }
 
             token.type in setOf(

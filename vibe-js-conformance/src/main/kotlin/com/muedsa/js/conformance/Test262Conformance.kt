@@ -338,6 +338,10 @@ private class Test262Runner(
         if (test.source.contains("Array.print")) {
             return "unsupported harness: print"
         }
+        // TemporalHelpers.propertyBagObserver 通过 Proxy/Reflect 观测属性访问
+        if (test.source.contains("propertyBagObserver")) {
+            return "unsupported harness: Proxy"
+        }
         // ES2015 子集中排除 BigInt/Proxy/Generator 内容（项目明确排除）
         if (suite == "es2015" &&
             (test.source.contains("BigInt") ||
@@ -533,7 +537,7 @@ private class Test262Runner(
             "Symbol.species", "Symbol.isConcatSpreadable",
             "Symbol.match", "Symbol.replace", "Symbol.search", "Symbol.split",
             "Symbol.matchAll", "String.prototype.matchAll",
-            "Symbol.unscopables", "set-methods", "RegExp.escape",
+            "Symbol.unscopables", "set-methods", "RegExp.escape", "iterator-helpers",
             "Symbol.prototype.description",
             "Array.prototype.flat", "Array.prototype.flatMap",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",
@@ -576,7 +580,6 @@ private class Test262Runner(
             "test/built-ins/MapIteratorPrototype/",
             "test/built-ins/SetIteratorPrototype/",
             "test/built-ins/RegExpStringIteratorPrototype/",
-            "test/built-ins/Iterator/",
             "test/built-ins/AsyncIteratorPrototype/",
             "-from-generator-function-declaration.js",
             "-from-yield-expression.js",
@@ -614,7 +617,7 @@ private class Test262Runner(
             "TypedArray", "ArrayBuffer", "DataView", "SharedArrayBuffer", "Atomics",
             "Intl", "WeakRef", "FinalizationRegistry", "class-fields-public",
             "class-fields-private", "class-static-block", "regexp-match-indices",
-            "decorators", "explicit-resource-management", "iterator-helpers",
+            "decorators", "explicit-resource-management",
             "Symbol.asyncIterator", "generator", "async-iteration",
             "dynamic-import", "import-attributes", "top-level-await",
             "resizable-arraybuffer", "arraybuffer-transfer", "Float16Array",

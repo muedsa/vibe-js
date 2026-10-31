@@ -534,6 +534,9 @@ class Lexer(private val input: String) {
                     if (digits == 0) {
                         throw lexerError("Invalid hexadecimal number", startLine, startColumn, startOffset)
                     }
+                    if (consumeBigIntSuffix(sb)) {
+                        return makeToken(TokenType.BIGINT, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+                    }
                     rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
                     return makeToken(TokenType.NUMBER_HEX, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
                 }
@@ -551,6 +554,9 @@ class Lexer(private val input: String) {
                     if (digits == 0) {
                         throw lexerError("Invalid octal number", startLine, startColumn, startOffset)
                     }
+                    if (consumeBigIntSuffix(sb)) {
+                        return makeToken(TokenType.BIGINT, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+                    }
                     rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
                     return makeToken(TokenType.NUMBER_OCT, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
                 }
@@ -567,6 +573,9 @@ class Lexer(private val input: String) {
                     )
                     if (digits == 0) {
                         throw lexerError("Invalid binary number", startLine, startColumn, startOffset)
+                    }
+                    if (consumeBigIntSuffix(sb)) {
+                        return makeToken(TokenType.BIGINT, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
                     }
                     rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
                     return makeToken(TokenType.NUMBER_BIN, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
@@ -649,8 +658,26 @@ class Lexer(private val input: String) {
             }
         }
 
+        // BigInt 后缀 n：仅十进制整数形式允许（不能带小数点或指数）
+        if (peek() == 'n' &&
+            sb.indexOf('.') < 0 && sb.indexOf('e') < 0 && sb.indexOf('E') < 0
+        ) {
+            sb.append('n')
+            advance()
+            rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
+            return makeToken(TokenType.BIGINT, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+        }
+
         rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
         return makeToken(TokenType.NUMBER, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+    }
+
+    /** 消费 BigInt 字面量后缀 `n`。 */
+    private fun consumeBigIntSuffix(sb: StringBuilder): Boolean {
+        if (peek() != 'n') return false
+        sb.append('n')
+        advance()
+        return true
     }
 
     /**
@@ -1079,6 +1106,9 @@ class Lexer(private val input: String) {
                     }
                 }
 
+                // 正则字面量内的引号/花括号不能参与配对，必须先整体跳过
+                c == '/' && isRegexStartInTemplate() -> skipRegexLiteral()
+
                 c == '{' -> {
                     depth++
                     advance()
@@ -1139,6 +1169,75 @@ class Lexer(private val input: String) {
                     advance(); advance()
                     readTemplateExpressionSource()
                 }
+
+                else -> advance()
+            }
+        }
+    }
+
+    /**
+     * 判断模板表达式中的 `/` 是否为正则字面量起始。
+     *
+     * 采用"前一个有效字符/关键字"启发式：标识符、数字、右括号与字面量之后是除号，
+     * 其余表达式起始位置按正则处理，必须整体跳过其内部的引号与花括号。
+     */
+    private fun isRegexStartInTemplate(): Boolean {
+        var index = pos - 1
+        while (index >= 0 && input[index].let { it == ' ' || it == '\t' || it == '\n' || it == '\r' }) {
+            index--
+        }
+        if (index < 0) return true
+        val previous = input[index]
+        if (previous.isLetterOrDigit() || previous == '_' || previous == '$') {
+            // 关键字之后允许正则，普通标识符/数字之后是除号
+            var wordStart = index
+            while (wordStart > 0 &&
+                input[wordStart - 1].let { it.isLetterOrDigit() || it == '_' || it == '$' }
+            ) {
+                wordStart--
+            }
+            val word = input.substring(wordStart, index + 1)
+            return word in setOf(
+                "return", "typeof", "instanceof", "in", "of", "new", "delete", "void",
+                "throw", "case", "do", "else", "yield", "await",
+            )
+        }
+        return previous !in ")]}\"'`"
+    }
+
+    /** 跳过模板表达式中的正则字面量（含字符类、转义与标志位）。 */
+    private fun skipRegexLiteral() {
+        advance() // '/'
+        var inClass = false
+        while (pos < input.length) {
+            when {
+                peek() == '\\' -> {
+                    advance()
+                    if (pos < input.length) advance()
+                }
+
+                peek() == '[' -> {
+                    inClass = true
+                    advance()
+                }
+
+                peek() == ']' -> {
+                    inClass = false
+                    advance()
+                }
+
+                peek() == '/' && !inClass -> {
+                    advance()
+                    // 正则标志位
+                    while (pos < input.length &&
+                        input[pos].let { it.isLetterOrDigit() || it == '_' || it == '$' }
+                    ) {
+                        advance()
+                    }
+                    return
+                }
+
+                peek() == '\n' || peek() == '\r' -> return
 
                 else -> advance()
             }

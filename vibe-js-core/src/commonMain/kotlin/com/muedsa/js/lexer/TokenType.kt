@@ -6,6 +6,7 @@ enum class TokenType {
     NUMBER_HEX, // 数字字面量
     NUMBER_OCT, // 数字字面量
     NUMBER_BIN, // 数字字面量
+    BIGINT,     // BigInt 字面量（仅语法识别，运行时明确不支持）
     // 123, 3.14
     STRING,     // 字符串字面量，如 "hello", 'world'
     NULL,       // null 字面量

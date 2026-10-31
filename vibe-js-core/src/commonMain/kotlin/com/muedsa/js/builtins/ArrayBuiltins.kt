@@ -1070,7 +1070,7 @@ object ArrayBuiltins {
             for (index in 0 until array.length) {
                 values.add(array.getElement(index) ?: JSUndefined)
             }
-            IteratorBuiltins.createIterator(intrinsics, values, "Array Iterator")
+            IteratorBuiltins.createIterator(intrinsics, values, intrinsics.arrayIteratorPrototype)
         }
         arrayPrototype.defineDataProperty(PropertyKey.Str("values"), valuesIterator)
         arrayPrototype.defineDataProperty(PropertyKey.Sym(intrinsics.symbolIterator), valuesIterator)
@@ -1080,7 +1080,7 @@ object ArrayBuiltins {
             value = BuiltinHelpers.method(intrinsics, "keys", 0) { interpreter, thisValue, _ ->
                 val array = requireArray(interpreter, thisValue, "Array.prototype.keys")
                 val indices = (0 until array.length).map { JSNumber(it.toDouble()) }
-                IteratorBuiltins.createIterator(intrinsics, indices, "Array Iterator")
+                IteratorBuiltins.createIterator(intrinsics, indices, intrinsics.arrayIteratorPrototype)
             },
         )
         arrayPrototype.defineDataProperty(
@@ -1096,7 +1096,7 @@ object ArrayBuiltins {
                         prototype = intrinsics.arrayPrototype,
                     )
                 }
-                IteratorBuiltins.createIterator(intrinsics, entries, "Array Iterator")
+                IteratorBuiltins.createIterator(intrinsics, entries, intrinsics.arrayIteratorPrototype)
             },
         )
     }

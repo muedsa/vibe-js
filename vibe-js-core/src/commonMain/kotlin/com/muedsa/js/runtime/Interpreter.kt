@@ -4,6 +4,7 @@ import com.muedsa.js.ast.ArrayLiteral
 import com.muedsa.js.ast.ArrowFunction
 import com.muedsa.js.ast.AssignmentExpr
 import com.muedsa.js.ast.BinaryOp
+import com.muedsa.js.ast.BigIntLiteral
 import com.muedsa.js.ast.BlockStatement
 import com.muedsa.js.ast.BooleanLiteral
 import com.muedsa.js.ast.BreakStatement
@@ -1992,6 +1993,7 @@ class Interpreter(
                 ?: throw referenceError("${expression.name} is not defined")
 
             is NumberLiteral -> JSNumber(expression.value)
+            is BigIntLiteral -> throw typeError("BigInt literals are not supported")
             is StringLiteral -> JSString(expression.value)
             is BooleanLiteral -> JSBoolean.getJsBoolean(expression.value)
             is NullLiteral -> JSNull

@@ -193,7 +193,7 @@ object MapBuiltins {
             val method = BuiltinHelpers.method(intrinsics, name, 0) { interpreter, thisValue, _ ->
                 val map = requireMap(interpreter, thisValue, "Map.prototype.$name")
                 var index = 0
-                IteratorBuiltins.createIteratorWithNext(intrinsics, "Map Iterator") { _, _, _ ->
+                IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.mapIteratorPrototype) { _, _, _ ->
                     val result = JSObject(prototype = intrinsics.objectPrototype)
                     val done = index >= map.entries.size
                     val value = if (done) {

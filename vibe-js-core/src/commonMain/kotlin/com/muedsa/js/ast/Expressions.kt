@@ -14,6 +14,17 @@ class NumberLiteral(
     override val range: SourceRange,
 ) : Expression()
 
+/**
+ * BigInt 字面量（如 `2n`）。
+ *
+ * 项目明确不支持 BigInt 运行时；保留语法识别以便解析包含该语法的宿主脚本，
+ * 求值时统一抛出 TypeError。
+ */
+class BigIntLiteral(
+    val raw: String,
+    override val range: SourceRange,
+) : Expression()
+
 /** 正则字面量。 */
 class RegExpLiteral(
     val pattern: String,

@@ -530,24 +530,7 @@ object RegExpBuiltins {
             },
         )
 
-        // RegExp String Iterator 原型（next 由每个迭代器实例闭包提供）
-        val matchAllIteratorPrototype = JSObject(prototype = intrinsics.objectPrototype)
-        matchAllIteratorPrototype.defineDataProperty(
-            key = PropertyKey.Sym(intrinsics.symbolToStringTag),
-            value = JSString("RegExp String Iterator"),
-            writable = false,
-            enumerable = false,
-            configurable = true,
-        )
-        matchAllIteratorPrototype.defineDataProperty(
-            key = PropertyKey.Sym(intrinsics.symbolIterator),
-            value = BuiltinHelpers.method(intrinsics, "[Symbol.iterator]", 0) { _, thisValue, _ ->
-                thisValue
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
+        // RegExp String Iterator 使用共享原型（@@toStringTag 与 @@iterator 由 Intrinsics/IteratorBuiltins 提供）
 
         regexpPrototype.defineDataProperty(
             key = PropertyKey.Sym(intrinsics.symbolMatchAll),
@@ -580,7 +563,7 @@ object RegExpBuiltins {
                 )
                 createRegExpStringIterator(
                     interpreter = interpreter,
-                    prototype = matchAllIteratorPrototype,
+                    prototype = intrinsics.regexpStringIteratorPrototype,
                     regexp = matcher,
                     input = input,
                     global = flags.contains('g'),

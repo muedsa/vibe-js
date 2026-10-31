@@ -805,7 +805,7 @@ object StringBuiltins {
                         index++
                     }
                 }
-                IteratorBuiltins.createIterator(intrinsics, codePoints, "String Iterator")
+                IteratorBuiltins.createIterator(intrinsics, codePoints, intrinsics.stringIteratorPrototype)
             },
         )
     }

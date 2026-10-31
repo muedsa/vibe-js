@@ -47,6 +47,25 @@ class Intrinsics(val globalObject: GlobalObject) {
     lateinit var weakSetPrototype: JSObject
     lateinit var promisePrototype: JSObject
 
+    /** %IteratorPrototype%：所有迭代器共享的原型（含 @@iterator 与辅助方法）。 */
+    lateinit var iteratorPrototype: JSObject
+    /** %ArrayIteratorPrototype%：数组迭代器专用原型。 */
+    lateinit var arrayIteratorPrototype: JSObject
+    /** %StringIteratorPrototype%：字符串迭代器原型。 */
+    lateinit var stringIteratorPrototype: JSObject
+    /** %MapIteratorPrototype%：Map 迭代器原型。 */
+    lateinit var mapIteratorPrototype: JSObject
+    /** %SetIteratorPrototype%：Set 迭代器原型。 */
+    lateinit var setIteratorPrototype: JSObject
+    /** %RegExpStringIteratorPrototype%：String.prototype.matchAll 迭代器原型。 */
+    lateinit var regexpStringIteratorPrototype: JSObject
+    /** %IteratorHelperPrototype%：map/filter 等辅助迭代器的原型。 */
+    lateinit var iteratorHelperPrototype: JSObject
+    /** %WrapForValidIteratorPrototype%：Iterator.from 包装非迭代器时的原型。 */
+    lateinit var wrapForValidIteratorPrototype: JSObject
+    /** %Iterator% 构造器（抽象类，供 extends Iterator 使用）。 */
+    lateinit var iteratorConstructor: JSNativeFunction
+
     /** %AsyncFunction.prototype%：普通对象，async 函数的 [[Prototype]]。 */
     lateinit var asyncFunctionPrototype: JSObject
 
@@ -138,6 +157,14 @@ class Intrinsics(val globalObject: GlobalObject) {
         weakMapPrototype = JSObject(prototype = objectPrototype)
         weakSetPrototype = JSObject(prototype = objectPrototype)
         promisePrototype = JSObject(prototype = objectPrototype)
+        iteratorPrototype = JSObject(prototype = objectPrototype)
+        arrayIteratorPrototype = JSObject(prototype = iteratorPrototype)
+        stringIteratorPrototype = JSObject(prototype = iteratorPrototype)
+        mapIteratorPrototype = JSObject(prototype = iteratorPrototype)
+        setIteratorPrototype = JSObject(prototype = iteratorPrototype)
+        regexpStringIteratorPrototype = JSObject(prototype = iteratorPrototype)
+        iteratorHelperPrototype = JSObject(prototype = iteratorPrototype)
+        wrapForValidIteratorPrototype = JSObject(prototype = iteratorPrototype)
         // 规范：%AsyncFunction.prototype% 是普通对象（非函数），其 [[Prototype]] 为 Function.prototype
         asyncFunctionPrototype = JSObject(prototype = functionPrototype)
 
