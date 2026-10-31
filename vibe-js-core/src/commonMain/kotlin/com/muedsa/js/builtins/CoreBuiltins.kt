@@ -29,6 +29,7 @@ object CoreBuiltins {
         WeakSetBuiltins.install(registry)
         PromiseBuiltins.install(registry)
         ErrorBuiltins.install(registry)
+        DisposableStackBuiltins.install(registry)
         MathBuiltins.install(registry)
         JsonBuiltins.install(registry)
         GlobalBuiltins.install(registry)

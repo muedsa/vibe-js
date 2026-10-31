@@ -103,11 +103,48 @@ object ErrorBuiltins {
         }
         intrinsics.aggregateErrorConstructor = aggregateErrorConstructor
 
+        // SuppressedError(error, suppressed, message)：message 仅在显式传入时创建
+        val suppressedErrorConstructor = BuiltinHelpers.constructor(
+            intrinsics = intrinsics,
+            name = "SuppressedError",
+            length = 3,
+            prototypeObject = intrinsics.suppressedErrorPrototype,
+        ) { interpreter, _, args ->
+            val errorValue = args.getOrElse(0) { JSUndefined }
+            val suppressedValue = args.getOrElse(1) { JSUndefined }
+            val messageArg = args.getOrElse(2) { JSUndefined }
+            val objectValue = JSObject(prototype = intrinsics.suppressedErrorPrototype)
+            if (messageArg !is JSUndefined) {
+                objectValue.defineDataProperty(
+                    key = PropertyKey.MESSAGE,
+                    value = JSString(interpreter.toStringValue(messageArg)),
+                    writable = true,
+                    enumerable = false,
+                    configurable = true,
+                )
+            }
+            objectValue.defineDataProperty(
+                key = PropertyKey.Str("error"),
+                value = errorValue,
+                writable = true,
+                enumerable = false,
+                configurable = true,
+            )
+            objectValue.defineDataProperty(
+                key = PropertyKey.Str("suppressed"),
+                value = suppressedValue,
+                writable = true,
+                enumerable = false,
+                configurable = true,
+            )
+            objectValue
+        }
+
         // ES5 15.11.3：标准错误子构造器的 [[Prototype]] 是 Error 构造器
         for (constructor in listOf(
             typeErrorConstructor, rangeErrorConstructor, referenceErrorConstructor,
             syntaxErrorConstructor, evalErrorConstructor, uriErrorConstructor,
-            aggregateErrorConstructor,
+            suppressedErrorConstructor, aggregateErrorConstructor,
         )) {
             constructor.prototype = errorConstructor
         }
@@ -119,6 +156,7 @@ object ErrorBuiltins {
         registry.defineGlobal("SyntaxError", syntaxErrorConstructor)
         registry.defineGlobal("EvalError", evalErrorConstructor)
         registry.defineGlobal("URIError", uriErrorConstructor)
+        registry.defineGlobal("SuppressedError", suppressedErrorConstructor)
         registry.defineGlobal("AggregateError", aggregateErrorConstructor)
     }
 

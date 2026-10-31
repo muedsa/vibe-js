@@ -1213,6 +1213,55 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `DisposableStack 逆序释放并聚合 SuppressedError`() = runTest {
+        val runtime = TestRuntime()
+        // use + defer 按加入顺序逆序释放
+        assertEquals("2,1", runtime.evalString(
+            "var out = [];" +
+                "var stack = new DisposableStack();" +
+                "stack.defer(function () { out.push(1); });" +
+                "stack.use({ [Symbol.dispose]: function () { out.push(2); } });" +
+                "stack.dispose();" +
+                "out.join(',')"
+        ))
+        // adopt 回调接收原值；move 转移资源并把旧栈标记为 disposed
+        assertEquals(true, runtime.evalBoolean(
+            "var seen; var stack = new DisposableStack();" +
+                "stack.adopt(5, function (v) { seen = v; });" +
+                "var before = stack.disposed;" +
+                "var moved = stack.move();" +
+                "var after = stack.disposed;" +
+                "moved.dispose();" +
+                "before === false && after === true && seen === 5 && moved.disposed === true"
+        ))
+        // 多个释放错误嵌套为 SuppressedError
+        assertEquals(true, runtime.evalBoolean(
+            "var e1 = new Error('1'), e2 = new Error('2'), e3 = new Error('3');" +
+                "var stack = new DisposableStack();" +
+                "stack.defer(function () { throw e1; });" +
+                "stack.defer(function () { throw e2; });" +
+                "stack.defer(function () { throw e3; });" +
+                "try { stack.dispose(); false } catch (e) {" +
+                " e instanceof SuppressedError && e.error === e1 &&" +
+                " e.suppressed instanceof SuppressedError &&" +
+                " e.suppressed.error === e2 && e.suppressed.suppressed === e3 }"
+        ))
+        // 已释放的栈再 use 抛 ReferenceError
+        assertEquals(true, runtime.evalBoolean(
+            "var stack = new DisposableStack(); stack.dispose();" +
+                "try { stack.use({}); false } catch (e) { e instanceof ReferenceError }"
+        ))
+        // @@dispose 与 dispose 同一函数；Iterator.prototype[@@dispose] 调用 return
+        assertEquals("true,1", runtime.evalString(
+            "var calls = 0;" +
+                "var it = { return: function () { calls++; return {}; } };" +
+                "Iterator.prototype[Symbol.dispose].call(it);" +
+                "String(DisposableStack.prototype[Symbol.dispose] ===" +
+                " DisposableStack.prototype.dispose) + ',' + calls"
+        ))
+    }
+
+    @Test
     fun `WeakMap 与 WeakSet 支持非注册 Symbol 键`() = runTest {
         val runtime = TestRuntime()
         assertEquals(true, runtime.evalBoolean(

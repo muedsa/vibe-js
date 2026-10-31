@@ -500,6 +500,21 @@ internal object IteratorBuiltins {
             enumerable = false,
             configurable = true,
         )
+        prototype.defineDataProperty(
+            key = PropertyKey.Sym(intrinsics.symbolDispose),
+            value = BuiltinHelpers.method(intrinsics, "[Symbol.dispose]", 0) { interpreter, thisValue, _ ->
+                val iterator = thisValue as? JSObject
+                    ?: interpreter.typeError("Iterator dispose called on non-object")
+                val returnMethod = getMethod(interpreter, iterator, PropertyKey.Str("return"))
+                if (returnMethod != null) {
+                    interpreter.callFunction(returnMethod, iterator, emptyList())
+                }
+                JSUndefined
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
 
         val iteratorConstructor = BuiltinHelpers.constructor(
             intrinsics = intrinsics,

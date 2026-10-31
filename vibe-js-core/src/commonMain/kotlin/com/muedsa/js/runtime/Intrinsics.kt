@@ -39,6 +39,8 @@ class Intrinsics(val globalObject: GlobalObject) {
     lateinit var syntaxErrorPrototype: JSObject
     lateinit var evalErrorPrototype: JSObject
     lateinit var uriErrorPrototype: JSObject
+    /** %SuppressedError.prototype%：DisposableStack 资源释放错误聚合。 */
+    lateinit var suppressedErrorPrototype: JSObject
     lateinit var jsonObject: JSObject
     lateinit var mathObject: JSObject
     lateinit var mapPrototype: JSObject
@@ -77,6 +79,8 @@ class Intrinsics(val globalObject: GlobalObject) {
 
     lateinit var symbolIterator: JSSymbol
     lateinit var symbolAsyncIterator: JSSymbol
+    lateinit var symbolDispose: JSSymbol
+    lateinit var symbolAsyncDispose: JSSymbol
     lateinit var symbolToStringTag: JSSymbol
     lateinit var symbolSpecies: JSSymbol
     lateinit var symbolHasInstance: JSSymbol
@@ -150,6 +154,7 @@ class Intrinsics(val globalObject: GlobalObject) {
         syntaxErrorPrototype = createErrorPrototype("SyntaxError")
         evalErrorPrototype = createErrorPrototype("EvalError")
         uriErrorPrototype = createErrorPrototype("URIError")
+        suppressedErrorPrototype = createErrorPrototype("SuppressedError")
 
         jsonObject = JSObject(prototype = objectPrototype)
         mathObject = JSObject(prototype = objectPrototype)
@@ -171,6 +176,8 @@ class Intrinsics(val globalObject: GlobalObject) {
 
         symbolIterator = JSSymbol("Symbol.iterator")
         symbolAsyncIterator = JSSymbol("Symbol.asyncIterator")
+        symbolDispose = JSSymbol("Symbol.dispose")
+        symbolAsyncDispose = JSSymbol("Symbol.asyncDispose")
         symbolToStringTag = JSSymbol("Symbol.toStringTag")
         symbolSpecies = JSSymbol("Symbol.species")
         symbolHasInstance = JSSymbol("Symbol.hasInstance")
