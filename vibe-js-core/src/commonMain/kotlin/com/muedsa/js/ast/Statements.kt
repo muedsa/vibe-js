@@ -200,9 +200,12 @@ enum class ClassMemberKind {
     METHOD,
     GET,
     SET,
+
+    /** `static { ... }` 静态初始化块（value 为无参、无 prototype 的伪方法体）。 */
+    STATIC_BLOCK,
 }
 
-/** class 成员（方法/访问器/构造器）。 */
+/** class 成员（方法/访问器/构造器/静态初始化块）。 */
 class ClassMember(
     val kind: ClassMemberKind,
     val isStatic: Boolean,

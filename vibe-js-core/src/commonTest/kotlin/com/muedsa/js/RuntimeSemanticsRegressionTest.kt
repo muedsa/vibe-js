@@ -1,6 +1,7 @@
 package com.muedsa.js
 
 import com.muedsa.js.lexer.LexerException
+import com.muedsa.js.parser.ParseException
 import com.muedsa.js.runtime.exception.JSException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -1713,5 +1714,77 @@ class RuntimeSemanticsRegressionTest {
             "var f = function () { return 2n; }; typeof f"
         ))
         assertFailsWith<JSException> { runtime.eval("1n;") }
+    }
+
+    @Test
+    fun `class 静态初始化块按源码顺序执行且 this super 与 new target 语义正确`() = runTest {
+        val runtime = TestRuntime()
+        // 顺序执行；this 为类构造器；super 基为父构造器；new.target 为 undefined
+        assertEquals(true, runtime.evalBoolean(
+            "var order = [];" +
+                "var Base = function () {};" +
+                "Base.value = 42;" +
+                "class C extends Base {" +
+                "  static { order.push('first'); this.own = 1; }" +
+                "  static { order.push(super.value); }" +
+                "  static { order.push(new.target === undefined ? 'target-undefined' : 'target'); }" +
+                "  static {}" +
+                "}" +
+                "order.join(',') === 'first,42,target-undefined' && C.own === 1"
+        ))
+        // 每个块拥有独立的函数级作用域，var 不外泄；块内可见类名
+        assertEquals(true, runtime.evalBoolean(
+            "var captured;" +
+                "class D { static { var inner = 'block'; captured = D.name; } }" +
+                "captured === 'D' && typeof inner === 'undefined' && typeof D.static === 'undefined'"
+        ))
+        // 块内抛出异常会中止类求值并向外传播
+        assertEquals("boom", runtime.evalString(
+            "var message;" +
+                "try { class E { static { throw 'boom'; } } } catch (e) { message = e; }" +
+                "message"
+        ))
+    }
+
+    @Test
+    fun `class 静态初始化块的 arguments await return 与 super 调用限制`() = runTest {
+        val runtime = TestRuntime()
+        // arguments 引用与绑定在块内非法（箭头不解除），但普通函数/方法内合法
+        assertFailsWith<ParseException> { runtime.eval("class C { static { arguments; } }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { static { (() => arguments); } }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { static { (x = arguments) => x; } }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { static { class A { [arguments]() {} } } }") }
+        assertEquals(true, runtime.evalBoolean(
+            "var seen;" +
+                "class C1 { static { (function () { seen = arguments; })('ok'); } }" +
+                "seen.length === 1 && seen[0] === 'ok'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var methodArgs;" +
+                "class C2 { static { var o = { m: function () { methodArgs = arguments; } }; o.m(1, 2); } }" +
+                "methodArgs.length === 2"
+        ))
+        // await 在块内非法；绑定名 await 在块内非法，但在箭头函数体内恢复
+        assertFailsWith<ParseException> { runtime.eval("class C { static { await 0; } }") }
+        assertFailsWith<ParseException> {
+            runtime.eval("async function f() { class C { static { await 0; } } }")
+        }
+        assertFailsWith<ParseException> { runtime.eval("class C { static { class await {} } }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { static { (await) => 0; } }") }
+        runtime.eval("class C3 { static { (() => { class await {} }); } }")
+        // return 在块内非法，嵌套函数内合法；super() 调用非法
+        assertFailsWith<ParseException> {
+            runtime.eval("function f() { class C { static { return; } } }")
+        }
+        assertFailsWith<ParseException> { runtime.eval("class C extends Object { static { super(); } }") }
+        assertEquals(true, runtime.evalBoolean(
+            "class C4 { static { var f = function () { return 1; }; this.v = f(); } } C4.v === 1"
+        ))
+        // arguments 可作为标签（标签不是标识符引用）
+        assertEquals(true, runtime.evalBoolean(
+            "var count = 0;" +
+                "class C5 { static { arguments: for (;;) { count++; break arguments; } } }" +
+                "count === 1"
+        ))
     }
 }

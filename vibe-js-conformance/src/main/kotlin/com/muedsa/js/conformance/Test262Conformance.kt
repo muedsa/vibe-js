@@ -569,7 +569,7 @@ private class Test262Runner(
         /** BigInt 字面量检测（项目明确排除 BigInt）。 */
         /** 生成器方法语法（`*keys() {}` / `*[Symbol.iterator]() {}`），项目未实现。 */
         private val generatorMethodPattern = Regex(
-            """(?m)^\s*\*\s*(?:[A-Za-z_$][A-Za-z0-9_$]*|\[[^\]]*\])\s*\("""
+            """(?m)(?:^\s*|[{(,;]\s*)\*\s*(?:[A-Za-z_$][A-Za-z0-9_$]*|\[[^\]]*\])\s*\("""
         )
 
         private val bigIntLiteralPattern = Regex(
@@ -594,7 +594,7 @@ private class Test262Runner(
             "await-dictionary", "iterator-includes", "Iterator.prototype.join", "Error.isError",
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
             "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
-            "regexp-dotall",
+            "regexp-dotall", "class-static-block",
             "Symbol.prototype.description", "Math.sumPrecise",
             "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",
@@ -657,7 +657,7 @@ private class Test262Runner(
             "Reflect.construct", "Reflect", "Proxy", "BigInt",
             "TypedArray", "ArrayBuffer", "DataView", "SharedArrayBuffer", "Atomics",
             "Intl", "WeakRef", "FinalizationRegistry", "class-fields-public",
-            "class-fields-private", "class-static-block", "regexp-match-indices",
+            "class-fields-private", "regexp-match-indices",
             "decorators",
             "Symbol.asyncIterator", "generator", "async-iteration",
             "dynamic-import", "import-attributes", "top-level-await",

@@ -2370,8 +2370,13 @@ class Interpreter(
             constructor.prototype = superClassValue
         }
 
+        val staticBlocks = ArrayList<ClassMember>()
         for (member in members) {
             if (member.kind == ClassMemberKind.CONSTRUCTOR) continue
+            if (member.kind == ClassMemberKind.STATIC_BLOCK) {
+                staticBlocks.add(member)
+                continue
+            }
             val key = if (member.computed) {
                 toPropertyKey(evaluate(member.key))
             } else {
@@ -2421,7 +2426,26 @@ class Interpreter(
                 )
 
                 ClassMemberKind.CONSTRUCTOR -> Unit
+
+                ClassMemberKind.STATIC_BLOCK -> Unit
             }
+        }
+
+        // 静态初始化块按源码顺序执行：this 为类构造器，super 基为父构造器
+        for (block in staticBlocks) {
+            val function = createFunction(
+                name = "",
+                params = emptyList(),
+                body = block.value.body,
+                closure = classEnvironment,
+                strict = true,
+                varDeclarations = block.value.varDeclarations,
+                functionDeclarations = block.value.functionDeclarations,
+                isMethod = true,
+                superBase = superClassValue as? JSObject,
+                homeObject = constructor,
+            )
+            callFunction(function, constructor, emptyList())
         }
 
         return constructor

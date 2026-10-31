@@ -39,7 +39,7 @@
 | 默认参数、rest 参数（含解构 rest）、函数 length | ✅ | |
 | 解构：声明/赋值/for-of/函数参数/catch、默认值、嵌套、数组 rest、对象 rest | ✅ | |
 | spread：数组/调用/new/对象 | ✅ | |
-| class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、默认派生构造器；类字段不支持 |
+| class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、静态初始化块 `static { }`、默认派生构造器；类字段不支持 |
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
 | 模板字符串 / 标签模板 | ✅ | |
 | 正则字面量、String 正则方法 | ✅ | `s`/`u` 标志暂按普通模式处理，命名组有限 |
@@ -99,9 +99,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 410 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 410 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 410 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 412 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 412 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 412 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

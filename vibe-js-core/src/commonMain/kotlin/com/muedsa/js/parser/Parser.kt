@@ -61,6 +61,24 @@ class Parser(
     /** 无论是否严格模式都不能作为标识符的未来保留字（词法上未单独建 Token 的部分）。 */
     private val ALWAYS_RESERVED_WORDS = setOf("enum", "export", "import")
 
+    /**
+     * class 静态初始化块内禁止引用 arguments（箭头函数不作为解除限制的函数边界）。
+     * 该限制跨普通函数/方法边界时解除。
+     */
+    private var argumentsForbidden = false
+
+    /**
+     * class 静态初始化块内禁止把 await 用作标识符。
+     * 函数/方法/箭头的函数体恢复 [~Await] 语境；箭头参数仍沿用外层限制。
+     */
+    private var awaitIdentifierForbidden = false
+
+    /**
+     * 正在解析的 class 静态初始化块所在的 functionDepth。
+     * 块内 return 非法，但块内嵌套函数/方法中的 return 合法。
+     */
+    private val staticBlockDepths = mutableListOf<Int>()
+
     /** 严格模式下不能作为标识符的未来保留字。 */
     private val STRICT_FUTURE_RESERVED_WORDS = setOf(
         "implements", "interface", "let", "package", "private", "protected",
@@ -93,7 +111,28 @@ class Parser(
             else -> throw error(message)
         }
         validateIdentifierToken(token)
+        validateStaticBlockBindingName(token.value)
         return token
+    }
+
+    /** class 静态初始化块内的绑定名限制（参考 ContainsArguments/Await 静态语义）。 */
+    private fun validateStaticBlockBindingName(name: String) {
+        if (argumentsForbidden && name == "arguments") {
+            throw error("Unexpected 'arguments' in class static block")
+        }
+        if (awaitIdentifierForbidden && name == "await") {
+            throw error("Unexpected 'await' in class static block")
+        }
+    }
+
+    /** class 静态初始化块内的标识符引用限制。 */
+    private fun validateStaticBlockReferenceName(name: String) {
+        if (argumentsForbidden && name == "arguments") {
+            throw error("Unexpected 'arguments' in class static block")
+        }
+        if (awaitIdentifierForbidden && name == "await") {
+            throw error("Unexpected 'await' in class static block")
+        }
     }
 
     /** 可作为属性名/对象键的关键字 Token 类型（ES5 允许保留字作为属性名）。 */
@@ -271,8 +310,9 @@ class Parser(
         val labelToken = consume(TokenType.IDENTIFIER, "Expected label")
         validateIdentifierToken(labelToken)
         validateIdentifierName(labelToken.value, strict)
-        if (strict && labelToken.value in STRICT_RESTRICTED_NAMES) {
-            throw error("Unexpected eval or arguments in strict mode")
+        // 静态初始化块处于 [+Await] 语境，await 会被当作 await 表达式而非标签
+        if (awaitIdentifierForbidden && labelToken.value == "await") {
+            throw error("Unexpected 'await' in class static block")
         }
         if (labelScopes.any { it.name == labelToken.value }) {
             throw error("Label '${labelToken.value}' has already been declared")
@@ -440,6 +480,7 @@ class Parser(
 
     /** 严格模式绑定名校验（eval/arguments 不能作为绑定名）。 */
     private fun validateStrictBindingName(name: String) {
+        validateStaticBlockBindingName(name)
         if (strict && name in STRICT_RESTRICTED_NAMES) {
             throw error("Unexpected eval or arguments in strict mode")
         }
@@ -804,6 +845,7 @@ class Parser(
             nameToken?.let {
                 validateIdentifierToken(it)
                 validateIdentifierName(it.value, strict = true)
+                validateStaticBlockBindingName(it.value)
                 if (it.value in STRICT_RESTRICTED_NAMES) {
                     throw error("Unexpected eval or arguments in strict mode")
                 }
@@ -834,6 +876,41 @@ class Parser(
             while (!check(TokenType.RBRACE) && !isAtEnd()) {
                 if (match(TokenType.SEMICOLON)) continue
                 val memberStart = peek().range.start
+
+                // `static { ... }` 静态初始化块：与 static 方法修饰符区分
+                if (peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
+                    peek().value == "static" && peek(1).type == TokenType.LBRACE
+                ) {
+                    advance() // static
+                    val bodyInfo = parseFunctionBody(
+                        allowSuperProperty = true,
+                        allowSuperCall = false,
+                        allowNewTarget = true,
+                        staticBlock = true,
+                    )
+                    val function = FunctionExpression(
+                        name = "",
+                        params = emptyList(),
+                        body = bodyInfo.body,
+                        strict = true,
+                        isAsync = false,
+                        varDeclarations = bodyInfo.varDeclarations,
+                        functionDeclarations = bodyInfo.functionDeclarations,
+                        range = SourceRange(memberStart, bodyInfo.body.range.end),
+                        isMethodDefinition = true,
+                    )
+                    members.add(
+                        ClassMember(
+                            kind = ClassMemberKind.STATIC_BLOCK,
+                            isStatic = true,
+                            key = Identifier("static", SourceRange(memberStart, memberStart)),
+                            computed = false,
+                            value = function,
+                            range = SourceRange(memberStart, bodyInfo.body.range.end),
+                        )
+                    )
+                    continue
+                }
 
                 var isStatic = false
                 if (peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
@@ -1084,6 +1161,7 @@ class Parser(
         } else {
             null
         }
+        // 函数表达式名属于函数自身绑定作用域：静态块内的 await 限制在此不适用
         nameToken?.let { validateIdentifierToken(it) }
         val params = withFunctionContext(false, false, true) {
             withAsyncContext(isAsync) { parseParameters() }
@@ -1122,15 +1200,22 @@ class Parser(
         val outerSuperProperty = superPropertyAllowed
         val outerSuperCall = superCallAllowed
         val outerNewTarget = newTargetAllowed
+        // 普通函数/方法/构造器是静态块限制的函数边界
+        val outerArgumentsForbidden = argumentsForbidden
+        val outerAwaitForbidden = awaitIdentifierForbidden
         superPropertyAllowed = allowSuperProperty
         superCallAllowed = allowSuperCall
         newTargetAllowed = allowNewTarget
+        argumentsForbidden = false
+        awaitIdentifierForbidden = false
         return try {
             block()
         } finally {
             superPropertyAllowed = outerSuperProperty
             superCallAllowed = outerSuperCall
             newTargetAllowed = outerNewTarget
+            argumentsForbidden = outerArgumentsForbidden
+            awaitIdentifierForbidden = outerAwaitForbidden
         }
     }
 
@@ -1140,6 +1225,8 @@ class Parser(
         allowSuperCall: Boolean = false,
         allowNewTarget: Boolean = true,
         params: List<Parameter> = emptyList(),
+        staticBlock: Boolean = false,
+        isArrow: Boolean = false,
     ): FunctionBodyInfo {
         val bodyStart = pos
         val bodyStrict = detectUseStrictDirective(bodyStart)
@@ -1152,11 +1239,24 @@ class Parser(
         val outerSuperProperty = superPropertyAllowed
         val outerSuperCall = superCallAllowed
         val outerNewTarget = newTargetAllowed
+        val outerArgumentsForbidden = argumentsForbidden
+        val outerAwaitForbidden = awaitIdentifierForbidden
         strict = outerStrict || bodyStrict
         asyncContext = isAsync
         superPropertyAllowed = allowSuperProperty
         superCallAllowed = allowSuperCall
         newTargetAllowed = allowNewTarget
+        if (staticBlock) {
+            // 静态初始化块体复用函数体的声明作用域/标签隔离机制，
+            // 但 arguments 与 await 标识符仍受限制
+            argumentsForbidden = true
+            awaitIdentifierForbidden = true
+        } else {
+            // 箭头函数不解除 arguments 限制（ContainsArguments 会进入箭头体），
+            // 但所有函数体的 await 标识符语境都恢复为 [~Await]
+            if (!isArrow) argumentsForbidden = false
+            awaitIdentifierForbidden = false
+        }
 
         // 函数边界重置循环/switch/标签上下文
         val outerFunctionDepth = functionDepth
@@ -1166,6 +1266,7 @@ class Parser(
         val outerInLabelChain = inLabelChain
         val outerLabelChainAllowsFunction = labelChainAllowsFunction
         functionDepth++
+        if (staticBlock) staticBlockDepths.add(functionDepth)
         loopDepth = 0
         switchDepth = 0
         labelScopes.clear()
@@ -1177,6 +1278,7 @@ class Parser(
             parseBlockStatement(trackScope = false)
         } finally {
             popDeclScope()
+            if (staticBlock) staticBlockDepths.removeAt(staticBlockDepths.lastIndex)
             functionDepth = outerFunctionDepth
             loopDepth = outerLoopDepth
             switchDepth = outerSwitchDepth
@@ -1187,6 +1289,8 @@ class Parser(
             superPropertyAllowed = outerSuperProperty
             superCallAllowed = outerSuperCall
             newTargetAllowed = outerNewTarget
+            argumentsForbidden = outerArgumentsForbidden
+            awaitIdentifierForbidden = outerAwaitForbidden
         }
         val innerStrict = strict
         strict = outerStrict
@@ -1725,7 +1829,9 @@ class Parser(
     /** return 语句。 */
     private fun parseReturnStatement(): ReturnStatement {
         val start = consume(TokenType.RETURN, "Expected 'return'").range.start
-        if (functionDepth == 0) {
+        // 静态初始化块体不是函数体：块内直接 return 非法，嵌套函数内的 return 合法
+        val inStaticBlockBody = staticBlockDepths.isNotEmpty() && functionDepth == staticBlockDepths.last()
+        if (functionDepth == 0 || inStaticBlockBody) {
             throw error("Illegal return statement")
         }
         var value: Expression? = null
@@ -1877,7 +1983,10 @@ class Parser(
             ) {
                 val start = advance().range.start
                 val paramToken = advance()
-                withAsyncContext(true) { validateIdentifierToken(paramToken) }
+                withAsyncContext(true) {
+                    validateIdentifierToken(paramToken)
+                    validateStaticBlockBindingName(paramToken.value)
+                }
                 consume(TokenType.ARROW, "Expected '=>'")
                 return parseArrowBody(
                     start,
@@ -1899,6 +2008,7 @@ class Parser(
         ) {
             val token = advance()
             validateIdentifierToken(token)
+            validateStaticBlockBindingName(token.value)
             consume(TokenType.ARROW, "Expected '=>'")
             return parseArrowBody(
                 token.range.start,
@@ -1955,6 +2065,7 @@ class Parser(
                 allowSuperCall = superCallAllowed,
                 allowNewTarget = newTargetAllowed,
                 params = params,
+                isArrow = true,
             )
             validateFunctionParameters(params, bodyInfo.strict, isArrow = true)
             return ArrowFunction(
@@ -1972,6 +2083,9 @@ class Parser(
 
         val outerAsync = asyncContext
         asyncContext = isAsync
+        // 箭头函数体是 await 标识符限制的边界（[~Await] 语境）
+        val outerAwaitForbidden = awaitIdentifierForbidden
+        awaitIdentifierForbidden = false
         // 表达式体沿用当前严格模式上下文
         validateFunctionParameters(params, strict, isArrow = true)
         try {
@@ -1989,6 +2103,7 @@ class Parser(
             )
         } finally {
             asyncContext = outerAsync
+            awaitIdentifierForbidden = outerAwaitForbidden
         }
     }
 
@@ -2467,6 +2582,7 @@ class Parser(
             TokenType.IDENTIFIER -> {
                 validateIdentifierToken(token)
                 validateIdentifierName(token.value, strict)
+                validateStaticBlockReferenceName(token.value)
                 if (token.value == "async" && !token.containsEscape &&
                     peek(1).type == TokenType.FUNCTION && !peek(1).precededByNewline
                 ) {
@@ -2682,6 +2798,7 @@ class Parser(
                     // 因此转义关键字（如 { bre\u0061k }）在此非法
                     lastPropertyKeyToken?.let { validateIdentifierToken(it) }
                     validateIdentifierName(key.name, strict)
+                    validateStaticBlockReferenceName(key.name)
                     val identifier = Identifier(key.name, key.range)
                     if (match(TokenType.ASSIGN)) {
                         if (patternSyntaxDepth == 0) {
