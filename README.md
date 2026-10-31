@@ -58,13 +58,15 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
   `break`/`continue`（含标签）、`return`、`throw`、`try/catch/finally`、`with`（非严格）、`debugger`、空语句
 - 函数：箭头函数、默认参数、rest 参数、闭包、递归、`this`、构造函数、
   `call/apply/bind`、`name/length`、`arguments`、`new.target`
-- 类：构造器、实例/静态方法、getter/setter、`extends`、`super()`、`super.method()`
+- 类：构造器、实例/静态方法、getter/setter、`extends`、`super()`、`super.method()`、静态初始化块、公有/私有字段与方法（含 `#x in obj`）
 - 表达式：字面量、数组（含空洞/展开）、对象（简写/方法/getter/setter/计算键/展开）、
   模板字符串/标签模板、正则字面量、解构声明与赋值（含函数参数/catch）、spread、
   成员访问、调用、`new`、赋值/复合赋值/逻辑赋值、自增自减、一元/二元/三元、`??`、
-  逗号、`typeof`、`delete/void/in/instanceof`
+  逗号、可选链 `?.`、`typeof`、`delete/void/in/instanceof`
 - 严格模式：`"use strict"` 脚本/函数级切换
 - 异步：`async` 函数/箭头函数、`await`、Promise 微任务
+- 资源管理：`using` / `await using`、DisposableStack / AsyncDisposableStack
+- 严格模式尾调用优化（含 try/catch/finally 的待处理语义阻断）
 
 ### 标准内建
 
@@ -79,12 +81,15 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - **Number**：常量、`toString(radix)/toFixed/toExponential/toPrecision`、
   静态 `isNaN/isFinite/isInteger/parseInt/parseFloat`
 - **Boolean**、**Math**、**JSON**（`parse`/`stringify` 支持 reviver/replacer/space）
-- **RegExp**：字面量/构造器、`exec/test/toString`，字符串 `match/search/replace/replaceAll/split`
+- **RegExp**：字面量/构造器、`exec/test/toString`、`d/g/i/m/s/u/v/y` 标志、命名捕获组、后向断言、
+  Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`）、`v` 扩展字符类（集合运算、属性字符串、`\q`）
 - **Date**：构造、`Date.now/parse/UTC`、常用 getter/setter、`toISOString/toJSON`
-- **Error**：`Error`、`TypeError`、`RangeError`、`ReferenceError`、`SyntaxError`、`EvalError`、`URIError`
+- **Error**：`Error`、`TypeError`、`RangeError`、`ReferenceError`、`SyntaxError`、`EvalError`、`URIError`、`SuppressedError`、`AggregateError`、`Error.isError`
 - **Symbol**：`Symbol()`、`Symbol.for/keyFor`、知名 Symbol（iterator/toStringTag 等）
 - **集合**：`Map`、`Set`、`WeakMap`、`WeakSet`，配套迭代器协议
-- **Promise**：`resolve/reject/all/race/allSettled/any`、`then/catch/finally`
+- **Promise**：`resolve/reject/all/race/allSettled/any/allKeyed/allSettledKeyed`、`then/catch/finally`、`withResolvers/try`
+- **Iterator**：抽象构造器、`Iterator.from/concat/zip/zipKeyed` 与 helpers（map/filter/take/drop/flatMap/reduce/toArray 等）
+- **其他**：Symbol 知名方法、WeakMap/WeakSet、JSON 源文本、`RegExp.escape`、ES2025 Set 方法集
 
 ### 尚未支持（明确排除或后续阶段）
 
@@ -93,8 +98,10 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - `Proxy` / `Reflect`
 - BigInt、Intl、TypedArray/ArrayBuffer/DataView
 - DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）
-- 可选链 `?.`、类字段/私有字段、`String.prototype.normalize`
+- `String.prototype.normalize`、`ShadowRealm`、`Atomics`
 - 完整 ASI 边界规则、`Date` 真实时区（当前本地时间按 UTC 实现）
+
+Unicode 属性/标识符数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。
 
 ## 架构与扩展
 
