@@ -316,6 +316,72 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+
+    LibrarySpec(
+        name = "lz-string",
+        url = "https://unpkg.com/lz-string@1.5.0/libs/lz-string.min.js",
+        globalName = "LZString",
+        cases = listOf(
+            SmokeCase(
+                "base64 roundtrip",
+                assertion(
+                    "(function () { var input = 'hello hello hello'; " +
+                        "return LZString.decompressFromBase64(LZString.compressToBase64(input)) === input; })()"
+                ),
+            ),
+            SmokeCase(
+                "utf16 roundtrip",
+                assertion(
+                    "(function () { var input = '你好，世界'; " +
+                        "return LZString.decompressFromUTF16(LZString.compressToUTF16(input)) === input; })()"
+                ),
+            ),
+            SmokeCase(
+                "uri component roundtrip",
+                assertion(
+                    "(function () { var input = 'a-b_c~d'; " +
+                        "return LZString.decompressFromEncodedURIComponent(" +
+                        "LZString.compressToEncodedURIComponent(input)) === input; })()"
+                ),
+            ),
+            SmokeCase(
+                "compress short",
+                assertion(
+                    "(function () { var input = 'abc'; " +
+                        "return LZString.decompress(LZString.compress(input)) === input; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "marked",
+        url = "https://unpkg.com/marked@4.3.0/marked.min.js",
+        globalName = "marked",
+        cases = listOf(
+            SmokeCase(
+                "heading",
+                assertion("marked.parse('# Hi').indexOf('<h1 id=\"hi\">Hi</h1>') === 0"),
+            ),
+            SmokeCase(
+                "strong",
+                assertion("marked.parse('**bold**').indexOf('<strong>bold</strong>') >= 0"),
+            ),
+            SmokeCase(
+                "list",
+                assertion(
+                    "marked.parse('- a\\n- b').indexOf('<li>a</li>') >= 0 && " +
+                        "marked.parse('- a\\n- b').indexOf('<ul>') >= 0"
+                ),
+            ),
+            SmokeCase(
+                "inline code link",
+                assertion(
+                    "marked.parse('`x`').indexOf('<code>x</code>') >= 0 && " +
+                        "marked.parse('[x](https://a)').indexOf('<a href=\"https://a\">x</a>') >= 0"
+                ),
+            ),
+        ),
+    ),
 )
 
 
