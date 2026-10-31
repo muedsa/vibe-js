@@ -56,7 +56,7 @@ object WeakSetBuiltins {
                 val set = thisValue as? JSWeakSet
                     ?: interpreter.typeError("WeakSet.prototype.add requires that 'this' be a WeakSet")
                 val value = args.getOrElse(0) { JSUndefined }
-                if (value !is JSObject) {
+                if (!WeakMapBuiltins.canBeHeldWeakly(value)) {
                     interpreter.typeError("Invalid value used in WeakSet")
                 }
                 if (set.values.none { interpreter.conversions.sameValueZero(it, value) }) {

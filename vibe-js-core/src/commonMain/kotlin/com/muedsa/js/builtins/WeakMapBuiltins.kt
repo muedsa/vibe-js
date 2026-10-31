@@ -5,7 +5,9 @@ import com.muedsa.js.runtime.value.JSMap
 import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSSymbol
 import com.muedsa.js.runtime.value.JSUndefined
+import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.JSWeakMap
 import com.muedsa.js.runtime.value.PropertyKey
 
@@ -13,6 +15,10 @@ import com.muedsa.js.runtime.value.PropertyKey
  * WeakMap 构造器（基于 Map 存储；不提供 size 与迭代）。
  */
 object WeakMapBuiltins {
+
+    /** CanBeHeldWeakly：对象或非注册 Symbol。 */
+    internal fun canBeHeldWeakly(value: JSValue): Boolean =
+        value is JSObject || (value is JSSymbol && !value.registered)
 
     fun install(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
@@ -61,7 +67,7 @@ object WeakMapBuiltins {
                     ?: interpreter.typeError("WeakMap.prototype.set requires that 'this' be a WeakMap")
                 val key = args.getOrElse(0) { JSUndefined }
                 val value = args.getOrElse(1) { JSUndefined }
-                if (key !is JSObject) {
+                if (!canBeHeldWeakly(key)) {
                     interpreter.typeError("Invalid value used as WeakMap key")
                 }
                 val index = map.entries.indexOfFirst {
@@ -118,7 +124,7 @@ object WeakMapBuiltins {
                     ?: interpreter.typeError("WeakMap.prototype.getOrInsert requires that 'this' be a WeakMap")
                 val key = args.getOrElse(0) { JSUndefined }
                 val value = args.getOrElse(1) { JSUndefined }
-                if (key !is JSObject) {
+                if (!canBeHeldWeakly(key)) {
                     interpreter.typeError("Invalid value used as WeakMap key")
                 }
                 val index = map.entries.indexOfFirst {
@@ -144,7 +150,7 @@ object WeakMapBuiltins {
                     )
                 val key = args.getOrElse(0) { JSUndefined }
                 val callback = args.getOrElse(1) { JSUndefined }
-                if (key !is JSObject) {
+                if (!canBeHeldWeakly(key)) {
                     interpreter.typeError("Invalid value used as WeakMap key")
                 }
                 if (!interpreter.isCallable(callback)) {

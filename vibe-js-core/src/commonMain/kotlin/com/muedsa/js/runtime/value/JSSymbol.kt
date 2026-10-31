@@ -4,9 +4,14 @@ package com.muedsa.js.runtime.value
  * Symbol 原始值。
  *
  * 阶段 A 仅提供类型与属性键支持，内建 Symbol 对象在后续阶段注册。
- * Symbol 的唯一性由引用决定，因此不重写 equals/hashCode。
+ * 符号的唯一性由引用决定，因此不重写 equals/hashCode。
+ *
+ * @property registered 是否由 Symbol.for 创建（注册符号不能作为 WeakMap/WeakSet 键）
  */
-class JSSymbol(val description: String?) : JSValue() {
+class JSSymbol(
+    val description: String?,
+    val registered: Boolean = false,
+) : JSValue() {
 
     override val isPrimitive: Boolean = true
 

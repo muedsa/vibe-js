@@ -1213,6 +1213,31 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `WeakMap 与 WeakSet 支持非注册 Symbol 键`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var s = Symbol('k');" +
+                "var map = new WeakMap([[s, 1]]);" +
+                "map.get(s) === 1 && map.has(s) &&" +
+                " map.getOrInsert(s, 2) === 1 && map.delete(s) && !map.has(s)"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var s = Symbol('k');" +
+                "var set = new WeakSet([s]);" +
+                "set.has(s) && set.delete(s) && !set.has(s)"
+        ))
+        // 注册符号不能作为弱引用键
+        assertEquals(true, runtime.evalBoolean(
+            "var threw = 0;" +
+                "try { new WeakMap().set(Symbol.for('reg'), 1); }" +
+                " catch (e) { if (e instanceof TypeError) threw++; }" +
+                "try { new WeakSet().add(Symbol.for('reg')); }" +
+                " catch (e) { if (e instanceof TypeError) threw++; }" +
+                "threw === 2"
+        ))
+    }
+
+    @Test
     fun `Iterator zip 与 zipKeyed 的模式和结果对象`() = runTest {
         val runtime = TestRuntime()
         // shortest：按最短输入结束

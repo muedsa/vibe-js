@@ -113,7 +113,7 @@ object SymbolBuiltins {
             value = BuiltinHelpers.method(intrinsics, "for", 1) { interpreter, _, args ->
                 val key = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
                 globalRegistry.getOrPut(key) {
-                    JSSymbol(key).also { keyRegistry[it] = key }
+                    JSSymbol(key, registered = true).also { keyRegistry[it] = key }
                 }
             },
         )
