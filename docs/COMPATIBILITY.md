@@ -61,7 +61,7 @@
 | 全局常量/函数 | ✅ | undefined、NaN、Infinity、globalThis、parseInt、parseFloat、isNaN、isFinite、Annex B escape/unescape |
 | Object | ✅ | 构造器；keys/values/entries/assign/create/getPrototypeOf/setPrototypeOf/getOwnPropertyDescriptor/getOwnPropertyNames/getOwnPropertySymbols/defineProperty/defineProperties/is/freeze/seal/preventExtensions/isFrozen/isSealed/isExtensible |
 | Object.prototype | ✅ | hasOwnProperty、isPrototypeOf、propertyIsEnumerable、valueOf、toString、toLocaleString、`__proto__`、Annex B `__defineGetter__`/`__defineSetter__`/`__lookupGetter__`/`__lookupSetter__` |
-| Function | ✅ | call/apply/bind/toString、动态 Function 构造器 |
+| Function | ✅ | call/apply/bind/toString（动态函数源码，其余 NativeFunction 形式）、动态 Function 构造器 |
 | Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；array-like 支持 2^53-1 长度边界 |
 | String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 暂缺 |
 | Number | ✅ | 常量、toString(radix)、toFixed/toExponential/toPrecision、静态判断与解析 |

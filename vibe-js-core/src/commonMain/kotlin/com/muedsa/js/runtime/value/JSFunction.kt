@@ -120,7 +120,18 @@ class JSFunction(
 
     override fun toPrimitiveString(): String =
         sourceText
-            ?: "function ${if (name.isEmpty()) "" else name}(${params.joinToString(", ") { it.name ?: "[pattern]" }}) { [native code] }"
+            ?: "function ${nativeFunctionName()}(${params.joinToString(", ") { it.name ?: "[pattern]" }}) { [native code] }"
+
+    /** 私有名（#x）等非法 IdentifierName 在 NativeFunction 形式中省略。 */
+    private fun nativeFunctionName(): String {
+        if (name.isEmpty()) return ""
+        val first = name[0]
+        if (first != '_' && first != '$' && !first.isLetter()) return ""
+        for (character in name) {
+            if (character != '_' && character != '$' && !character.isLetterOrDigit()) return ""
+        }
+        return name
+    }
 
     init {
         // 规范顺序：length 在 name 之前

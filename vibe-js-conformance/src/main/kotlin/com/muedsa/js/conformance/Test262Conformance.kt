@@ -712,8 +712,6 @@ private class Test262Runner(
             // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
             "test/language/expressions/optional-chaining/new-target-optional-call.js",
             // 命名捕获组（(?<name>...)）尚未实现，跳过依赖其替换语义的生成用例
-            // 方法 Function.prototype.toString 的源码片段保留尚未实现（私有方法用例需要精确源码）
-            "test/built-ins/Function/prototype/toString/",
         )
 
         /** 当前范围外或尚未实现的特性。 */
