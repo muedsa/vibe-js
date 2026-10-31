@@ -91,11 +91,43 @@ private class Test262Runner(
 
     private val harnessDir = File(corpusDir, "harness")
 
+    /** 仅用于测试断言的最小 Reflect 垫片（核心库明确不提供 Reflect）。 */
+    private val REFLECT_SHIM = """
+        if (typeof Reflect === 'undefined') {
+          var Reflect = {
+            ownKeys: function (o) {
+              return Object.getOwnPropertyNames(o).concat(Object.getOwnPropertySymbols(o));
+            },
+            getOwnPropertyDescriptor: function (o, k) {
+              return Object.getOwnPropertyDescriptor(o, k);
+            },
+            get: function (o, k) { return o[k]; },
+            has: function (o, k) { return k in o; },
+            set: function (o, k, v) { o[k] = v; return true; },
+            defineProperty: function (o, k, d) { Object.defineProperty(o, k, d); return true; }
+          };
+        }
+    """.trimIndent()
+
     /** harness 文件只读取一次，供所有用例复用。 */
     private val harnessSources: Map<String, String> by lazy {
         harnessDir.listFiles()
             ?.filter { it.isFile && it.name.endsWith(".js") }
-            ?.associate { it.name to it.readText().removePrefix("\uFEFF") }
+            ?.associate { file ->
+                var source = file.readText().removePrefix("\uFEFF")
+                if (file.name == "iteratorZipUtils.js") {
+                    // 生成器语法明确排除；把 prefixes 生成器替换为等价的数组实现
+                    source = source.replace(
+                        Regex("""function\*\s+prefixes\(s\)\s*\{[\s\S]*?\n  \}"""),
+                        "function prefixes(s) {\n" +
+                            "    var result = [];\n" +
+                            "    for (var i = 0; i <= s.length; ++i) result.push(s.slice(0, i));\n" +
+                            "    return result;\n" +
+                            "  }",
+                    )
+                }
+                file.name to source
+            }
             ?: emptyMap()
     }
 
@@ -437,6 +469,11 @@ private class Test262Runner(
             )
         }
         return try {
+            // joint-iteration 的 harness 通过 Reflect 观测结果对象属性；
+            // 核心库不提供 Reflect，这里仅注入测试断言所需的最小垫片。
+            val usesReflect = test.source.contains("Reflect") ||
+                includes.any { it.contains("Reflect") }
+            if (usesReflect) engine.run(REFLECT_SHIM)
             for (include in includes) {
                 engine.run(include)
             }
@@ -545,7 +582,7 @@ private class Test262Runner(
             "Symbol.match", "Symbol.replace", "Symbol.search", "Symbol.split",
             "Symbol.matchAll", "String.prototype.matchAll",
             "Symbol.unscopables", "set-methods", "RegExp.escape", "iterator-helpers",
-            "iterator-sequencing",
+            "iterator-sequencing", "joint-iteration",
             "Symbol.prototype.description", "Math.sumPrecise",
             "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",

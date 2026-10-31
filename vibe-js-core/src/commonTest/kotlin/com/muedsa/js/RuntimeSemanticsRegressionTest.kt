@@ -1213,6 +1213,62 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Iterator zip 与 zipKeyed 的模式和结果对象`() = runTest {
+        val runtime = TestRuntime()
+        // shortest：按最短输入结束
+        assertEquals("1,4;2,5;3,6", runtime.evalString(
+            "var out = [];" +
+                "for (var pair of Iterator.zip([[1, 2, 3], [4, 5, 6]]))" +
+                " out.push(pair.join(','));" +
+                "out.join(';')"
+        ))
+        // longest + padding：较短输入缺失位置使用 padding
+        assertEquals("1,2;9,3", runtime.evalString(
+            "var out = [];" +
+                "for (var pair of Iterator.zip([[1], [2, 3]]," +
+                " { mode: 'longest', padding: [9] })) out.push(pair.join(','));" +
+                "out.join(';')"
+        ))
+        // strict：长度不一致抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "try { Array.from(Iterator.zip([[1], [2, 3]], { mode: 'strict' })); false }" +
+                " catch (e) { e instanceof TypeError }"
+        ))
+        // zipKeyed：null 原型结果对象与键顺序
+        assertEquals(true, runtime.evalBoolean(
+            "var results = Array.from(Iterator.zipKeyed({ a: [1, 2], b: [3, 4] }));" +
+                "Object.getPrototypeOf(results[0]) === null &&" +
+                " results[1].a === 2 && results[1].b === 4 &&" +
+                " Array.prototype.join.call(Object.keys(results[0]), ',') === 'a,b'"
+        ))
+        // zipKeyed + longest：padding 按属性包读取
+        assertEquals(true, runtime.evalBoolean(
+            "var results = Array.from(Iterator.zipKeyed({ a: [1], b: [2, 3] }," +
+                " { mode: 'longest', padding: { a: 9 } }));" +
+                "results[1].a === 9 && results[1].b === 3"
+        ))
+        // return() 逆序关闭开放迭代器
+        assertEquals("2,1", runtime.evalString(
+            "var closed = [];" +
+                "function make(n) { return {" +
+                " next: function () { return { done: false, value: n }; }," +
+                " return: function () { closed.push(n); return {}; } }; }" +
+                "var it = Iterator.zip([make(1), make(2)]);" +
+                "it.next(); it.return();" +
+                "closed.join(',')"
+        ))
+        // 非法 mode / options 立即抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "var bad = 0;" +
+                "try { Iterator.zip([], { mode: 'loose' }); }" +
+                " catch (e) { if (e instanceof TypeError) bad++; }" +
+                "try { Iterator.zip([], null); }" +
+                " catch (e) { if (e instanceof TypeError) bad++; }" +
+                "bad === 2"
+        ))
+    }
+
+    @Test
     fun `Math sumPrecise 精确求和与特殊值`() = runTest {
         val runtime = TestRuntime()
         // 中间溢出后相互抵消仍返回精确舍入结果

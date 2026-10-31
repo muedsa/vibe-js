@@ -32,6 +32,9 @@ internal object IteratorBuiltins {
         var done: Boolean
         var running: Boolean
 
+        /** 是否已产出过值（suspended-yield）；false 表示 suspended-start。 */
+        var started: Boolean
+
         /** 推进并返回值；null 表示正常完成。 */
         suspend fun advance(interpreter: Interpreter): JSValue?
 
@@ -47,6 +50,7 @@ internal object IteratorBuiltins {
     ) : HelperState {
         override var done: Boolean = false
         override var running: Boolean = false
+        override var started: Boolean = false
 
         override suspend fun advance(interpreter: Interpreter): JSValue? = advanceFn(interpreter)
 
@@ -62,6 +66,7 @@ internal object IteratorBuiltins {
     ) : HelperState {
         override var done: Boolean = false
         override var running: Boolean = false
+        override var started: Boolean = false
         private var nextIndex: Int = 0
         private var inner: DirectIterator? = null
 
@@ -89,6 +94,160 @@ internal object IteratorBuiltins {
 
     /** Iterator.from 包装器的内部状态（[[Iterated]]）。 */
     private class WrapState(val record: DirectIterator)
+
+    /**
+     * Iterator.zip / zipKeyed 的 helper 状态。
+     *
+     * iters 中 null 表示 longest 模式下已耗尽的槽位，使用 padding 值填充；
+     * open 保存仍未耗尽的迭代器，用于按逆序关闭。
+     */
+    private class ZipHelperState(
+        private val iters: MutableList<DirectIterator?>,
+        private val padding: List<JSValue>,
+        private val mode: String,
+        private val keyed: Boolean,
+        private val keys: List<PropertyKey>,
+        private val intrinsics: Intrinsics,
+    ) : HelperState {
+        override var done: Boolean = false
+        override var running: Boolean = false
+        override var started: Boolean = false
+        private val open = ArrayList<DirectIterator>()
+
+        init {
+            for (iter in iters) {
+                if (iter != null) open.add(iter)
+            }
+        }
+
+        override suspend fun advance(interpreter: Interpreter): JSValue? {
+            if (iters.isEmpty()) return null
+            val results = ArrayList<JSValue>(iters.size)
+            var index = 0
+            while (index < iters.size) {
+                val iter = iters[index]
+                if (iter == null) {
+                    results.add(padding.getOrElse(index) { JSUndefined })
+                    index++
+                    continue
+                }
+                val value = try {
+                    nextValue(interpreter, iter)
+                } catch (error: JSException) {
+                    // 抛错的迭代器先移出 open，再关闭其余 open 迭代器
+                    open.remove(iter)
+                    closeOpen(interpreter, throwCompletion = true, cause = error)
+                    throw error
+                }
+                if (value != null) {
+                    results.add(value)
+                    index++
+                    continue
+                }
+                // 当前迭代器报告 done
+                open.remove(iter)
+                iters[index] = null
+                when (mode) {
+                    "shortest" -> {
+                        closeOpen(interpreter, throwCompletion = false)
+                        return null
+                    }
+
+                    "strict" -> {
+                        if (index != 0) throwStrictFailure(interpreter)
+                        var otherIndex = 1
+                        while (otherIndex < iters.size) {
+                            val other = iters[otherIndex]
+                            if (other != null) {
+                                val otherDone = try {
+                                    stepDone(interpreter, other)
+                                } catch (error: JSException) {
+                                    open.remove(other)
+                                    closeOpen(interpreter, throwCompletion = true, cause = error)
+                                    throw error
+                                }
+                                if (!otherDone) throwStrictFailure(interpreter)
+                                open.remove(other)
+                                iters[otherIndex] = null
+                            }
+                            otherIndex++
+                        }
+                        return null
+                    }
+
+                    else -> results.add(padding.getOrElse(index) { JSUndefined })
+                }
+                index++
+            }
+            if (open.isEmpty()) return null
+            return finishResults(interpreter, results)
+        }
+
+        override suspend fun close(interpreter: Interpreter) {
+            closeOpen(interpreter, throwCompletion = false)
+        }
+
+        private suspend fun stepDone(interpreter: Interpreter, iter: DirectIterator): Boolean {
+            val result = interpreter.callFunction(iter.nextMethod, iter.iterator, emptyList())
+            if (result !is JSObject) {
+                interpreter.typeError("Iterator result is not an object")
+            }
+            return interpreter.toBoolean(interpreter.getV(result, PropertyKey.Str("done")))
+        }
+
+        /** strict 模式长度不一致：关闭所有 open 迭代器后抛 TypeError。 */
+        private suspend fun throwStrictFailure(interpreter: Interpreter): Nothing {
+            closeOpen(interpreter, throwCompletion = true)
+            interpreter.typeError("Iterator.zip: strict mode iterators have different lengths")
+        }
+
+        /**
+         * 逆序关闭 open 迭代器。
+         * cause 非空时视为 throw 完成（关闭错误忽略并保留原始异常）；
+         * 正常完成时记录首个关闭错误，继续关闭其余迭代器后抛出。
+         */
+        private suspend fun closeOpen(
+            interpreter: Interpreter,
+            throwCompletion: Boolean,
+            cause: JSException? = null,
+        ) {
+            var firstError: JSException? = cause
+            var throwMode = throwCompletion || cause != null
+            for (index in open.indices.reversed()) {
+                try {
+                    closeDirect(interpreter, open[index], throwCompletion = throwMode)
+                } catch (error: JSException) {
+                    if (firstError == null) firstError = error
+                    throwMode = true
+                }
+            }
+            open.clear()
+            firstError?.let { throw it }
+        }
+
+        /** 结果对象：zip 为 Array，zipKeyed 为 null 原型对象。 */
+        private fun finishResults(interpreter: Interpreter, results: List<JSValue>): JSValue {
+            if (!keyed) {
+                return JSArray(
+                    results.toMutableList(),
+                    prototype = intrinsics.arrayPrototype,
+                )
+            }
+            val objectValue = JSObject(prototype = null)
+            for (index in results.indices) {
+                objectValue.defineOwnProperty(
+                    keys[index],
+                    PropertyDescriptor.data(
+                        results[index],
+                        writable = true,
+                        enumerable = true,
+                        configurable = true,
+                    ),
+                )
+            }
+            return objectValue
+        }
+    }
 
     private fun doneResult(interpreter: Interpreter): JSObject =
         createIterResult(interpreter, JSUndefined, done = true)
@@ -387,6 +546,7 @@ internal object IteratorBuiltins {
                         state.done = true
                         doneResult(interpreter)
                     } else {
+                        state.started = true
                         createIterResult(interpreter, value, done = false)
                     }
                 } finally {
@@ -405,11 +565,17 @@ internal object IteratorBuiltins {
                 if (state.running) interpreter.typeError("Iterator Helper is already running")
                 if (state.done) return@method doneResult(interpreter)
                 state.done = true
-                state.running = true
-                try {
+                if (state.started) {
+                    // suspended-yield：恢复执行期间再次调用 next/return 应抛 TypeError
+                    state.running = true
+                    try {
+                        state.close(interpreter)
+                    } finally {
+                        state.running = false
+                    }
+                } else {
+                    // suspended-start：先标记 completed，再关闭底层迭代器
                     state.close(interpreter)
-                } finally {
-                    state.running = false
                 }
                 doneResult(interpreter)
             },
@@ -470,6 +636,26 @@ internal object IteratorBuiltins {
             key = PropertyKey.Str("concat"),
             value = BuiltinHelpers.method(intrinsics, "concat", 0) { interpreter, _, args ->
                 iteratorConcat(interpreter, args)
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+
+        iteratorConstructor.defineDataProperty(
+            key = PropertyKey.Str("zip"),
+            value = BuiltinHelpers.method(intrinsics, "zip", 1) { interpreter, _, args ->
+                iteratorZip(interpreter, args, keyed = false)
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+
+        iteratorConstructor.defineDataProperty(
+            key = PropertyKey.Str("zipKeyed"),
+            value = BuiltinHelpers.method(intrinsics, "zipKeyed", 1) { interpreter, _, args ->
+                iteratorZip(interpreter, args, keyed = true)
             },
             writable = true,
             enumerable = false,
@@ -637,6 +823,189 @@ internal object IteratorBuiltins {
         val helper = JSObject(prototype = interpreter.intrinsics.iteratorHelperPrototype)
         helper.internalState = ConcatHelperState(records)
         return helper
+    }
+
+    /** 读取对象的 @@iterator 并创建直接迭代器记录。 */
+    private suspend fun iteratorFromIterable(
+        interpreter: Interpreter,
+        objectValue: JSObject,
+        description: String,
+    ): DirectIterator {
+        val method = getMethod(
+            interpreter,
+            objectValue,
+            PropertyKey.Sym(interpreter.intrinsics.symbolIterator),
+        ) ?: interpreter.typeError("$description is not iterable")
+        val iteratorValue = interpreter.callFunction(method, objectValue, emptyList())
+        val iterator = iteratorValue as? JSObject
+            ?: interpreter.typeError("Iterator method did not return an object")
+        return getIteratorDirect(interpreter, iterator)
+    }
+
+    /** Iterator.zip / zipKeyed：校验选项、收集迭代器、预读 padding 后返回 helper。 */
+    private suspend fun iteratorZip(
+        interpreter: Interpreter,
+        args: List<JSValue>,
+        keyed: Boolean,
+    ): JSObject {
+        val iterablesArg = args.getOrElse(0) { JSUndefined }
+        if (iterablesArg !is JSObject) {
+            interpreter.typeError("Iterator.zip requires an object")
+        }
+        val optionsArg = args.getOrElse(1) { JSUndefined }
+        val options = when (optionsArg) {
+            is JSUndefined -> JSObject(prototype = null)
+            is JSObject -> optionsArg
+            else -> interpreter.typeError("options must be an object")
+        }
+        val modeValue = interpreter.getV(options, PropertyKey.Str("mode"))
+        val mode = if (modeValue is JSUndefined) {
+            "shortest"
+        } else if (modeValue is JSString &&
+            modeValue.value in setOf("shortest", "longest", "strict")
+        ) {
+            modeValue.value
+        } else {
+            interpreter.typeError("Invalid mode")
+        }
+        var paddingOption: JSValue = JSUndefined
+        if (mode == "longest") {
+            paddingOption = interpreter.getV(options, PropertyKey.Str("padding"))
+            if (paddingOption !is JSUndefined && paddingOption !is JSObject) {
+                interpreter.typeError("padding must be an object")
+            }
+        }
+
+        val iters = ArrayList<DirectIterator?>()
+        val keys = ArrayList<PropertyKey>()
+        if (keyed) {
+            for (key in iterablesArg.ownPropertyKeys()) {
+                val descriptor = iterablesArg.getOwnProperty(key) ?: continue
+                if (!descriptor.enumerable) continue
+                val value = try {
+                    interpreter.getV(iterablesArg, key)
+                } catch (error: JSException) {
+                    closeZipIters(interpreter, iters, error)
+                    throw error
+                }
+                if (value is JSUndefined) continue
+                val iter = try {
+                    getIteratorFlattenable(interpreter, value, rejectStrings = true)
+                } catch (error: JSException) {
+                    closeZipIters(interpreter, iters, error)
+                    throw error
+                }
+                keys.add(key)
+                iters.add(iter)
+            }
+        } else {
+            val inputIter = iteratorFromIterable(interpreter, iterablesArg, "iterables")
+            while (true) {
+                val value = try {
+                    nextValue(interpreter, inputIter)
+                } catch (error: JSException) {
+                    closeZipIters(interpreter, iters, error)
+                    throw error
+                } ?: break
+                val iter = try {
+                    getIteratorFlattenable(interpreter, value, rejectStrings = true)
+                } catch (error: JSException) {
+                    closeZipWithInput(interpreter, iters, inputIter, error)
+                    throw error
+                }
+                iters.add(iter)
+            }
+        }
+
+        val padding = ArrayList<JSValue>(iters.size)
+        if (mode == "longest" && paddingOption !is JSUndefined) {
+            if (keyed) {
+                // zipKeyed 的 padding 是同键属性包，不是迭代器
+                for (key in keys) {
+                    val value = try {
+                        interpreter.getV(paddingOption as JSObject, key)
+                    } catch (error: JSException) {
+                        closeZipIters(interpreter, iters, error)
+                        throw error
+                    }
+                    padding.add(value)
+                }
+            } else {
+                val paddingIter = try {
+                    iteratorFromIterable(interpreter, paddingOption as JSObject, "padding")
+                } catch (error: JSException) {
+                    closeZipIters(interpreter, iters, error)
+                    throw error
+                }
+                var usingIterator = true
+                try {
+                    for (index in iters.indices) {
+                        if (usingIterator) {
+                            val value = nextValue(interpreter, paddingIter)
+                            if (value != null) {
+                                padding.add(value)
+                                continue
+                            }
+                            usingIterator = false
+                        }
+                        padding.add(JSUndefined)
+                    }
+                } catch (error: JSException) {
+                    // padding 迭代出错时只关闭 iters，不调用 padding 的 return
+                    closeZipIters(interpreter, iters, error)
+                    throw error
+                }
+                if (usingIterator) {
+                    try {
+                        closeDirect(interpreter, paddingIter, throwCompletion = false)
+                    } catch (error: JSException) {
+                        closeZipIters(interpreter, iters, error)
+                        throw error
+                    }
+                }
+            }
+        } else {
+            repeat(iters.size) { padding.add(JSUndefined) }
+        }
+
+        val helper = JSObject(prototype = interpreter.intrinsics.iteratorHelperPrototype)
+        helper.internalState = ZipHelperState(
+            iters = iters,
+            padding = padding,
+            mode = mode,
+            keyed = keyed,
+            keys = keys,
+            intrinsics = interpreter.intrinsics,
+        )
+        return helper
+    }
+
+    /** 创建阶段错误：逆序关闭已收集迭代器（throw 完成），再抛出原始异常。 */
+    private suspend fun closeZipIters(
+        interpreter: Interpreter,
+        iters: List<DirectIterator?>,
+        cause: JSException,
+    ) {
+        for (index in iters.indices.reversed()) {
+            val iter = iters[index] ?: continue
+            closeDirect(interpreter, iter, throwCompletion = true)
+        }
+        throw cause
+    }
+
+    /** 输入 iterable 出错：先关闭已收集迭代器，再关闭输入迭代器。 */
+    private suspend fun closeZipWithInput(
+        interpreter: Interpreter,
+        iters: List<DirectIterator?>,
+        inputIter: DirectIterator,
+        cause: JSException,
+    ) {
+        for (index in iters.indices.reversed()) {
+            val iter = iters[index] ?: continue
+            closeDirect(interpreter, iter, throwCompletion = true)
+        }
+        closeDirect(interpreter, inputIter, throwCompletion = true)
+        throw cause
     }
 
     /** 沿原型链判断实例是否继承自 %IteratorPrototype%。 */
