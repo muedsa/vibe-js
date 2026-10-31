@@ -421,6 +421,47 @@ object ObjectBuiltins {
             },
         )
 
+        // Object.groupBy(items, callback)：分组对象为 null 原型，组值为普通数组
+        objectConstructor.defineDataProperty(
+            key = PropertyKey.Str("groupBy"),
+            value = BuiltinHelpers.method(intrinsics, "groupBy", 2) { interpreter, _, args ->
+                val items = args.getOrElse(0) { JSUndefined }
+                val callback = args.getOrElse(1) { JSUndefined }
+                if (!interpreter.isCallable(callback)) {
+                    interpreter.typeError("Object.groupBy requires a callable callback")
+                }
+                val result = JSObject(prototype = null)
+                val groups = LinkedHashMap<PropertyKey, JSArray>()
+                var index = 0.0
+                interpreter.consumeIterator(items) { value ->
+                    val keyValue = interpreter.callFunction(
+                        callback,
+                        JSUndefined,
+                        listOf(value, JSNumber(index)),
+                    )
+                    index += 1.0
+                    val key = interpreter.toPropertyKey(keyValue)
+                    val group = groups[key]
+                    if (group == null) {
+                        val created = JSArray(prototype = intrinsics.arrayPrototype)
+                        created.setElement(0, value)
+                        groups[key] = created
+                        val defined = interpreter.defineOwnPropertyOn(
+                            result,
+                            key,
+                            PropertyDescriptor.data(created),
+                        )
+                        if (!defined) {
+                            interpreter.typeError("Cannot create group '$key'")
+                        }
+                    } else {
+                        group.setElement(group.lengthLong, value)
+                    }
+                }
+                result
+            },
+        )
+
         // 冻结 / 密封 / 防扩展
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("freeze"),

@@ -429,6 +429,35 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Object groupBy 与 Map groupBy`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var grouped = Object.groupBy([1, 2, 3, 4], function (v) { return v % 2 ? 'odd' : 'even'; });" +
+                " Object.getPrototypeOf(grouped) === null &&" +
+                " grouped.odd.join(',') === '1,3' && grouped.even.join(',') === '2,4'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var mapGrouped = Map.groupBy(['a', 'bb', 'c'], function (v) { return v.length; });" +
+                " mapGrouped instanceof Map && mapGrouped.get(1).join(',') === 'a,c' &&" +
+                " mapGrouped.get(2)[0] === 'bb'"
+        ))
+        // 字符串按码点迭代，代理对作为一个元素
+        assertEquals(true, runtime.evalBoolean(
+            "var codePoints = Object.groupBy('\\uD83D\\uDCA9\\uD83D\\uDE08', function (v) { return v.length; });" +
+                " codePoints[2].length === 2"
+        ))
+        // 回调抛错时关闭迭代器
+        assertEquals(true, runtime.evalBoolean(
+            "var closed = 0; var iterable = {};" +
+                " iterable[Symbol.iterator] = function () { var i = 0;" +
+                " return { next: function () { return { value: i++, done: false }; }," +
+                " return: function () { closed++; return {}; } }; };" +
+                " try { Object.groupBy(iterable, function () { throw new RangeError('x'); }); } catch (e) {}" +
+                " closed === 1"
+        ))
+    }
+
+    @Test
     fun `Set 方法集结果与顺序`() = runTest {
         val runtime = TestRuntime()
         assertEquals("1,2,3", runtime.evalString(

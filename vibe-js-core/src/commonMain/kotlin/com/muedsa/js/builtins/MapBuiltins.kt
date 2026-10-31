@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSMap
 import com.muedsa.js.runtime.value.JSNull
+import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
@@ -188,6 +189,40 @@ object MapBuiltins {
                 prototype = intrinsics.arrayPrototype,
             )
         }
+
+        // Map.groupBy(items, callback)：键按 SameValueZero 分组，组值为普通数组
+        mapConstructor.defineDataProperty(
+            key = PropertyKey.Str("groupBy"),
+            value = BuiltinHelpers.method(intrinsics, "groupBy", 2) { interpreter, _, args ->
+                val items = args.getOrElse(0) { JSUndefined }
+                val callback = args.getOrElse(1) { JSUndefined }
+                if (!interpreter.isCallable(callback)) {
+                    interpreter.typeError("Map.groupBy requires a callable callback")
+                }
+                val result = JSMap(prototype = intrinsics.mapPrototype)
+                var index = 0.0
+                interpreter.consumeIterator(items) { value ->
+                    val key = interpreter.callFunction(
+                        callback,
+                        JSUndefined,
+                        listOf(value, JSNumber(index)),
+                    )
+                    index += 1.0
+                    val existing = result.entries.firstOrNull {
+                        interpreter.conversions.sameValueZero(it.first, key)
+                    }
+                    val group = existing?.second as? JSArray
+                    if (group == null) {
+                        val created = JSArray(prototype = intrinsics.arrayPrototype)
+                        created.setElement(0, value)
+                        result.entries.add(key to created)
+                    } else {
+                        group.setElement(group.lengthLong, value)
+                    }
+                }
+                result
+            },
+        )
 
         registry.defineGlobal("Map", mapConstructor)
     }

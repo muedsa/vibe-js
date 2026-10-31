@@ -542,7 +542,7 @@ private class Test262Runner(
             "String.prototype.at", "String.fromCodePoint",
             "String.prototype.replaceAll",
             "String.prototype.isWellFormed", "String.prototype.toWellFormed",
-            "Object.is", "Object.hasOwn", "Object.fromEntries",
+            "Object.is", "Object.hasOwn", "Object.fromEntries", "array-grouping",
             "array-find-from-last", "change-array-by-copy",
             "Map", "Set", "WeakMap", "WeakSet", "Promise", "async-functions",
             "Promise.allSettled", "Promise.any",
