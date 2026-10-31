@@ -393,14 +393,6 @@ private class Test262Runner(
         ) {
             return "unsupported feature: ArrayBuffer"
         }
-        // v 标志的属性字符串（\p{RGI_Emoji} 等）与 \q 字符串析取尚未实现
-        if (test.source.contains("\\q{") ||
-            test.source.contains("Basic_Emoji") ||
-            test.source.contains("Emoji_Keycap_Sequence") ||
-            test.source.contains("RGI_Emoji")
-        ) {
-            return "unsupported property strings"
-        }
         // ES2015 子集中排除 BigInt/Proxy/Generator 内容（项目明确排除）
         if (suite == "es2015" &&
             (test.source.contains("BigInt") ||
@@ -713,8 +705,6 @@ private class Test262Runner(
             "test/built-ins/AsyncIteratorPrototype/",
             "-from-generator-function-declaration.js",
             "-from-yield-expression.js",
-            // 属性字符串语料（\q 与 RGI_Emoji 等字符串属性尚未实现）
-            "test/built-ins/RegExp/property-escapes/generated/strings/",
             // ES2024 v 标志正则语料中的 CharacterClassEscapes 依赖 v 模式码点表
             "test/built-ins/RegExp/CharacterClassEscapes/",
             // 孤立代理项匹配依赖引擎码元语义（当前 Kotlin Regex 近似）

@@ -75,7 +75,8 @@ class JsRegexEngine(
         groupCount = parser.groupCount
         namedGroupIndices = parser.namedGroupsSnapshot()
         singleClassRoot = if (groupCount == 0) {
-            (root as? Node.SequenceNode)?.nodes?.singleOrNull() as? Node.ClassNode
+            ((root as? Node.SequenceNode)?.nodes?.singleOrNull() as? Node.ClassNode)
+                ?.takeIf { it.strings.isEmpty() }
         } else {
             null
         }
@@ -256,28 +257,96 @@ class JsRegexEngine(
             }
 
             is Node.ClassNode -> {
-                // u 模式下按完整码点匹配，字符类才能覆盖 astral 属性集合
+                // u 模式按完整码点匹配；v 模式的字符串操作数可消耗多个码点，
+                // 需要在同一位置尝试多个候选长度（回溯）
                 if (reverse) {
                     if (pos <= 0) {
-                        false
-                    } else {
-                        val codePoint = codePointBefore(pos)
-                        val matched = node.items.any { it.matches(codePoint, flags.ignoreCase) }
-                        if (matched != node.negated) {
-                            continuation(pos - codePointWidthBefore(pos), captures)
-                        } else {
+                        if (node.negated) {
                             false
+                        } else {
+                            var result = false
+                            for (string in node.strings) {
+                                if (string.isEmpty() && continuation(pos, captures)) {
+                                    result = true
+                                    break
+                                }
+                            }
+                            result
+                        }
+                    } else {
+                        var matched = false
+                        val codePoint = codePointBefore(pos)
+                        for (item in node.items) {
+                            if (item.matches(codePoint, flags.ignoreCase)) {
+                                matched = true
+                                break
+                            }
+                        }
+                        if (node.negated) {
+                            if (matched) false
+                            else continuation(pos - codePointWidthBefore(pos), captures)
+                        } else {
+                            var result = false
+                            if (matched) {
+                                result = continuation(pos - codePointWidthBefore(pos), captures)
+                            }
+                            if (!result) {
+                                for (string in node.strings) {
+                                    if (matchesEndingAt(pos, string, false) &&
+                                        continuation(pos - string.length, captures)
+                                    ) {
+                                        result = true
+                                        break
+                                    }
+                                }
+                            }
+                            result
                         }
                     }
                 } else {
-                    if (pos >= inputForMatch.length) false
-                    else {
-                        val codePoint = codePointAt(pos)
-                        val matched = node.items.any { it.matches(codePoint, flags.ignoreCase) }
-                        if (matched != node.negated) {
-                            continuation(pos + codePointWidthAt(pos), captures)
-                        } else {
+                    if (pos > inputForMatch.length) {
+                        false
+                    } else if (pos >= inputForMatch.length) {
+                        if (node.negated) {
                             false
+                        } else {
+                            var result = false
+                            for (string in node.strings) {
+                                if (string.isEmpty() && continuation(pos, captures)) {
+                                    result = true
+                                    break
+                                }
+                            }
+                            result
+                        }
+                    } else {
+                        var matched = false
+                        val codePoint = codePointAt(pos)
+                        for (item in node.items) {
+                            if (item.matches(codePoint, flags.ignoreCase)) {
+                                matched = true
+                                break
+                            }
+                        }
+                        if (node.negated) {
+                            if (matched) false
+                            else continuation(pos + codePointWidthAt(pos), captures)
+                        } else {
+                            var result = false
+                            if (matched) {
+                                result = continuation(pos + codePointWidthAt(pos), captures)
+                            }
+                            if (!result) {
+                                for (string in node.strings) {
+                                    if (matchesAt(pos, string, false) &&
+                                        continuation(pos + string.length, captures)
+                                    ) {
+                                        result = true
+                                        break
+                                    }
+                                }
+                            }
+                            result
                         }
                     }
                 }
@@ -479,11 +548,16 @@ class JsRegexEngine(
         }
 
         // 单字符类/字面量/任意字符的量词：迭代消费，避免长文本上递归导致栈溢出
-        if (count == 0 && innerGroups.isEmpty() &&
-            (node.child is Node.CharNode || node.child is Node.AnyNode ||
-                node.child is Node.ClassNode)
-        ) {
-            return matchSimpleQuantifier(node, pos, captures, flags, reverse, continuation)
+        if (count == 0 && innerGroups.isEmpty()) {
+            val child = node.child
+            if (child is Node.CharNode || child is Node.AnyNode ||
+                (child is Node.ClassNode && child.strings.isEmpty())
+            ) {
+                return matchSimpleQuantifier(node, pos, captures, flags, reverse, continuation)
+            }
+            if (child is Node.ClassNode) {
+                return matchStringClassQuantifier(node, child, pos, captures, flags, reverse, continuation)
+            }
         }
 
         if (count < node.min) {
@@ -567,6 +641,119 @@ class JsRegexEngine(
             back--
         }
         return false
+    }
+
+    /**
+     * 含属性字符串的字符类量词：迭代消费并优先选择最长匹配，避免递归过深。
+     *
+     * 与 [matchSimpleQuantifier] 相同，贪婪模式在失败后按已消费位置回退。
+     */
+    private fun matchStringClassQuantifier(
+        node: Node.QuantifierNode,
+        child: Node.ClassNode,
+        startPos: Int,
+        captures: Array<IntRange?>,
+        flags: MatchFlags,
+        reverse: Boolean,
+        continuation: (Int, Array<IntRange?>) -> Boolean,
+    ): Boolean {
+        var current = startPos
+        var consumed = 0
+        var zeroWidth = false
+        if (!node.greedy) {
+            if (node.min == 0 && continuation(current, captures)) return true
+            while (consumed < node.max) {
+                val step = stringClassStep(child, current, flags, reverse)
+                if (step < 0) break
+                if (step == 0) {
+                    zeroWidth = true
+                    break
+                }
+                current += if (reverse) -step else step
+                consumed++
+                if (consumed >= node.min && continuation(current, captures)) return true
+            }
+            if (zeroWidth && continuation(current, captures)) return true
+            return false
+        }
+
+        while (consumed < node.max) {
+            val step = stringClassStep(child, current, flags, reverse)
+            if (step < 0) break
+            if (step == 0) {
+                zeroWidth = true
+                break
+            }
+            current += if (reverse) -step else step
+            consumed++
+        }
+        if (consumed < node.min) {
+            // 零宽匹配（\q{}）按通用量词语义允许一次空迭代
+            return zeroWidth && continuation(current, captures)
+        }
+        if (continuation(current, captures)) return true
+        if (consumed == node.min) return false
+
+        val positions = IntArray(consumed)
+        var probe = startPos
+        for (index in 0 until consumed) {
+            val step = stringClassStep(child, probe, flags, reverse)
+            if (step <= 0) return false
+            probe += if (reverse) -step else step
+            positions[index] = probe
+        }
+        var back = consumed - 1
+        while (back >= node.min) {
+            val position = if (back == 0) startPos else positions[back - 1]
+            if (continuation(position, captures)) return true
+            back--
+        }
+        return false
+    }
+
+    /**
+     * 字符串类单步：返回消费长度（UTF-16 码元），0 表示仅空字符串匹配，
+     * -1 表示无匹配。
+     */
+    private fun stringClassStep(
+        node: Node.ClassNode,
+        pos: Int,
+        flags: MatchFlags,
+        reverse: Boolean,
+    ): Int {
+        var best = -1
+        if (reverse) {
+            if (pos > 0) {
+                val codePoint = codePointBefore(pos)
+                for (item in node.items) {
+                    if (item.matches(codePoint, flags.ignoreCase)) {
+                        best = maxOf(best, codePointWidthBefore(pos))
+                        break
+                    }
+                }
+            }
+            for (string in node.strings) {
+                if (string.length > best && matchesEndingAt(pos, string, false)) {
+                    best = string.length
+                }
+            }
+        } else {
+            if (pos < inputForMatch.length) {
+                val codePoint = codePointAt(pos)
+                for (item in node.items) {
+                    if (item.matches(codePoint, flags.ignoreCase)) {
+                        best = maxOf(best, codePointWidthAt(pos))
+                        break
+                    }
+                }
+            }
+            for (string in node.strings) {
+                if (string.length > best && matchesAt(pos, string, false)) {
+                    best = string.length
+                }
+            }
+        }
+        return best
     }
 
     /** 消费一个简单节点；不匹配返回 null。 */
@@ -730,7 +917,12 @@ class JsRegexEngine(
     private sealed class Node {
         data class CharNode(val character: Char) : Node()
         object AnyNode : Node()
-        data class ClassNode(val negated: Boolean, val items: List<ClassItem>) : Node()
+        /** v 模式的字符串操作数（\q 或属性字符串）；items 负责码点部分。 */
+        data class ClassNode(
+            val negated: Boolean,
+            val items: List<ClassItem>,
+            val strings: List<String> = emptyList(),
+        ) : Node()
         data class SequenceNode(val nodes: List<Node>) : Node()
         data class AlternationNode(val branches: List<Node>) : Node()
         data class GroupNode(val index: Int?, val child: Node) : Node()
@@ -826,10 +1018,79 @@ class JsRegexEngine(
         }
     }
 
+    /** v 模式字符类的求值结果：码点集合 + 多码点字符串（属性字符串或 \q）。 */
+    private class ClassSetValue(
+        val codePoints: CodePointSet,
+        val strings: List<String>,
+    ) {
+        fun union(other: ClassSetValue): ClassSetValue = ClassSetValue(
+            codePoints.union(other.codePoints),
+            mergeStrings(strings, other.strings),
+        )
+
+        fun intersect(other: ClassSetValue): ClassSetValue = ClassSetValue(
+            codePoints.intersect(other.codePoints),
+            strings.filter { it in other.strings }.distinct(),
+        )
+
+        fun subtract(other: ClassSetValue): ClassSetValue = ClassSetValue(
+            codePoints.subtract(other.codePoints),
+            strings.filter { it !in other.strings },
+        )
+
+        fun complement(): ClassSetValue {
+            if (strings.isNotEmpty()) {
+                throw IllegalArgumentException("Negated character class may contain strings")
+            }
+            return ClassSetValue(codePoints.complement(), emptyList())
+        }
+
+        companion object {
+            val EMPTY = ClassSetValue(CodePointSet.EMPTY, emptyList())
+
+            fun ofCodePoints(set: CodePointSet): ClassSetValue =
+                ClassSetValue(set, emptyList())
+
+            /** 单码点字符串规范化为码点集合，保留多码点与空字符串。 */
+            fun ofStrings(values: List<String>): ClassSetValue {
+                var codePoints = CodePointSet.EMPTY
+                val multi = LinkedHashSet<String>()
+                for (value in values) {
+                    val single = singleCodePoint(value)
+                    if (single != null) {
+                        codePoints = codePoints.union(CodePointSet.singleton(single))
+                    } else {
+                        multi.add(value)
+                    }
+                }
+                return ClassSetValue(codePoints, multi.toList())
+            }
+
+            private fun mergeStrings(
+                left: List<String>,
+                right: List<String>,
+            ): List<String> {
+                if (right.isEmpty()) return left
+                if (left.isEmpty()) return right
+                val merged = LinkedHashSet(left)
+                merged.addAll(right)
+                return merged.toList()
+            }
+
+            private fun singleCodePoint(value: String): Int? = when {
+                value.isEmpty() -> null
+                value.length == 1 -> value[0].code
+                value.length == 2 && value[0].isHighSurrogate() && value[1].isLowSurrogate() ->
+                    0x10000 + ((value[0].code - 0xD800) shl 10) + (value[1].code - 0xDC00)
+                else -> null
+            }
+        }
+    }
+
     /** 集合操作数：单个字符（可构成范围）或已求值的集合。 */
     private sealed class SetOperand {
         data class CharAtom(val value: Int) : SetOperand()
-        data class RangeSet(val set: CodePointSet) : SetOperand()
+        data class Value(val value: ClassSetValue) : SetOperand()
     }
 
     private inner class PatternParser(
@@ -1091,8 +1352,13 @@ class JsRegexEngine(
 
         private fun parseCharacterClass(): Node {
             if (unicodeSets) {
-                val set = parseClassSet()
-                return Node.ClassNode(false, listOf(ClassItem.Ranges(set)))
+                val value = parseClassSet()
+                val items = if (value.codePoints.isEmpty) {
+                    emptyList()
+                } else {
+                    listOf(ClassItem.Ranges(value.codePoints))
+                }
+                return Node.ClassNode(false, items, value.strings)
             }
             position++ // '['
             var negated = false
@@ -1136,8 +1402,8 @@ class JsRegexEngine(
             return Node.ClassNode(negated, items)
         }
 
-        /** 解析 v 模式扩展字符类，返回求值后的码点集合；position 指向 '['。 */
-        private fun parseClassSet(): CodePointSet {
+        /** 解析 v 模式扩展字符类，返回求值结果；position 指向 '['。 */
+        private fun parseClassSet(): ClassSetValue {
             position++ // '['
             var negated = false
             if (position < pattern.length && peek() == '^') {
@@ -1160,7 +1426,7 @@ class JsRegexEngine(
         }
 
         /** ClassSetExpression：并集，或单个 && / -- 运算（不能与并集混用）。 */
-        private fun parseClassSetExpression(): CodePointSet {
+        private fun parseClassSetExpression(): ClassSetValue {
             var left = parseClassSetTerm()
             when {
                 startsWith("&&") -> {
@@ -1194,7 +1460,7 @@ class JsRegexEngine(
         }
 
         /** 解析一个操作数，并在单个字符时按 `-` 合并范围。 */
-        private fun parseClassSetTerm(): CodePointSet {
+        private fun parseClassSetTerm(): ClassSetValue {
             val first = parseClassSetOperand()
             if (first is SetOperand.CharAtom && position < pattern.length && peek() == '-' &&
                 !startsWith("--")
@@ -1211,11 +1477,14 @@ class JsRegexEngine(
                 if (first.value > second.value) {
                     throw IllegalArgumentException("Range out of order in character class")
                 }
-                return CodePointSet.range(first.value, second.value)
+                return ClassSetValue.ofCodePoints(
+                    CodePointSet.range(first.value, second.value)
+                )
             }
             return when (first) {
-                is SetOperand.CharAtom -> CodePointSet.singleton(first.value)
-                is SetOperand.RangeSet -> first.set
+                is SetOperand.CharAtom ->
+                    ClassSetValue.ofCodePoints(CodePointSet.singleton(first.value))
+                is SetOperand.Value -> first.value
             }
         }
 
@@ -1224,7 +1493,7 @@ class JsRegexEngine(
                 throw IllegalArgumentException("Unterminated class set")
             }
             return when (peek()) {
-                '[' -> SetOperand.RangeSet(parseClassSet())
+                '[' -> SetOperand.Value(parseClassSet())
                 '\\' -> parseClassSetEscape()
                 ']' -> throw IllegalArgumentException("Unexpected ']' in class set")
                 '-' -> throw IllegalArgumentException("Invalid '-' in class set")
@@ -1352,54 +1621,164 @@ class JsRegexEngine(
             return when (escaped) {
                 'd' -> {
                     position++
-                    SetOperand.RangeSet(CodePointSet.range(0x30, 0x39))
+                    SetOperand.Value(
+                        ClassSetValue.ofCodePoints(CodePointSet.range(0x30, 0x39))
+                    )
                 }
 
                 'D' -> {
                     position++
-                    SetOperand.RangeSet(CodePointSet.range(0x30, 0x39).complement())
+                    SetOperand.Value(
+                        ClassSetValue.ofCodePoints(
+                            CodePointSet.range(0x30, 0x39).complement()
+                        )
+                    )
                 }
 
                 'w' -> {
                     position++
-                    SetOperand.RangeSet(WORD_SET)
+                    SetOperand.Value(ClassSetValue.ofCodePoints(WORD_SET))
                 }
 
                 'W' -> {
                     position++
-                    SetOperand.RangeSet(WORD_SET.complement())
+                    SetOperand.Value(ClassSetValue.ofCodePoints(WORD_SET.complement()))
                 }
 
                 's' -> {
                     position++
-                    SetOperand.RangeSet(SPACE_SET)
+                    SetOperand.Value(ClassSetValue.ofCodePoints(SPACE_SET))
                 }
 
                 'S' -> {
                     position++
-                    SetOperand.RangeSet(SPACE_SET.complement())
+                    SetOperand.Value(ClassSetValue.ofCodePoints(SPACE_SET.complement()))
                 }
 
                 'p' -> {
                     position++
-                    SetOperand.RangeSet(readPropertySet(negated = false))
+                    SetOperand.Value(readPropertySet(negated = false))
                 }
 
                 'P' -> {
                     position++
-                    SetOperand.RangeSet(readPropertySet(negated = true))
+                    SetOperand.Value(readPropertySet(negated = true))
                 }
 
-                'q' -> throw IllegalArgumentException("\\q is not supported yet")
+                'q' -> {
+                    position++
+                    SetOperand.Value(readClassStringDisjunction())
+                }
+
                 else -> SetOperand.CharAtom(readEscapedCharAtom())
             }
         }
 
-        /** 读取 `\p{...}` / `\P{...}` 对应的码点集合；position 指向 '{'。 */
-        private fun readPropertySet(negated: Boolean): CodePointSet {
-            val item = readPropertyEscape(negated = false) as ClassItem.Property
-            val set = CodePointSet.of(item.set.rangeData())
-            return if (negated) set.complement() else set
+        /** 字符类之外的属性转义（v 模式可匹配属性字符串）。 */
+        private fun propertyNode(negated: Boolean): Node {
+            val value = readPropertySet(negated)
+            val items = if (value.codePoints.isEmpty) {
+                emptyList()
+            } else {
+                listOf(ClassItem.Ranges(value.codePoints))
+            }
+            return Node.ClassNode(false, items, value.strings)
+        }
+
+        /** 读取 `\p{...}` / `\P{...}`：码点属性或属性字符串；position 指向 '{'。 */
+        private fun readPropertySet(negated: Boolean): ClassSetValue {
+            if (position >= pattern.length || peek() != '{') {
+                throw IllegalArgumentException("Invalid property escape")
+            }
+            val close = pattern.indexOf('}', position + 1)
+            if (close < 0) {
+                throw IllegalArgumentException("Unterminated property escape")
+            }
+            val expression = pattern.substring(position + 1, close)
+            position = close + 1
+            val property = UnicodePropertyData.resolve(expression)
+            if (property != null) {
+                var set = CodePointSet.of(property.rangeData())
+                if (negated) set = set.complement()
+                return ClassSetValue.ofCodePoints(set)
+            }
+            if (negated) {
+                throw IllegalArgumentException("Invalid property name or value: $expression")
+            }
+            val strings = UnicodeStringPropertyData.resolve(expression)
+                ?: throw IllegalArgumentException("Invalid property name or value: $expression")
+            return ClassSetValue.ofStrings(strings)
+        }
+
+        /** 解析 `\q{...}` 字符串析取；position 指向 '{'。 */
+        private fun readClassStringDisjunction(): ClassSetValue {
+            if (position >= pattern.length || peek() != '{') {
+                throw IllegalArgumentException("Invalid \\q")
+            }
+            position++ // '{'
+            val strings = mutableListOf<String>()
+            var builder = StringBuilder()
+            while (true) {
+                if (position >= pattern.length) {
+                    throw IllegalArgumentException("Unterminated \\q")
+                }
+                when (peek()) {
+                    '}' -> {
+                        strings.add(builder.toString())
+                        position++
+                        break
+                    }
+
+                    '|' -> {
+                        strings.add(builder.toString())
+                        builder = StringBuilder()
+                        position++
+                    }
+
+                    else -> appendCodePoint(builder, parseClassStringCharacter())
+                }
+            }
+            return ClassSetValue.ofStrings(strings)
+        }
+
+        private fun parseClassStringCharacter(): Int {
+            if (position >= pattern.length) {
+                throw IllegalArgumentException("Unterminated \\q")
+            }
+            val character = peek()
+            if (character == '\\') {
+                position++
+                return readEscapedCharAtom()
+            }
+            if (character == ']' || character == '|' || character == '}' ||
+                character in "()[{}/-"
+            ) {
+                throw IllegalArgumentException("Invalid character in \\q")
+            }
+            for (reserved in CLASS_SET_RESERVED_DOUBLES) {
+                if (startsWith(reserved)) {
+                    throw IllegalArgumentException("Invalid reserved double punctuator in \\q")
+                }
+            }
+            if (unicode && character.isHighSurrogate() && position + 1 < pattern.length &&
+                pattern[position + 1].isLowSurrogate()
+            ) {
+                position += 2
+                return 0x10000 + ((character.code - 0xD800) shl 10) +
+                    (pattern[position - 1].code - 0xDC00)
+            }
+            position++
+            return character.code
+        }
+
+        private fun appendCodePoint(builder: StringBuilder, codePoint: Int) {
+            if (codePoint <= 0xFFFF) {
+                builder.append(codePoint.toChar())
+            } else {
+                val value = codePoint - 0x10000
+                builder.append(((value shr 10) + 0xD800).toChar())
+                builder.append(((value and 0x3FF) + 0xDC00).toChar())
+            }
         }
 
         private fun startsWith(text: String): Boolean {
@@ -1504,8 +1883,17 @@ class JsRegexEngine(
                 'W' -> Node.ClassNode(false, listOf(wordPredicate(true)))
                 's' -> Node.ClassNode(false, listOf(spacePredicate(false)))
                 'S' -> Node.ClassNode(false, listOf(spacePredicate(true)))
-                'p' -> Node.ClassNode(false, listOf(readPropertyEscape(negated = false)))
-                'P' -> Node.ClassNode(false, listOf(readPropertyEscape(negated = true)))
+                'p' -> if (unicodeSets) {
+                    propertyNode(negated = false)
+                } else {
+                    Node.ClassNode(false, listOf(readPropertyEscape(negated = false)))
+                }
+
+                'P' -> if (unicodeSets) {
+                    propertyNode(negated = true)
+                } else {
+                    Node.ClassNode(false, listOf(readPropertyEscape(negated = true)))
+                }
                 'q' -> if (unicodeSets) {
                     throw IllegalArgumentException("\\q is only valid inside a class")
                 } else {

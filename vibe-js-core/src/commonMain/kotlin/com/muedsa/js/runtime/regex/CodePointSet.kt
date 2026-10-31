@@ -8,6 +8,8 @@ package com.muedsa.js.runtime.regex
  */
 internal class CodePointSet private constructor(val ranges: IntArray) {
 
+    val isEmpty: Boolean get() = ranges.isEmpty()
+
     fun contains(codePoint: Int): Boolean {
         var low = 0
         var high = ranges.size / 2 - 1

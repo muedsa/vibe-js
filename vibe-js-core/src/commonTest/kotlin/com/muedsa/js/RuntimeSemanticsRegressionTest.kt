@@ -2392,6 +2392,30 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp v 标志支持属性字符串与 q 字符串析取`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "/^\\p{Basic_Emoji}$/v.test('\\u231A') && !/^\\p{Basic_Emoji}$/v.test('A') &&" +
+                " /^\\p{RGI_Emoji}$/v.test('\\u{1F1E7}\\u{1F1EA}') &&" +
+                " /^\\p{RGI_Emoji}$/v.test('\\u{1F468}\\u200D\\u{1F469}\\u200D\\u{1F467}')"
+        ))
+        // \q 析取、空串与集合运算
+        assertEquals(true, runtime.evalBoolean(
+            "/^[\\q{a|ab}]$/v.test('ab') && /^[\\q{a|ab}]$/v.test('a') &&" +
+                " /^[\\q{}]$/v.test('') &&" +
+                " /^[\\d--\\q{0|2|4|9\\uFE0F\\u20E3}]+$/v.test('13579') &&" +
+                " !/^[\\d--\\q{0|2|4|9\\uFE0F\\u20E3}]+$/v.test('0') &&" +
+                " /^[\\q{ab}&&\\q{ab|cd}]$/v.test('ab') &&" +
+                " !/^[\\q{ab}&&\\q{ab|cd}]$/v.test('cd')"
+        ))
+        // 否定类与 \P 不允许包含字符串；u 模式不允许属性字符串
+        assertFailsWith<LexerException> { runtime.eval("/[^\\q{ab}]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/\\P{Basic_Emoji}/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[\\P{RGI_Emoji}]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/\\p{Basic_Emoji}/u;") }
+    }
+
+    @Test
     fun `Unicode 属性转义支持二进制属性 通用类别 脚本与码点级匹配`() = runTest {
         val runtime = TestRuntime()
         // 字母属性跨 BMP 与 astral 码点，非字母不匹配
