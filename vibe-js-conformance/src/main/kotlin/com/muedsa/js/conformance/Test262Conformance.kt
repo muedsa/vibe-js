@@ -527,6 +527,7 @@ private class Test262Runner(
             "Symbol.species", "Symbol.isConcatSpreadable",
             "Symbol.match", "Symbol.replace", "Symbol.search", "Symbol.split",
             "Symbol.matchAll", "String.prototype.matchAll",
+            "Symbol.unscopables",
             "Symbol.prototype.description",
             "Array.prototype.flat", "Array.prototype.flatMap",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",

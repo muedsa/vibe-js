@@ -68,6 +68,9 @@ sealed class Environment(val parent: Environment?) {
     /** 确保 var 绑定存在（初始化为 undefined），不覆盖已有绑定。 */
     open fun ensureVarBinding(name: String) = Unit
 
+    /** 标识符引用解析用：当前环境是否真正绑定该名字（with 环境会检查 @@unscopables）。 */
+    open suspend fun hasBindingForReference(name: String): Boolean = hasOwnBinding(name)
+
     /** 在当前作用域创建 let 绑定。 */
     open fun createLetBinding(name: String, value: JSValue) = Unit
 
@@ -234,7 +237,21 @@ class ObjectEnvironment(
     parent: Environment? = null,
     private val access: PropertyAccess,
     override val isVarScope: Boolean = false,
+    /** with 环境传入 @@unscopables 键；全局对象环境为 null */
+    private val unscopablesKey: PropertyKey? = null,
 ) : Environment(parent) {
+
+    /**
+     * with 环境中同名方法被 @@unscopables 标记时不可绑定。
+     *
+     * 按规范通过 Get 读取（可能触发 getter）；非对象值不参与屏蔽。
+     */
+    private suspend fun isUnscopable(name: String): Boolean {
+        val key = unscopablesKey ?: return false
+        val unscopables = access.getProperty(bindingObject, key)
+        if (unscopables !is JSObject) return false
+        return access.getProperty(unscopables, PropertyKey.Str(name)).toPrimitiveBoolean()
+    }
 
     override fun hasBinding(name: String): Boolean =
         bindingObject.hasProperty(PropertyKey.Str(name)) || super.hasBinding(name)
@@ -242,22 +259,49 @@ class ObjectEnvironment(
     override fun hasOwnBinding(name: String): Boolean =
         bindingObject.hasProperty(PropertyKey.Str(name))
 
-    override suspend fun getBinding(name: String): JSValue? {
+    /** 标识符引用解析：先 HasProperty，再（with 环境）检查 @@unscopables。 */
+    override suspend fun hasBindingForReference(name: String): Boolean {
+        if (unscopablesKey == null) return hasOwnBinding(name)
         val key = PropertyKey.Str(name)
-        return if (bindingObject.hasProperty(key)) {
-            access.getProperty(bindingObject, key)
-        } else {
-            parent?.getBinding(name)
+        if (!bindingObject.hasProperty(key)) return false
+        return !isUnscopable(name)
+    }
+
+    override suspend fun getBinding(name: String): JSValue? {
+        if (unscopablesKey == null) {
+            val legacyKey = PropertyKey.Str(name)
+            return if (bindingObject.hasProperty(legacyKey)) {
+                access.getProperty(bindingObject, legacyKey)
+            } else {
+                parent?.getBinding(name)
+            }
         }
+        val key = PropertyKey.Str(name)
+        if (!bindingObject.hasProperty(key)) return parent?.getBinding(name)
+        if (isUnscopable(name)) return parent?.getBinding(name)
+        // GetBindingValue：unscopables getter 可能删除绑定
+        if (!bindingObject.hasProperty(key)) {
+            if (access.isStrictContext()) {
+                throw JSException(JSError("ReferenceError", "$name is not defined"))
+            }
+            return JSUndefined
+        }
+        return access.getProperty(bindingObject, key)
     }
 
     override suspend fun setBinding(name: String, value: JSValue, strict: Boolean): Boolean {
         val key = PropertyKey.Str(name)
-        if (bindingObject.hasProperty(key)) {
-            access.setProperty(bindingObject, key, value, strict)
-            return true
+        if (!bindingObject.hasProperty(key)) {
+            return parent?.setBinding(name, value, strict) ?: false
         }
-        return parent?.setBinding(name, value, strict) ?: false
+        if (unscopablesKey != null && isUnscopable(name)) {
+            return parent?.setBinding(name, value, strict) ?: false
+        }
+        if (!bindingObject.hasProperty(key) && strict) {
+            throw JSException(JSError("ReferenceError", "$name is not defined"))
+        }
+        access.setProperty(bindingObject, key, value, strict)
+        return true
     }
 
     override fun createVarBinding(name: String, value: JSValue) {

@@ -21,4 +21,7 @@ interface PropertyAccess {
 
     /** 对象（含原型链）是否存在该属性。 */
     fun hasProperty(base: JSObject, key: PropertyKey): Boolean
+
+    /** 当前执行上下文是否处于严格模式（with 环境的 GetBindingValue 需要）。 */
+    fun isStrictContext(): Boolean = false
 }

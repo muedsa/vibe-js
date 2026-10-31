@@ -427,6 +427,39 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Symbol unscopables 与 with 绑定解析`() = runTest {
+        val runtime = TestRuntime()
+        // Array.prototype[@@unscopables] 属性形状
+        assertEquals(true, runtime.evalBoolean(
+            "var unscopableList = Array.prototype[Symbol.unscopables];" +
+                " Object.getPrototypeOf(unscopableList) === null &&" +
+                " unscopableList.values === true && unscopableList.at === true &&" +
+                " unscopableList.with === undefined &&" +
+                " Object.getOwnPropertyDescriptor(Array.prototype, Symbol.unscopables).writable === false"
+        ))
+        // with 中数组方法被屏蔽，解析到外层同名变量
+        assertEquals("outer", runtime.evalString(
+            "var values = 'outer'; var outerArray = [1, 2];" +
+                " var captured = ''; with (outerArray) { captured = values; } captured"
+        ))
+        // unscopables getter 抛错向外传播
+        assertEquals(true, runtime.evalBoolean(
+            "var throwingEnv = { x: 1 };" +
+                " Object.defineProperty(throwingEnv, Symbol.unscopables," +
+                " { get: function () { throw new RangeError('boom'); } });" +
+                " try { with (throwingEnv) { x; } false } catch (e) { e instanceof RangeError }"
+        ))
+        // getter 删除绑定：sloppy 读 undefined
+        assertEquals(true, runtime.evalBoolean(
+            "var deletingEnv = { y: 1 };" +
+                " Object.defineProperty(deletingEnv, Symbol.unscopables," +
+                " { get: function () { delete deletingEnv.y; return null; } });" +
+                " var deletedRead; with (deletingEnv) { deletedRead = y; }" +
+                " deletedRead === undefined"
+        ))
+    }
+
+    @Test
     fun `String replaceAll 分派与替换模式`() = runTest {
         val runtime = TestRuntime()
         assertEquals("X-X-X", runtime.evalString("'a-a-a'.replaceAll('a', 'X')"))

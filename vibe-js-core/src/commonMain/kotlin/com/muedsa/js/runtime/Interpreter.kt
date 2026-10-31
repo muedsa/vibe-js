@@ -508,6 +508,8 @@ class Interpreter(
     /** [PropertyAccess] 实现：属性存在性判断。 */
     override fun hasProperty(base: JSObject, key: PropertyKey): Boolean = base.hasProperty(key)
 
+    override fun isStrictContext(): Boolean = frame?.strict ?: false
+
     /** 沿原型链读取属性，访问器使用 receiver 作为 this。 */
     private suspend fun getPropertyFrom(
         objectValue: JSObject?,
@@ -1840,6 +1842,7 @@ class Interpreter(
             parent = currentFrame.lexicalEnv,
             access = this,
             isVarScope = false,
+            unscopablesKey = PropertyKey.Sym(intrinsics.symbolUnscopables),
         )
         val previousEnvironment = currentFrame.lexicalEnv
         currentFrame.lexicalEnv = withEnvironment
@@ -3498,10 +3501,10 @@ class Interpreter(
     }
 
     /** 查找当前作用域链中拥有该绑定/属性的环境（Reference 的基环境）。 */
-    private fun findBindingOwner(name: String): Environment? {
+    private suspend fun findBindingOwner(name: String): Environment? {
         var environment: Environment? = currentFrame.lexicalEnv
         while (environment != null) {
-            if (environment.hasOwnBinding(name)) return environment
+            if (environment.hasBindingForReference(name)) return environment
             environment = environment.parent
         }
         return null
@@ -3510,7 +3513,15 @@ class Interpreter(
     /** 读取标识符 Reference；不存在时抛 ReferenceError。 */
     private suspend fun readIdentifierReference(owner: Environment?, name: String): JSValue {
         val value = when (owner) {
-            is ObjectEnvironment -> getV(owner.bindingObject, PropertyKey.Str(name))
+            is ObjectEnvironment -> {
+                val key = PropertyKey.Str(name)
+                // GetBindingValue：HasBinding 之后绑定可能被删除
+                if (!owner.bindingObject.hasProperty(key) && currentFrame.strict) {
+                    throw referenceError("$name is not defined")
+                }
+                getV(owner.bindingObject, key)
+            }
+
             null -> null
             else -> owner.getBinding(name)
         }
@@ -3524,8 +3535,14 @@ class Interpreter(
         value: JSValue,
     ) {
         when (owner) {
-            is ObjectEnvironment ->
-                putV(owner.bindingObject, PropertyKey.Str(name), value, currentFrame.strict)
+            is ObjectEnvironment -> {
+                val key = PropertyKey.Str(name)
+                // SetMutableBinding：严格模式下绑定已被删除需抛 ReferenceError
+                if (!owner.bindingObject.hasProperty(key) && currentFrame.strict) {
+                    throw referenceError("$name is not defined")
+                }
+                putV(owner.bindingObject, key, value, currentFrame.strict)
+            }
 
             null -> assignIdentifier(name, value)
             else -> {

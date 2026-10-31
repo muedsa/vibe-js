@@ -56,6 +56,31 @@ object ArrayBuiltins {
             enumerable = false,
             configurable = true,
         )
+        // Array.prototype[@@unscopables]：with 环境中屏蔽这些方法名
+        val unscopableList = JSObject(prototype = null)
+        val unscopableMethods = listOf(
+            "copyWithin", "entries", "fill", "find", "findIndex",
+            "flat", "flatMap", "includes", "keys", "values",
+            "at", "findLast", "findLastIndex",
+            "toReversed", "toSorted", "toSpliced",
+        )
+        for (name in unscopableMethods) {
+            unscopableList.defineDataProperty(
+                key = PropertyKey.Str(name),
+                value = JSBoolean.TRUE,
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+        }
+        arrayPrototype.defineDataProperty(
+            key = PropertyKey.Sym(intrinsics.symbolUnscopables),
+            value = unscopableList,
+            writable = false,
+            enumerable = false,
+            configurable = true,
+        )
+
         // Array[@@species]：返回 this，子类方法默认沿用自身作为结果构造器
         arrayConstructor.defineAccessorProperty(
             key = PropertyKey.Sym(intrinsics.symbolSpecies),
