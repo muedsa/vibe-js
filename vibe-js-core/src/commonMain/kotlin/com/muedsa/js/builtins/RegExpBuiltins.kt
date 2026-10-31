@@ -609,6 +609,19 @@ object RegExpBuiltins {
             },
         )
 
+        // RegExp.escape(string)：首字符为 ASCII 字母/数字时以 \xHH 转义，
+        // 其余按 SyntaxCharacter、控制字符、空白/行终止符、代理项与 otherPunctuators 规则处理
+        regexpConstructor.defineDataProperty(
+            key = PropertyKey.Str("escape"),
+            value = BuiltinHelpers.method(intrinsics, "escape", 1) { interpreter, _, args ->
+                val value = args.getOrElse(0) { JSUndefined }
+                if (value !is JSString) {
+                    interpreter.typeError("RegExp.escape requires a string argument")
+                }
+                JSString(escapeRegExpString(value.value))
+            },
+        )
+
         registry.defineGlobal("RegExp", regexpConstructor)
     }
 
@@ -618,6 +631,80 @@ object RegExpBuiltins {
     /**
      * 执行正则匹配并构造结果数组（含 index/input）。
      */
+    /** RegExp.escape 的字符串转换。 */
+    private fun escapeRegExpString(text: String): String {
+        if (text.isEmpty()) return ""
+        val builder = StringBuilder(text.length + 8)
+        var first = true
+        var index = 0
+        while (index < text.length) {
+            val codePoint: Int
+            if (text[index].isHighSurrogate() && index + 1 < text.length &&
+                text[index + 1].isLowSurrogate()
+            ) {
+                val high = text[index].code - 0xD800
+                val low = text[index + 1].code - 0xDC00
+                codePoint = 0x10000 + (high shl 10) + low
+                index += 2
+            } else {
+                codePoint = text[index].code
+                index++
+            }
+            if (first && isAsciiAlphanumeric(codePoint)) {
+                builder.append("\\x").append(codePoint.toString(16).padStart(2, '0'))
+            } else {
+                builder.append(encodeForRegExpEscape(codePoint))
+            }
+            first = false
+        }
+        return builder.toString()
+    }
+
+    private fun isAsciiAlphanumeric(codePoint: Int): Boolean =
+        codePoint in '0'.code..'9'.code ||
+            codePoint in 'a'.code..'z'.code ||
+            codePoint in 'A'.code..'Z'.code
+
+    /** EncodeForRegExpEscape：控制转义、语法字符、空白/代理项与其他标点。 */
+    private fun encodeForRegExpEscape(codePoint: Int): String {
+        when (codePoint) {
+            9 -> return "\\t"
+            10 -> return "\\n"
+            11 -> return "\\v"
+            12 -> return "\\f"
+            13 -> return "\\r"
+        }
+        val char = codePoint.toChar()
+        if (codePoint <= 0xFFFF && "\\^$.*+?()[]{}|/".contains(char)) {
+            return "\\$char"
+        }
+        val isSurrogate = codePoint in 0xD800..0xDFFF
+        val isLineTerminator = codePoint == 0x2028 || codePoint == 0x2029
+        val isWhiteSpace = codePoint <= 0xFFFF && (
+            codePoint == 0x20 || codePoint == 0xA0 || codePoint == 0xFEFF ||
+                char.category == kotlin.text.CharCategory.SPACE_SEPARATOR
+            )
+        val otherPunctuators = ",-=<>#&!%:;@~'`\""
+        val isOtherPunctuator = codePoint <= 0xFFFF && otherPunctuators.contains(char)
+        if (isSurrogate || isLineTerminator || isWhiteSpace || isOtherPunctuator) {
+            if (codePoint <= 0xFF) {
+                return "\\x" + codePoint.toString(16).padStart(2, '0')
+            }
+            val unit = char.code
+            return "\\u" + unit.toString(16).padStart(4, '0')
+        }
+        // 其余码点原样输出（astral 码点输出代理对）
+        return if (codePoint <= 0xFFFF) {
+            char.toString()
+        } else {
+            val value = codePoint - 0x10000
+            buildString {
+                append(((value shr 10) + 0xD800).toChar())
+                append(((value and 0x3FF) + 0xDC00).toChar())
+            }
+        }
+    }
+
     /** 创建 RegExp String Iterator；next 闭包持有 done 状态。 */
     private fun createRegExpStringIterator(
         interpreter: Interpreter,

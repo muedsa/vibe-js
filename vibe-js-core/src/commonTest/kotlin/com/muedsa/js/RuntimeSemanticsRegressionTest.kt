@@ -429,6 +429,24 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp escape 字面量转义规则`() = runTest {
+        val runtime = TestRuntime()
+        // 首字符为 ASCII 字母/数字时使用 \xHH
+        assertEquals("\\x312a", runtime.evalString("RegExp.escape('12a')"))
+        assertEquals("\\.\\*", runtime.evalString("RegExp.escape('.*')"))
+        assertEquals("\\/", runtime.evalString("RegExp.escape('/')"))
+        assertEquals("\\x20", runtime.evalString("RegExp.escape(' ')"))
+        assertEquals("\\u2028", runtime.evalString("RegExp.escape('\\u2028')"))
+        assertEquals("\\ud800", runtime.evalString("RegExp.escape('\\uD800')"))
+        assertEquals("\\x2c", runtime.evalString("RegExp.escape(',')"))
+        assertEquals("你", runtime.evalString("RegExp.escape('你')"))
+        // 仅接受字符串参数
+        assertEquals(true, runtime.evalBoolean(
+            "try { RegExp.escape(1); false } catch (e) { e instanceof TypeError }"
+        ))
+    }
+
+    @Test
     fun `Promise withResolvers try 与 finally`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(
