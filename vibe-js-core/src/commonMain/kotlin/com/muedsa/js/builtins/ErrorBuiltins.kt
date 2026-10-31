@@ -88,21 +88,42 @@ object ErrorBuiltins {
             prototypeObject = aggregateErrorPrototype,
         ) { interpreter, _, args ->
             val errorsValue = args.getOrElse(0) { JSUndefined }
-            val message = if (args.size < 2 || args[1] is JSUndefined) {
-                ""
-            } else {
-                interpreter.toStringValue(args[1])
+            val messageArg = args.getOrElse(1) { JSUndefined }
+            val objectValue = JSObject(prototype = aggregateErrorPrototype)
+            objectValue.isErrorData = true
+            // 规范：仅在显式传入非 undefined 的 message 时创建自有属性
+            if (messageArg !is JSUndefined) {
+                objectValue.defineDataProperty(
+                    key = PropertyKey.MESSAGE,
+                    value = JSString(interpreter.toStringValue(messageArg)),
+                    writable = true,
+                    enumerable = false,
+                    configurable = true,
+                )
             }
             val errors = interpreter.iterateValues(errorsValue)
-            val error = JSError("AggregateError", message, aggregateErrorPrototype)
-            error.defineDataProperty(
+            objectValue.defineDataProperty(
                 key = PropertyKey.Str("errors"),
                 value = JSArray(errors.toMutableList(), prototype = intrinsics.arrayPrototype),
                 writable = true,
                 enumerable = false,
                 configurable = true,
             )
-            error
+            // options.cause：options 为对象且存在 cause 属性时复制（不可枚举）
+            val options = args.getOrElse(2) { JSUndefined }
+            if (options is JSObject) {
+                val causeKey = PropertyKey.Str("cause")
+                if (interpreter.hasProperty(options, causeKey)) {
+                    objectValue.defineDataProperty(
+                        key = causeKey,
+                        value = interpreter.getV(options, causeKey),
+                        writable = true,
+                        enumerable = false,
+                        configurable = true,
+                    )
+                }
+            }
+            objectValue
         }
         intrinsics.aggregateErrorConstructor = aggregateErrorConstructor
 

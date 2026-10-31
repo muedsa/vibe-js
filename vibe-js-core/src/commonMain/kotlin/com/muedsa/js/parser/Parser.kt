@@ -2441,8 +2441,17 @@ class Parser(
     /** `??` 空值合并（左结合）。 */
     private fun parseCoalesce(): Expression {
         var expression = parseLogicalOr()
+        if (check(TokenType.COALESCE) && isUnparenthesizedLogicalChain(expression)) {
+            throw error("Coalesce expression cannot be mixed with logical operators without parentheses")
+        }
         while (match(TokenType.COALESCE)) {
-            val right = parseLogicalOr()
+            // 右侧是 BitwiseORExpression：`??` 不得与未加括号的 &&/|| 混用
+            val right = parseBitwiseOr()
+            if (isUnparenthesizedLogicalChain(right)) {
+                throw error(
+                    "Coalesce expression cannot be mixed with logical operators without parentheses"
+                )
+            }
             expression = CoalesceExpr(
                 expression,
                 right,
@@ -2451,6 +2460,12 @@ class Parser(
         }
         return expression
     }
+
+    /** 未加括号的 &&/|| 链（不能直接作为 ?? 的操作数）。 */
+    private fun isUnparenthesizedLogicalChain(expression: Expression): Boolean =
+        expression is BinaryOp &&
+            (expression.operator == "||" || expression.operator == "&&") &&
+            expression.range !in parenthesizedRanges
 
     private fun parseLogicalOr(): Expression =
         parseLeftAssociative(setOf(TokenType.OR), ::parseLogicalAnd)

@@ -595,7 +595,8 @@ private class Test262Runner(
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
             "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
             "regexp-dotall", "class-static-block", "regexp-match-indices", "regexp-named-groups",
-            "regexp-modifiers",
+            "regexp-modifiers", "__proto__", "AggregateError", "coalesce-expression",
+            "u180e", "legacy-regexp", "caller", "well-formed-json-stringify",
             "class-fields-public", "class-static-fields-public",
             "class-fields-private", "class-methods-private", "class-static-fields-private",
             "class-static-methods-private", "class-fields-private-in", "nonextensible-applies-to-private",
@@ -643,8 +644,8 @@ private class Test262Runner(
             "test/built-ins/RegExp/CharacterClassEscapes/",
             // 孤立代理项匹配依赖引擎码元语义（当前 Kotlin Regex 近似）
             "test/built-ins/RegExp/prototype/Symbol.match/builtin-infer-unicode.js",
-            // Kotlin/Java 引擎的非 u 模式 `.` 按码点匹配 astral 字符，与 JS 的码元语义有差异
-            "test/built-ins/RegExp/match-indices/indices-array-non-unicode-match.js",
+            // V8/最新规范允许子类实例调用 RegExp.prototype.compile，测试基于旧草案
+            "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
             // 依赖 Unicode 属性转义（\p{...} 与 (?i) 折叠），属性转义整体尚未实现
             "test/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-lower-p.js",
             "test/built-ins/RegExp/regexp-modifiers/add-ignoreCase-affects-slash-upper-p.js",

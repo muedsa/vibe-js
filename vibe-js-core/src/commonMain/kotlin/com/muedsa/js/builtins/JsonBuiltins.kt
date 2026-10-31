@@ -375,11 +375,13 @@ object JsonBuiltins {
         }
     }
 
-    /** JSON 字符串转义。 */
+    /** JSON 字符串转义（孤立代理项按 well-formed JSON.stringify 转义）。 */
     private fun quote(text: String): String {
         val builder = StringBuilder(text.length + 2)
         builder.append('"')
-        for (c in text) {
+        var index = 0
+        while (index < text.length) {
+            val c = text[index]
             when (c) {
                 '"' -> builder.append("\\\"")
                 '\\' -> builder.append("\\\\")
@@ -392,11 +394,20 @@ object JsonBuiltins {
                     if (c.code < 0x20) {
                         builder.append("\\u")
                         builder.append(c.code.toString(16).padStart(4, '0'))
+                    } else if (c.isHighSurrogate() && index + 1 < text.length &&
+                        text[index + 1].isLowSurrogate()
+                    ) {
+                        builder.append(c).append(text[index + 1])
+                        index++
+                    } else if (c.isSurrogate()) {
+                        builder.append("\\u")
+                        builder.append(c.code.toString(16).padStart(4, '0'))
                     } else {
                         builder.append(c)
                     }
                 }
             }
+            index++
         }
         builder.append('"')
         return builder.toString()

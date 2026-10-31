@@ -685,6 +685,77 @@ object RegExpBuiltins {
             },
         )
 
+        // Annex B：RegExp 构造器上的遗留静态访问器（$1-$9、$&、$+、$_、$`、$'）
+        fun requireConstructor(interpreter: com.muedsa.js.runtime.Interpreter, thisValue: JSValue) {
+            if (thisValue !== regexpConstructor) {
+                interpreter.typeError("RegExp legacy accessor called on incompatible receiver")
+            }
+        }
+
+        fun legacyGetter(name: String, read: (com.muedsa.js.runtime.Interpreter) -> String): JSNativeFunction =
+            JSNativeFunction(
+                name = "get $name",
+                length = 0,
+                prototype = intrinsics.functionPrototype,
+            ) { interpreter, thisValue, _ ->
+                requireConstructor(interpreter, thisValue)
+                JSString(read(interpreter))
+            }
+
+        fun installLegacyAccessor(
+            name: String,
+            alias: String,
+            read: (com.muedsa.js.runtime.Interpreter) -> String,
+            write: (suspend (com.muedsa.js.runtime.Interpreter, JSValue) -> Unit)? = null,
+        ) {
+            val getter = legacyGetter(name, read)
+            val setter = write?.let { writer ->
+                JSNativeFunction(
+                    name = "set $name",
+                    length = 1,
+                    prototype = intrinsics.functionPrototype,
+                ) { interpreter, thisValue, callArgs ->
+                    requireConstructor(interpreter, thisValue)
+                    writer(interpreter, callArgs.getOrElse(0) { JSUndefined })
+                    JSUndefined
+                }
+            }
+            regexpConstructor.defineAccessorProperty(
+                key = PropertyKey.Str(name),
+                get = getter,
+                set = setter,
+                enumerable = false,
+                configurable = true,
+            )
+            regexpConstructor.defineAccessorProperty(
+                key = PropertyKey.Str(alias),
+                get = getter,
+                set = setter,
+                enumerable = false,
+                configurable = true,
+            )
+        }
+
+        installLegacyAccessor(
+            name = "input",
+            alias = "\$_",
+            read = { it.legacyRegExpInput },
+            write = { interpreter, value ->
+                interpreter.legacyRegExpInput = interpreter.toStringValue(value)
+            },
+        )
+        installLegacyAccessor(name = "lastMatch", alias = "$&", read = { it.legacyRegExpLastMatch })
+        installLegacyAccessor(name = "lastParen", alias = "$+", read = { it.legacyRegExpLastParen })
+        installLegacyAccessor(name = "leftContext", alias = "$`", read = { it.legacyRegExpLeftContext })
+        installLegacyAccessor(name = "rightContext", alias = "$'", read = { it.legacyRegExpRightContext })
+        for (index in 1..9) {
+            installLegacyAccessor(
+                name = "$$index",
+                alias = "$$index",
+                read = { interpreter -> interpreter.legacyRegExpCaptures[index - 1] ?: "" },
+            )
+        }
+
         registry.defineGlobal("RegExp", regexpConstructor)
     }
 
@@ -1078,6 +1149,22 @@ object RegExpBuiltins {
                 JSNumber(match.end.toDouble()),
                 strict = true,
             )
+        }
+
+        // Annex B：成功 exec 时更新 RegExp 遗留静态属性
+        interpreter.legacyRegExpInput = input
+        interpreter.legacyRegExpLastMatch = match.value
+        interpreter.legacyRegExpLeftContext = input.substring(0, match.start.coerceIn(0, input.length))
+        interpreter.legacyRegExpRightContext =
+            input.substring(match.end.coerceIn(0, input.length))
+        var lastParen = ""
+        for (index in 1 until match.groupCount) {
+            match.group(index)?.let { lastParen = it }
+        }
+        interpreter.legacyRegExpLastParen = lastParen
+        for (index in 1..9) {
+            interpreter.legacyRegExpCaptures[index - 1] =
+                if (index < match.groupCount) match.group(index) else null
         }
 
         val values = ArrayList<JSValue?>(match.groupCount)

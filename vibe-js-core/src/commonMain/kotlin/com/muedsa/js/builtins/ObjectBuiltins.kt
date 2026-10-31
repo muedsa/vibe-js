@@ -147,18 +147,33 @@ object ObjectBuiltins {
         // __proto__ 访问器（常见写法；规范中位于 Object.prototype）
         objectPrototype.defineAccessorProperty(
             key = PropertyKey.Str("__proto__"),
-            get = BuiltinHelpers.method(intrinsics, "get __proto__", 0) { _, thisValue, _ ->
-                (thisValue as? JSObject)?.prototype ?: JSNull
+            get = BuiltinHelpers.method(intrinsics, "get __proto__", 0) { interpreter, thisValue, _ ->
+                // 规范：先 ToObject(this)（null/undefined 抛 TypeError），再读取 [[Prototype]]
+                val objectValue = interpreter.toObject(thisValue)
+                objectValue.prototype ?: JSNull
             },
             set = BuiltinHelpers.method(intrinsics, "set __proto__", 1) { interpreter, thisValue, args ->
-                val target = thisValue
-                val newPrototype = args.getOrNull(0)
-                if (target is JSObject && (newPrototype is JSObject || newPrototype is JSNull)) {
-                    // 不可扩展对象不能修改原型；规范 setter 在失败时抛 TypeError
-                    if (!target.isExtensible() && target.prototype !== newPrototype) {
-                        interpreter.typeError("Cannot set prototype of non-extensible object")
+                // 规范：先 ToObject(this)；非对象值（undefined 除外）静默忽略
+                val target = interpreter.toObject(thisValue)
+                when (val newPrototype = args.getOrNull(0)) {
+                    is JSUndefined -> Unit
+                    is JSNull -> {
+                        if (!interpreter.setPrototypeOf(target, null)) {
+                            interpreter.typeError("Cyclic __proto__ value")
+                        }
                     }
-                    target.prototype = newPrototype as? JSObject
+
+                    is JSObject -> {
+                        // 不可扩展对象不能修改原型；规范 setter 在失败时抛 TypeError
+                        if (!target.isExtensible() && target.prototype !== newPrototype) {
+                            interpreter.typeError("Cannot set prototype of non-extensible object")
+                        }
+                        if (!interpreter.setPrototypeOf(target, newPrototype)) {
+                            interpreter.typeError("Cyclic __proto__ value")
+                        }
+                    }
+
+                    else -> Unit
                 }
                 JSUndefined
             },
@@ -343,7 +358,9 @@ object ObjectBuiltins {
                 if (!objectValue.isExtensible() && objectValue.prototype !== newPrototype) {
                     interpreter.typeError("Cannot set prototype of non-extensible object")
                 }
-                objectValue.prototype = newPrototype
+                if (!interpreter.setPrototypeOf(objectValue, newPrototype)) {
+                    interpreter.typeError("Cyclic prototype chain")
+                }
                 objectValue
             },
         )

@@ -2003,6 +2003,94 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `空值合并不得与未加括号的逻辑运算符混用`() = runTest {
+        val runtime = TestRuntime()
+        assertFailsWith<ParseException> { runtime.eval("a || b ?? c;") }
+        assertFailsWith<ParseException> { runtime.eval("a ?? b || c;") }
+        assertFailsWith<ParseException> { runtime.eval("a && b ?? c;") }
+        assertFailsWith<ParseException> { runtime.eval("a ?? b && c;") }
+        assertEquals(true, runtime.evalBoolean("((null || 1) ?? 2) === 1"))
+        assertEquals(true, runtime.evalBoolean("((null && 1) ?? 2) === 2"))
+        assertEquals(true, runtime.evalBoolean("(null ?? (0 || 2)) === 2"))
+    }
+
+    @Test
+    fun `__proto__ 访问器阻止原型环并遵循 ToObject 语义`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var o = {};" +
+                " (function () { try { o.__proto__ = o; return false } catch (e) { return e instanceof TypeError } })()"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var get = Object.getOwnPropertyDescriptor(Object.prototype, '__proto__').get;" +
+                "var set = Object.getOwnPropertyDescriptor(Object.prototype, '__proto__').set;" +
+                "(function () { try { get.call(undefined); return false } catch (e) { return e instanceof TypeError } })() &&" +
+                "(function () { try { set.call(null); return false } catch (e) { return e instanceof TypeError } })()"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var a = {}, b = {}; a.__proto__ = b; Object.getPrototypeOf(a) === b"
+        ))
+    }
+
+    @Test
+    fun `AggregateError 的 message 与 cause 属性按需创建`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var errors = [1, 2];" +
+                "var cause = { x: 1 };" +
+                "var e = new AggregateError(errors, 'msg', { cause: cause });" +
+                "e.errors.length === 2 && e.errors[1] === 2 &&" +
+                " e.message === 'msg' && e.cause === cause &&" +
+                " Object.keys(e).length === 0 &&" +
+                " e instanceof AggregateError && e instanceof Error"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var a = new AggregateError([], undefined);" +
+                "var b = new AggregateError([]);" +
+                "!a.hasOwnProperty('message') && !b.hasOwnProperty('message') &&" +
+                " !b.hasOwnProperty('cause') &&" +
+                " new AggregateError([], 'm', { cause: undefined }).hasOwnProperty('cause')"
+        ))
+    }
+
+    @Test
+    fun `JSON 序列化转义孤立代理项`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "JSON.stringify(String.fromCharCode(0xD834)) === '\"' + String.fromCharCode(92) + 'ud834\"' &&" +
+                " JSON.stringify(String.fromCharCode(0xD834, 0xDD1E)) === '\"𝄞\"'"
+        ))
+    }
+
+    @Test
+    fun `RegExp 遗留静态属性与点号码元语义`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "'abc'.match(/b(c)/);" +
+                " RegExp.input === 'abc' && RegExp.\$_ === 'abc' &&" +
+                " RegExp.lastMatch === 'bc' && RegExp['$&'] === 'bc' &&" +
+                " RegExp.lastParen === 'c' && RegExp['$+'] === 'c' &&" +
+                " RegExp.leftContext === 'a' && RegExp['$`'] === 'a' &&" +
+                " RegExp.rightContext === '' && RegExp[\"$'\"] === '' &&" +
+                " RegExp.$1 === 'c' && RegExp.$2 === ''"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "RegExp.input = 123; RegExp.input === '123'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var get = Object.getOwnPropertyDescriptor(RegExp, 'input').get;" +
+                "(function () { try { get.call({}); return false } catch (e) { return e instanceof TypeError } })()"
+        ))
+        // 无 u 模式 . 按码元匹配 astral 字符
+        assertEquals(1.0, runtime.evalNumber(
+            "'\\uD835\\uDC01'.match(/./)[0].length"
+        ))
+        assertEquals(2.0, runtime.evalNumber(
+            "'\\uD835\\uDC01'.match(/./u)[0].length"
+        ))
+    }
+
+    @Test
     fun `RegExp 作用域修饰符按组生效并可嵌套覆盖`() = runTest {
         val runtime = TestRuntime()
         // i/m/s 仅在组内生效

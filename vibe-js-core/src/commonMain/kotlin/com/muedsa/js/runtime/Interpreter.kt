@@ -150,6 +150,16 @@ class Interpreter(
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
 
+    /** Annex B RegExp 遗留静态属性状态（input/lastMatch/...）。 */
+    var legacyRegExpInput: String = ""
+    var legacyRegExpLastMatch: String = ""
+    var legacyRegExpLastParen: String = ""
+    var legacyRegExpLeftContext: String = ""
+    var legacyRegExpRightContext: String = ""
+
+    /** $1..$9 捕获值（未匹配为 null）。 */
+    val legacyRegExpCaptures: Array<String?> = arrayOfNulls(9)
+
     /** 是否处于原生构造器调用中（供 Date 等区分 new Date() 与 Date()）。 */
     internal var nativeConstructCall: Boolean = false
 
@@ -384,6 +394,23 @@ class Interpreter(
 
     /** ToObject。 */
     suspend fun toObject(value: JSValue): JSObject = conversions.toObject(value)
+
+    /**
+     * 设置对象原型并阻止原型环（OrdinarySetPrototypeOf 的循环检查）。
+     * 返回 false 表示会形成环，调用方应抛 TypeError。
+     */
+    fun setPrototypeOf(objectValue: JSObject, newPrototype: JSObject?): Boolean {
+        if (objectValue.prototype === newPrototype) return true
+        var cursor: JSObject? = newPrototype
+        var guard = 0
+        while (cursor != null) {
+            if (cursor === objectValue) return false
+            cursor = cursor.prototype
+            if (++guard > 1_000_000) return false
+        }
+        objectValue.prototype = newPrototype
+        return true
+    }
 
     /** ToInt32。 */
     suspend fun toInt32(value: JSValue): Int = conversions.toInt32(value)
@@ -4369,7 +4396,8 @@ class Interpreter(
         // d 标志需要每个捕获组的精确区间，Kotlin 公共 MatchGroup 不暴露位置，
         // 因此同样统一使用回退引擎
         val matcher = if ('d' in flags || namedAnalysis.hasNamedGroups ||
-            namedAnalysis.hasModifiers || namedGroupNeedsFallback || requiresJsRegexEngine(pattern)
+            namedAnalysis.hasModifiers || namedGroupNeedsFallback ||
+            hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
         ) {
             buildFallback()
         } else {
@@ -4395,6 +4423,30 @@ class Interpreter(
             matcher = matcher,
             prototype = intrinsics.regexpPrototype,
         )
+    }
+
+    /** 是否存在字符类之外的 `.`（Kotlin/Java 引擎按码点匹配，与 JS 码元语义不同）。 */
+    private fun hasDotOutsideClass(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            when (pattern[index]) {
+                '\\' -> index += 2
+                '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                ']' -> {
+                    inClass = false
+                    index++
+                }
+
+                '.' -> if (inClass) index++ else return true
+                else -> index++
+            }
+        }
+        return false
     }
 
     /** lookahead 中包含数字反向引用的模式（Java 对反向引用语义与 JS 不同）。 */
