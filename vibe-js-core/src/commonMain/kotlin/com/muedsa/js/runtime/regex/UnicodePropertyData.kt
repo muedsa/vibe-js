@@ -1,7 +1,7 @@
 package com.muedsa.js.runtime.regex
 
 /**
- * Unicode 17.0.0 属性数据（由 UCD 自动生成，请勿手工修改）。
+ * Unicode 17.0.0 属性数据（由 tools/generate_unicode_data.py 自动生成，请勿手工修改）。
  *
  * 覆盖 ECMAScript 允许的二进制属性、General_Category 值、Script 与
  * Script_Extensions 值及其别名。区间以十六进制 "start-end" 编码存储，

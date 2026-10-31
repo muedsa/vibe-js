@@ -3,7 +3,7 @@ package com.muedsa.js.runtime.regex
 /**
  * Unicode 17.0.0 的 RegExp 属性字符串（properties of strings）数据。
  *
- * 由 emoji-test.txt 与 emoji-data.txt 自动生成：每个值是以 `|` 分隔的
+ * 由 tools/generate_unicode_data.py 从 emoji-test.txt 与 emoji-data.txt 生成：每个值是以 `|` 分隔的
  * 码点序列，序列内部码点以 `-` 分隔。仅供 `v` 模式的 `\p{...}` 与 `\q{...}` 使用。
  */
 internal object UnicodeStringPropertyData {

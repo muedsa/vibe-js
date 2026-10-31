@@ -1,7 +1,7 @@
 package com.muedsa.js.lexer
 
 /**
- * Unicode 17.0.0 的 ID_Start / ID_Continue 数据（由 DerivedCoreProperties.txt 生成）。
+ * Unicode 17.0.0 的 ID_Start / ID_Continue 数据（由 tools/generate_unicode_data.py 从 DerivedCoreProperties.txt 生成）。
  *
  * 区间以 "start-end" 十六进制编码；首次使用时解码为 IntArray 并做二分查找。
  * 同时包含 Other_ID_Start / Other_ID_Continue 与 ZWNJ/ZWJ 等规范要求的字符。
