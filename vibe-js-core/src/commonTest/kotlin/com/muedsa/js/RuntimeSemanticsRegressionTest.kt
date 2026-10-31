@@ -1213,6 +1213,37 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Iterator chunks 与 windows 分块语义`() = runTest {
+        val runtime = TestRuntime()
+        // chunks：末尾允许不足块，每块为新数组
+        assertEquals("0,1;2,3;4", runtime.evalString(
+            "Array.from([0, 1, 2, 3, 4].values().chunks(2))" +
+                ".map(function (c) { return c.join(','); }).join(';')"
+        ))
+        // windows：默认仅完整窗口
+        assertEquals("0,1;1,2;2,3;3,4", runtime.evalString(
+            "Array.from([0, 1, 2, 3, 4].values().windows(2))" +
+                ".map(function (w) { return w.join(','); }).join(';')"
+        ))
+        // allow-partial：末尾不足窗口仍输出一次
+        assertEquals("1:0,1,2", runtime.evalString(
+            "var out = Array.from([0, 1, 2].values().windows(10, 'allow-partial'));" +
+                "out.length + ':' + out[0].join(',')"
+        ))
+        // 参数校验：不做类型转换；范围与 undersized 模式非法时分别抛错
+        assertEquals(true, runtime.evalBoolean(
+            "var bad = 0;" +
+                "try { [].values().chunks({ valueOf: function () { return 2; } }); }" +
+                " catch (e) { if (e instanceof TypeError) bad++; }" +
+                "try { [].values().chunks(0); }" +
+                " catch (e) { if (e instanceof RangeError) bad++; }" +
+                "try { [].values().windows(1, 'x'); }" +
+                " catch (e) { if (e instanceof TypeError) bad++; }" +
+                "bad === 3"
+        ))
+    }
+
+    @Test
     fun `Annex B 对象访问器方法与描述符保留`() = runTest {
         val runtime = TestRuntime()
         assertEquals("g2,s", runtime.evalString(

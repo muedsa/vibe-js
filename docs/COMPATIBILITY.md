@@ -72,7 +72,7 @@
 | Date | ⚠️ | 构造、now/parse/UTC、常用 getter/setter、toISOString/toJSON；本地时间按 UTC 处理 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；Weak 版本不可迭代，支持非注册 Symbol 键 |
-| Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers、独立迭代器原型与 constructor/@@toStringTag 访问器 |
+| Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
 | Promise | ✅ | then/catch/finally、resolve/reject/all/race/allSettled/any、withResolvers/try、thenable 与循环检测 |
 | DisposableStack | ✅ | DisposableStack/AsyncDisposableStack、use/adopt/defer/move/dispose/disposeAsync、Symbol.dispose/asyncDispose 与 SuppressedError；using 声明语法暂缺 |
 | Generator | ❌ | 明确排除 |
@@ -99,9 +99,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 400 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 400 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 400 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 401 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 401 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 401 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -138,7 +138,7 @@
 | `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
 | `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
-| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、Iterator helpers/concat/zip 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法 |
+| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、Iterator helpers/concat/zip/chunks/windows 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法 |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `HostModuleTest`（:vibe-js-host） | window/self、console、定时器/setInterval、queueMicrotask、atob/btoa、时钟注入 |

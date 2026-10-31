@@ -1040,6 +1040,28 @@ internal object IteratorBuiltins {
         return wrapper
     }
 
+    /** chunks/windows 的尺寸：必须是 1..2^32-1 的整数 Number，且不做类型转换。 */
+    private suspend fun validateChunkSize(
+        interpreter: Interpreter,
+        value: JSValue,
+        thisValue: JSValue,
+    ): Long {
+        if (value !is JSNumber) {
+            closeForInvalidArgument(interpreter, thisValue)
+            interpreter.typeError("Size must be a Number")
+        }
+        val number = value.value
+        if (!number.isFinite() || kotlin.math.floor(number) != number) {
+            closeForInvalidArgument(interpreter, thisValue)
+            interpreter.typeError("Size must be an integral Number")
+        }
+        if (number < 1.0 || number > 4294967295.0) {
+            closeForInvalidArgument(interpreter, thisValue)
+            interpreter.rangeError("Size out of range")
+        }
+        return number.toLong()
+    }
+
     /** take/drop 的 limit：按规范顺序 ToNumber、范围校验与 ToIntegerOrInfinity。 */
     private suspend fun toLimit(interpreter: Interpreter, value: JSValue, thisValue: JSValue): Double {
         val number = try {
@@ -1073,6 +1095,99 @@ internal object IteratorBuiltins {
     private fun installPrototypeMethods(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
         val prototype = intrinsics.iteratorPrototype
+
+        prototype.defineDataProperty(
+            PropertyKey.Str("chunks"),
+            BuiltinHelpers.method(intrinsics, "chunks", 1) { interpreter, thisValue, args ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("Iterator.prototype.chunks called on non-object")
+                }
+                val chunkSize = validateChunkSize(
+                    interpreter,
+                    args.getOrElse(0) { JSUndefined },
+                    thisValue,
+                )
+                val record = getIteratorDirect(interpreter, thisValue)
+                createHelper(interpreter, record) { inner ->
+                    val buffer = ArrayList<JSValue>()
+                    while (buffer.size.toLong() < chunkSize) {
+                        val value = nextValue(inner, record)
+                        if (value == null) {
+                            if (buffer.isEmpty()) return@createHelper null
+                            return@createHelper JSArray(
+                                buffer.toMutableList(),
+                                prototype = intrinsics.arrayPrototype,
+                            )
+                        }
+                        buffer.add(value)
+                    }
+                    JSArray(buffer.toMutableList(), prototype = intrinsics.arrayPrototype)
+                }
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+
+        prototype.defineDataProperty(
+            PropertyKey.Str("windows"),
+            BuiltinHelpers.method(intrinsics, "windows", 1) { interpreter, thisValue, args ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("Iterator.prototype.windows called on non-object")
+                }
+                val windowSize = validateChunkSize(
+                    interpreter,
+                    args.getOrElse(0) { JSUndefined },
+                    thisValue,
+                )
+                val undersizedValue = args.getOrElse(1) { JSUndefined }
+                val undersized = if (undersizedValue is JSUndefined) {
+                    "only-full"
+                } else if (undersizedValue is JSString &&
+                    undersizedValue.value in setOf("only-full", "allow-partial")
+                ) {
+                    undersizedValue.value
+                } else {
+                    closeForInvalidArgument(interpreter, thisValue)
+                    interpreter.typeError("Invalid undersized mode")
+                }
+                val record = getIteratorDirect(interpreter, thisValue)
+                val buffer = ArrayList<JSValue>()
+                var yieldedPartial = false
+                createHelper(interpreter, record) { inner ->
+                    while (true) {
+                        val value = nextValue(inner, record)
+                        if (value == null) {
+                            if (undersized == "allow-partial" && !yieldedPartial &&
+                                buffer.isNotEmpty() && buffer.size.toLong() < windowSize
+                            ) {
+                                yieldedPartial = true
+                                return@createHelper JSArray(
+                                    buffer.toMutableList(),
+                                    prototype = intrinsics.arrayPrototype,
+                                )
+                            }
+                            return@createHelper null
+                        }
+                        if (buffer.size.toLong() == windowSize) {
+                            buffer.removeAt(0)
+                        }
+                        buffer.add(value)
+                        if (buffer.size.toLong() == windowSize) {
+                            return@createHelper JSArray(
+                                buffer.toMutableList(),
+                                prototype = intrinsics.arrayPrototype,
+                            )
+                        }
+                    }
+                    @Suppress("UNREACHABLE_CODE")
+                    null
+                }
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
 
         prototype.defineDataProperty(
             PropertyKey.Str("map"),
