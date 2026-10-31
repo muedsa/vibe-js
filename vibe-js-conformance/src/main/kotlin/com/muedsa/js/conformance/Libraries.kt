@@ -257,6 +257,65 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "big.js",
+        url = "https://cdn.jsdelivr.net/npm/big.js@6.2.1/big.min.js",
+        globalName = "Big",
+        cases = listOf(
+            SmokeCase(
+                "plus",
+                assertion("new Big('0.1').plus('0.2').toString() === '0.3'"),
+            ),
+            SmokeCase(
+                "times toFixed",
+                assertion("Big(123.456).times(2).toFixed(2) === '246.91'"),
+            ),
+            SmokeCase(
+                "div",
+                assertion("Big('1e9').div(3).toFixed(3) === '333333333.333'"),
+            ),
+            SmokeCase(
+                "pow cmp",
+                assertion("new Big(255).pow(2).eq(65025) && Big(1).cmp(2) === -1"),
+            ),
+            SmokeCase(
+                "mod round",
+                assertion("Big(10).mod(3).toNumber() === 1 && new Big('123.45').round(1).toString() === '123.5'"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "diff",
+        url = "https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js",
+        globalName = "Diff",
+        cases = listOf(
+            SmokeCase(
+                "diffChars",
+                assertion(
+                    "(function () { var parts = Diff.diffChars('abc', 'abd'); " +
+                        "return parts.length === 3 && parts[0].value === 'ab' && " +
+                        "parts[1].removed === true && parts[1].value === 'c' && " +
+                        "parts[2].added === true && parts[2].value === 'd'; })()"
+                ),
+            ),
+            SmokeCase(
+                "diffArrays",
+                assertion(
+                    "(function () { var parts = Diff.diffArrays([1, 2, 3], [1, 3]); " +
+                        "return parts.length === 3 && parts[1].removed === true && " +
+                        "parts[1].value.join(',') === '2'; })()"
+                ),
+            ),
+            SmokeCase(
+                "diffWords",
+                assertion(
+                    "(function () { var parts = Diff.diffWords('one two', 'one three'); " +
+                        "return parts.length === 3 && parts[1].removed === true && " +
+                        "parts[2].added === true; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 

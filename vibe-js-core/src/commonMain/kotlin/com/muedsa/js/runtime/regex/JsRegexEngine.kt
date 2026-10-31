@@ -1387,9 +1387,14 @@ class JsRegexEngine(
                             throw IllegalArgumentException("Range out of order in character class")
                         }
                         items.add(ClassItem.Range(atom.codePoint, endAtom.codePoint))
-                    } else {
-                        // 规范：范围任一端点是字符类转义（\d、\p{...} 等）时是语法错误
+                    } else if (unicode) {
+                        // 规范：u/v 模式下范围任一端点是字符类转义（\d、\p{...} 等）是语法错误
                         throw IllegalArgumentException("Invalid character class range")
+                    } else {
+                        // Annex B：非 u 模式把 '-' 视为字面量（如 [\s-_]）
+                        items.add(atom)
+                        items.add(ClassItem.Single('-'.code))
+                        items.add(endAtom)
                     }
                 } else {
                     items.add(atom)

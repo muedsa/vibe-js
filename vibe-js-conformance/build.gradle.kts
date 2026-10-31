@@ -164,7 +164,7 @@ val downloadLibraryCorpus by tasks.registering(JavaExec::class) {    group = "ve
  */
 val librarySmoke by tasks.registering(JavaExec::class) {
     group = "verification"
-    description = "运行 lodash/mustache/dayjs/qs/validator/underscore/moment/semver/punycode/json5 的 UMD 冒烟"
+    description = "运行 lodash/mustache/dayjs/qs/validator/underscore/moment/semver/punycode/json5/big.js/diff 的 UMD 冒烟"
     dependsOn(downloadLibraryCorpus)
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.muedsa.js.conformance.LibrarySmokeKt")
