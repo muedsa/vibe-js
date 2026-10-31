@@ -147,8 +147,8 @@ class Interpreter(
     /** using 资源释放作用域栈（语句列表/循环作用域）。 */
     private val disposalScopes = ArrayList<DisposalScope>()
 
-    /** 当前嵌套的 try 语句深度：try 内的返回不参与尾调用优化。 */
-    private var tryDepth = 0
+    /** 仍待执行的 catch/finally 数量：大于 0 时返回不参与尾调用优化。 */
+    private var tailCallBlockers = 0
 
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
@@ -784,7 +784,7 @@ class Interpreter(
 
     /** 当前返回表达式是否处于可优化的尾位置。 */
     private fun canUseTailCall(): Boolean {
-        if (tryDepth > 0) return false
+        if (tailCallBlockers > 0) return false
         val active = frame ?: return false
         if (!active.strict || active.isConstructor) return false
         return active.function?.isAsync != true
@@ -2129,20 +2129,27 @@ class Interpreter(
         }
     }
 
-    /** try-catch-finally 语句；try 区域内禁用尾调用以保证 catch/finally 语义。 */
-    private suspend fun executeTry(statement: TryStatement): Completion {
-        tryDepth++
-        try {
-            return executeTryBody(statement)
-        } finally {
-            tryDepth--
-        }
-    }
+    /** try-catch-finally 语句。 */
+    private suspend fun executeTry(statement: TryStatement): Completion =
+        executeTryBody(statement)
 
+    /**
+     * try/catch/finally 执行。
+     *
+     * [tailCallBlockers] 记录返回时仍需执行的 handler/finalizer：
+     * try 块内存在 handler/finalizer、catch 块内存在 finalizer 时禁止尾调用；
+     * finally 块本身（以及无 finalizer 的 catch）允许尾调用。
+     */
     private suspend fun executeTryBody(statement: TryStatement): Completion {
         var pending: Completion = Completion.Normal(JSUndefined)
         var thrown: JSException? = null
+        val outerBlockers = tailCallBlockers
 
+        tailCallBlockers = if (statement.handler != null || statement.finalizer != null) {
+            outerBlockers + 1
+        } else {
+            outerBlockers
+        }
         try {
             pending = executeBlock(
                 statement.block.statements,
@@ -2163,6 +2170,11 @@ class Interpreter(
                         catchEnvironment,
                     )
                 }
+                tailCallBlockers = if (statement.finalizer != null) {
+                    outerBlockers + 1
+                } else {
+                    outerBlockers
+                }
                 try {
                     pending = executeBlock(handler.body.statements, catchEnvironment)
                 } catch (catchException: JSException) {
@@ -2171,6 +2183,8 @@ class Interpreter(
             } else {
                 thrown = exception
             }
+        } finally {
+            tailCallBlockers = outerBlockers
         }
 
         val finalizer = statement.finalizer

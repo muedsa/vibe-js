@@ -52,7 +52,7 @@
 | import / export | ❌ | 明确排除（单脚本目标） |
 | Proxy / Reflect | ❌ | 明确排除 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
-| 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板）；try 区域暂不优化 |
+| 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板），try/catch/finally 按待处理语义阻断 |
 
 ## 3. 标准内建
 
