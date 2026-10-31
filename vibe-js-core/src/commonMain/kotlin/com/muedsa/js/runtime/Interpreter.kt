@@ -4350,8 +4350,12 @@ class Interpreter(
 
     fun createRegExp(pattern: String, flags: String): JSValue {
         // 命名捕获组：校验组名/反向引用，并得到规范化后的引擎模式
+        if ('u' in flags && 'v' in flags) {
+            throw syntaxError("Invalid regular expression flags")
+        }
+        val unicodeMode = 'u' in flags || 'v' in flags
         val namedAnalysis = try {
-            RegexNamedGroups.analyze(pattern, 'u' in flags)
+            RegexNamedGroups.analyze(pattern, unicodeMode)
         } catch (error: RegexSyntaxError) {
             throw syntaxError(
                 error.message ?: "Invalid regular expression: /$pattern/$flags"
@@ -4372,6 +4376,8 @@ class Interpreter(
                 // Kotlin/JS 等平台的公共 RegexOption 不提供 DOT_MATCHES_ALL，'s' 暂按普通模式处理
                 's' -> Unit
                 'u' -> Unit
+                // v 标志启用扩展字符类，匹配语义由回退引擎实现
+                'v' -> Unit
                 // d 标志只影响匹配结果（indices 数组），不影响匹配语义
                 'd' -> Unit
                 else -> throw syntaxError("Invalid regular expression flags")
@@ -4395,7 +4401,7 @@ class Interpreter(
         // 因为 Kotlin/Java 的语义与 JS 不同或无法编译；
         // d 标志需要每个捕获组的精确区间，Kotlin 公共 MatchGroup 不暴露位置，
         // 因此同样统一使用回退引擎
-        val matcher = if ('d' in flags || namedAnalysis.hasNamedGroups ||
+        val matcher = if ('d' in flags || 'v' in flags || namedAnalysis.hasNamedGroups ||
             namedAnalysis.hasModifiers || namedGroupNeedsFallback ||
             hasLookbehind(pattern) || hasNumericBackReference(pattern) ||
             ('u' in flags && hasUnicodePropertyEscape(pattern)) ||

@@ -1,5 +1,6 @@
 package com.muedsa.js.lexer
 
+import com.muedsa.js.runtime.regex.JsRegexEngine
 import com.muedsa.js.runtime.regex.JsRegexSyntax
 import com.muedsa.js.runtime.regex.RegexNamedGroups
 import com.muedsa.js.runtime.regex.RegexSyntaxError
@@ -1003,12 +1004,16 @@ class Lexer(private val input: String) {
         val flagText = flags.toString()
         val seenFlags = mutableSetOf<Char>()
         for (flag in flagText) {
-            if (flag !in "dgimsuy" || !seenFlags.add(flag)) {
+            if (flag !in "dgimsuvy" || !seenFlags.add(flag)) {
                 throw lexerError("Invalid regular expression flags", startLine, startColumn, startOffset)
             }
         }
-        try {
-            RegexNamedGroups.analyze(pattern.toString(), 'u' in flagText)
+        if ('u' in flagText && 'v' in flagText) {
+            throw lexerError("Invalid regular expression flags", startLine, startColumn, startOffset)
+        }
+        val unicodeMode = 'u' in flagText || 'v' in flagText
+        val analysis = try {
+            RegexNamedGroups.analyze(pattern.toString(), unicodeMode)
         } catch (error: RegexSyntaxError) {
             throw lexerError(
                 error.message ?: "Invalid regular expression: /${pattern}/$flagText",
@@ -1021,6 +1026,19 @@ class Lexer(private val input: String) {
             val error = JsRegexSyntax.unicodeError(pattern.toString())
             if (error != null) {
                 throw lexerError(error, startLine, startColumn, startOffset)
+            }
+        }
+        if ('v' in flagText) {
+            // v 模式的扩展字符类语法由回退引擎统一校验（字面量同样需在解析期报错）
+            try {
+                JsRegexEngine(analysis.enginePattern, flagText, analysis.nameCandidates)
+            } catch (_: IllegalArgumentException) {
+                throw lexerError(
+                    "Invalid regular expression: /${pattern}/$flagText",
+                    startLine,
+                    startColumn,
+                    startOffset,
+                )
             }
         }
 

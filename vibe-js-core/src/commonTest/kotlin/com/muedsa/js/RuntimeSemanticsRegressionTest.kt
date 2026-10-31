@@ -2353,6 +2353,45 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp v 标志支持扩展字符类的并集交集差集与嵌套`() = runTest {
+        val runtime = TestRuntime()
+        // 交集与差集可嵌套普通字符类
+        assertEquals(true, runtime.evalBoolean(
+            "/^[a-z&&[^aeiou]]$/v.test('b') && !/^[a-z&&[^aeiou]]$/v.test('a') &&" +
+                " /^[a-z--[aeiou]]$/v.test('z') && !/^[a-z--[aeiou]]$/v.test('e') &&" +
+                " /^[[a-c]&&[b-d]]$/v.test('b') && !/^[[a-c]&&[b-d]]$/v.test('a')"
+        ))
+        // 集合转义、属性转义、否定类与 astral 码点
+        assertEquals(true, runtime.evalBoolean(
+            "/^[\\d&&[0-4]]+$/v.test('1234') && !/^[\\d&&[0-4]]+$/v.test('5') &&" +
+                " /^[^a]$/v.test('b') && !/^[^a]$/v.test('a') &&" +
+                " /^[[\\u{1F600}-\\u{1F64F}]--[\\u{1F610}]]$/v.test('\\u{1F601}') &&" +
+                " !/^[[\\u{1F600}-\\u{1F64F}]--[\\u{1F610}]]$/v.test('\\u{1F610}')"
+        ))
+        // 转义的语法字符与属性集合交集
+        assertEquals(true, runtime.evalBoolean(
+            "/^[\\-\\{\\}\\(\\)\\/\\|]+$/v.test('-{}()/|') &&" +
+                " /^[\\p{ASCII}&&\\p{Letter}]$/v.test('A') &&" +
+                " /^[a&b]$/v.test('&')"
+        ))
+        // 标志、访问器与 u/v 互斥
+        assertEquals(true, runtime.evalBoolean(
+            "var r = /a/v; r.unicodeSets === true && r.unicode === false &&" +
+                " r.flags === 'v' && new RegExp('a', 'v').unicodeSets === true"
+        ))
+        assertFailsWith<LexerException> { runtime.eval("/a/uv;") }
+        assertFailsWith<LexerException> { runtime.eval("/[]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[^]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[a-]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[-a]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[a&&b&&c]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[a&&b--c]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[!!]/v;") }
+        assertFailsWith<LexerException> { runtime.eval("/[(]/v;") }
+        assertFailsWith<JSException> { runtime.eval("new RegExp('[]', 'v')") }
+    }
+
+    @Test
     fun `Unicode 属性转义支持二进制属性 通用类别 脚本与码点级匹配`() = runTest {
         val runtime = TestRuntime()
         // 字母属性跨 BMP 与 astral 码点，非字母不匹配

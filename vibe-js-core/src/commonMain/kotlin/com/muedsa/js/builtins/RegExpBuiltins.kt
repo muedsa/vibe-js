@@ -213,6 +213,28 @@ object RegExpBuiltins {
             enumerable = false,
             configurable = true,
         )
+        // v 标志的 unicodeSets 访问器
+        regexpPrototype.defineAccessorProperty(
+            key = PropertyKey.Str("unicodeSets"),
+            get = JSNativeFunction(
+                name = "get unicodeSets",
+                length = 0,
+                prototype = intrinsics.functionPrototype,
+            ) { interpreter, thisValue, _ ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("RegExp.prototype.unicodeSets getter called on non-object")
+                }
+                if (thisValue === intrinsics.regexpPrototype) return@JSNativeFunction JSUndefined
+                val regexp = thisValue as? JSRegExp
+                    ?: interpreter.typeError(
+                        "RegExp.prototype.unicodeSets getter called on incompatible receiver"
+                    )
+                JSBoolean.getJsBoolean(regexp.unicodeSets)
+            },
+            set = null,
+            enumerable = false,
+            configurable = true,
+        )
         // dotAll 访问器要求接收者具有 RegExp 内部槽
         regexpPrototype.defineAccessorProperty(
             key = PropertyKey.Str("dotAll"),
@@ -258,6 +280,9 @@ object RegExpBuiltins {
                 }
                 if (interpreter.toBoolean(interpreter.getV(thisValue, PropertyKey.Str("unicode")))) {
                     builder.append('u')
+                }
+                if (interpreter.toBoolean(interpreter.getV(thisValue, PropertyKey.Str("unicodeSets")))) {
+                    builder.append('v')
                 }
                 if (interpreter.toBoolean(interpreter.getV(thisValue, PropertyKey.Str("sticky")))) {
                     builder.append('y')

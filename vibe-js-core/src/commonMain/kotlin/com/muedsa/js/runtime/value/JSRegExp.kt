@@ -20,6 +20,7 @@ class JSRegExp(
     val multiline: Boolean get() = flags.contains('m')
     val sticky: Boolean get() = flags.contains('y')
     val unicode: Boolean get() = flags.contains('u')
+    val unicodeSets: Boolean get() = flags.contains('v')
     val dotAll: Boolean get() = flags.contains('s')
     val hasIndices: Boolean get() = flags.contains('d')
 

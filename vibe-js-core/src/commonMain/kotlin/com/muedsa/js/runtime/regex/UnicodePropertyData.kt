@@ -1055,6 +1055,9 @@ internal object UnicodePropertyData {
 internal class UnicodePropertySet(private val encoded: String) {
     private val ranges: IntArray by lazy(LazyThreadSafetyMode.NONE) { decode(encoded) }
 
+    /** 供 v 模式集合运算使用的只读区间数组（不可修改）。 */
+    fun rangeData(): IntArray = ranges
+
     fun contains(codePoint: Int): Boolean {
         val data = ranges
         var low = 0

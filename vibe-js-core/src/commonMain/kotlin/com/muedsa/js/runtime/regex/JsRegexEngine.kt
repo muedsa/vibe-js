@@ -13,7 +13,10 @@ class JsRegexEngine(
     initialNameCandidates: Map<String, List<Int>> = emptyMap(),
 ) : JsRegex {
 
-    private val unicode = 'u' in flags
+    private val unicode = 'u' in flags || 'v' in flags
+
+    /** v 标志：扩展字符类（集合运算、属性字符串与 \q）。 */
+    private val unicodeSets = 'v' in flags
 
     /** 匹配期生效的标志（修饰符组可局部覆盖）。 */
     private class MatchFlags(
@@ -32,6 +35,26 @@ class JsRegexEngine(
         const val FLAG_IGNORE_CASE = 1
         const val FLAG_MULTILINE = 2
         const val FLAG_DOT_ALL = 4
+
+        /** ASCII 单词字符集合（`\w`）。 */
+        val WORD_SET = CodePointSet.of(
+            intArrayOf(0x30, 0x39, 0x41, 0x5A, 0x5F, 0x5F, 0x61, 0x7A)
+        )
+
+        /** JS WhiteSpace + LineTerminator 集合（`\s`）。 */
+        val SPACE_SET = CodePointSet.of(
+            intArrayOf(
+                0x09, 0x0D, 0x20, 0x20, 0xA0, 0xA0, 0x1680, 0x1680,
+                0x2000, 0x200A, 0x2028, 0x2029, 0x202F, 0x202F,
+                0x205F, 0x205F, 0x3000, 0x3000, 0xFEFF, 0xFEFF,
+            )
+        )
+
+        /** v 模式中必须成对转义的保留双标点。 */
+        val CLASS_SET_RESERVED_DOUBLES = arrayOf(
+            "&&", "!!", "##", "$$", "%%", "**", "++", ",,", "..", "::",
+            ";;", "<<", "==", ">>", "??", "@@", "^^", "``", "~~",
+        )
     }
 
     private val root: Node
@@ -769,6 +792,17 @@ class JsRegexEngine(
                 predicate(codePoint, ignoreCase)
         }
 
+        /** v 模式扩展字符类求值后的码点集合。 */
+        data class Ranges(val set: CodePointSet) : ClassItem() {
+            override fun matches(codePoint: Int, ignoreCase: Boolean): Boolean {
+                if (set.contains(codePoint)) return true
+                if (!ignoreCase || codePoint > 0xFFFF) return false
+                val character = codePoint.toChar()
+                return set.contains(character.uppercaseChar().code) ||
+                    set.contains(character.lowercaseChar().code)
+            }
+        }
+
         /**
          * Unicode 属性转义：`\p{...}` / `\P{...}`。
          *
@@ -790,6 +824,12 @@ class JsRegexEngine(
             private fun containsEffective(codePoint: Int): Boolean =
                 set.contains(codePoint) != negated
         }
+    }
+
+    /** 集合操作数：单个字符（可构成范围）或已求值的集合。 */
+    private sealed class SetOperand {
+        data class CharAtom(val value: Int) : SetOperand()
+        data class RangeSet(val set: CodePointSet) : SetOperand()
     }
 
     private inner class PatternParser(
@@ -1050,6 +1090,10 @@ class JsRegexEngine(
         }
 
         private fun parseCharacterClass(): Node {
+            if (unicodeSets) {
+                val set = parseClassSet()
+                return Node.ClassNode(false, listOf(ClassItem.Ranges(set)))
+            }
             position++ // '['
             var negated = false
             if (position < pattern.length && peek() == '^') {
@@ -1090,6 +1134,280 @@ class JsRegexEngine(
             }
             position++ // ']'
             return Node.ClassNode(negated, items)
+        }
+
+        /** 解析 v 模式扩展字符类，返回求值后的码点集合；position 指向 '['。 */
+        private fun parseClassSet(): CodePointSet {
+            position++ // '['
+            var negated = false
+            if (position < pattern.length && peek() == '^') {
+                negated = true
+                position++
+            }
+            if (position >= pattern.length) {
+                throw IllegalArgumentException("Unterminated class set")
+            }
+            if (peek() == ']') {
+                throw IllegalArgumentException("Empty class set")
+            }
+            var result = parseClassSetExpression()
+            if (position >= pattern.length || peek() != ']') {
+                throw IllegalArgumentException("Unterminated class set")
+            }
+            position++ // ']'
+            if (negated) result = result.complement()
+            return result
+        }
+
+        /** ClassSetExpression：并集，或单个 && / -- 运算（不能与并集混用）。 */
+        private fun parseClassSetExpression(): CodePointSet {
+            var left = parseClassSetTerm()
+            when {
+                startsWith("&&") -> {
+                    position += 2
+                    left = left.intersect(parseClassSetTerm())
+                    if (startsWith("&&") || startsWith("--")) {
+                        throw IllegalArgumentException("Invalid class set operation chain")
+                    }
+                }
+
+                startsWith("--") -> {
+                    position += 2
+                    left = left.subtract(parseClassSetTerm())
+                    if (startsWith("&&") || startsWith("--")) {
+                        throw IllegalArgumentException("Invalid class set operation chain")
+                    }
+                }
+
+                else -> {
+                    while (position < pattern.length && peek() != ']' &&
+                        !startsWith("&&") && !startsWith("--")
+                    ) {
+                        left = left.union(parseClassSetTerm())
+                    }
+                    if (startsWith("&&") || startsWith("--")) {
+                        throw IllegalArgumentException("Class set operation cannot follow union")
+                    }
+                }
+            }
+            return left
+        }
+
+        /** 解析一个操作数，并在单个字符时按 `-` 合并范围。 */
+        private fun parseClassSetTerm(): CodePointSet {
+            val first = parseClassSetOperand()
+            if (first is SetOperand.CharAtom && position < pattern.length && peek() == '-' &&
+                !startsWith("--")
+            ) {
+                // v 模式不允许末尾/孤立 '-'，必须转义为 \-
+                if (position + 1 >= pattern.length || pattern[position + 1] == ']') {
+                    throw IllegalArgumentException("Invalid '-' in class set")
+                }
+                position++
+                val second = parseClassSetOperand()
+                if (second !is SetOperand.CharAtom) {
+                    throw IllegalArgumentException("Invalid class set range endpoint")
+                }
+                if (first.value > second.value) {
+                    throw IllegalArgumentException("Range out of order in character class")
+                }
+                return CodePointSet.range(first.value, second.value)
+            }
+            return when (first) {
+                is SetOperand.CharAtom -> CodePointSet.singleton(first.value)
+                is SetOperand.RangeSet -> first.set
+            }
+        }
+
+        private fun parseClassSetOperand(): SetOperand {
+            if (position >= pattern.length) {
+                throw IllegalArgumentException("Unterminated class set")
+            }
+            return when (peek()) {
+                '[' -> SetOperand.RangeSet(parseClassSet())
+                '\\' -> parseClassSetEscape()
+                ']' -> throw IllegalArgumentException("Unexpected ']' in class set")
+                '-' -> throw IllegalArgumentException("Invalid '-' in class set")
+                '&' -> {
+                    if (startsWith("&&")) {
+                        throw IllegalArgumentException("Invalid '&&' in class set")
+                    }
+                    SetOperand.CharAtom(parseClassSetCharacterAtom())
+                }
+
+                else -> SetOperand.CharAtom(parseClassSetCharacterAtom())
+            }
+        }
+
+        /** position 指向反斜杠后的转义字符；返回对应码点并推进。 */
+        private fun readEscapedCharAtom(): Int {
+            if (position >= pattern.length) {
+                throw IllegalArgumentException("Trailing backslash")
+            }
+            val escaped = peek()
+            return when (escaped) {
+                'd', 'D', 'w', 'W', 's', 'S', 'p', 'P', 'q' ->
+                    throw IllegalArgumentException("Invalid class set range endpoint")
+
+                'b' -> {
+                    position++
+                    0x08
+                }
+
+                'n' -> {
+                    position++
+                    0x0A
+                }
+
+                'r' -> {
+                    position++
+                    0x0D
+                }
+
+                't' -> {
+                    position++
+                    0x09
+                }
+
+                'f' -> {
+                    position++
+                    0x0C
+                }
+
+                'v' -> {
+                    position++
+                    0x0B
+                }
+
+                '0' -> {
+                    position++
+                    0
+                }
+
+                'x' -> {
+                    position++
+                    readHex(2)
+                }
+
+                'u' -> {
+                    position++
+                    val braceForm = position < pattern.length && peek() == '{'
+                    val value = readUnicode()
+                    if (braceForm) value else (readLowSurrogatePair(value) ?: value)
+                }
+
+                'c' -> {
+                    position++
+                    val control = peek()
+                    position++
+                    control.code and 0x1F
+                }
+
+                else -> {
+                    position++
+                    escaped.code
+                }
+            }
+        }
+
+        /** 单个字符原子（可作范围端点），返回码点。 */
+        private fun parseClassSetCharacterAtom(): Int {
+            if (position >= pattern.length) {
+                throw IllegalArgumentException("Unterminated class set")
+            }
+            val character = peek()
+            if (character == '\\') {
+                position++
+                return readEscapedCharAtom()
+            }
+            if (character == ']') {
+                throw IllegalArgumentException("Unterminated class set")
+            }
+            if (character in "()[{}/|") {
+                throw IllegalArgumentException("Invalid unescaped character in class set")
+            }
+            for (reserved in CLASS_SET_RESERVED_DOUBLES) {
+                if (startsWith(reserved)) {
+                    throw IllegalArgumentException("Invalid reserved double punctuator in class set")
+                }
+            }
+            if (unicode && character.isHighSurrogate() && position + 1 < pattern.length &&
+                pattern[position + 1].isLowSurrogate()
+            ) {
+                position += 2
+                return 0x10000 + ((character.code - 0xD800) shl 10) +
+                    (pattern[position - 1].code - 0xDC00)
+            }
+            position++
+            return character.code
+        }
+
+        /** 解析字符类内的转义操作数（集合转义、属性转义或单字符）。 */
+        private fun parseClassSetEscape(): SetOperand {
+            position++ // '\'
+            if (position >= pattern.length) {
+                throw IllegalArgumentException("Trailing backslash")
+            }
+            val escaped = peek()
+            return when (escaped) {
+                'd' -> {
+                    position++
+                    SetOperand.RangeSet(CodePointSet.range(0x30, 0x39))
+                }
+
+                'D' -> {
+                    position++
+                    SetOperand.RangeSet(CodePointSet.range(0x30, 0x39).complement())
+                }
+
+                'w' -> {
+                    position++
+                    SetOperand.RangeSet(WORD_SET)
+                }
+
+                'W' -> {
+                    position++
+                    SetOperand.RangeSet(WORD_SET.complement())
+                }
+
+                's' -> {
+                    position++
+                    SetOperand.RangeSet(SPACE_SET)
+                }
+
+                'S' -> {
+                    position++
+                    SetOperand.RangeSet(SPACE_SET.complement())
+                }
+
+                'p' -> {
+                    position++
+                    SetOperand.RangeSet(readPropertySet(negated = false))
+                }
+
+                'P' -> {
+                    position++
+                    SetOperand.RangeSet(readPropertySet(negated = true))
+                }
+
+                'q' -> throw IllegalArgumentException("\\q is not supported yet")
+                else -> SetOperand.CharAtom(readEscapedCharAtom())
+            }
+        }
+
+        /** 读取 `\p{...}` / `\P{...}` 对应的码点集合；position 指向 '{'。 */
+        private fun readPropertySet(negated: Boolean): CodePointSet {
+            val item = readPropertyEscape(negated = false) as ClassItem.Property
+            val set = CodePointSet.of(item.set.rangeData())
+            return if (negated) set.complement() else set
+        }
+
+        private fun startsWith(text: String): Boolean {
+            if (position + text.length > pattern.length) return false
+            for (offset in text.indices) {
+                if (pattern[position + offset] != text[offset]) return false
+            }
+            return true
         }
 
         private fun parseClassAtom(): ClassItem {
@@ -1151,9 +1469,7 @@ class JsRegexEngine(
             }
 
         private fun spacePredicate(negated: Boolean): ClassItem = ClassItem.Predicate("space") { codePoint, _ ->
-            (codePoint == 0x20 || codePoint == 0x09 || codePoint == 0x0A ||
-                codePoint == 0x0D || codePoint == 0x0B || codePoint == 0x0C ||
-                codePoint == 0xA0 || codePoint == 0xFEFF) != negated
+            SPACE_SET.contains(codePoint) != negated
         }
 
         /** 读取 `\p{...}` / `\P{...}`；position 指向 '{'。 */
@@ -1190,6 +1506,11 @@ class JsRegexEngine(
                 'S' -> Node.ClassNode(false, listOf(spacePredicate(true)))
                 'p' -> Node.ClassNode(false, listOf(readPropertyEscape(negated = false)))
                 'P' -> Node.ClassNode(false, listOf(readPropertyEscape(negated = true)))
+                'q' -> if (unicodeSets) {
+                    throw IllegalArgumentException("\\q is only valid inside a class")
+                } else {
+                    Node.CharNode('q')
+                }
                 'b' -> Node.AnchorNode(Node.AnchorKind.WORD_BOUNDARY, positive = true)
                 'B' -> Node.AnchorNode(Node.AnchorKind.WORD_BOUNDARY, positive = false)
                 'n' -> Node.CharNode('\n')
