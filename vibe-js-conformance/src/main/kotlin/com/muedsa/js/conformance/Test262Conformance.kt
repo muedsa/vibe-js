@@ -588,7 +588,7 @@ private class Test262Runner(
             "explicit-resource-management", "__getter__", "__setter__", "iterator-chunking",
             "await-dictionary", "iterator-includes", "Iterator.prototype.join", "Error.isError",
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
-            "error-stack-accessor", "json-parse-with-source",
+            "error-stack-accessor", "json-parse-with-source", "for-in-order",
             "Symbol.prototype.description", "Math.sumPrecise",
             "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",

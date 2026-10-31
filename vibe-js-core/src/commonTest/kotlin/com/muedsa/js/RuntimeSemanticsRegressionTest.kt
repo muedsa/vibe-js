@@ -1213,6 +1213,25 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `属性枚举顺序与 for-in 继承顺序`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("1,2,b,a|1,2,b,a", runtime.evalString(
+            "var o = { b: 1, a: 2, 2: 3, 1: 4 };" +
+                "var inOrder = [];" +
+                "for (var key in o) inOrder.push(key);" +
+                "Object.keys(o).join(',') + '|' + inOrder.join(',')"
+        ))
+        // 原型上的可枚举属性排在自有属性之后，且被自有同名属性遮蔽
+        assertEquals("a,b,c", runtime.evalString(
+            "var proto = { b: 0, c: 0 };" +
+                "var o = Object.create(proto);" +
+                "o.a = 1; o.b = 2;" +
+                "var order = []; for (var k in o) order.push(k);" +
+                "order.join(',')"
+        ))
+    }
+
+    @Test
     fun `JSON rawJSON 与 reviver source 上下文`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[1,\"x\",null,true]", runtime.evalString(
