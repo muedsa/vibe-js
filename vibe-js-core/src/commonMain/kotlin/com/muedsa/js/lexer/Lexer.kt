@@ -102,6 +102,16 @@ class Lexer(private val input: String) {
     fun tokenize(): List<Token> {
         val tokens = mutableListOf<Token>()
 
+        // Hashbang 注释仅允许出现在源文件最开头
+        if (input.startsWith("#!")) {
+            while (pos < input.length &&
+                input[pos] != '\n' && input[pos] != '\r' &&
+                input[pos] != '\u2028' && input[pos] != '\u2029'
+            ) {
+                advance()
+            }
+        }
+
         while (true) {
             skipWhitespaceAndComments()
             if (pos >= input.length) break

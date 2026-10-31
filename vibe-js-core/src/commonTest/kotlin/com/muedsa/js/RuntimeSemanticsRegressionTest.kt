@@ -1213,6 +1213,15 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `hashbang 注释仅允许位于源文件开头`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(1.0, runtime.evalNumber("#! /usr/bin/env node\n1"))
+        assertEquals(2.0, runtime.evalNumber("#!line\r2"))
+        assertFailsWith<LexerException> { runtime.eval(" #! not at start") }
+        assertFailsWith<LexerException> { runtime.eval("// comment\n#! not at start") }
+    }
+
+    @Test
     fun `Iterator includes 与 join 及 Error isError`() = runTest {
         val runtime = TestRuntime()
         // includes：命中后关闭迭代器；支持 SameValueZero 与 skippedElements

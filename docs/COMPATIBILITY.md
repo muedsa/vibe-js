@@ -16,7 +16,7 @@
 | 字符串：`\xXX` / `\uXXXX` / `\u{...}` | ✅ | |
 | 模板字符串 | ✅ | 支持 `${}` 嵌套；raw 文本暂与 cooked 相同 |
 | 正则字面量 | ✅ | 通过"上一 Token"启发式区分除法/正则 |
-| 注释：单行/多行 | ✅ | 未闭合报错 |
+| 注释：单行/多行 | ✅ | 未闭合报错；支持仅位于文件开头的 hashbang |
 | 未闭合字符串/模板/正则 | ✅ | 抛出 `LexerException` |
 | 标识符：Unicode 字母、`\uXXXX`、`\u{...}` 与 astral | ✅ | astral 范围采用近似表 |
 | 自动分号插入（ASI） | ⚠️ | 覆盖 return/throw/break/continue/++/-- 换行与常规语句分隔；极少数边界未覆盖 |
@@ -99,9 +99,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 403 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 403 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 403 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 404 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 404 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 404 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -138,7 +138,7 @@
 | `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
 | `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
-| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
+| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `HostModuleTest`（:vibe-js-host） | window/self、console、定时器/setInterval、queueMicrotask、atob/btoa、时钟注入 |

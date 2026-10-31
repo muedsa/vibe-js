@@ -238,7 +238,7 @@ private class Test262Runner(
                 .sortedBy { it.relativeTo(corpusDir).invariantSeparatorsPath }
                 .forEach { file ->
                     val relativePath = file.relativeTo(corpusDir).invariantSeparatorsPath
-                    val (metadata, body) = parseTestFile(file)
+                    val (metadata, body, prefix) = parseTestFile(file)
                     val matchesSuite = if (suite == "es2015") {
                         // ES2015 子集：非 ES5 用例、特性全部已支持，且不依赖未实现的内建内部对象
                         metadata != null && metadata.es5Id == null &&
@@ -249,12 +249,14 @@ private class Test262Runner(
                         metadata?.es5Id != null
                     }
                     if (matchesSuite && (filter == null || relativePath.contains(filter))) {
+                        // hashbang 用例的可执行前缀位于 metadata 之前，需保留
+                        val source = if ("hashbang" in metadata!!.features) prefix + body else body
                         result.add(
                             TestFile(
                                 file = file,
                                 relativePath = relativePath,
-                                metadata = metadata!!,
-                                source = body,
+                                metadata = metadata,
+                                source = source,
                             )
                         )
                     }
@@ -263,15 +265,15 @@ private class Test262Runner(
         return result
     }
 
-    private fun parseTestFile(file: File): Pair<Metadata?, String> {
+    private fun parseTestFile(file: File): Triple<Metadata?, String, String> {
         val source = file.readText().removePrefix("\uFEFF")
         val start = source.indexOf("/*---")
-        if (start < 0) return null to source
+        if (start < 0) return Triple(null, source, "")
         val end = source.indexOf("---*/", start + 5)
-        if (end < 0) return null to source
+        if (end < 0) return Triple(null, source, "")
         val metadata = parseMetadata(source.substring(start + 5, end))
         val body = source.substring(end + 5).trimStart('\r', '\n')
-        return metadata to body
+        return Triple(metadata, body, source.substring(0, start))
     }
 
     private fun parseMetadata(raw: String): Metadata {
@@ -585,6 +587,7 @@ private class Test262Runner(
             "iterator-sequencing", "joint-iteration", "symbols-as-weakmap-keys",
             "explicit-resource-management", "__getter__", "__setter__", "iterator-chunking",
             "await-dictionary", "iterator-includes", "Iterator.prototype.join", "Error.isError",
+            "hashbang",
             "Symbol.prototype.description", "Math.sumPrecise",
             "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",
