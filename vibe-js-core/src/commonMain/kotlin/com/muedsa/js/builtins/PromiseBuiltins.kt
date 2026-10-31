@@ -383,6 +383,30 @@ object PromiseBuiltins {
         )
 
         promiseConstructor.defineDataProperty(
+            key = PropertyKey.Str("allKeyed"),
+            value = BuiltinHelpers.method(intrinsics, "allKeyed", 1) { interpreter, thisValue, args ->
+                performKeyedCombinator(
+                    interpreter,
+                    thisValue,
+                    args.getOrElse(0) { JSUndefined },
+                    settled = false,
+                )
+            },
+        )
+
+        promiseConstructor.defineDataProperty(
+            key = PropertyKey.Str("allSettledKeyed"),
+            value = BuiltinHelpers.method(intrinsics, "allSettledKeyed", 1) { interpreter, thisValue, args ->
+                performKeyedCombinator(
+                    interpreter,
+                    thisValue,
+                    args.getOrElse(0) { JSUndefined },
+                    settled = true,
+                )
+            },
+        )
+
+        promiseConstructor.defineDataProperty(
             key = PropertyKey.Str("withResolvers"),
             value = BuiltinHelpers.method(intrinsics, "withResolvers", 0) { interpreter, thisValue, _ ->
                 if (!interpreter.isConstructor(thisValue)) {
@@ -657,6 +681,189 @@ object PromiseBuiltins {
     /** 创建 TypeError 值（用于把错误传给 capability.reject，而不是抛出）。 */
     private fun typeErrorValue(interpreter: Interpreter, message: String): JSError =
         JSError("TypeError", message, interpreter.intrinsics.typeErrorPrototype)
+
+    /** Promise.allKeyed / allSettledKeyed：按自有可枚举键组合 Promise。 */
+    private suspend fun performKeyedCombinator(
+        interpreter: Interpreter,
+        thisValue: JSValue,
+        promises: JSValue,
+        settled: Boolean,
+    ): JSValue {
+        if (!interpreter.isConstructor(thisValue)) {
+            interpreter.typeError("Promise combinator requires a constructor as this")
+        }
+        val intrinsics = interpreter.intrinsics
+        val capability = PromiseSupport.newPromiseCapability(interpreter, thisValue)
+        val resolveMethod = try {
+            interpreter.getV(thisValue, PropertyKey.Str("resolve"))
+        } catch (error: JSException) {
+            rejectCapability(interpreter, capability, error.value)
+            return capability.promise
+        }
+        if (!interpreter.isCallable(resolveMethod)) {
+            rejectCapability(
+                interpreter,
+                capability,
+                typeErrorValue(interpreter, "Promise.resolve is not a function"),
+            )
+            return capability.promise
+        }
+        if (promises !is JSObject) {
+            rejectCapability(
+                interpreter,
+                capability,
+                typeErrorValue(interpreter, "Promise combinator argument is not an object"),
+            )
+            return capability.promise
+        }
+        val keys = ArrayList<PropertyKey>()
+        val values = ArrayList<JSValue>()
+        try {
+            for (key in promises.ownPropertyKeys()) {
+                val descriptor = promises.getOwnProperty(key) ?: continue
+                if (!descriptor.enumerable) continue
+                keys.add(key)
+                values.add(interpreter.getV(promises, key))
+            }
+        } catch (error: JSException) {
+            rejectCapability(interpreter, capability, error.value)
+            return capability.promise
+        }
+
+        val results = MutableList<JSValue>(values.size) { JSUndefined }
+        var remaining = 1
+        try {
+            for (index in values.indices) {
+                val itemPromise = interpreter.callFunction(
+                    resolveMethod,
+                    thisValue,
+                    listOf(values[index]),
+                )
+                val thenMethod = interpreter.getV(itemPromise, PropertyKey.Str("then"))
+                if (!interpreter.isCallable(thenMethod)) {
+                    interpreter.typeError("Promise.prototype.then is not a function")
+                }
+                remaining++
+                val alreadyCalled = booleanArrayOf(false)
+                val onFulfilled = JSNativeFunction(
+                    name = "",
+                    length = 1,
+                    prototype = intrinsics.functionPrototype,
+                ) { _, _, handlerArgs ->
+                    if (!alreadyCalled[0]) {
+                        alreadyCalled[0] = true
+                        results[index] = if (settled) {
+                            val entry = JSObject(prototype = intrinsics.objectPrototype)
+                            entry.defineDataProperty(
+                                PropertyKey.Str("status"),
+                                JSString("fulfilled"),
+                                writable = true,
+                                enumerable = true,
+                                configurable = true,
+                            )
+                            entry.defineDataProperty(
+                                PropertyKey.Str("value"),
+                                handlerArgs.getOrElse(0) { JSUndefined },
+                                writable = true,
+                                enumerable = true,
+                                configurable = true,
+                            )
+                            entry
+                        } else {
+                            handlerArgs.getOrElse(0) { JSUndefined }
+                        }
+                        remaining--
+                        if (remaining == 0) {
+                            resolveCapability(
+                                interpreter,
+                                capability,
+                                createKeyedResult(intrinsics, keys, results),
+                            )
+                        }
+                    }
+                    JSUndefined
+                }
+                val onRejected = JSNativeFunction(
+                    name = "",
+                    length = 1,
+                    prototype = intrinsics.functionPrototype,
+                ) { _, _, handlerArgs ->
+                    if (!alreadyCalled[0]) {
+                        alreadyCalled[0] = true
+                        if (settled) {
+                            val entry = JSObject(prototype = intrinsics.objectPrototype)
+                            entry.defineDataProperty(
+                                PropertyKey.Str("status"),
+                                JSString("rejected"),
+                                writable = true,
+                                enumerable = true,
+                                configurable = true,
+                            )
+                            entry.defineDataProperty(
+                                PropertyKey.Str("reason"),
+                                handlerArgs.getOrElse(0) { JSUndefined },
+                                writable = true,
+                                enumerable = true,
+                                configurable = true,
+                            )
+                            results[index] = entry
+                            remaining--
+                            if (remaining == 0) {
+                                resolveCapability(
+                                    interpreter,
+                                    capability,
+                                    createKeyedResult(intrinsics, keys, results),
+                                )
+                            }
+                        } else {
+                            rejectCapability(
+                                interpreter,
+                                capability,
+                                handlerArgs.getOrElse(0) { JSUndefined },
+                            )
+                        }
+                    }
+                    JSUndefined
+                }
+                interpreter.callFunction(thenMethod, itemPromise, listOf(onFulfilled, onRejected))
+            }
+        } catch (error: JSException) {
+            rejectCapability(interpreter, capability, error.value)
+            return capability.promise
+        }
+        remaining--
+        if (remaining == 0) {
+            try {
+                resolveCapability(
+                    interpreter,
+                    capability,
+                    createKeyedResult(intrinsics, keys, results),
+                )
+            } catch (error: JSException) {
+                rejectCapability(interpreter, capability, error.value)
+            }
+        }
+        return capability.promise
+    }
+
+    /** 键控组合结果：null 原型对象，键顺序与输入一致。 */
+    private fun createKeyedResult(
+        intrinsics: com.muedsa.js.runtime.Intrinsics,
+        keys: List<PropertyKey>,
+        values: List<JSValue>,
+    ): JSObject {
+        val result = JSObject(prototype = null)
+        for (index in keys.indices) {
+            result.defineDataProperty(
+                key = keys[index],
+                value = values[index],
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+        }
+        return result
+    }
 
     private suspend fun resolveCapability(
         interpreter: Interpreter,

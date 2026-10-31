@@ -1213,6 +1213,38 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Promise allKeyed 与 allSettledKeyed`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            "var out = '';" +
+                "Promise.allKeyed({ a: Promise.resolve(1), b: 2 }).then(function (r) {" +
+                " out = (Object.getPrototypeOf(r) === null) + ':' + r.a + ',' + r.b; });"
+        )
+        assertEquals("true:1,2", runtime.evalString("out"))
+        runtime.eval(
+            "Promise.allSettledKeyed({ a: Promise.resolve(3), b: Promise.reject(4) })" +
+                ".then(function (r) {" +
+                " out = r.a.status + ':' + r.a.value + ',' + r.b.status + ':' + r.b.reason; });"
+        )
+        assertEquals("fulfilled:3,rejected:4", runtime.evalString("out"))
+        // 非对象参数以拒绝形式返回 TypeError
+        runtime.eval(
+            "Promise.allKeyed(123).then(function () { out = 'fulfilled'; }," +
+                " function (e) { out = String(e instanceof TypeError); });"
+        )
+        assertEquals("true", runtime.evalString("out"))
+        // 仅遍历自有可枚举键，结果保持键顺序
+        runtime.eval(
+            "var obj = Object.create(null);" +
+                "obj.a = Promise.resolve(5); obj.b = 6; obj.hidden = 1;" +
+                "Object.defineProperty(obj, 'hidden', { enumerable: false });" +
+                "Promise.allKeyed(obj).then(function (r) {" +
+                " out = Object.keys(r).join(',') + ':' + r.a + ',' + r.b; });"
+        )
+        assertEquals("a,b:5,6", runtime.evalString("out"))
+    }
+
+    @Test
     fun `Iterator chunks 与 windows 分块语义`() = runTest {
         val runtime = TestRuntime()
         // chunks：末尾允许不足块，每块为新数组
