@@ -68,6 +68,78 @@ object GlobalBuiltins {
             },
         )
 
+        // Annex B escape/unescape
+        registry.defineGlobal(
+            name = "escape",
+            value = BuiltinHelpers.method(intrinsics, "escape", length = 1) { interpreter, _, args ->
+                val text = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
+                val builder = StringBuilder()
+                for (c in text) {
+                    if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' ||
+                        c in "@*_+-./"
+                    ) {
+                        builder.append(c)
+                    } else if (c.code < 256) {
+                        builder.append('%')
+                        builder.append(c.code.toString(16).uppercase().padStart(2, '0'))
+                    } else {
+                        builder.append("%u")
+                        builder.append(c.code.toString(16).uppercase().padStart(4, '0'))
+                    }
+                }
+                JSString(builder.toString())
+            },
+        )
+        registry.defineGlobal(
+            name = "unescape",
+            value = BuiltinHelpers.method(intrinsics, "unescape", length = 1) { interpreter, _, args ->
+                val text = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
+                val builder = StringBuilder()
+                var index = 0
+                fun hexAt(position: Int): Int {
+                    if (position >= text.length) return -1
+                    return when (val c = text[position]) {
+                        in '0'..'9' -> c - '0'
+                        in 'a'..'f' -> c - 'a' + 10
+                        in 'A'..'F' -> c - 'A' + 10
+                        else -> -1
+                    }
+                }
+                while (index < text.length) {
+                    val c = text[index]
+                    if (c == '%' && index + 5 < text.length && text[index + 1] == 'u') {
+                        var value = 0
+                        var valid = true
+                        for (offset in 2..5) {
+                            val digit = hexAt(index + offset)
+                            if (digit < 0) {
+                                valid = false
+                                break
+                            }
+                            value = value * 16 + digit
+                        }
+                        if (valid) {
+                            builder.append(value.toChar())
+                            index += 6
+                            continue
+                        }
+                    }
+                    if (c == '%' && index + 2 < text.length) {
+                        val high = hexAt(index + 1)
+                        val low = hexAt(index + 2)
+                        if (high >= 0 && low >= 0) {
+                            builder.append((high * 16 + low).toChar())
+                            index += 3
+                            continue
+                        }
+                    }
+                    builder.append(c)
+                    index++
+                }
+                JSString(builder.toString())
+            },
+        )
+
         // parseInt / parseFloat
         registry.defineGlobal(
             name = "parseInt",

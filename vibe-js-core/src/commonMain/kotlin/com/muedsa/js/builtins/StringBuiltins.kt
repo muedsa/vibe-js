@@ -360,14 +360,20 @@ object StringBuiltins {
             },
         )
 
+        // Annex B：trimLeft/trimRight 与 trimStart/trimEnd 是同一函数对象
+        val trimStartFunction = BuiltinHelpers.method(intrinsics, "trimStart", 0) { interpreter, thisValue, _ ->
+            if (thisValue is JSNull || thisValue is JSUndefined) {
+                interpreter.typeError("String.prototype.trimStart called on null or undefined")
+            }
+            JSString(interpreter.toStringValue(thisValue).trimStart { isJsWhitespace(it) })
+        }
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("trimStart"),
-            value = BuiltinHelpers.method(intrinsics, "trimStart", 0) { interpreter, thisValue, _ ->
-                if (thisValue is JSNull || thisValue is JSUndefined) {
-                    interpreter.typeError("String.prototype.trimStart called on null or undefined")
-                }
-                JSString(interpreter.toStringValue(thisValue).trimStart { isJsWhitespace(it) })
-            },
+            value = trimStartFunction,
+        )
+        stringPrototype.defineDataProperty(
+            key = PropertyKey.Str("trimLeft"),
+            value = trimStartFunction,
         )
 
         // String.prototype.isWellFormed：检测孤立代理项
@@ -392,14 +398,19 @@ object StringBuiltins {
             },
         )
 
+        val trimEndFunction = BuiltinHelpers.method(intrinsics, "trimEnd", 0) { interpreter, thisValue, _ ->
+            if (thisValue is JSNull || thisValue is JSUndefined) {
+                interpreter.typeError("String.prototype.trimEnd called on null or undefined")
+            }
+            JSString(interpreter.toStringValue(thisValue).trimEnd { isJsWhitespace(it) })
+        }
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("trimEnd"),
-            value = BuiltinHelpers.method(intrinsics, "trimEnd", 0) { interpreter, thisValue, _ ->
-                if (thisValue is JSNull || thisValue is JSUndefined) {
-                    interpreter.typeError("String.prototype.trimEnd called on null or undefined")
-                }
-                JSString(interpreter.toStringValue(thisValue).trimEnd { isJsWhitespace(it) })
-            },
+            value = trimEndFunction,
+        )
+        stringPrototype.defineDataProperty(
+            key = PropertyKey.Str("trimRight"),
+            value = trimEndFunction,
         )
 
         stringPrototype.defineDataProperty(

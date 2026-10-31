@@ -96,6 +96,44 @@ object RegExpBuiltins {
             configurable = true,
         )
 
+        // Annex B RegExp.prototype.compile：原地重新初始化正则
+        regexpPrototype.defineDataProperty(
+            key = PropertyKey.Str("compile"),
+            value = BuiltinHelpers.method(intrinsics, "compile", 2) { interpreter, thisValue, args ->
+                val target = thisValue as? JSRegExp
+                    ?: interpreter.typeError("RegExp.prototype.compile called on incompatible receiver")
+                val patternValue = args.getOrElse(0) { JSUndefined }
+                val flagsValue = args.getOrElse(1) { JSUndefined }
+                val pattern: String
+                val flags: String
+                if (patternValue is JSRegExp) {
+                    if (flagsValue !is JSUndefined) {
+                        interpreter.typeError("Cannot supply flags when compiling a RegExp")
+                    }
+                    pattern = patternValue.pattern
+                    flags = patternValue.flags
+                } else {
+                    pattern = if (patternValue is JSUndefined) {
+                        ""
+                    } else {
+                        interpreter.toStringValue(patternValue)
+                    }
+                    flags = if (flagsValue is JSUndefined) {
+                        ""
+                    } else {
+                        interpreter.toStringValue(flagsValue)
+                    }
+                }
+                val compiled = interpreter.createRegExp(pattern, flags) as? JSRegExp
+                    ?: interpreter.typeError("Invalid RegExp")
+                target.pattern = compiled.pattern
+                target.flags = compiled.flags
+                target.matcher = compiled.matcher
+                interpreter.putV(target, PropertyKey.Str("lastIndex"), JSNumber.ZERO, strict = true)
+                target
+            },
+        )
+
         // ES2015 15.10.6.4：原型上的 source/global/ignoreCase/multiline 是访问器
         fun flagAccessor(name: String, read: (JSRegExp) -> JSValue): JSNativeFunction =
             JSNativeFunction(name = "get $name", length = 0, prototype = intrinsics.functionPrototype) { interpreter, thisValue, _ ->
@@ -428,11 +466,6 @@ object RegExpBuiltins {
                 val regexp = thisValue
                 val input = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
                 val limitValue = args.getOrNull(1)
-                val limit = if (limitValue == null || limitValue is JSUndefined) {
-                    4294967295L
-                } else {
-                    interpreter.toUint32(limitValue)
-                }
                 val constructor = interpreter.speciesConstructor(regexp, intrinsics.regexpConstructor)
                 val flags = interpreter.toStringValue(interpreter.getV(regexp, PropertyKey.Str("flags")))
                 val unicodeMatching = flags.contains('u')
@@ -443,6 +476,12 @@ object RegExpBuiltins {
                 )
                 val splitter = splitterValue as? JSObject
                     ?: interpreter.typeError("RegExp species constructor did not return an object")
+                // 规范顺序：先构造 splitter，再转换 limit
+                val limit = if (limitValue == null || limitValue is JSUndefined) {
+                    4294967295L
+                } else {
+                    interpreter.toUint32(limitValue)
+                }
                 val result = JSArray(prototype = intrinsics.arrayPrototype)
                 var resultLength = 0L
                 if (limit == 0L) return@method result

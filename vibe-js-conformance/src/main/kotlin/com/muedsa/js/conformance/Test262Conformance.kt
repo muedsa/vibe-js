@@ -228,7 +228,12 @@ private class Test262Runner(
 
     private fun collectTests(): List<TestFile> {
         val result = mutableListOf<TestFile>()
-        for (rootName in listOf("test/language", "test/built-ins")) {
+        val roots = if (suite == "es2015") {
+            listOf("test/language", "test/built-ins", "test/annexB")
+        } else {
+            listOf("test/language", "test/built-ins")
+        }
+        for (rootName in roots) {
             val root = File(corpusDir, rootName)
             if (!root.isDirectory) continue
             root.walkTopDown()
@@ -588,7 +593,7 @@ private class Test262Runner(
             "explicit-resource-management", "__getter__", "__setter__", "iterator-chunking",
             "await-dictionary", "iterator-includes", "Iterator.prototype.join", "Error.isError",
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
-            "error-stack-accessor", "json-parse-with-source", "for-in-order",
+            "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
             "Symbol.prototype.description", "Math.sumPrecise",
             "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",

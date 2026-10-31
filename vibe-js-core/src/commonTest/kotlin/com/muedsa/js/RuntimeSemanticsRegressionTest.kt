@@ -1213,6 +1213,33 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Annex B RegExp compile 与 escape-unescape`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var re = /abc/gim; re.lastIndex = 5;" +
+                "re.compile('def', 'i') === re && re.source === 'def' &&" +
+                " re.flags === 'i' && re.lastIndex === 0 && re.test('DEF')"
+        ))
+        // @@split 先构造 splitter，再转换 limit
+        assertEquals("3|,bb,", runtime.evalString(
+            "var re = /a/;" +
+                "var out = re[Symbol.split]('abba'," +
+                " { valueOf: function () { re.compile('b'); return -1; } });" +
+                "String(out.length) + '|' + out.join(',')"
+        ))
+        assertEquals("%uD834%uDF06%u0100%20", runtime.evalString(
+            "escape('\\uD834\\uDF06\\u0100 ')"
+        ))
+        assertEquals(4.0, runtime.evalNumber(
+            "unescape('%uD834%uDF06%u0100%20').length"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "unescape('%41%42') === 'AB' && unescape('%u0041') === 'A' &&" +
+                " unescape('%zz') === '%zz'"
+        ))
+    }
+
+    @Test
     fun `属性枚举顺序与 for-in 继承顺序`() = runTest {
         val runtime = TestRuntime()
         assertEquals("1,2,b,a|1,2,b,a", runtime.evalString(

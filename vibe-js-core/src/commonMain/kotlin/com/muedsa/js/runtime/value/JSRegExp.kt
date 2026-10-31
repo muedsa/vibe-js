@@ -9,18 +9,19 @@ import com.muedsa.js.runtime.regex.JsRegex
  * 保留 JS 的 source/flags 与 lastIndex 语义。
  */
 class JSRegExp(
-    val pattern: String,
-    val flags: String,
-    val matcher: JsRegex,
+    var pattern: String,
+    var flags: String,
+    var matcher: JsRegex,
     prototype: JSObject?,
 ) : JSObject(prototype) {
 
-    val global: Boolean = flags.contains('g')
-    val ignoreCase: Boolean = flags.contains('i')
-    val multiline: Boolean = flags.contains('m')
-    val sticky: Boolean = flags.contains('y')
-    val unicode: Boolean = flags.contains('u')
-    val dotAll: Boolean = flags.contains('s')
+    val global: Boolean get() = flags.contains('g')
+    val ignoreCase: Boolean get() = flags.contains('i')
+    val multiline: Boolean get() = flags.contains('m')
+    val sticky: Boolean get() = flags.contains('y')
+    val unicode: Boolean get() = flags.contains('u')
+    val dotAll: Boolean get() = flags.contains('s')
+    val hasIndices: Boolean get() = flags.contains('d')
 
     init {
         // 规范：source/flags/global 等均为原型访问器（读取内部槽）；
