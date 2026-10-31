@@ -1213,6 +1213,35 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Error prototype stack 访问器`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var e = new Error('msg');" +
+                "typeof e.stack === 'string' &&" +
+                " !Object.prototype.hasOwnProperty.call(e, 'stack') &&" +
+                " typeof Object.getOwnPropertyDescriptor(Error.prototype, 'stack').get ===" +
+                " 'function'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var e = new TypeError('m');" +
+                "e.stack = 'custom';" +
+                "e.stack === 'custom' &&" +
+                " Object.getOwnPropertyDescriptor(e, 'stack').enumerable &&" +
+                " delete e.stack && typeof e.stack === 'string'"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var threw = 0;" +
+                "try { new Error().stack = null; } catch (e) { if (e instanceof TypeError) threw++; }" +
+                "try { Error.prototype.stack = 'x'; } catch (e) {" +
+                " if (e instanceof TypeError) threw++; }" +
+                "threw === 2"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "Object.create(new Error()).stack === undefined"
+        ))
+    }
+
+    @Test
     fun `可选 catch 绑定、稳定排序与 JSON 超集`() = runTest {
         val runtime = TestRuntime()
         assertEquals("caught", runtime.evalString(

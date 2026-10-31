@@ -2,6 +2,7 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSError
@@ -10,6 +11,7 @@ import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
+import com.muedsa.js.runtime.value.PropertyDescriptor
 import com.muedsa.js.runtime.value.PropertyKey
 
 /**
@@ -171,6 +173,71 @@ object ErrorBuiltins {
             enumerable = false,
             configurable = true,
         )
+
+        // Error.prototype.stack：实现定义的堆栈字符串访问器
+        val stackKey = PropertyKey.Str("stack")
+        intrinsics.errorPrototype.defineAccessorProperty(
+            key = stackKey,
+            get = BuiltinHelpers.method(intrinsics, "get stack", 0) { interpreter, thisValue, _ ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("get Error.prototype.stack called on non-object")
+                }
+                if (!thisValue.isErrorData) return@method JSUndefined
+                val name = readStackText(interpreter, thisValue, PropertyKey.NAME, "Error")
+                val message = readStackText(interpreter, thisValue, PropertyKey.MESSAGE, "")
+                JSString(if (message.isEmpty()) name else "$name: $message")
+            },
+            set = BuiltinHelpers.method(intrinsics, "set stack", 1) { interpreter, thisValue, args ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("set Error.prototype.stack called on non-object")
+                }
+                val value = args.getOrElse(0) { JSUndefined }
+                if (value !is JSString) {
+                    interpreter.typeError("Error.prototype.stack must be a string")
+                }
+                if (thisValue === intrinsics.errorPrototype) {
+                    interpreter.typeError("Cannot set Error.prototype.stack")
+                }
+                if (thisValue.getOwnProperty(stackKey) == null) {
+                    val defined = interpreter.defineOwnPropertyOn(
+                        thisValue,
+                        stackKey,
+                        PropertyDescriptor.data(
+                            value,
+                            writable = true,
+                            enumerable = true,
+                            configurable = true,
+                        ),
+                    )
+                    if (!defined) interpreter.typeError("Cannot create Error.prototype.stack")
+                } else {
+                    interpreter.putV(thisValue, stackKey, value, strict = true)
+                }
+                JSUndefined
+            },
+            enumerable = false,
+            configurable = true,
+        )
+    }
+
+    /** 读取 name/message 文本，异常或缺失时回退。 */
+    private suspend fun readStackText(
+        interpreter: Interpreter,
+        objectValue: JSObject,
+        key: PropertyKey,
+        fallback: String,
+    ): String {
+        val value = try {
+            interpreter.getV(objectValue, key)
+        } catch (_: JSException) {
+            return fallback
+        }
+        if (value is JSUndefined) return fallback
+        return try {
+            interpreter.toStringValue(value)
+        } catch (_: JSException) {
+            fallback
+        }
     }
 
     private fun createErrorConstructor(
