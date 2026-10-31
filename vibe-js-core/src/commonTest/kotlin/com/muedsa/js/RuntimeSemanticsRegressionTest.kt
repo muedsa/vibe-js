@@ -1213,6 +1213,34 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `JSON rawJSON 与 reviver source 上下文`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("[1,\"x\",null,true]", runtime.evalString(
+            "var raw = JSON.rawJSON(1);" +
+                "JSON.isRawJSON(raw) && Object.getPrototypeOf(raw) === null &&" +
+                "JSON.stringify([raw, JSON.rawJSON('\"x\"')," +
+                " JSON.rawJSON(null), JSON.rawJSON(true)])"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var bad = 0;" +
+                "try { JSON.rawJSON([]); } catch (e) { if (e instanceof SyntaxError) bad++; }" +
+                "try { JSON.rawJSON(' 1'); } catch (e) { if (e instanceof SyntaxError) bad++; }" +
+                "try { JSON.rawJSON(Symbol('x')); }" +
+                " catch (e) { if (e instanceof TypeError) bad++; }" +
+                "bad === 3"
+        ))
+        // reviver context.source 仅对原始字面量提供
+        assertEquals("1.1e1|\"foo\"|1", runtime.evalString(
+            "var out = [];" +
+                "JSON.parse('[1.1e1, \"foo\", {\"x\": 1}]'," +
+                " function (k, v, context) {" +
+                "  if (k === '0' || k === '1' || k === 'x') out.push(context.source);" +
+                "  return v; });" +
+                "out.join('|')"
+        ))
+    }
+
+    @Test
     fun `Error prototype stack 访问器`() = runTest {
         val runtime = TestRuntime()
         assertEquals(true, runtime.evalBoolean(

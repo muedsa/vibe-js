@@ -26,12 +26,30 @@ internal class JsonParser(
 
     private var index = 0
 
+    /** 原始字面量：源码文本与解析得到的原始值。 */
+    data class LiteralSource(val text: String, val value: JSValue)
+
+    /** 原始字面量源码：按父对象记录可直接取源的原始 JSON 文本。 */
+    private val sources = HashMap<JSObject, MutableMap<String, LiteralSource>>()
+
+    /** 根值为原始字面量时的源码与值。 */
+    var rootLiteral: LiteralSource? = null
+        private set
+
+    /** 查询父对象某个属性的原始字面量信息。 */
+    fun sourceOf(parent: JSObject, key: String): LiteralSource? = sources[parent]?.get(key)
+
     fun parse(): JSValue {
         skipWhitespace()
+        val start = index
         val value = parseValue()
+        val end = index
         skipWhitespace()
         if (index != text.length) {
             fail("Unexpected token")
+        }
+        if (value !is JSObject) {
+            rootLiteral = LiteralSource(text.substring(start, end), value)
         }
         return value
     }
@@ -76,7 +94,13 @@ internal class JsonParser(
             if (peek() != ':') fail("Expected ':' after property name")
             index++
             skipWhitespace()
+            val valueStart = index
             val value = parseValue()
+            val valueEnd = index
+            if (value !is JSObject) {
+                sources.getOrPut(result) { LinkedHashMap() }[key] =
+                    LiteralSource(text.substring(valueStart, valueEnd), value)
+            }
             // JSON 的重复键以后者为准
             result.defineDataProperty(
                 com.muedsa.js.runtime.value.PropertyKey.Str(key),
@@ -102,6 +126,7 @@ internal class JsonParser(
     private fun parseArray(): JSArray {
         index++ // '['
         val elements = mutableListOf<JSValue?>()
+        val elementSources = LinkedHashMap<String, LiteralSource>()
         skipWhitespace()
         if (peek() == ']') {
             index++
@@ -109,7 +134,14 @@ internal class JsonParser(
         }
         while (true) {
             skipWhitespace()
-            elements.add(parseValue())
+            val valueStart = index
+            val value = parseValue()
+            val valueEnd = index
+            if (value !is JSObject) {
+                elementSources[elements.size.toString()] =
+                    LiteralSource(text.substring(valueStart, valueEnd), value)
+            }
+            elements.add(value)
             skipWhitespace()
             when (peek()) {
                 ',' -> {
@@ -117,7 +149,9 @@ internal class JsonParser(
                 }
                 ']' -> {
                     index++
-                    return JSArray(elements, prototype = arrayPrototype)
+                    val result = JSArray(elements, prototype = arrayPrototype)
+                    if (elementSources.isNotEmpty()) sources[result] = elementSources
+                    return result
                 }
                 else -> fail("Expected ',' or ']'")
             }

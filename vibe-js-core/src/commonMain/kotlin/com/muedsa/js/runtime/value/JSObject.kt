@@ -33,6 +33,9 @@ open class JSObject(
     /** 是否具有 [[ErrorData]] 内部槽（供 Error.isError 判断）。 */
     var isErrorData: Boolean = false
 
+    /** 是否具有 [[IsRawJSON]] 内部槽（供 JSON.isRawJSON/stringify 判断）。 */
+    var isRawJson: Boolean = false
+
     override val isPrimitive: Boolean = false
 
     override fun toPrimitiveBoolean(): Boolean = true

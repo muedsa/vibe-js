@@ -43,9 +43,10 @@ object JsonBuiltins {
             key = PropertyKey.Str("parse"),
             value = BuiltinHelpers.method(intrinsics, "JSON.parse", 2) { interpreter, _, args ->
                 val text = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
+                val parser = JsonParser(text, intrinsics.objectPrototype, intrinsics.arrayPrototype)
                 val value = try {
                     // 使用严格 JSON 语法，而不是宽松的 JS 表达式解析器
-                    JsonParser(text, intrinsics.objectPrototype, intrinsics.arrayPrototype).parse()
+                    parser.parse()
                 } catch (error: JsonParseException) {
                     interpreter.syntaxError(error.message ?: "Invalid JSON")
                 }
@@ -54,10 +55,50 @@ object JsonBuiltins {
                 if (reviver != null && interpreter.isCallable(reviver)) {
                     val holder = JSObject(prototype = intrinsics.objectPrototype)
                     holder.defineDataProperty(PropertyKey.Str(""), value)
-                    internalize(interpreter, holder, "", reviver)
+                    internalize(interpreter, holder, "", reviver, parser, holder)
                 } else {
                     value
                 }
+            },
+        )
+
+        json.defineDataProperty(
+            key = PropertyKey.Str("rawJSON"),
+            value = BuiltinHelpers.method(intrinsics, "rawJSON", 1) { interpreter, _, args ->
+                val textValue = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
+                if (textValue.isEmpty() ||
+                    textValue.first() in setOf('\t', '\n', '\r', ' ') ||
+                    textValue.last() in setOf('\t', '\n', '\r', ' ')
+                ) {
+                    interpreter.syntaxError("Invalid raw JSON text")
+                }
+                val parsed = try {
+                    JsonParser(textValue, intrinsics.objectPrototype, intrinsics.arrayPrototype).parse()
+                } catch (error: JsonParseException) {
+                    interpreter.syntaxError(error.message ?: "Invalid raw JSON text")
+                }
+                if (parsed is JSObject) {
+                    interpreter.syntaxError("Raw JSON must be a primitive value")
+                }
+                val raw = JSObject(prototype = null)
+                raw.isRawJson = true
+                raw.defineDataProperty(
+                    key = PropertyKey.Str("rawJSON"),
+                    value = JSString(textValue),
+                    writable = false,
+                    enumerable = true,
+                    configurable = false,
+                )
+                raw.preventExtensions()
+                raw
+            },
+        )
+
+        json.defineDataProperty(
+            key = PropertyKey.Str("isRawJSON"),
+            value = BuiltinHelpers.method(intrinsics, "isRawJSON", 1) { _, _, args ->
+                val value = args.getOrElse(0) { JSUndefined }
+                JSBoolean.getJsBoolean(value is JSObject && value.isRawJson)
             },
         )
 
@@ -95,6 +136,8 @@ object JsonBuiltins {
         holder: JSObject,
         key: String,
         reviver: JSValue,
+        parser: JsonParser,
+        rootHolder: JSObject,
     ): JSValue {
         val value = interpreter.getV(holder, PropertyKey.Str(key))
 
@@ -103,7 +146,9 @@ object JsonBuiltins {
                 for (index in 0 until value.length) {
                     val elementKey = index.toString()
                     val elementKeyRef = PropertyKey.Str(elementKey)
-                    val newElement = internalize(interpreter, value, elementKey, reviver)
+                    val newElement = internalize(
+                        interpreter, value, elementKey, reviver, parser, rootHolder,
+                    )
                     if (newElement is JSUndefined) {
                         value.deleteOwnProperty(elementKeyRef)
                     } else {
@@ -123,7 +168,9 @@ object JsonBuiltins {
                 for (propertyKey in value.ownPropertyKeys()) {
                     if (propertyKey !is PropertyKey.Str) continue
                     if (value.getOwnProperty(propertyKey)?.enumerable != true) continue
-                    val newValue = internalize(interpreter, value, propertyKey.value, reviver)
+                    val newValue = internalize(
+                        interpreter, value, propertyKey.value, reviver, parser, rootHolder,
+                    )
                     if (newValue is JSUndefined) {
                         value.deleteOwnProperty(propertyKey)
                     } else {
@@ -142,7 +189,28 @@ object JsonBuiltins {
             }
         }
 
-        return interpreter.callFunction(reviver, holder, listOf(JSString(key), value))
+        val context = JSObject(prototype = interpreter.intrinsics.objectPrototype)
+        val literal = if (holder === rootHolder && key.isEmpty()) {
+            parser.rootLiteral
+        } else {
+            parser.sourceOf(holder, key)
+        }
+        // 属性在 reviver 期间被改写后不再提供原始 source
+        val source = literal?.takeIf { interpreter.strictEquals(value, it.value) }?.text
+        if (source != null) {
+            context.defineDataProperty(
+                PropertyKey.Str("source"),
+                JSString(source),
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+        }
+        return interpreter.callFunction(
+            reviver,
+            holder,
+            listOf(JSString(key), value, context),
+        )
     }
 
     /** replacer 为数组时构造属性白名单。 */
@@ -205,6 +273,12 @@ object JsonBuiltins {
                 holder,
                 listOf(JSString(key), value),
             )
+        }
+
+        // [[IsRawJSON]]：直接输出原始 JSON 文本
+        if (value is JSObject && value.isRawJson) {
+            return (value.getOwnDataValue(PropertyKey.Str("rawJSON")) as? JSString)?.value
+                ?: "null"
         }
 
         return serializeValue(
