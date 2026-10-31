@@ -1,5 +1,6 @@
 package com.muedsa.js.runtime.value
 
+import com.muedsa.js.runtime.PromiseCapability
 import com.muedsa.js.runtime.exception.JSException
 import kotlinx.coroutines.CompletableDeferred
 
@@ -18,11 +19,17 @@ class JSPromise(
         REJECTED,
     }
 
-    /** then 的响应记录。 */
+    /**
+     * then 的响应记录。
+     *
+     * child 用于内部派生的子 Promise；capability 用于 Promise.prototype.then
+     * 依据 SpeciesConstructor 得到的自定义 capability（此时 child 为 null）。
+     */
     data class Reaction(
         val onFulfilled: JSValue?,
         val onRejected: JSValue?,
-        val child: JSPromise,
+        val child: JSPromise?,
+        val capability: PromiseCapability? = null,
     )
 
     var state: State = State.PENDING

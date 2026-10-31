@@ -1,6 +1,7 @@
 package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
+import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSSymbol
 import com.muedsa.js.runtime.value.JSUndefined
@@ -43,7 +44,7 @@ object SymbolBuiltins {
         symbolPrototype.defineDataProperty(
             key = PropertyKey.Str("toString"),
             value = BuiltinHelpers.method(intrinsics, "toString", 0) { interpreter, thisValue, _ ->
-                val symbol = thisValue as? JSSymbol
+                val symbol = thisSymbolValue(thisValue)
                     ?: interpreter.typeError("Symbol.prototype.toString requires that 'this' be a Symbol")
                 JSString(symbol.toPrimitiveString())
             },
@@ -51,14 +52,23 @@ object SymbolBuiltins {
         symbolPrototype.defineDataProperty(
             key = PropertyKey.Str("valueOf"),
             value = BuiltinHelpers.method(intrinsics, "valueOf", 0) { interpreter, thisValue, _ ->
-                thisValue as? JSSymbol
+                thisSymbolValue(thisValue)
                     ?: interpreter.typeError("Symbol.prototype.valueOf requires that 'this' be a Symbol")
             },
+        )
+        // ES2015 Symbol.prototype[@@toPrimitive]：返回 Symbol 原始值
+        symbolPrototype.defineDataProperty(
+            key = PropertyKey.Sym(intrinsics.symbolToPrimitive),
+            value = BuiltinHelpers.method(intrinsics, "[Symbol.toPrimitive]", 1) { interpreter, thisValue, _ ->
+                thisSymbolValue(thisValue)
+                    ?: interpreter.typeError("Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol")
+            },
+            writable = false,
         )
         symbolPrototype.defineAccessorProperty(
             key = PropertyKey.Str("description"),
             get = BuiltinHelpers.method(intrinsics, "get description", 0) { interpreter, thisValue, _ ->
-                val symbol = thisValue as? JSSymbol
+                val symbol = thisSymbolValue(thisValue)
                     ?: interpreter.typeError("Symbol.prototype.description requires that 'this' be a Symbol")
                 symbol.description?.let { JSString(it) } ?: JSUndefined
             },
@@ -91,6 +101,11 @@ object SymbolBuiltins {
         wellKnown("toPrimitive", intrinsics.symbolToPrimitive)
         wellKnown("isConcatSpreadable", intrinsics.symbolIsConcatSpreadable)
         wellKnown("unscopables", intrinsics.symbolUnscopables)
+        wellKnown("match", intrinsics.symbolMatch)
+        wellKnown("replace", intrinsics.symbolReplace)
+        wellKnown("search", intrinsics.symbolSearch)
+        wellKnown("split", intrinsics.symbolSplit)
+        wellKnown("matchAll", intrinsics.symbolMatchAll)
 
         symbolConstructor.defineDataProperty(
             key = PropertyKey.Str("for"),
@@ -111,5 +126,12 @@ object SymbolBuiltins {
         )
 
         registry.defineGlobal("Symbol", symbolConstructor)
+    }
+
+    /** 提取 this 的 Symbol 原始值（支持 Symbol 包装对象）。 */
+    private fun thisSymbolValue(value: com.muedsa.js.runtime.value.JSValue): JSSymbol? = when (value) {
+        is JSSymbol -> value
+        is JSBoxedPrimitive -> value.primitive as? JSSymbol
+        else -> null
     }
 }

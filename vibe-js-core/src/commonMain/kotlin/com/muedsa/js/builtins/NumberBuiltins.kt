@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSBoolean
+import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
@@ -67,6 +68,20 @@ object NumberBuiltins {
         constant("EPSILON", 2.220446049250313e-16)
     }
 
+    /** Number.prototype 方法要求 this 为 Number 原始值/包装对象。 */
+    private fun numberReceiver(
+        interpreter: Interpreter,
+        thisValue: JSValue,
+        name: String,
+    ): Double = when (thisValue) {
+        is JSNumber -> thisValue.value
+        is JSBoxedPrimitive -> (thisValue.primitive as? JSNumber)?.value
+            ?: interpreter.typeError("$name requires that 'this' be a Number")
+
+        interpreter.intrinsics.numberPrototype -> 0.0
+        else -> interpreter.typeError("$name requires that 'this' be a Number")
+    }
+
     private fun installPrototypeMethods(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
         val numberPrototype = intrinsics.numberPrototype
@@ -74,23 +89,18 @@ object NumberBuiltins {
         numberPrototype.defineDataProperty(
             key = PropertyKey.Str("valueOf"),
             value = BuiltinHelpers.method(intrinsics, "valueOf", 0) { interpreter, thisValue, _ ->
-                JSNumber(interpreter.toNumber(thisValue))
+                JSNumber(numberReceiver(interpreter, thisValue, "Number.prototype.valueOf"))
             },
         )
 
-        numberPrototype.defineDataProperty(
-            key = PropertyKey.Sym(intrinsics.symbolToStringTag),
-            value = JSString("Number"),
-            writable = false,
-            enumerable = false,
-            configurable = true,
-        )
 
         numberPrototype.defineDataProperty(
             key = PropertyKey.Str("toString"),
             value = BuiltinHelpers.method(intrinsics, "toString", 1) { interpreter, thisValue, args ->
-                val number = interpreter.toNumber(thisValue)
-                val radix = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 10
+                val number = numberReceiver(interpreter, thisValue, "Number.prototype method")
+                val radix = args.getOrNull(0)
+                    ?.takeUnless { it is JSUndefined }
+                    ?.let { interpreter.toNumber(it).toInt() } ?: 10
                 if (radix < 2 || radix > 36) {
                     interpreter.rangeError("toString() radix must be between 2 and 36")
                 }
@@ -101,8 +111,10 @@ object NumberBuiltins {
         numberPrototype.defineDataProperty(
             key = PropertyKey.Str("toFixed"),
             value = BuiltinHelpers.method(intrinsics, "toFixed", 1) { interpreter, thisValue, args ->
-                val number = interpreter.toNumber(thisValue)
-                val digits = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
+                val number = numberReceiver(interpreter, thisValue, "Number.prototype method")
+                val digits = args.getOrNull(0)
+                    ?.takeUnless { it is JSUndefined }
+                    ?.let { interpreter.toNumber(it).toInt() } ?: 0
                 if (digits < 0 || digits > 100) {
                     interpreter.rangeError("toFixed() digits argument must be between 0 and 100")
                 }
@@ -113,7 +125,7 @@ object NumberBuiltins {
         numberPrototype.defineDataProperty(
             key = PropertyKey.Str("toExponential"),
             value = BuiltinHelpers.method(intrinsics, "toExponential", 1) { interpreter, thisValue, args ->
-                val number = interpreter.toNumber(thisValue)
+                val number = numberReceiver(interpreter, thisValue, "Number.prototype method")
                 val digits = args.getOrNull(0)
                     ?.takeUnless { it is JSUndefined }
                     ?.let { interpreter.toNumber(it).toInt() }
@@ -127,7 +139,7 @@ object NumberBuiltins {
         numberPrototype.defineDataProperty(
             key = PropertyKey.Str("toPrecision"),
             value = BuiltinHelpers.method(intrinsics, "toPrecision", 1) { interpreter, thisValue, args ->
-                val number = interpreter.toNumber(thisValue)
+                val number = numberReceiver(interpreter, thisValue, "Number.prototype method")
                 val precision = args.getOrNull(0)
                     ?.takeUnless { it is JSUndefined }
                     ?.let { interpreter.toNumber(it).toInt() }
@@ -144,7 +156,7 @@ object NumberBuiltins {
         numberPrototype.defineDataProperty(
             key = PropertyKey.Str("toLocaleString"),
             value = BuiltinHelpers.method(intrinsics, "toLocaleString", 0) { interpreter, thisValue, _ ->
-                JSString(NumberFormatting.toString(interpreter.toNumber(thisValue)))
+                JSString(NumberFormatting.toString(numberReceiver(interpreter, thisValue, "Number.prototype.toLocaleString")))
             },
         )
     }
@@ -174,6 +186,18 @@ object NumberBuiltins {
                 val value = args.getOrNull(0)
                 JSBoolean.getJsBoolean(
                     value is JSNumber && value.value.isFinite() && value.value % 1.0 == 0.0
+                )
+            },
+        )
+
+        numberConstructor.defineDataProperty(
+            key = PropertyKey.Str("isSafeInteger"),
+            value = BuiltinHelpers.method(intrinsics, "isSafeInteger", 1) { _, _, args ->
+                val value = args.getOrNull(0)
+                JSBoolean.getJsBoolean(
+                    value is JSNumber && value.value.isFinite() &&
+                        value.value % 1.0 == 0.0 &&
+                        kotlin.math.abs(value.value) <= 9007199254740991.0
                 )
             },
         )

@@ -18,6 +18,15 @@ class Binding(
     var value: JSValue,
     val mutable: Boolean,
     var initialized: Boolean = true,
+    /** 是否为词法（let/const/class）绑定；var/参数为 false */
+    val lexical: Boolean = false,
+    /**
+     * 是否为严格绑定（规范 SetMutableBinding 的 S 参数置真）。
+     *
+     * const/class 的不可变绑定始终严格，非严格代码赋值也抛 TypeError；
+     * 具名函数表达式的名字绑定则是非严格不可变绑定（sloppy 静默忽略）。
+     */
+    val strict: Boolean = false,
 )
 
 /**
@@ -111,7 +120,11 @@ class DeclarativeEnvironment(
                 throw JSException(JSError("ReferenceError", "Cannot access '$name' before initialization"))
             }
             if (!binding.mutable) {
-                throw JSException(JSError("TypeError", "Assignment to constant variable."))
+                // 规范 SetMutableBinding：严格绑定或严格代码下抛 TypeError，否则静默忽略
+                if (binding.strict || strict) {
+                    throw JSException(JSError("TypeError", "Assignment to constant variable."))
+                }
+                return true
             }
             binding.value = value
             return true
@@ -139,10 +152,18 @@ class DeclarativeEnvironment(
         if (bindings.containsKey(name)) {
             throw JSException(JSError("SyntaxError", "Identifier '$name' has already been declared"))
         }
-        bindings[name] = Binding(value, mutable = true)
+        bindings[name] = Binding(value, mutable = true, lexical = true)
     }
 
     override fun createConstBinding(name: String, value: JSValue) {
+        if (bindings.containsKey(name)) {
+            throw JSException(JSError("SyntaxError", "Identifier '$name' has already been declared"))
+        }
+        bindings[name] = Binding(value, mutable = false, lexical = true, strict = true)
+    }
+
+    /** 具名函数表达式的名字绑定：非严格不可变绑定（规范 CreateImmutableBinding(name, false)）。 */
+    fun createFunctionNameBinding(name: String, value: JSValue) {
         if (bindings.containsKey(name)) {
             throw JSException(JSError("SyntaxError", "Identifier '$name' has already been declared"))
         }
@@ -165,11 +186,20 @@ class DeclarativeEnvironment(
         if (bindings.containsKey(name)) {
             throw JSException(JSError("SyntaxError", "Identifier '$name' has already been declared"))
         }
-        bindings[name] = Binding(JSUndefined, mutable = mutable, initialized = false)
+        bindings[name] = Binding(
+            JSUndefined,
+            mutable = mutable,
+            initialized = false,
+            lexical = true,
+            strict = !mutable,
+        )
     }
 
     /** 当前作用域是否存在尚未初始化的绑定。 */
     fun hasUninitializedLocal(name: String): Boolean = bindings[name]?.initialized == false
+
+    /** 当前作用域是否存在同名词法绑定（let/const/class）。 */
+    fun hasOwnLexicalBinding(name: String): Boolean = bindings[name]?.lexical == true
 
     /** 初始化通过 [declareLexical] 预声明的绑定。 */
     fun initializeLexical(name: String, value: JSValue) {
@@ -185,7 +215,7 @@ class DeclarativeEnvironment(
             binding.value = value
             binding.initialized = true
         } else {
-            bindings[name] = Binding(value, mutable = true)
+            bindings[name] = Binding(value, mutable = true, lexical = true)
         }
     }
 

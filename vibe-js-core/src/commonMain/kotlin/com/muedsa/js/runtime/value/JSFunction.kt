@@ -26,7 +26,7 @@ import com.muedsa.js.runtime.Environment
  * @property functionPrototypeObject 函数的 `.prototype` 对象（箭头函数为 null）
  */
 class JSFunction(
-    val name: String,
+    name: String,
     val params: List<Parameter>,
     val body: BlockStatement?,
     val closure: Environment,
@@ -38,28 +38,76 @@ class JSFunction(
     val expressionBody: Expression? = null,
     val isArrow: Boolean = false,
     val isAsync: Boolean = false,
+    isMethod: Boolean = false,
     val lexicalThis: JSValue? = null,
+    /** 箭头函数捕获的 new.target */
+    val lexicalNewTarget: JSValue? = null,
+    /** 函数体语法上是否允许 new.target（箭头函数继承外层） */
+    val allowsNewTarget: Boolean = true,
     val isClassConstructor: Boolean = false,
     val isDefaultDerivedConstructor: Boolean = false,
-    val homeObject: JSObject? = null,
+    homeObject: JSObject? = null,
     val superConstructor: JSValue? = null,
-    val superBase: JSObject? = null,
+    superBase: JSObject? = null,
 ) : JSObject(prototype) {
 
-    /** 函数 length：第一个默认值/rest 参数之前的参数个数。 */
-    val functionLength: Int = params.takeWhile { it.defaultValue == null && !it.rest }.size
+    /** 方法所属对象（super 查找基准）；对象字面量方法在构造后补充。 */
+    var homeObject: JSObject? = homeObject
+        private set
 
-    override fun toPrimitiveString(): String =
-        "function ${if (name.isEmpty()) "" else name}(${params.joinToString(", ") { it.name ?: "[pattern]" }}) { [code] }"
+    /** 构造器/方法的 super 基对象（对象方法动态使用 homeObject.prototype）。 */
+    var superBase: JSObject? = superBase
+        private set
 
-    init {
+    /** 为对象字面量方法补充 HomeObject 与初始 super 基。 */
+    fun setMethodHome(home: JSObject, base: JSObject?) {
+        homeObject = home
+        superBase = base
+    }
+
+    /** 函数名；匿名函数为空串，NamedEvaluation 时可更新。 */
+    var name: String = name
+        private set
+
+    /** 是否为方法（无 prototype、不可构造）；对象字面量方法在构造后标记。 */
+    var isMethod: Boolean = isMethod
+        private set
+
+    /** 标记为方法并移除已创建的 prototype 属性。 */
+    fun markAsMethod() {
+        isMethod = true
+        removeOwnPropertyIgnoringAttributes(PropertyKey.PROTOTYPE)
+    }
+
+    /** ES2015 SetFunctionName：更新 name 自有属性（configurable，允许重定义）。 */
+    fun setName(newName: String) {
+        if (name == newName) return
+        name = newName
+        val existing = getOwnProperty(PropertyKey.NAME)
+        // 类静态 name()/get name() 已覆盖内建 name 属性时，保留静态成员
+        val builtInName = existing != null && existing.isData && !existing.writable
+        if (!builtInName) return
         defineDataProperty(
             PropertyKey.NAME,
-            JSString(name),
+            JSString(newName),
             writable = false,
             enumerable = false,
             configurable = true,
         )
+    }
+
+    /** 函数 length：第一个默认值/rest 参数之前的参数个数。 */
+    val functionLength: Int = params.takeWhile { it.defaultValue == null && !it.rest }.size
+
+    /** 动态构造（Function/AsyncFunction）保留的源码文本，供 Function.prototype.toString 使用。 */
+    var sourceText: String? = null
+
+    override fun toPrimitiveString(): String =
+        sourceText
+            ?: "function ${if (name.isEmpty()) "" else name}(${params.joinToString(", ") { it.name ?: "[pattern]" }}) { [native code] }"
+
+    init {
+        // 规范顺序：length 在 name 之前
         defineDataProperty(
             PropertyKey.LENGTH,
             JSNumber(functionLength.toDouble()),
@@ -67,7 +115,14 @@ class JSFunction(
             enumerable = false,
             configurable = true,
         )
-        if (functionPrototypeObject != null) {
+        defineDataProperty(
+            PropertyKey.NAME,
+            JSString(name),
+            writable = false,
+            enumerable = false,
+            configurable = true,
+        )
+        if (functionPrototypeObject != null && !isMethod) {
             defineDataProperty(
                 PropertyKey.PROTOTYPE,
                 functionPrototypeObject,

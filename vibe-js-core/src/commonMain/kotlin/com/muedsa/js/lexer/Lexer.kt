@@ -1,5 +1,7 @@
 package com.muedsa.js.lexer
 
+import com.muedsa.js.runtime.regex.JsRegexSyntax
+
 /**
  * 词法分析器：把 JavaScript 源码转换为 [Token] 序列。
  *
@@ -28,6 +30,33 @@ class Lexer(private val input: String) {
 
     /** 上一个有效 Token 的类型，用于区分正则字面量与除法。 */
     private var lastTokenType: TokenType? = null
+
+    /** 当前字符串字面量是否出现旧式八进制转义（严格模式禁止）。 */
+    private var legacyOctalEscape = false
+
+    /** 括号是否为控制语句条件括号（if/while/for/with/switch/catch）。 */
+    private val controlParenStack = mutableListOf<Boolean>()
+
+    /** 最近一个右括号是否结束控制语句条件。 */
+    private var lastClosedControlParen = false
+
+    /** 花括号是否为语句块（true）或对象字面量（false）。 */
+    private val braceStack = mutableListOf<Boolean>()
+
+    /** 最近一个右花括号是否结束语句块。 */
+    private var lastClosedBraceWasBlock = false
+
+    /** 括号/方括号深度与 class 体花括号判定状态（用于正则/除号）。 */
+    private var parenDepth = 0
+    private var bracketDepth = 0
+    private var pendingClassBody = false
+    private var classBodyParenDepth = 0
+    private var classBodyBracketDepth = 0
+
+    private val controlParenKeywords = setOf(
+        TokenType.IF, TokenType.WHILE, TokenType.FOR, TokenType.WITH,
+        TokenType.SWITCH, TokenType.CATCH,
+    )
 
     /** 关键字表：标识符文本 -> Token 类型。 */
     private val keywords: Map<String, TokenType> = mapOf(
@@ -132,8 +161,9 @@ class Lexer(private val input: String) {
             current == '`' ->
                 readTemplate(startLine, startColumn, startOffset, newlineBefore)
 
-            // 标识符 / 关键字
-            isIdentifierStart(current) ->
+            // 标识符 / 关键字（支持 \uXXXX / \u{...} 转义与 astral 起始）
+            isIdentifierStart(current) || (current == '\\' && peek(1) == 'u') ||
+                isAstralPairAt(pos) ->
                 readIdentifierOrKeyword(startLine, startColumn, startOffset, newlineBefore)
 
             current == '+' -> {
@@ -409,31 +439,49 @@ class Lexer(private val input: String) {
             }
 
             current == '(' -> {
+                parenDepth++
+                controlParenStack.add(lastTokenType in controlParenKeywords)
                 advance()
                 makeToken(TokenType.LPAREN, "(", startLine, startColumn, startOffset, newlineBefore)
             }
 
             current == ')' -> {
+                if (parenDepth > 0) parenDepth--
+                lastClosedControlParen = controlParenStack.removeLastOrNull() == true
                 advance()
                 makeToken(TokenType.RPAREN, ")", startLine, startColumn, startOffset, newlineBefore)
             }
 
             current == '{' -> {
+                val isClassBody = pendingClassBody &&
+                    parenDepth == classBodyParenDepth &&
+                    bracketDepth == classBodyBracketDepth
+                if (isClassBody) pendingClassBody = false
+                braceStack.add(
+                    isClassBody || isBlockBrace(
+                        previous = lastTokenType,
+                        newlineBefore = newlineBefore,
+                        previousControlParen = lastClosedControlParen,
+                    )
+                )
                 advance()
                 makeToken(TokenType.LBRACE, "{", startLine, startColumn, startOffset, newlineBefore)
             }
 
             current == '}' -> {
+                lastClosedBraceWasBlock = braceStack.removeLastOrNull() ?: true
                 advance()
                 makeToken(TokenType.RBRACE, "}", startLine, startColumn, startOffset, newlineBefore)
             }
 
             current == '[' -> {
+                bracketDepth++
                 advance()
                 makeToken(TokenType.LBRACKET, "[", startLine, startColumn, startOffset, newlineBefore)
             }
 
             current == ']' -> {
+                if (bracketDepth > 0) bracketDepth--
                 advance()
                 makeToken(TokenType.RBRACKET, "]", startLine, startColumn, startOffset, newlineBefore)
             }
@@ -490,6 +538,7 @@ class Lexer(private val input: String) {
                     if (digits == 0) {
                         throw lexerError("Invalid hexadecimal number", startLine, startColumn, startOffset)
                     }
+                    rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
                     return makeToken(TokenType.NUMBER_HEX, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
                 }
 
@@ -504,6 +553,7 @@ class Lexer(private val input: String) {
                     if (digits == 0) {
                         throw lexerError("Invalid octal number", startLine, startColumn, startOffset)
                     }
+                    rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
                     return makeToken(TokenType.NUMBER_OCT, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
                 }
 
@@ -518,18 +568,46 @@ class Lexer(private val input: String) {
                     if (digits == 0) {
                         throw lexerError("Invalid binary number", startLine, startColumn, startOffset)
                     }
+                    rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
                     return makeToken(TokenType.NUMBER_BIN, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
                 }
             }
         }
 
+        // 旧式八进制（01）与非八进制十进制（09）：整数部分先读取以区分二者
         var hasDigits = false
-
-        // 整数部分（前导小数点时可以为空）
-        while (peek().isDigit() || peek() == '_') {
-            if (peek().isDigit()) hasDigits = true
-            sb.append(peek())
-            advance()
+        val legacyCandidate = peek() == '0' && peek(1).isDigit()
+        var nonOctalDecimal = false
+        if (legacyCandidate) {
+            while (peek().isDigit() || peek() == '_') {
+                if (peek().isDigit()) {
+                    hasDigits = true
+                    if (peek() in '8'..'9') nonOctalDecimal = true
+                }
+                sb.append(peek())
+                advance()
+            }
+            if (!nonOctalDecimal) {
+                // legacy octal 不能带小数，但允许 01.a 属性访问
+                if (peek() == '.' && peek(1).isDigit()) {
+                    throw lexerError("Unexpected number", startLine, startColumn, startOffset)
+                }
+                rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
+                return makeToken(TokenType.NUMBER, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+            }
+            // 09.x 非法，09..x 合法
+            if (peek() == '.' && !peek(1).isDigit() &&
+                (isIdentifierStart(peek(1)) || peek(1) == '\\' || isAstralPairAt(pos + 1))
+            ) {
+                throw lexerError("Unexpected number", startLine, startColumn, startOffset)
+            }
+        } else {
+            // 整数部分（前导小数点时可以为空）
+            while (peek().isDigit() || peek() == '_') {
+                if (peek().isDigit()) hasDigits = true
+                sb.append(peek())
+                advance()
+            }
         }
 
         // 小数部分
@@ -566,7 +644,16 @@ class Lexer(private val input: String) {
             }
         }
 
+        rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
         return makeToken(TokenType.NUMBER, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+    }
+
+    /** 数字字面量后不允许直接跟标识符（如 3in）。 */
+    private fun rejectIdentifierAfterNumber(startLine: Int, startColumn: Int, startOffset: Int) {
+        val c = peek()
+        if (isIdentifierStart(c) || (c == '\\' && peek(1) == 'u') || isAstralPairAt(pos)) {
+            throw lexerError("Identifier directly after number", startLine, startColumn, startOffset)
+        }
     }
 
     /**
@@ -581,9 +668,11 @@ class Lexer(private val input: String) {
         startOffset: Int,
         newlineBefore: Boolean,
     ): Token {
+        legacyOctalEscape = false
         val quote = peek()
         advance()
         val sb = StringBuilder()
+        var containsEscape = false
 
         while (true) {
             if (pos >= input.length) {
@@ -593,13 +682,23 @@ class Lexer(private val input: String) {
             when {
                 c == quote -> {
                     advance()
-                    return makeToken(TokenType.STRING, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+                    return makeToken(
+                        TokenType.STRING,
+                        sb.toString(),
+                        startLine,
+                        startColumn,
+                        startOffset,
+                        newlineBefore,
+                        containsEscape = containsEscape,
+                        legacyOctal = legacyOctalEscape,
+                    )
                 }
 
-                c == '\n' || c == '\r' || c == '\u2028' || c == '\u2029' ->
+                c == '\n' || c == '\r' ->
                     throw lexerError("Unterminated string literal", startLine, startColumn, startOffset)
 
                 c == '\\' -> {
+                    containsEscape = true
                     advance()
                     readEscapeSequence(sb)
                 }
@@ -626,13 +725,34 @@ class Lexer(private val input: String) {
             'b' -> { sb.append('\b'); advance() }
             'f' -> { sb.append('\u000C'); advance() }
             'v' -> { sb.append('\u000B'); advance() }
-            // 简化：\0 只处理 NUL，不实现 legacy 八进制转义
             '0' -> {
                 advance()
                 if (peek().isDigit()) {
-                    throw lexerError("Octal escape sequences are not allowed", line, column, pos)
+                    // 旧式八进制转义（严格模式下由 Parser 报错）
+                    legacyOctalEscape = true
+                    var value = 0
+                    var count = 0
+                    while (count < 2 && peek() in '0'..'7') {
+                        value = value * 8 + (peek() - '0')
+                        advance()
+                        count++
+                    }
+                    sb.append(value.toChar())
+                } else {
+                    sb.append('\u0000')
                 }
-                sb.append('\u0000')
+            }
+
+            in '1'..'7' -> {
+                legacyOctalEscape = true
+                var value = 0
+                var count = 0
+                while (count < 3 && peek() in '0'..'7') {
+                    value = value * 8 + (peek() - '0')
+                    advance()
+                    count++
+                }
+                sb.append(value.toChar())
             }
 
             '\\' -> { sb.append('\\'); advance() }
@@ -652,6 +772,11 @@ class Lexer(private val input: String) {
             'u' -> {
                 advance()
                 readUnicodeEscape(sb)
+            }
+
+            '8', '9' -> {
+                // NonEscapeSequence 中的十进制数字 8/9 在字符串中非法
+                throw lexerError("Invalid escape sequence", line, column, pos)
             }
 
             else -> {
@@ -752,6 +877,9 @@ class Lexer(private val input: String) {
                     if (pos >= input.length) {
                         throw lexerError("Unterminated regular expression", startLine, startColumn, startOffset)
                     }
+                    if (peek() == '\n' || peek() == '\r' || peek() == '\u2028' || peek() == '\u2029') {
+                        throw lexerError("Unterminated regular expression", startLine, startColumn, startOffset)
+                    }
                     pattern.append(peek())
                     advance()
                 }
@@ -785,6 +913,19 @@ class Lexer(private val input: String) {
             flags.append(peek())
             advance()
         }
+        val flagText = flags.toString()
+        val seenFlags = mutableSetOf<Char>()
+        for (flag in flagText) {
+            if (flag !in "gimsuy" || !seenFlags.add(flag)) {
+                throw lexerError("Invalid regular expression flags", startLine, startColumn, startOffset)
+            }
+        }
+        if ('u' in flagText) {
+            val error = JsRegexSyntax.unicodeError(pattern.toString())
+            if (error != null) {
+                throw lexerError(error, startLine, startColumn, startOffset)
+            }
+        }
 
         return Token(
             type = TokenType.REGEX,
@@ -794,7 +935,7 @@ class Lexer(private val input: String) {
                 end = SourcePosition(line, column, pos),
             ),
             precededByNewline = newlineBefore,
-            regexFlags = flags.toString(),
+            regexFlags = flagText,
         )
     }
 
@@ -838,7 +979,11 @@ class Lexer(private val input: String) {
                 c == '\\' -> {
                     val rawStart = pos
                     advance()
+                    legacyOctalEscape = false
                     readEscapeSequence(text)
+                    if (legacyOctalEscape) {
+                        throw lexerError("Octal escape sequences are not allowed in template literals", line, column, pos)
+                    }
                     rawText.append(input, rawStart, pos)
                 }
 
@@ -962,6 +1107,9 @@ class Lexer(private val input: String) {
      */
     private fun isRegexAllowed(previous: TokenType?): Boolean {
         if (previous == null) return true
+        // 控制语句条件或语句块结束后，`/` 处于语句起始位置
+        if (previous == TokenType.RPAREN && lastClosedControlParen && looksLikeRegexLiteral()) return true
+        if (previous == TokenType.RBRACE && lastClosedBraceWasBlock && looksLikeRegexLiteral()) return true
         return previous in setOf(
             TokenType.LPAREN, TokenType.LBRACKET, TokenType.LBRACE,
             TokenType.COMMA, TokenType.SEMICOLON, TokenType.COLON, TokenType.QUESTION,
@@ -996,13 +1144,190 @@ class Lexer(private val input: String) {
         newlineBefore: Boolean,
     ): Token {
         val sb = StringBuilder()
-        while (isIdentifierPart(peek())) {
-            sb.append(peek())
+        // 标识符里允许 \uXXXX / \u{...} 转义；转义得到的字符按解码后的值参与判断
+        var escaped = false
+        var first = true
+        while (true) {
+            val c = peek()
+            if (c == '\\') {
+                if (peek(1) != 'u') {
+                    throw lexerError("Invalid escape in identifier", startLine, startColumn, startOffset)
+                }
+                advance()
+                advance()
+                val codePoint = if (peek() == '{') {
+                    advance()
+                    var value = 0
+                    var digits = 0
+                    while (peek() != '}' && pos < input.length) {
+                        val digit = hexDigitValue(peek())
+                        if (digit < 0 || digits >= 6) {
+                            throw lexerError("Invalid unicode escape in identifier", startLine, startColumn, startOffset)
+                        }
+                        value = value * 16 + digit
+                        digits++
+                        advance()
+                    }
+                    if (digits == 0 || peek() != '}') {
+                        throw lexerError("Invalid unicode escape in identifier", startLine, startColumn, startOffset)
+                    }
+                    advance() // '}'
+                    value
+                } else {
+                    var value = 0
+                    repeat(4) {
+                        val digit = hexDigitValue(peek())
+                        if (digit < 0) {
+                            throw lexerError("Invalid unicode escape in identifier", startLine, startColumn, startOffset)
+                        }
+                        value = value * 16 + digit
+                        advance()
+                    }
+                    value
+                }
+                val decoded: String
+                val valid: Boolean
+                if (codePoint > 0xFFFF) {
+                    decoded = buildString {
+                        val value = codePoint - 0x10000
+                        append(((value shr 10) + 0xD800).toChar())
+                        append(((value and 0x3FF) + 0xDC00).toChar())
+                    }
+                    valid = if (first) {
+                        isAstralIdentifierStart(codePoint)
+                    } else {
+                        isAstralIdentifierPart(codePoint)
+                    }
+                } else {
+                    val character = codePoint.toChar()
+                    decoded = character.toString()
+                    valid = if (first) isIdentifierStart(character) else isIdentifierPart(character)
+                }
+                if (!valid) {
+                    throw lexerError("Invalid identifier escape", startLine, startColumn, startOffset)
+                }
+                sb.append(decoded)
+                escaped = true
+                first = false
+                continue
+            }
+            if (isAstralPairAt(pos)) {
+                val codePoint = ((c.code - 0xD800) shl 10) + (peek(1).code - 0xDC00) + 0x10000
+                val valid = if (first) isAstralIdentifierStart(codePoint) else isAstralIdentifierPart(codePoint)
+                if (!valid) {
+                    throw lexerError("Invalid identifier character", startLine, startColumn, startOffset)
+                }
+                sb.append(c)
+                advance()
+                sb.append(peek())
+                advance()
+                first = false
+                continue
+            }
+            if (!isIdentifierPart(c)) break
+            sb.append(c)
             advance()
+            first = false
         }
         val text = sb.toString()
-        val type = keywords[text] ?: TokenType.IDENTIFIER
-        return makeToken(type, text, startLine, startColumn, startOffset, newlineBefore)
+        // 转义关键字统一先作为标识符输出；属性名/成员访问直接可用，
+        // 标识符位置由 Parser 根据 containsEscape 与保留字集合拒绝。
+        val type = when {
+            lastTokenType == TokenType.DOT -> TokenType.IDENTIFIER
+            escaped -> TokenType.IDENTIFIER
+            else -> keywords[text] ?: TokenType.IDENTIFIER
+        }
+        if (type == TokenType.CLASS) {
+            pendingClassBody = true
+            classBodyParenDepth = parenDepth
+            classBodyBracketDepth = bracketDepth
+        }
+        return makeToken(
+            type = type,
+            value = text,
+            startLine = startLine,
+            startColumn = startColumn,
+            startOffset = startOffset,
+            newlineBefore = newlineBefore,
+            containsEscape = escaped,
+        )
+    }
+
+    /** 当前字符是否为 astral 代理对（用于标识符）。 */
+    private fun isAstralPairAt(index: Int): Boolean {
+        if (index + 1 >= input.length) return false
+        return input[index].isHighSurrogate() && input[index + 1].isLowSurrogate()
+    }
+
+    /** astral 平面标识符起止字符的近似范围（覆盖语料中的 Deseret/CJK/数学字母等）。 */
+    private fun isAstralIdentifierStart(codePoint: Int): Boolean =
+        codePoint in 0x10000..0x1004D ||
+            codePoint in 0x10480..0x104FF ||
+            codePoint in 0x1D400..0x1D7FF ||
+            codePoint in 0x1EE00..0x1EEFF ||
+            codePoint in 0x20000..0x2B81D ||
+            codePoint in 0x2B820..0x2CEAF ||
+            codePoint in 0x2CEB0..0x2EBEF ||
+            codePoint in 0x30000..0x3134F
+
+    /** astral 标识符后续字符：含变体选择符等组合字符。 */
+    private fun isAstralIdentifierPart(codePoint: Int): Boolean =
+        isAstralIdentifierStart(codePoint) || codePoint in 0xE0100..0xE01EF
+
+    private fun hexDigitValue(c: Char): Int = when (c) {
+        in '0'..'9' -> c - '0'
+        in 'a'..'f' -> c - 'a' + 10
+        in 'A'..'F' -> c - 'A' + 10
+        else -> -1
+    }
+
+    /**
+     * 判断 `{` 是语句块还是对象字面量，用于正则/除号判定。
+     */
+    private fun isBlockBrace(
+        previous: TokenType?,
+        newlineBefore: Boolean,
+        previousControlParen: Boolean,
+    ): Boolean {
+        if (previous == null) return true
+        when (previous) {
+            TokenType.SEMICOLON, TokenType.LBRACE, TokenType.RBRACE, TokenType.COLON,
+            TokenType.ELSE, TokenType.DO, TokenType.TRY, TokenType.FINALLY,
+            TokenType.ARROW, TokenType.RPAREN,
+            -> return true
+            TokenType.RETURN -> return newlineBefore
+            else -> Unit
+        }
+        // 换行后出现的 `{` 通常开启新语句；但赋值/逗号/括号等仍需继续表达式
+        if (newlineBefore) {
+            return previous !in setOf(
+                TokenType.ASSIGN, TokenType.COMMA, TokenType.LPAREN, TokenType.LBRACKET,
+                TokenType.COLON, TokenType.RETURN, TokenType.ARROW,
+                TokenType.PLUS, TokenType.MINUS, TokenType.MULTIPLY, TokenType.DIVIDE,
+                TokenType.MODULO, TokenType.EXPONENT, TokenType.AND, TokenType.OR,
+                TokenType.QUESTION, TokenType.EQ, TokenType.NEQ, TokenType.STRICT_EQ,
+                TokenType.STRICT_NEQ, TokenType.LT, TokenType.LTE, TokenType.GT, TokenType.GTE,
+            )
+        }
+        return false
+    }
+
+    /** 从当前位置的 `/` 向后扫描，判断是否形如完整的正则字面量。 */
+    private fun looksLikeRegexLiteral(): Boolean {
+        var index = pos + 1
+        var inClass = false
+        while (index < input.length) {
+            val c = input[index]
+            when {
+                c == '\n' || c == '\r' || c == '\u2028' || c == '\u2029' -> return false
+                c == '\\' -> index++
+                c == '[' -> inClass = true
+                c == ']' -> inClass = false
+                c == '/' && !inClass -> return true
+            }
+            index++
+        }
+        return false
     }
 
     /**
@@ -1016,13 +1341,33 @@ class Lexer(private val input: String) {
                     advance()
                 }
 
-                ' ', '\t', '\u000B', '\u000C', '\u00A0', '\uFEFF' -> advance()
+                ' ', '\t', '\u000B', '\u000C', '\u00A0', '\uFEFF',
+                '\u1680', in '\u2000'..'\u200A', '\u202F', '\u205F', '\u3000' -> advance()
 
                 '/' -> {
                     when (peek(1)) {
                         '/' -> skipLineComment()
                         '*' -> skipBlockComment()
                         else -> return
+                    }
+                }
+
+                // Annex B HTML 注释：`<!--` 任意位置，`-->` 仅在行首（可前置空白）
+                '<' -> {
+                    if (peek(1) == '!' && peek(2) == '-' && peek(3) == '-') {
+                        repeat(4) { advance() }
+                        skipHtmlCommentTail()
+                    } else {
+                        return
+                    }
+                }
+
+                '-' -> {
+                    if (peek(1) == '-' && peek(2) == '>' && isAtLineStartIgnoringWhitespace()) {
+                        repeat(3) { advance() }
+                        skipHtmlCommentTail()
+                    } else {
+                        return
                     }
                 }
 
@@ -1037,9 +1382,41 @@ class Lexer(private val input: String) {
     private fun skipLineComment() {
         advance() // '/'
         advance() // '/'
-        while (pos < input.length && peek() != '\n' && peek() != '\r') {
+        skipHtmlCommentTail()
+    }
+
+    /** 跳至行尾（不消费换行，交由主循环记录）。 */
+    private fun skipHtmlCommentTail() {
+        while (pos < input.length && peek() != '\n' && peek() != '\r' &&
+            peek() != '\u2028' && peek() != '\u2029'
+        ) {
             advance()
         }
+    }
+
+    /** 当前行从行首到当前位置是否只有空白（用于 Annex B `-->` 注释）。 */
+    private fun isAtLineStartIgnoringWhitespace(): Boolean {
+        var index = pos - 1
+        while (index >= 0) {
+            val c = input[index]
+            if (c == '\n' || c == '\r' || c == '\u2028' || c == '\u2029') return true
+            if (c == '/' && index >= 1 && input[index - 1] == '*') {
+                // 跳过紧邻的块注释，再继续检查注释前的行首
+                var cursor = index - 2
+                while (cursor >= 1) {
+                    if (input[cursor - 1] == '/' && input[cursor] == '*') break
+                    cursor--
+                }
+                if (cursor < 1) return false
+                index = cursor - 2
+                continue
+            }
+            val isWhitespace = c == ' ' || c == '\t' || c == '\u000B' || c == '\u000C' ||
+                c == '\u00A0' || c == '\uFEFF' || c.category == CharCategory.SPACE_SEPARATOR
+            if (!isWhitespace) return false
+            index--
+        }
+        return true
     }
 
     /**
@@ -1066,10 +1443,30 @@ class Lexer(private val input: String) {
     }
 
     /** 判断字符是否可作为标识符首字符。 */
-    private fun isIdentifierStart(c: Char): Boolean = c == '_' || c == '$' || c.isLetter()
+    private fun isIdentifierStart(c: Char): Boolean =
+        c == '_' || c == '$' || c.isLetter() ||
+            c.category == CharCategory.LETTER_NUMBER ||
+            c in OTHER_ID_START
 
-    /** 判断字符是否可作为标识符后续字符。 */
-    private fun isIdentifierPart(c: Char): Boolean = c == '_' || c == '$' || c.isLetterOrDigit()
+    /** 判断字符是否可作为标识符后续字符（Unicode ID_Continue 的常用近似）。 */
+    private fun isIdentifierPart(c: Char): Boolean =
+        isIdentifierStart(c) || c.isDigit() ||
+            c.category == CharCategory.DECIMAL_DIGIT_NUMBER ||
+            c.category == CharCategory.NON_SPACING_MARK ||
+            c.category == CharCategory.ENCLOSING_MARK ||
+            c.category == CharCategory.COMBINING_SPACING_MARK ||
+            c.category == CharCategory.CONNECTOR_PUNCTUATION ||
+            c == '\u200C' || c == '\u200D' ||
+            c in OTHER_ID_CONTINUE
+
+    private companion object {
+        /** Unicode Other_ID_Start。 */
+        val OTHER_ID_START = setOf('\u1885', '\u1886', '\u2118', '\u212E', '\u309B', '\u309C')
+
+        /** Unicode Other_ID_Continue。 */
+        val OTHER_ID_CONTINUE = setOf('\u00B7', '\u0387', '\u19DA') +
+            ('\u1369'..'\u1371').toSet()
+    }
 
     /** 判断字符是否为十六进制数字。 */
     private fun isHexDigit(c: Char): Boolean =
@@ -1129,6 +1526,8 @@ class Lexer(private val input: String) {
         startColumn: Int,
         startOffset: Int,
         newlineBefore: Boolean,
+        containsEscape: Boolean = false,
+        legacyOctal: Boolean = false,
     ): Token = Token(
         type = type,
         value = value,
@@ -1137,6 +1536,8 @@ class Lexer(private val input: String) {
             end = SourcePosition(line, column, pos),
         ),
         precededByNewline = newlineBefore,
+        containsEscape = containsEscape,
+        legacyOctal = legacyOctal,
     )
 
     /** 构造词法错误（范围从 start 到当前位置）。 */

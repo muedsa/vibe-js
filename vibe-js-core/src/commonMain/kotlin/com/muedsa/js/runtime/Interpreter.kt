@@ -37,6 +37,9 @@ import com.muedsa.js.ast.NumberLiteral
 import com.muedsa.js.ast.ObjectLiteral
 import com.muedsa.js.ast.ObjectProperty
 import com.muedsa.js.ast.ObjectSpreadProperty
+import com.muedsa.js.ast.OptionalChainCall
+import com.muedsa.js.ast.OptionalChainExpr
+import com.muedsa.js.ast.OptionalChainMember
 import com.muedsa.js.ast.Parameter
 import com.muedsa.js.ast.Program
 import com.muedsa.js.ast.PropertyKind
@@ -65,6 +68,11 @@ import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.exception.StackFrame
+import com.muedsa.js.runtime.regex.JsRegex
+import com.muedsa.js.runtime.regex.JsRegexSyntax
+import com.muedsa.js.runtime.regex.JsRegexEngine
+import com.muedsa.js.runtime.regex.KotlinJsRegex
+import com.muedsa.js.runtime.value.JSArguments
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSBoxedPrimitive
@@ -186,6 +194,155 @@ class Interpreter(
         return evaluate(expression)
     }
 
+    /**
+     * 执行 eval 源码。
+     *
+     * 当前实现按“直接 eval”处理：共享调用方的词法环境与 this，
+     * 并继承调用方或 eval 源码自身的严格模式。
+     */
+    suspend fun evaluateEvalSource(source: String): JSValue {
+        val previousFrame = frame
+        val caller = previousFrame ?: ExecutionContext(
+            lexicalEnv = context.globalEnvironment,
+            thisValue = context.globalObject,
+            strict = false,
+        )
+        val callerFunction = caller.function
+        // 直接 eval 的代码继承调用方的严格模式与 super 语法上下文
+        val program = try {
+            Parser(
+                Lexer(source).tokenize(),
+                strictContext = caller.strict,
+                superPropertyContext = callerFunction?.homeObject != null ||
+                    callerFunction?.superBase != null,
+                superCallContext = callerFunction?.let {
+                    it.isClassConstructor && it.superConstructor != null
+                } == true,
+                newTargetContext = callerFunction != null && callerFunction.allowsNewTarget,
+            ).parseProgram()
+        } catch (error: ParseException) {
+            syntaxError(error.message ?: "Invalid eval code")
+        } catch (error: LexerException) {
+            syntaxError(error.message ?: "Invalid eval code")
+        }
+
+        val evalStrict = caller.strict || program.strict
+        // 参数默认值中的直接 eval：var 声明与尚未初始化的参数绑定冲突属于 SyntaxError
+        if (!evalStrict) {
+            val callerDeclarative = caller.lexicalEnv as? DeclarativeEnvironment
+            if (callerDeclarative != null) {
+                val varNames = program.varDeclarations +
+                    program.functionDeclarations.map { it.name }
+                for (name in varNames) {
+                    if (callerDeclarative.hasUninitializedLocal(name)) {
+                        throw JSException(
+                            JSError("SyntaxError", "Identifier '$name' has already been declared")
+                        )
+                    }
+                }
+                checkEvalVarNameConflicts(caller.lexicalEnv, varNames)
+            }
+        }
+        // 直接 eval 始终拥有独立词法环境；sloppy 的 var/function 提升到调用方 var 作用域
+        val lexicalEnvironment = DeclarativeEnvironment(parent = caller.lexicalEnv)
+        val varEnvironment = if (evalStrict) {
+            DeclarativeEnvironment(parent = lexicalEnvironment, isVarScope = true)
+        } else {
+            caller.lexicalEnv.findVarScope()
+        }
+        val executionEnvironment = if (evalStrict) varEnvironment else lexicalEnvironment
+        frame = ExecutionContext(
+            lexicalEnv = executionEnvironment,
+            thisValue = caller.thisValue,
+            strict = evalStrict,
+            function = callerFunction,
+            newTarget = caller.newTarget,
+        )
+        return try {
+            hoistDeclarations(
+                varEnvironment,
+                program.functionDeclarations,
+                program.varDeclarations,
+            )
+            predeclareLexical(program.body, executionEnvironment)
+            when (val completion = executeStatements(program.body)) {
+                is Completion.Normal -> completion.value
+                is Completion.Return -> completion.value
+                is Completion.Break, is Completion.Continue ->
+                    throw syntaxError("Illegal break/continue statement in eval code")
+            }
+        } finally {
+            frame = previousFrame
+        }
+    }
+
+    /** var/function 声明与词法绑定冲突（EvalDeclarationInstantiation）。 */
+    private fun checkEvalVarNameConflicts(lexicalEnvironment: Environment, names: List<String>) {
+        for (name in names) {
+            var environment: Environment? = lexicalEnvironment
+            while (environment != null) {
+                if (environment is DeclarativeEnvironment && environment.hasOwnLexicalBinding(name)) {
+                    throw JSException(
+                        JSError("SyntaxError", "Identifier '$name' has already been declared")
+                    )
+                }
+                if (environment.isVarScope) break
+                environment = environment.parent
+            }
+        }
+    }
+
+    /**
+     * 间接 eval：代码在全局环境中求值，且不继承调用方严格模式。
+     */
+    suspend fun evaluateIndirectEval(source: String): JSValue {
+        val program = try {
+            Parser(Lexer(source).tokenize()).parseProgram()
+        } catch (error: ParseException) {
+            syntaxError(error.message ?: "Invalid eval code")
+        } catch (error: LexerException) {
+            syntaxError(error.message ?: "Invalid eval code")
+        }
+        val previousFrame = frame
+        val evalStrict = program.strict
+        if (!evalStrict) {
+            val varNames = program.varDeclarations +
+                program.functionDeclarations.map { it.name }
+            checkEvalVarNameConflicts(context.globalEnvironment, varNames)
+        }
+        // 间接 eval 同样拥有独立词法环境；sloppy 的 var/function 写入全局 var 作用域
+        val lexicalEnvironment = DeclarativeEnvironment(parent = context.globalEnvironment)
+        val varEnvironment = if (evalStrict) {
+            DeclarativeEnvironment(parent = lexicalEnvironment, isVarScope = true)
+        } else {
+            context.globalEnvironment.findVarScope()
+        }
+        val executionEnvironment = if (evalStrict) varEnvironment else lexicalEnvironment
+        frame = ExecutionContext(
+            lexicalEnv = executionEnvironment,
+            thisValue = context.globalObject,
+            strict = evalStrict,
+        )
+        pushStackFrame("<eval>")
+        return try {
+            hoistDeclarations(
+                varEnvironment,
+                program.functionDeclarations,
+                program.varDeclarations,
+            )
+            predeclareLexical(program.body, executionEnvironment)
+            when (val completion = executeStatements(program.body)) {
+                is Completion.Normal -> completion.value
+                is Completion.Return -> completion.value
+                is Completion.Break, is Completion.Continue ->
+                    throw syntaxError("Illegal break/continue statement in eval code")
+            }
+        } finally {
+            popStackFrame()
+            frame = previousFrame
+        }
+    }
+
     /** ToNumber。 */
     suspend fun toNumber(value: JSValue): Double = conversions.toNumber(value)
 
@@ -212,6 +369,33 @@ class Interpreter(
 
     /** 是否为可调用对象。 */
     fun isCallable(value: JSValue): Boolean = value is JSFunction || value is JSNativeFunction
+
+    /**
+     * SpeciesConstructor(O, defaultConstructor)。
+     *
+     * 读取 O.constructor，再取其 @@species；undefined/null 时回退默认构造器。
+     */
+    suspend fun speciesConstructor(objectValue: JSObject, defaultConstructor: JSValue): JSValue {
+        val constructor = getV(objectValue, PropertyKey.CONSTRUCTOR)
+        if (constructor is JSUndefined) return defaultConstructor
+        if (constructor !is JSObject) {
+            throw typeError("Species constructor is not an object")
+        }
+        val species = getV(constructor, PropertyKey.Sym(intrinsics.symbolSpecies))
+        if (species is JSUndefined || species is JSNull) return defaultConstructor
+        if (!isConstructor(species)) {
+            throw typeError("Species is not a constructor")
+        }
+        return species
+    }
+
+    /** IsRegExp：优先读取 @@match，未定义时按内建正则对象判断。 */
+    suspend fun isRegExp(value: JSValue): Boolean {
+        if (value !is JSObject) return false
+        val matcher = getV(value, PropertyKey.Sym(intrinsics.symbolMatch))
+        if (matcher !is JSUndefined) return toBoolean(matcher)
+        return value is JSRegExp
+    }
 
     /** typeof 结果。 */
     fun typeOf(value: JSValue): String = when (value) {
@@ -240,8 +424,8 @@ class Interpreter(
                 JSNumber(base.value.length.toDouble())
             } else {
                 val index = canonicalIndex(key)
-                if (index != null && index < base.value.length) {
-                    JSString(base.value[index].toString())
+                if (index != null && index >= 0 && index < base.value.length.toLong()) {
+                    JSString(base.value[index.toInt()].toString())
                 } else {
                     getPropertyFrom(intrinsics.stringPrototype, key, base)
                 }
@@ -266,6 +450,50 @@ class Interpreter(
             return
         }
         putProperty(base, key, value, strict)
+    }
+
+    /**
+     * [[DefineOwnProperty]] 的挂起版本。
+     *
+     * 数组 length 的赋值需要 ToNumber/ToUint32（可能调用 valueOf/toString），
+     * 因此不能放在非挂起的 JSArray.defineOwnProperty 中完成。
+     */
+    suspend fun defineOwnPropertyOn(
+        objectValue: JSObject,
+        key: PropertyKey,
+        descriptor: PropertyDescriptor,
+    ): Boolean {
+        if (objectValue is JSArguments) {
+            // ES5 10.6：映射索引定义数据属性时同步形参；不可写或改为访问器时解除映射
+            val mapping = objectValue.parameterMapping(key)
+            if (mapping != null) {
+                if (descriptor.isAccessor) {
+                    objectValue.unmapParameter(key)
+                } else {
+                    descriptor.value?.let { mapping.write(it) }
+                    if (!descriptor.writable) objectValue.unmapParameter(key)
+                }
+            }
+        }
+        if (objectValue is JSArray && key == PropertyKey.LENGTH) {
+            if (descriptor.isAccessor) return false
+            // length 恒为不可枚举、不可配置
+            if (descriptor.enumerable || descriptor.configurable) return false
+            val value = descriptor.value
+            val newLength = if (value == null) {
+                objectValue.lengthLong
+            } else {
+                val number = toNumber(value)
+                if (number.isNaN() || number < 0.0 || number > JSArray.MAX_LENGTH.toDouble() ||
+                    number != kotlin.math.floor(number)
+                ) {
+                    throw rangeError("Invalid array length")
+                }
+                number.toLong()
+            }
+            return objectValue.defineLength(newLength, descriptor.writable)
+        }
+        return objectValue.defineOwnProperty(key, descriptor)
     }
 
     /** [PropertyAccess] 实现：对象属性读取。 */
@@ -327,8 +555,7 @@ class Interpreter(
                     return
                 }
                 if (current === objectValue) {
-                    val updated = current.defineOwnProperty(
-                        key,
+                    val updated = defineOwnPropertyOn(current, key,
                         PropertyDescriptor.data(
                             value = value,
                             writable = true,
@@ -345,7 +572,8 @@ class Interpreter(
             }
             current = current.prototype
         }
-        val created = objectValue.defineOwnProperty(
+        val created = defineOwnPropertyOn(
+            objectValue,
             key,
             PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
         )
@@ -361,11 +589,16 @@ class Interpreter(
     /**
      * 调用函数（用户函数或原生函数）。
      */
-    suspend fun callFunction(callee: JSValue, thisValue: JSValue, args: List<JSValue>): JSValue {
+    suspend fun callFunction(
+        callee: JSValue,
+        thisValue: JSValue,
+        args: List<JSValue>,
+        callRange: SourceRange? = null,
+    ): JSValue {
         return when (callee) {
-            is JSFunction -> callUserFunction(callee, thisValue, args)
+            is JSFunction -> callUserFunction(callee, thisValue, args, callRange)
             is JSNativeFunction -> {
-                pushStackFrame(callee.name)
+                pushStackFrame(callee.name, callRange)
                 try {
                     callee.function(this, thisValue, args)
                 } finally {
@@ -384,19 +617,36 @@ class Interpreter(
         return when (constructor) {
             is JSFunction -> constructUserFunction(constructor, args)
             is JSNativeFunction -> {
-                pushStackFrame(constructor.name)
-                val previousConstructCall = nativeConstructCall
-                nativeConstructCall = true
-                try {
-                    val result = constructor.function(this, JSUndefined, args)
-                    if (result is JSObject) {
-                        result
-                    } else {
-                        wrapPrimitive(result)
+                val customConstruct = constructor.constructFunction
+                if (customConstruct != null) {
+                    pushStackFrame(constructor.name)
+                    val previousConstructCall = nativeConstructCall
+                    nativeConstructCall = true
+                    try {
+                        customConstruct(this, args)
+                    } finally {
+                        nativeConstructCall = previousConstructCall
+                        popStackFrame()
                     }
-                } finally {
-                    nativeConstructCall = previousConstructCall
-                    popStackFrame()
+                } else {
+                    // 内建方法（无 [[Construct]] 原型对象）不能被 new
+                    if (constructor.functionPrototypeObject == null) {
+                        throw typeError("${constructor.name.ifEmpty { "anonymous" }} is not a constructor")
+                    }
+                    pushStackFrame(constructor.name)
+                    val previousConstructCall = nativeConstructCall
+                    nativeConstructCall = true
+                    try {
+                        val result = constructor.function(this, JSUndefined, args)
+                        if (result is JSObject) {
+                            result
+                        } else {
+                            wrapPrimitive(result)
+                        }
+                    } finally {
+                        nativeConstructCall = previousConstructCall
+                        popStackFrame()
+                    }
                 }
             }
 
@@ -442,6 +692,7 @@ class Interpreter(
         function: JSFunction,
         thisValue: JSValue,
         args: List<JSValue>,
+        callRange: SourceRange? = null,
     ): JSValue {
         if (function.isClassConstructor) {
             throw typeError("Class constructor cannot be invoked without 'new'")
@@ -453,14 +704,17 @@ class Interpreter(
             thisValue
         } else if (thisValue is JSUndefined || thisValue is JSNull) {
             context.globalObject
-        } else {
+        } else if (thisValue is JSObject) {
             thisValue
+        } else {
+            // ES5 10.4.3：非严格函数收到原始值 thisArg 时先装箱
+            wrapPrimitive(thisValue)
         }
 
         if (function.isAsync) {
             return callAsyncFunction(function, effectiveThis, args)
         }
-        return executeUserFunction(function, effectiveThis, args)
+        return executeUserFunction(function, effectiveThis, args, callRange)
     }
 
     /**
@@ -501,14 +755,34 @@ class Interpreter(
         function: JSFunction,
         thisValue: JSValue,
         args: List<JSValue>,
+        callRange: SourceRange? = null,
     ): JSValue {
         val callEnv = DeclarativeEnvironment(parent = function.closure, isVarScope = true)
         val previousFrame = frame
-        frame = ExecutionContext(callEnv, thisValue, function.strict, function)
-        pushStackFrame(function.name.ifEmpty { "anonymous" })
+        frame = ExecutionContext(
+            callEnv,
+            thisValue,
+            function.strict,
+            function,
+            newTarget = if (function.isArrow) function.lexicalNewTarget else null,
+        )
+        pushStackFrame(function.name.ifEmpty { "anonymous" }, callRange)
         try {
             if (!function.isArrow) {
-                callEnv.createVarBinding("arguments", createArgumentsObject(args, function))
+                // 规范 9.2.10：形参名重复时不建立 arguments 映射
+                val parameterNames = function.params.mapNotNull { it.name }
+                val mapped = !function.strict && function.params.all {
+                    it.name != null && !it.rest && it.defaultValue == null && it.pattern == null
+                } && parameterNames.distinct().size == function.params.size
+                callEnv.createVarBinding(
+                    "arguments",
+                    createArgumentsObject(
+                        args = args,
+                        function = function,
+                        mappedEnvironment = if (mapped) callEnv else null,
+                        mappedParams = if (mapped) function.params else emptyList(),
+                    ),
+                )
             }
             bindParameters(function, args, callEnv)
             hoistDeclarations(callEnv, function.functionDeclarations, function.varDeclarations)
@@ -539,6 +813,19 @@ class Interpreter(
         args: List<JSValue>,
         environment: Environment,
     ) {
+        // 参数 TDZ：先声明全部参数名为未初始化绑定，默认值只能引用已初始化的前置参数
+        val declarative = environment as? DeclarativeEnvironment
+        if (declarative != null) {
+            val parameterNames = mutableListOf<String>()
+            for (param in function.params) {
+                if (param.name != null) {
+                    parameterNames.add(param.name)
+                } else {
+                    param.pattern?.let { collectPatternNames(it, parameterNames) }
+                }
+            }
+            for (name in parameterNames.toSet()) declarative.declareUninitialized(name)
+        }
         var index = 0
         for (param in function.params) {
             if (param.rest) {
@@ -547,15 +834,22 @@ class Interpreter(
                     restValues.add(args[index])
                     index++
                 }
-                environment.createVarBinding(
-                    param.name ?: throw syntaxError("Invalid rest parameter"),
-                    JSArray(restValues, prototype = intrinsics.arrayPrototype),
-                )
+                val restArray = JSArray(restValues, prototype = intrinsics.arrayPrototype)
+                val restName = param.name
+                if (restName != null) {
+                    environment.createVarBinding(restName, restArray)
+                } else {
+                    val pattern = param.pattern
+                        ?: throw syntaxError("Invalid rest parameter")
+                    bindPattern(pattern, restArray, DeclarationKind.LET, environment)
+                }
             } else {
                 var value = args.getOrNull(index) ?: JSUndefined
                 index++
                 if (value is JSUndefined && param.defaultValue != null) {
-                    value = evaluate(param.defaultValue)
+                    val defaultValue = param.defaultValue
+                    value = evaluate(defaultValue)
+                    param.name?.let { applyInferredFunctionName(defaultValue, value, it) }
                 }
                 val name = param.name
                 if (name != null) {
@@ -571,34 +865,62 @@ class Interpreter(
 
     /** 构造用户函数实例。 */
     private suspend fun constructUserFunction(function: JSFunction, args: List<JSValue>): JSValue {
-        if (function.isArrow) {
+        if (function.isArrow || function.isMethod || function.isAsync) {
             throw typeError("${function.name.ifEmpty { "anonymous" }} is not a constructor")
         }
-        val instancePrototype = function.functionPrototypeObject ?: intrinsics.objectPrototype
+        // 必须在构造时读取当前的 F.prototype，而不是创建函数时捕获的对象
+        val prototypeValue = getV(function, PropertyKey.PROTOTYPE)
+        val instancePrototype = prototypeValue as? JSObject ?: intrinsics.objectPrototype
         val instance = JSObject(prototype = instancePrototype)
 
+        val derived = function.isClassConstructor && function.superConstructor != null
         val callEnv = DeclarativeEnvironment(parent = function.closure, isVarScope = true)
         val previousFrame = frame
-        frame = ExecutionContext(callEnv, instance, function.strict, function, newTarget = function)
+        frame = ExecutionContext(
+            callEnv,
+            instance,
+            function.strict,
+            function,
+            newTarget = function,
+            thisInitialized = !derived,
+        )
         pushStackFrame(function.name.ifEmpty { "anonymous" })
+        val activeFrame = frame!!
         try {
             callEnv.createVarBinding("arguments", createArgumentsObject(args, function))
             bindParameters(function, args, callEnv)
             hoistDeclarations(callEnv, function.functionDeclarations, function.varDeclarations)
 
-            // 默认派生类构造器：隐式调用父构造器
+            // 默认派生类构造器：隐式调用父构造器（动态读取当前 [[Prototype]]）
             if (function.isDefaultDerivedConstructor) {
-                val superConstructor = function.superConstructor
-                    ?: throw typeError("Super constructor is not a constructor")
-                callSuperConstructor(superConstructor, instance, args)
+                val superConstructorValue: JSValue = function.prototype ?: intrinsics.functionPrototype
+                if (!isConstructor(superConstructorValue)) {
+                    throw typeError("Super constructor is not a constructor")
+                }
+                val result = callSuperConstructor(superConstructorValue, activeFrame.thisValue, args)
+                activeFrame.thisValue = result
+                activeFrame.thisInitialized = true
             }
 
-            val body = function.body ?: return instance
-            val completion = executeStatements(body.statements)
-            return when (completion) {
-                is Completion.Return -> if (completion.value is JSObject) completion.value else instance
-                else -> instance
+            val body = function.body
+            if (body == null) {
+                if (!activeFrame.thisInitialized) {
+                    throw referenceError("Must call super constructor before returning from derived constructor")
+                }
+                return activeFrame.thisValue
             }
+            val completion = executeStatements(body.statements)
+            if (completion is Completion.Return) {
+                val returned = completion.value
+                if (returned is JSObject) return returned
+                if (derived && returned !is JSUndefined) {
+                    throw typeError("Derived constructors may only return object or undefined")
+                }
+            }
+            if (!activeFrame.thisInitialized) {
+                throw referenceError("Must call super constructor before returning from derived constructor")
+            }
+            return activeFrame.thisValue
         } finally {
             popStackFrame()
             frame = previousFrame
@@ -617,7 +939,10 @@ class Interpreter(
         expressionBody: Expression? = null,
         isArrow: Boolean = false,
         isAsync: Boolean = false,
+        isMethod: Boolean = false,
         lexicalThis: JSValue? = null,
+        lexicalNewTarget: JSValue? = null,
+        allowsNewTarget: Boolean = true,
         isClassConstructor: Boolean = false,
         isDefaultDerivedConstructor: Boolean = false,
         homeObject: JSObject? = null,
@@ -625,36 +950,65 @@ class Interpreter(
         superBase: JSObject? = null,
         functionPrototypeObject: JSObject? = null,
     ): JSFunction {
-        val prototypeObject = if (isArrow) {
+        // async 函数不是构造器，没有 own "prototype" 属性
+        val prototypeObject = if (isArrow || isMethod || isAsync) {
             null
         } else {
             functionPrototypeObject ?: JSObject(prototype = intrinsics.objectPrototype)
         }
-        return JSFunction(
+        val function = JSFunction(
             name = name,
             params = params,
             body = body,
             closure = closure,
             strict = strict,
-            prototype = intrinsics.functionPrototype,
+            // async 函数的 [[Prototype]] 是 %AsyncFunction.prototype%
+            prototype = if (isAsync) intrinsics.asyncFunctionPrototype else intrinsics.functionPrototype,
             functionPrototypeObject = prototypeObject,
             varDeclarations = varDeclarations,
             functionDeclarations = functionDeclarations,
             expressionBody = expressionBody,
             isArrow = isArrow,
             isAsync = isAsync,
+            isMethod = isMethod,
             lexicalThis = lexicalThis,
+            lexicalNewTarget = lexicalNewTarget,
+            allowsNewTarget = allowsNewTarget,
             isClassConstructor = isClassConstructor,
             isDefaultDerivedConstructor = isDefaultDerivedConstructor,
             homeObject = homeObject,
             superConstructor = superConstructor,
             superBase = superBase,
         )
+        // ES5 15.3.5.4：非严格普通函数的 caller/arguments 是值为 null 的自有数据属性；
+        // 严格函数、箭头、方法与 async 函数不定义（读取落到 Function.prototype 拒绝访问器）
+        if (!strict && !isArrow && !isMethod && !isAsync) {
+            function.defineDataProperty(
+                PropertyKey.Str("caller"),
+                JSUndefined,
+                writable = false,
+                enumerable = false,
+                configurable = false,
+            )
+            function.defineDataProperty(
+                PropertyKey.Str("arguments"),
+                JSNull,
+                writable = false,
+                enumerable = false,
+                configurable = false,
+            )
+        }
+        return function
     }
 
     /** 创建 arguments 对象（类数组，非 Array 实例）。 */
-    private fun createArgumentsObject(args: List<JSValue>, function: JSFunction?): JSObject {
-        val arguments = JSObject(prototype = intrinsics.objectPrototype)
+    private fun createArgumentsObject(
+        args: List<JSValue>,
+        function: JSFunction?,
+        mappedEnvironment: Environment? = null,
+        mappedParams: List<Parameter> = emptyList(),
+    ): JSObject {
+        val arguments = JSArguments(prototype = intrinsics.objectPrototype)
         arguments.defineDataProperty(
             key = PropertyKey.LENGTH,
             value = JSNumber(args.size.toDouble()),
@@ -663,18 +1017,87 @@ class Interpreter(
             configurable = true,
         )
         args.forEachIndexed { index, value ->
-            arguments.defineDataProperty(
-                key = PropertyKey.Str(index.toString()),
-                value = value,
-                writable = true,
-                enumerable = true,
-                configurable = true,
-            )
+            val parameterName = mappedParams.getOrNull(index)?.name
+            if (mappedEnvironment != null && parameterName != null) {
+                // sloppy 简单参数列表：arguments[index] 与形参双向绑定
+                val getter = JSNativeFunction(
+                    name = "get",
+                    length = 0,
+                    prototype = intrinsics.functionPrototype,
+                ) { _, _, _ -> mappedEnvironment.getBinding(parameterName) ?: JSUndefined }
+                val setter = JSNativeFunction(
+                    name = "set",
+                    length = 1,
+                    prototype = intrinsics.functionPrototype,
+                ) { _, _, setterArgs ->
+                    mappedEnvironment.setBinding(
+                        parameterName,
+                        setterArgs.getOrElse(0) { JSUndefined },
+                        strict = false,
+                    )
+                    JSUndefined
+                }
+                arguments.defineOwnProperty(
+                    PropertyKey.Str(index.toString()),
+                    PropertyDescriptor.accessor(
+                        get = getter,
+                        set = setter,
+                        enumerable = true,
+                        configurable = true,
+                    ),
+                )
+                // 记录参数映射：Object.defineProperty 在同步索引值时需要直接读写形参
+                arguments.mapParameter(
+                    index.toLong(),
+                    JSArguments.ParameterMapping(
+                        read = { mappedEnvironment.getBinding(parameterName) ?: JSUndefined },
+                        write = { newValue -> mappedEnvironment.setBinding(parameterName, newValue, strict = false) },
+                    ),
+                )
+            } else {
+                arguments.defineDataProperty(
+                    key = PropertyKey.Str(index.toString()),
+                    value = value,
+                    writable = true,
+                    enumerable = true,
+                    configurable = true,
+                )
+            }
         }
         if (function != null) {
+            if (function.strict) {
+                // 严格模式下访问 callee/caller 必须抛 TypeError
+                val thrower = JSNativeFunction(
+                    name = "thrower",
+                    length = 0,
+                    prototype = intrinsics.functionPrototype,
+                ) { interpreter, _, _ ->
+                    interpreter.typeError("'caller', 'callee' and 'arguments' properties may not be accessed on strict mode functions")
+                }
+                arguments.defineOwnProperty(
+                    PropertyKey.Str("callee"),
+                    PropertyDescriptor.accessor(
+                        get = thrower,
+                        set = thrower,
+                        enumerable = false,
+                        configurable = false,
+                    ),
+                )
+            } else {
+                arguments.defineDataProperty(
+                    key = PropertyKey.Str("callee"),
+                    value = function,
+                    writable = true,
+                    enumerable = false,
+                    configurable = true,
+                )
+            }
+        }
+        // ES2015：arguments 对象自有 @@iterator，复用 Array.prototype.values
+        intrinsics.arrayValuesFunction?.let { valuesFunction ->
             arguments.defineDataProperty(
-                key = PropertyKey.Str("callee"),
-                value = function,
+                key = PropertyKey.Sym(intrinsics.symbolIterator),
+                value = valuesFunction,
                 writable = true,
                 enumerable = false,
                 configurable = true,
@@ -691,21 +1114,7 @@ class Interpreter(
     fun createDynamicFunction(paramStrings: List<String>, body: String): JSFunction {
         val parameters = paramStrings.joinToString(",")
         val source = "(function($parameters) {\n$body\n})"
-        val expression = try {
-            val program = Parser(Lexer(source).tokenize()).parseProgram()
-            val statement = program.body.singleOrNull()
-            if (statement !is ExpressionStatement) {
-                throw syntaxError("Invalid Function constructor arguments")
-            }
-            statement.expression
-        } catch (error: LexerException) {
-            throw syntaxError(error.message ?: "Invalid Function constructor arguments")
-        } catch (error: ParseException) {
-            throw syntaxError(error.message ?: "Invalid Function constructor arguments")
-        }
-
-        val function = expression as? FunctionExpression
-            ?: throw syntaxError("Invalid Function constructor arguments")
+        val function = parseDynamicFunctionSource(source)
         return createFunction(
             name = function.name ?: "anonymous",
             params = function.params,
@@ -716,6 +1125,48 @@ class Interpreter(
             functionDeclarations = function.functionDeclarations,
             isAsync = function.isAsync,
         )
+    }
+
+    /**
+     * 动态创建 async 函数（AsyncFunction 构造器）。
+     *
+     * 参数文本可能以行注释结尾，因此在 ')' 前保留换行；源码文本同时用于
+     * Function.prototype.toString（动态函数按规范返回构造函数体源码）。
+     */
+    fun createDynamicAsyncFunction(paramStrings: List<String>, body: String): JSFunction {
+        val parameters = paramStrings.joinToString(",")
+        val source = "(async function anonymous($parameters\n) {\n$body\n})"
+        val function = parseDynamicFunctionSource(source)
+        val created = createFunction(
+            name = function.name ?: "anonymous",
+            params = function.params,
+            body = function.body,
+            closure = context.globalEnvironment,
+            strict = function.strict,
+            varDeclarations = function.varDeclarations,
+            functionDeclarations = function.functionDeclarations,
+            isAsync = true,
+        )
+        created.sourceText = source.substring(1, source.length - 1)
+        return created
+    }
+
+    /** 解析动态函数源码并返回函数表达式节点。 */
+    private fun parseDynamicFunctionSource(source: String): FunctionExpression {
+        val expression = try {
+            val program = Parser(Lexer(source).tokenize()).parseProgram()
+            val statement = program.body.singleOrNull()
+            if (statement !is ExpressionStatement) {
+                throw syntaxError("Invalid dynamic function arguments")
+            }
+            statement.expression
+        } catch (error: LexerException) {
+            throw syntaxError(error.message ?: "Invalid dynamic function arguments")
+        } catch (error: ParseException) {
+            throw syntaxError(error.message ?: "Invalid dynamic function arguments")
+        }
+        return expression as? FunctionExpression
+            ?: throw syntaxError("Invalid dynamic function arguments")
     }
 
     /**
@@ -752,9 +1203,20 @@ class Interpreter(
     private suspend fun executeStatements(statements: List<Statement>): Completion {
         var lastValue: JSValue = JSUndefined
         for (statement in statements) {
-            val completion = executeStatement(statement)
-            if (completion !is Completion.Normal) return completion
-            lastValue = completion.value
+            when (val completion = executeStatement(statement)) {
+                is Completion.Normal -> {
+                    // 空语句与声明语句产生 empty completion，不覆盖 eval 完成值
+                    if (statement !is EmptyStatement && statement !is ClassDeclaration &&
+                        statement !is FunctionDeclaration && statement !is VarDeclaration
+                    ) {
+                        lastValue = completion.value
+                    }
+                }
+                // 规范：break/continue 携带所在语句列表已累积的完成值
+                is Completion.Break -> return Completion.Break(completion.label, lastValue)
+                is Completion.Continue -> return Completion.Continue(completion.label, lastValue)
+                else -> return completion
+            }
         }
         return Completion.Normal(lastValue)
     }
@@ -946,21 +1408,34 @@ class Interpreter(
                 bindPattern(pattern, value, statement.kind, currentFrame.lexicalEnv)
             } else {
                 val name = declaration.name ?: continue
-                val value = declaration.initializer?.let { evaluate(it) } ?: JSUndefined
                 when (statement.kind) {
-                    DeclarationKind.VAR ->
-                        currentFrame.lexicalEnv.findVarScope().createVarBinding(name, value)
+                    DeclarationKind.VAR -> {
+                        val initializer = declaration.initializer
+                        if (initializer == null) {
+                            // 重复的 var 声明不得把已有值重置为 undefined
+                            currentFrame.lexicalEnv.findVarScope().ensureVarBinding(name)
+                        } else {
+                            // 初始化器是赋值语义：在 with 作用域内应优先写入 with 对象
+                            val value = evaluate(initializer)
+                            applyInferredFunctionName(initializer, value, name)
+                            writeIdentifierReference(findBindingOwner(name), name, value)
+                        }
+                    }
 
                     DeclarationKind.LET -> {
+                        val initializer = declaration.initializer
+                        val value = initializer?.let { evaluate(it) } ?: JSUndefined
+                        initializer?.let { applyInferredFunctionName(it, value, name) }
                         if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, name, value)) {
                             currentFrame.lexicalEnv.createLetBinding(name, value)
                         }
                     }
 
                     DeclarationKind.CONST -> {
-                        if (declaration.initializer == null) {
-                            throw syntaxError("Missing initializer in const declaration")
-                        }
+                        val initializer = declaration.initializer
+                            ?: throw syntaxError("Missing initializer in const declaration")
+                        val value = evaluate(initializer)
+                        applyInferredFunctionName(initializer, value, name)
                         if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, name, value)) {
                             currentFrame.lexicalEnv.createConstBinding(name, value)
                         }
@@ -982,42 +1457,49 @@ class Interpreter(
 
     /** while 语句。 */
     private suspend fun executeWhile(statement: WhileStatement, labels: List<String> = emptyList()): Completion {
+        // V：最后一次正常完成的语句值（供 eval 完成值使用）
+        var lastValue: JSValue = JSUndefined
         while (toBoolean(evaluate(statement.condition))) {
             when (val completion = executeStatement(statement.body)) {
-                is Completion.Normal -> Unit
-                is Completion.Return -> return completion
-                is Completion.Break -> {
-                    if (completion.label == null || completion.label in labels) break
-                    return completion
-                }
-
-                is Completion.Continue -> {
-                    if (completion.label != null && completion.label !in labels) return completion
-                }
-            }
-        }
-        return Completion.Normal(JSUndefined)
-    }
-
-    /** do-while 语句。 */
-    private suspend fun executeDoWhile(statement: DoWhileStatement, labels: List<String> = emptyList()): Completion {
-        do {
-            when (val completion = executeStatement(statement.body)) {
-                is Completion.Normal -> Unit
+                is Completion.Normal -> lastValue = completion.value
                 is Completion.Return -> return completion
                 is Completion.Break -> {
                     if (completion.label == null || completion.label in labels) {
-                        return Completion.Normal(JSUndefined)
+                        return Completion.Normal(completion.value)
                     }
                     return completion
                 }
 
                 is Completion.Continue -> {
                     if (completion.label != null && completion.label !in labels) return completion
+                    lastValue = completion.value
+                }
+            }
+        }
+        return Completion.Normal(lastValue)
+    }
+
+    /** do-while 语句。 */
+    private suspend fun executeDoWhile(statement: DoWhileStatement, labels: List<String> = emptyList()): Completion {
+        var lastValue: JSValue = JSUndefined
+        do {
+            when (val completion = executeStatement(statement.body)) {
+                is Completion.Normal -> lastValue = completion.value
+                is Completion.Return -> return completion
+                is Completion.Break -> {
+                    if (completion.label == null || completion.label in labels) {
+                        return Completion.Normal(completion.value)
+                    }
+                    return completion
+                }
+
+                is Completion.Continue -> {
+                    if (completion.label != null && completion.label !in labels) return completion
+                    lastValue = completion.value
                 }
             }
         } while (toBoolean(evaluate(statement.condition)))
-        return Completion.Normal(JSUndefined)
+        return Completion.Normal(lastValue)
     }
 
     /** for 语句（支持 let/const 每迭代作用域）。 */
@@ -1026,69 +1508,87 @@ class Interpreter(
         val previousEnvironment = currentFrame.lexicalEnv
         currentFrame.lexicalEnv = forEnvironment
         try {
+            // for (let/const ...) 的词法绑定名（支持解构）
             var loopVariableNames: List<String> = emptyList()
+            var loopMutable = true
             val init = statement.init
+            if (init is VarDeclaration && init.kind != DeclarationKind.VAR) {
+                loopMutable = init.kind == DeclarationKind.LET
+                val names = LinkedHashSet<String>()
+                for (declaration in init.declarations) {
+                    declaration.name?.let { names.add(it) }
+                    declaration.pattern?.let { pattern ->
+                        val patternNames = mutableListOf<String>()
+                        collectPatternNames(pattern, patternNames)
+                        names.addAll(patternNames)
+                    }
+                }
+                loopVariableNames = names.toList()
+            }
             if (init != null) {
                 val initCompletion = executeStatement(init)
                 if (initCompletion !is Completion.Normal) return initCompletion
-                if (init is VarDeclaration && init.kind != DeclarationKind.VAR) {
-                    loopVariableNames = init.declarations.mapNotNull { it.name }
-                }
             }
 
+            // 每轮创建新的词法环境并复制上一轮的值；初始环境保留给初始化表达式的闭包
+            suspend fun createIterationEnvironment(source: DeclarativeEnvironment): DeclarativeEnvironment {
+                val environment = DeclarativeEnvironment(parent = previousEnvironment)
+                for (name in loopVariableNames) {
+                    val value = source.getBinding(name) ?: JSUndefined
+                    if (loopMutable) {
+                        environment.createLetBinding(name, value)
+                    } else {
+                        environment.createConstBinding(name, value)
+                    }
+                }
+                return environment
+            }
+
+            var loopEnvironment = if (loopVariableNames.isEmpty()) {
+                forEnvironment
+            } else {
+                createIterationEnvironment(forEnvironment)
+            }
+            currentFrame.lexicalEnv = loopEnvironment
+
+            var lastValue: JSValue = JSUndefined
             while (true) {
                 val condition = statement.condition?.let { toBoolean(evaluate(it)) } ?: true
                 if (!condition) break
-
-                val iterationEnvironment = if (loopVariableNames.isEmpty()) {
-                    null
-                } else {
-                    val env = DeclarativeEnvironment(parent = forEnvironment)
-                    for (name in loopVariableNames) {
-                        env.createLetBinding(name, forEnvironment.getBinding(name) ?: JSUndefined)
-                    }
-                    env
-                }
-
-                if (iterationEnvironment != null) {
-                    currentFrame.lexicalEnv = iterationEnvironment
-                }
 
                 var completion: Completion = Completion.Normal(JSUndefined)
                 try {
                     completion = executeStatement(statement.body)
                 } finally {
-                    if (iterationEnvironment != null) {
-                        // 把本轮循环变量的值同步回 for 环境，供 update 使用
-                        for (name in loopVariableNames) {
-                            forEnvironment.createVarBinding(
-                                name,
-                                iterationEnvironment.getBinding(name) ?: JSUndefined,
-                            )
-                        }
-                        currentFrame.lexicalEnv = forEnvironment
-                    }
+                    currentFrame.lexicalEnv = loopEnvironment
                 }
 
                 when (completion) {
-                    is Completion.Normal -> Unit
+                    is Completion.Normal -> lastValue = completion.value
                     is Completion.Return -> return completion
                     is Completion.Break -> {
-                        if (completion.label == null || completion.label in labels) break
+                        if (completion.label == null || completion.label in labels) {
+                            return Completion.Normal(completion.value)
+                        }
                         return completion
                     }
 
                     is Completion.Continue -> {
                         if (completion.label != null && completion.label !in labels) return completion
+                        lastValue = completion.value
                     }
                 }
 
+                if (loopVariableNames.isNotEmpty()) {
+                    loopEnvironment = createIterationEnvironment(loopEnvironment)
+                    currentFrame.lexicalEnv = loopEnvironment
+                }
                 statement.update?.let { evaluate(it) }
             }
+            return Completion.Normal(lastValue)
         } finally {
             currentFrame.lexicalEnv = previousEnvironment
         }
-        return Completion.Normal(JSUndefined)
     }
 
     /**
@@ -1097,26 +1597,48 @@ class Interpreter(
      * 遍历对象自身与原型链上的可枚举字符串键；let/const 声明为每轮迭代创建新绑定。
      */
     private suspend fun executeForIn(statement: ForInStatement, labels: List<String> = emptyList()): Completion {
-        val rightValue = evaluate(statement.right)
-        if (rightValue is JSNull || rightValue is JSUndefined) {
-            return Completion.Normal(JSUndefined)
-        }
-        val objectValue = toObject(rightValue)
-        val keys = enumerableStringKeysIncludingPrototype(objectValue)
-
-        val forEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
         val previousEnvironment = currentFrame.lexicalEnv
-        currentFrame.lexicalEnv = forEnvironment
+        val lexical = statement.declarationKind == DeclarationKind.LET ||
+            statement.declarationKind == DeclarationKind.CONST
+        val declarationNames = mutableListOf<String>()
+        if (lexical) {
+            statement.variableName?.let { declarationNames.add(it) }
+            statement.pattern?.let { collectPatternNames(it, declarationNames) }
+        }
+        var headEnvironment: DeclarativeEnvironment? = null
+        var forEnvironment: DeclarativeEnvironment? = null
         try {
+            if (lexical) {
+                // RHS 在头部词法环境中求值；绑定名尚未初始化（TDZ）
+                headEnvironment = DeclarativeEnvironment(parent = previousEnvironment)
+                for (name in declarationNames) {
+                    headEnvironment.declareLexical(
+                        name,
+                        mutable = statement.declarationKind != DeclarationKind.CONST,
+                    )
+                }
+                currentFrame.lexicalEnv = headEnvironment
+            }
+            val rightValue = evaluate(statement.right)
+            if (rightValue is JSNull || rightValue is JSUndefined) {
+                return Completion.Normal(JSUndefined)
+            }
+            val objectValue = toObject(rightValue)
+            val keys = enumerableStringKeysIncludingPrototype(objectValue)
+            if (!lexical) {
+                forEnvironment = DeclarativeEnvironment(parent = previousEnvironment)
+                currentFrame.lexicalEnv = forEnvironment
+            }
+
+            var lastValue: JSValue = JSUndefined
             for (key in keys) {
                 val propertyKey = PropertyKey.Str(key)
                 if (!objectValue.hasProperty(propertyKey)) continue
 
-                val iterationEnvironment = when (statement.declarationKind) {
-                    DeclarationKind.LET, DeclarationKind.CONST ->
-                        DeclarativeEnvironment(parent = forEnvironment)
-
-                    else -> null
+                val iterationEnvironment = if (lexical) {
+                    DeclarativeEnvironment(parent = headEnvironment!!)
+                } else {
+                    null
                 }
                 if (iterationEnvironment != null) {
                     currentFrame.lexicalEnv = iterationEnvironment
@@ -1127,11 +1649,11 @@ class Interpreter(
                     val pattern = statement.pattern
                     val variableName = statement.variableName
                     val kind = statement.declarationKind ?: DeclarationKind.VAR
-                    val targetEnvironment = iterationEnvironment ?: forEnvironment
+                    val targetEnvironment = iterationEnvironment ?: forEnvironment!!
                     when {
                         pattern != null -> bindPattern(pattern, JSString(key), kind, targetEnvironment)
                         variableName != null -> when (kind) {
-                            DeclarationKind.VAR -> forEnvironment.findVarScope()
+                            DeclarationKind.VAR -> forEnvironment!!.findVarScope()
                                 .createVarBinding(variableName, JSString(key))
 
                             DeclarationKind.LET -> targetEnvironment
@@ -1145,46 +1667,72 @@ class Interpreter(
                     }
                     completion = executeStatement(statement.body)
                 } finally {
-                    if (iterationEnvironment != null) {
-                        currentFrame.lexicalEnv = forEnvironment
-                    }
+                    currentFrame.lexicalEnv = if (lexical) headEnvironment!! else forEnvironment!!
                 }
 
                 when (completion) {
-                    is Completion.Normal -> Unit
+                    is Completion.Normal -> lastValue = completion.value
                     is Completion.Return -> return completion
                     is Completion.Break -> {
-                        if (completion.label == null || completion.label in labels) break
+                        if (completion.label == null || completion.label in labels) {
+                            return Completion.Normal(completion.value)
+                        }
                         return completion
                     }
 
                     is Completion.Continue -> {
                         if (completion.label != null && completion.label !in labels) return completion
+                        lastValue = completion.value
                     }
                 }
             }
+            return Completion.Normal(lastValue)
         } finally {
             currentFrame.lexicalEnv = previousEnvironment
         }
-        return Completion.Normal(JSUndefined)
     }
 
     /**
      * for-of 语句：遍历可迭代值。
      */
     private suspend fun executeForOf(statement: ForOfStatement, labels: List<String> = emptyList()): Completion {
-        val values = iterateValues(evaluate(statement.right))
-
-        val forEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
         val previousEnvironment = currentFrame.lexicalEnv
-        currentFrame.lexicalEnv = forEnvironment
+        val lexical = statement.declarationKind == DeclarationKind.LET ||
+            statement.declarationKind == DeclarationKind.CONST
+        val declarationNames = mutableListOf<String>()
+        if (lexical) {
+            statement.variableName?.let { declarationNames.add(it) }
+            statement.pattern?.let { collectPatternNames(it, declarationNames) }
+        }
+        var headEnvironment: DeclarativeEnvironment? = null
+        var forEnvironment: DeclarativeEnvironment? = null
         try {
-            for (value in values) {
-                val iterationEnvironment = when (statement.declarationKind) {
-                    DeclarationKind.LET, DeclarationKind.CONST ->
-                        DeclarativeEnvironment(parent = forEnvironment)
+            if (lexical) {
+                // RHS 在头部词法环境中求值；绑定名尚未初始化（TDZ）
+                headEnvironment = DeclarativeEnvironment(parent = previousEnvironment)
+                for (name in declarationNames) {
+                    headEnvironment.declareLexical(
+                        name,
+                        mutable = statement.declarationKind != DeclarationKind.CONST,
+                    )
+                }
+                currentFrame.lexicalEnv = headEnvironment
+            }
+            val records = getIterator(evaluate(statement.right))
+            if (!lexical) {
+                forEnvironment = DeclarativeEnvironment(parent = previousEnvironment)
+                currentFrame.lexicalEnv = forEnvironment
+            }
 
-                    else -> null
+            var lastValue: JSValue = JSUndefined
+            while (true) {
+                // IteratorStep 的异常直接传播，不调用 return
+                val value = iteratorNext(records) ?: break
+
+                val iterationEnvironment = if (lexical) {
+                    DeclarativeEnvironment(parent = headEnvironment!!)
+                } else {
+                    null
                 }
                 if (iterationEnvironment != null) {
                     currentFrame.lexicalEnv = iterationEnvironment
@@ -1195,11 +1743,11 @@ class Interpreter(
                     val pattern = statement.pattern
                     val variableName = statement.variableName
                     val kind = statement.declarationKind ?: DeclarationKind.VAR
-                    val targetEnvironment = iterationEnvironment ?: forEnvironment
+                    val targetEnvironment = iterationEnvironment ?: forEnvironment!!
                     when {
                         pattern != null -> bindPattern(pattern, value, kind, targetEnvironment)
                         variableName != null -> when (kind) {
-                            DeclarationKind.VAR -> forEnvironment.findVarScope()
+                            DeclarationKind.VAR -> forEnvironment!!.findVarScope()
                                 .createVarBinding(variableName, value)
 
                             DeclarationKind.LET -> targetEnvironment
@@ -1212,29 +1760,41 @@ class Interpreter(
                         else -> statement.target?.let { assignTarget(it, value) }
                     }
                     completion = executeStatement(statement.body)
+                } catch (error: JSException) {
+                    iteratorClose(records, throwCompletion = true)
+                    throw error
                 } finally {
-                    if (iterationEnvironment != null) {
-                        currentFrame.lexicalEnv = forEnvironment
-                    }
+                    currentFrame.lexicalEnv = if (lexical) headEnvironment!! else forEnvironment!!
                 }
 
                 when (completion) {
-                    is Completion.Normal -> Unit
-                    is Completion.Return -> return completion
+                    is Completion.Normal -> lastValue = completion.value
+                    is Completion.Return -> {
+                        iteratorClose(records, throwCompletion = false)
+                        return completion
+                    }
+
                     is Completion.Break -> {
-                        if (completion.label == null || completion.label in labels) break
+                        iteratorClose(records, throwCompletion = false)
+                        if (completion.label == null || completion.label in labels) {
+                            return Completion.Normal(completion.value)
+                        }
                         return completion
                     }
 
                     is Completion.Continue -> {
-                        if (completion.label != null && completion.label !in labels) return completion
+                        if (completion.label != null && completion.label !in labels) {
+                            iteratorClose(records, throwCompletion = false)
+                            return completion
+                        }
+                        lastValue = completion.value
                     }
                 }
             }
+            return Completion.Normal(lastValue)
         } finally {
             currentFrame.lexicalEnv = previousEnvironment
         }
-        return Completion.Normal(JSUndefined)
     }
 
     /**
@@ -1260,7 +1820,7 @@ class Interpreter(
         }
 
         return if (completion is Completion.Break && completion.label in labels) {
-            Completion.Normal(JSUndefined)
+            Completion.Normal(completion.value)
         } else {
             completion
         }
@@ -1325,10 +1885,15 @@ class Interpreter(
                 Completion.Normal(JSUndefined)
             } else {
                 var result: Completion = Completion.Normal(JSUndefined)
+                var lastValue: JSValue = JSUndefined
                 execution@ for (index in startIndex until statement.cases.size) {
                     for (inner in statement.cases[index].consequent) {
                         when (val completion = executeStatement(inner)) {
-                            is Completion.Normal -> Unit
+                            is Completion.Normal -> {
+                                lastValue = completion.value
+                                result = completion
+                            }
+
                             is Completion.Return -> {
                                 result = completion
                                 break@execution
@@ -1336,7 +1901,7 @@ class Interpreter(
 
                             is Completion.Break -> {
                                 result = if (completion.label == null) {
-                                    Completion.Normal(JSUndefined)
+                                    Completion.Normal(lastValue)
                                 } else {
                                     completion
                                 }
@@ -1368,6 +1933,7 @@ class Interpreter(
                 DeclarativeEnvironment(parent = currentFrame.lexicalEnv),
             )
         } catch (exception: JSException) {
+            normalizeErrorValue(exception.value)
             val handler = statement.handler
             if (handler != null) {
                 val catchEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
@@ -1398,7 +1964,11 @@ class Interpreter(
                     finalizer.statements,
                     DeclarativeEnvironment(parent = currentFrame.lexicalEnv),
                 )
-                if (completion !is Completion.Normal) pending = completion
+                if (completion !is Completion.Normal) {
+                    // finally 的 abrupt 完成（break/continue/return）覆盖之前的 throw
+                    pending = completion
+                    thrown = null
+                }
             } catch (finalizerException: JSException) {
                 thrown = finalizerException
             }
@@ -1422,7 +1992,12 @@ class Interpreter(
             is StringLiteral -> JSString(expression.value)
             is BooleanLiteral -> JSBoolean.getJsBoolean(expression.value)
             is NullLiteral -> JSNull
-            is ThisExpr -> currentFrame.thisValue
+            is ThisExpr -> {
+                if (!currentFrame.thisInitialized) {
+                    throw referenceError("Must call super constructor before accessing 'this'")
+                }
+                currentFrame.thisValue
+            }
 
             is RegExpLiteral -> createRegExp(expression.pattern, expression.flags)
             is TemplateLiteral -> evaluateTemplateLiteral(expression)
@@ -1434,16 +2009,39 @@ class Interpreter(
             is ArrayLiteral -> evaluateArrayLiteral(expression)
             is ObjectLiteral -> evaluateObjectLiteral(expression)
 
-            is FunctionExpression -> createFunction(
-                name = expression.name ?: "",
-                params = expression.params,
-                body = expression.body,
-                closure = currentFrame.lexicalEnv,
-                strict = expression.strict,
-                varDeclarations = expression.varDeclarations,
-                functionDeclarations = expression.functionDeclarations,
-                isAsync = expression.isAsync,
-            )
+            is FunctionExpression -> {
+                val name = expression.name
+                if (name == null || expression.isMethodDefinition) {
+                    // 方法语法没有 BindingIdentifier，不建立词法名字绑定
+                    createFunction(
+                        name = name ?: "",
+                        params = expression.params,
+                        body = expression.body,
+                        closure = currentFrame.lexicalEnv,
+                        strict = expression.strict,
+                        varDeclarations = expression.varDeclarations,
+                        functionDeclarations = expression.functionDeclarations,
+                        isAsync = expression.isAsync,
+                        isMethod = expression.isMethodDefinition,
+                    )
+                } else {
+                    // ES5 13：具名函数表达式的名字只在其自身作用域内可见（用于递归），
+                    // 不污染外层环境
+                    val nameEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+                    val function = createFunction(
+                        name = name,
+                        params = expression.params,
+                        body = expression.body,
+                        closure = nameEnvironment,
+                        strict = expression.strict,
+                        varDeclarations = expression.varDeclarations,
+                        functionDeclarations = expression.functionDeclarations,
+                        isAsync = expression.isAsync,
+                    )
+                    nameEnvironment.createFunctionNameBinding(name, function)
+                    function
+                }
+            }
 
             is ArrowFunction -> createFunction(
                 name = "",
@@ -1457,19 +2055,26 @@ class Interpreter(
                 isArrow = true,
                 isAsync = expression.isAsync,
                 lexicalThis = currentFrame.thisValue,
+                // 箭头函数继承 super 绑定与 new.target
+                lexicalNewTarget = currentFrame.newTarget,
+                allowsNewTarget = expression.allowsNewTarget,
+                homeObject = currentFrame.function?.homeObject,
+                superBase = currentFrame.function?.superBase,
             )
 
             is MemberExpr -> {
                 if (expression.obj is SuperExpr) {
-                    val superBase = currentFrame.function?.superBase
-                        ?: throw syntaxError("'super' keyword unexpected here")
-                    getV(superBase, memberKey(expression))
+                    if (!currentFrame.thisInitialized) {
+                        throw referenceError("Must call super constructor before accessing 'super'")
+                    }
+                    getV(superPropertyBase(), memberKey(expression))
                 } else {
                     val base = evaluate(expression.obj)
                     getV(base, memberKey(expression))
                 }
             }
 
+            is OptionalChainExpr -> evaluateOptionalChain(expression)
             is CallExpr -> evaluateCall(expression)
             is NewExpr -> construct(
                 constructor = evaluate(expression.constructor),
@@ -1543,14 +2148,52 @@ class Interpreter(
                         PropertyKey.Str(propertyName(element.key))
                     }
                     val value = evaluate(element.value)
+                    if (value is JSFunction && element.value is FunctionExpression) {
+                        // 对象字面量方法/访问器的 HomeObject 是正在构建的对象
+                        value.setMethodHome(result, result.prototype)
+                        if (element.method) value.markAsMethod()
+                    }
+                    if (value is JSFunction) {
+                        val source = element.value
+                        // 匿名函数/类按属性名推断名称；访问器使用 get/set 前缀，
+                        // 非标识符键的方法（字符串/数字/计算键）也在此补名
+                        val shouldName = element.kind != PropertyKind.INIT ||
+                            isAnonymousFunctionDefinition(source) ||
+                            (source is FunctionExpression && source.name == "")
+                        if (shouldName) {
+                            value.setName(methodFunctionName(key, element.kind))
+                        }
+                    }
                     when (element.kind) {
-                        PropertyKind.INIT -> result.defineDataProperty(
-                            key = key,
-                            value = value,
-                            writable = true,
-                            enumerable = true,
-                            configurable = true,
-                        )
+                        PropertyKind.INIT -> {
+                            val literalKeyName = if (!element.computed) {
+                                when (val keyExpression = element.key) {
+                                    is Identifier -> keyExpression.name
+                                    is StringLiteral -> keyExpression.value
+                                    else -> null
+                                }
+                            } else {
+                                null
+                            }
+                            // 冒号形式的 "__proto__: value" 设置原型；非对象/ null 忽略
+                            val isShorthand = element.value is Identifier &&
+                                element.value.range == element.key.range
+                            if (literalKeyName == "__proto__" && !element.method && !isShorthand) {
+                                when (val prototypeValue = value) {
+                                    is JSObject -> result.prototype = prototypeValue
+                                    is JSNull -> result.prototype = null
+                                    else -> Unit
+                                }
+                            } else {
+                                result.defineDataProperty(
+                                    key = key,
+                                    value = value,
+                                    writable = true,
+                                    enumerable = true,
+                                    configurable = true,
+                                )
+                            }
+                        }
 
                         PropertyKind.GET, PropertyKind.SET -> {
                             val existing = result.getOwnProperty(key)
@@ -1579,6 +2222,46 @@ class Interpreter(
         is StringLiteral -> key.value
         is NumberLiteral -> NumberFormatting.toString(key.value)
         else -> ""
+    }
+
+    /** 是否为语法上匿名的函数/类定义（需要 NamedEvaluation 推断名称）。 */
+    private fun isAnonymousFunctionDefinition(expression: Expression): Boolean = when (expression) {
+        is ArrowFunction -> true
+        is FunctionExpression -> expression.name == null
+        is ClassExpression -> expression.name == null
+        else -> false
+    }
+
+    /** 为匿名函数/类设置推断名称；具名函数表达式保持自己的名字。 */
+    private fun applyInferredFunctionName(expression: Expression, value: JSValue, name: String) {
+        if (!isAnonymousFunctionDefinition(expression)) return
+        (value as? JSFunction)?.setName(name)
+    }
+
+    /** ES2015 SetFunctionName 的 PropertyKey → 名称转换（Symbol 使用 [description]）。 */
+    private fun functionNameFromPropertyKey(key: PropertyKey): String = when (key) {
+        is PropertyKey.Str -> key.value
+        is PropertyKey.Sym -> key.symbol.description?.let { "[$it]" } ?: ""
+    }
+
+    /** 方法定义名称（访问器带 get/set 前缀）。 */
+    private fun methodFunctionName(key: PropertyKey, kind: PropertyKind): String {
+        val base = functionNameFromPropertyKey(key)
+        return when (kind) {
+            PropertyKind.GET -> "get $base"
+            PropertyKind.SET -> "set $base"
+            else -> base
+        }
+    }
+
+    /** 类成员方法名称（访问器带 get/set 前缀）。 */
+    private fun methodFunctionName(key: PropertyKey, kind: ClassMemberKind): String {
+        val base = functionNameFromPropertyKey(key)
+        return when (kind) {
+            ClassMemberKind.GET -> "get $base"
+            ClassMemberKind.SET -> "set $base"
+            else -> base
+        }
     }
 
     /** 模板字符串求值（普通模板）。 */
@@ -1626,7 +2309,7 @@ class Interpreter(
     ): JSValue {
         val superClassValue = superClassExpression?.let { evaluate(it) }
         if (superClassValue != null && superClassValue !is JSNull &&
-            superClassValue !is JSFunction && superClassValue !is JSNativeFunction
+            !isConstructor(superClassValue)
         ) {
             throw typeError("Class extends value is not a constructor or null")
         }
@@ -1636,7 +2319,13 @@ class Interpreter(
             is JSNativeFunction -> superClassValue.functionPrototypeObject
             else -> null
         }
-        val prototype = JSObject(prototype = superPrototype ?: intrinsics.objectPrototype)
+        // extends null 时类原型对象的 [[Prototype]] 为 null
+        val prototype = JSObject(
+            prototype = when {
+                superClassValue is JSNull -> null
+                else -> superPrototype ?: intrinsics.objectPrototype
+            }
+        )
         val classEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
 
         val constructorMember = members.firstOrNull { it.kind == ClassMemberKind.CONSTRUCTOR }
@@ -1662,7 +2351,7 @@ class Interpreter(
                 closure = classEnvironment,
                 strict = true,
                 isClassConstructor = true,
-                isDefaultDerivedConstructor = superClassValue != null && superClassValue !is JSNull,
+                isDefaultDerivedConstructor = superClassValue != null,
                 superConstructor = superClassValue,
                 superBase = superPrototype,
                 functionPrototypeObject = prototype,
@@ -1690,7 +2379,7 @@ class Interpreter(
                 superPrototype
             }
             val function = createFunction(
-                name = if (member.key is Identifier) member.key.name else "",
+                name = methodFunctionName(key, member.kind),
                 params = member.value.params,
                 body = member.value.body,
                 closure = classEnvironment,
@@ -1698,6 +2387,7 @@ class Interpreter(
                 varDeclarations = member.value.varDeclarations,
                 functionDeclarations = member.value.functionDeclarations,
                 isAsync = member.value.isAsync,
+                isMethod = true,
                 superBase = superBase,
                 homeObject = target,
             )
@@ -1742,19 +2432,22 @@ class Interpreter(
     ): JSValue {
         return when (superConstructor) {
             is JSFunction -> {
-                if (superConstructor.isArrow) {
+                if (superConstructor.isArrow || superConstructor.isMethod || superConstructor.isAsync) {
                     throw typeError("Super constructor is not a constructor")
                 }
+                val derived = superConstructor.isClassConstructor && superConstructor.superConstructor != null
                 val newTarget = currentFrame.newTarget
                 val callEnv = DeclarativeEnvironment(parent = superConstructor.closure, isVarScope = true)
                 val previousFrame = frame
-                frame = ExecutionContext(
+                val activeFrame = ExecutionContext(
                     lexicalEnv = callEnv,
                     thisValue = thisValue,
                     strict = true,
                     function = superConstructor,
                     newTarget = newTarget,
+                    thisInitialized = !derived,
                 )
+                frame = activeFrame
                 pushStackFrame(superConstructor.name.ifEmpty { "anonymous" })
                 try {
                     callEnv.createVarBinding("arguments", createArgumentsObject(args, superConstructor))
@@ -1765,18 +2458,30 @@ class Interpreter(
                         superConstructor.varDeclarations,
                     )
                     if (superConstructor.isDefaultDerivedConstructor) {
-                        val parent = superConstructor.superConstructor
-                            ?: throw typeError("Super constructor is not a constructor")
-                        callSuperConstructor(parent, thisValue, args)
+                        val parentValue: JSValue =
+                            superConstructor.prototype ?: intrinsics.functionPrototype
+                        if (!isConstructor(parentValue)) {
+                            throw typeError("Super constructor is not a constructor")
+                        }
+                        val result = callSuperConstructor(parentValue, activeFrame.thisValue, args)
+                        activeFrame.thisValue = result
+                        activeFrame.thisInitialized = true
                     }
                     val body = superConstructor.body
                     if (body != null) {
                         val completion = executeStatements(body.statements)
-                        if (completion is Completion.Return && completion.value is JSObject) {
-                            return completion.value
+                        if (completion is Completion.Return) {
+                            val returned = completion.value
+                            if (returned is JSObject) return returned
+                            if (derived && returned !is JSUndefined) {
+                                throw typeError("Derived constructors may only return object or undefined")
+                            }
                         }
                     }
-                    thisValue
+                    if (!activeFrame.thisInitialized) {
+                        throw referenceError("Must call super constructor before returning from derived constructor")
+                    }
+                    activeFrame.thisValue
                 } finally {
                     popStackFrame()
                     frame = previousFrame
@@ -1784,16 +2489,24 @@ class Interpreter(
             }
 
             is JSNativeFunction -> {
-                val result = callFunction(superConstructor, thisValue, args)
-                // 原生父构造器（如 Error）会返回新对象；把其自有属性合并到当前实例，
-                // 保证 class X extends Error 中 super(message) 后的 name/message 可用。
-                if (result is JSObject && thisValue is JSObject && result !== thisValue) {
-                    for (key in result.ownPropertyKeys()) {
-                        val descriptor = result.getOwnProperty(key) ?: continue
-                        thisValue.defineOwnProperty(key, descriptor)
-                    }
+                // 原生父构造器（Map/Set/Promise/Error 等）创建实际实例；
+                // 把实例原型改为 NewTarget.prototype（即派生构造器预创建实例的原型），
+                // 使 instanceof 与原型方法生效。
+                val previousConstructCall = nativeConstructCall
+                nativeConstructCall = true
+                val result = try {
+                    callFunction(superConstructor, thisValue, args)
+                } finally {
+                    nativeConstructCall = previousConstructCall
                 }
-                thisValue
+                if (result is JSObject) {
+                    if (thisValue is JSObject) {
+                        result.prototype = thisValue.prototype
+                    }
+                    result
+                } else {
+                    thisValue
+                }
             }
 
             else -> throw typeError("Super constructor is not a constructor")
@@ -1807,11 +2520,19 @@ class Interpreter(
         if (calleeExpression is SuperExpr) {
             val function = currentFrame.function
                 ?: throw syntaxError("'super' keyword unexpected here")
-            val superConstructor = function.superConstructor
-                ?: throw syntaxError("'super' keyword unexpected here")
+            if (currentFrame.thisInitialized) {
+                throw referenceError("Super constructor may only be called once")
+            }
+            // 参数列表先求值；随后动态读取 [[Prototype]] 并校验可构造性
             val arguments = evaluateArguments(expression.arguments)
-            callSuperConstructor(superConstructor, currentFrame.thisValue, arguments)
-            return currentFrame.thisValue
+            val superConstructorValue: JSValue = function.prototype ?: intrinsics.functionPrototype
+            if (!isConstructor(superConstructorValue)) {
+                throw typeError("Super constructor is not a constructor")
+            }
+            val result = callSuperConstructor(superConstructorValue, currentFrame.thisValue, arguments)
+            currentFrame.thisValue = result
+            currentFrame.thisInitialized = true
+            return result
         }
 
         // super.method(...)：在父类原型上查找方法，this 保持当前对象
@@ -1821,7 +2542,30 @@ class Interpreter(
             val key = memberKey(calleeExpression)
             val function = getV(superBase, key)
             val arguments = evaluateArguments(expression.arguments)
-            return callFunction(function, currentFrame.thisValue, arguments)
+            return callFunction(function, currentFrame.thisValue, arguments, expression.range)
+        }
+
+        // 直接 eval：只有与全局 %eval% 是同一函数时才按直接求值处理
+        if (calleeExpression is Identifier && calleeExpression.name == "eval") {
+            val function = evaluate(calleeExpression)
+            val arguments = evaluateArguments(expression.arguments)
+            val globalEval = context.globalObject.getOwnDataValue(PropertyKey.Str("eval"))
+            if (globalEval != null && function === globalEval) {
+                val value = arguments.getOrElse(0) { JSUndefined }
+                return if (value is JSString) evaluateEvalSource(value.value) else value
+            }
+            return callFunction(function, JSUndefined, arguments, expression.range)
+        }
+
+        if (calleeExpression is OptionalChainExpr) {
+            // 括号包裹的可选链作为被调用者：保留最后成员访问的 this
+            val chain = evaluateOptionalChainInternal(
+                calleeExpression,
+                calleeExpression.operations.size,
+            )
+            val arguments = evaluateArguments(expression.arguments)
+            val thisValue = if (chain.hasReceiver) chain.receiver ?: JSUndefined else JSUndefined
+            return callFunction(chain.value, thisValue, arguments, expression.range)
         }
 
         if (calleeExpression is MemberExpr) {
@@ -1830,12 +2574,112 @@ class Interpreter(
             val key = memberKey(calleeExpression)
             val function = getV(base, key)
             val arguments = evaluateArguments(expression.arguments)
-            return callFunction(function, base, arguments)
+            if (!isCallable(function)) {
+                throw typeError(
+                    "${describeValue(function)} is not a function (at ${calleeExpression.range})"
+                )
+            }
+            return callFunction(function, base, arguments, expression.range)
         }
 
         val function = evaluate(calleeExpression)
         val arguments = evaluateArguments(expression.arguments)
-        return callFunction(function, JSUndefined, arguments)
+        if (!isCallable(function)) {
+            throw typeError(
+                "${describeValue(function)} is not a function (at ${calleeExpression.range})"
+            )
+        }
+        return callFunction(function, JSUndefined, arguments, expression.range)
+    }
+
+    /**
+     * 可选链求值：任一 optional 段遇到 null/undefined 时整条链短路为 undefined，
+     * 其后的成员键与调用参数都不再求值；调用保留成员访问的 this。
+     */
+    /** 可选链求值结果：保留最后成员访问的 this 与短路标记。 */
+    private class OptionalChainResult(
+        val value: JSValue,
+        val receiver: JSValue?,
+        val hasReceiver: Boolean,
+        val shortCircuited: Boolean,
+    )
+
+    private suspend fun evaluateOptionalChain(expression: OptionalChainExpr): JSValue {
+        val result = evaluateOptionalChainInternal(expression, expression.operations.size)
+        return if (result.shortCircuited) JSUndefined else result.value
+    }
+
+    /**
+     * 求值可选链前 [count] 个操作，并记录可作为调用 this 的接收者。
+     *
+     * 基表达式是成员访问时先按引用求值，保证 `a.b?.()`/`super.m?.()` 的 this 正确。
+     */
+    private suspend fun evaluateOptionalChainInternal(
+        expression: OptionalChainExpr,
+        count: Int,
+    ): OptionalChainResult {
+        var receiver: JSValue? = null
+        var hasReceiver = false
+        var value = when (val base = expression.base) {
+            is OptionalChainExpr -> {
+                // 括号包裹的可选链作为链基：保留其最后成员的接收者
+                val inner = evaluateOptionalChainInternal(base, base.operations.size)
+                if (inner.shortCircuited) {
+                    return OptionalChainResult(JSUndefined, null, false, true)
+                }
+                receiver = inner.receiver
+                hasReceiver = inner.hasReceiver
+                inner.value
+            }
+
+            is MemberExpr -> {
+                if (base.obj is SuperExpr) {
+                    if (!currentFrame.thisInitialized) {
+                        throw referenceError("Must call super constructor before accessing 'super'")
+                    }
+                    receiver = currentFrame.thisValue
+                    hasReceiver = true
+                    getV(superPropertyBase(), memberKey(base))
+                } else {
+                    val baseValue = evaluate(base.obj)
+                    receiver = baseValue
+                    hasReceiver = true
+                    getV(baseValue, memberKey(base))
+                }
+            }
+
+            else -> evaluate(base)
+        }
+        for (index in 0 until count) {
+            when (val operation = expression.operations[index]) {
+                is OptionalChainMember -> {
+                    if (operation.optional && (value is JSNull || value is JSUndefined)) {
+                        return OptionalChainResult(JSUndefined, null, false, true)
+                    }
+                    val base = value
+                    val key = if (operation.computed) {
+                        toPropertyKey(evaluate(operation.property))
+                    } else {
+                        PropertyKey.Str((operation.property as Identifier).name)
+                    }
+                    receiver = base
+                    hasReceiver = true
+                    value = getV(base, key)
+                }
+
+                is OptionalChainCall -> {
+                    if (operation.optional && (value is JSNull || value is JSUndefined)) {
+                        return OptionalChainResult(JSUndefined, null, false, true)
+                    }
+                    val callee = value
+                    val arguments = evaluateArguments(operation.arguments)
+                    val thisValue = if (hasReceiver) receiver ?: JSUndefined else JSUndefined
+                    value = callFunction(callee, thisValue, arguments)
+                    hasReceiver = false
+                }
+            }
+        }
+        return OptionalChainResult(value, receiver, hasReceiver, false)
     }
 
     private suspend fun evaluateArguments(expressions: List<Expression>): List<JSValue> {
@@ -1850,66 +2694,168 @@ class Interpreter(
         return values
     }
 
+    /** super 属性访问的基对象：方法用 HomeObject 的动态原型，构造器用 superBase。 */
+    private fun superPropertyBase(): JSObject {
+        val function = currentFrame.function
+        val base = if (function?.homeObject != null) {
+            function.homeObject?.prototype
+        } else {
+            function?.superBase
+        }
+        return base ?: throw typeError("Cannot read properties of null (reading 'super')")
+    }
+
+    /** super 属性赋值：setter 以实际 this 为接收者，否则在接收者上创建自有属性。 */
+    private suspend fun putSuperProperty(
+        base: JSObject,
+        receiver: JSValue,
+        key: PropertyKey,
+        value: JSValue,
+        strict: Boolean,
+    ) {
+        var current: JSObject? = base
+        while (current != null) {
+            val descriptor = current.getOwnProperty(key)
+            if (descriptor != null) {
+                if (descriptor.isAccessor) {
+                    val setter = descriptor.set
+                    if (setter == null || setter is JSUndefined) {
+                        if (strict) throw typeError("Cannot set property '$key' which has only a getter")
+                        return
+                    }
+                    callFunction(setter, receiver, listOf(value))
+                    return
+                }
+                if (!descriptor.writable) {
+                    if (strict) throw typeError("Cannot assign to read only property '$key'")
+                    return
+                }
+                break
+            }
+            current = current.prototype
+        }
+        val receiverObject = receiver as? JSObject
+            ?: if (strict) {
+                throw typeError("Cannot create property '$key' on primitive value")
+            } else {
+                return
+            }
+        val defined = receiverObject.defineOwnProperty(
+            key,
+            PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
+        )
+        if (!defined && strict) throw typeError("Cannot create property '$key'")
+    }
+
     private suspend fun evaluateAssignment(expression: AssignmentExpr): JSValue {
         val operator = expression.operator
         return when (val target = expression.target) {
             is Identifier -> {
+                // 先解析 Reference 的基环境，避免 RHS/访问器删除绑定后写错位置
+                val owner = findBindingOwner(target.name)
                 when {
                     operator == "=" -> {
                         val value = evaluate(expression.value)
-                        assignIdentifier(target.name, value)
+                        applyInferredFunctionName(expression.value, value, target.name)
+                        writeIdentifierReference(owner, target.name, value)
                         value
                     }
 
                     isLogicalAssignment(operator) -> {
-                        val current = currentFrame.lexicalEnv.getBinding(target.name)
-                            ?: throw referenceError("${target.name} is not defined")
+                        val current = readIdentifierReference(owner, target.name)
                         if (!shouldAssignLogical(operator, current)) {
                             current
                         } else {
                             val value = evaluate(expression.value)
-                            assignIdentifier(target.name, value)
+                            applyInferredFunctionName(expression.value, value, target.name)
+                            writeIdentifierReference(owner, target.name, value)
                             value
                         }
                     }
 
                     else -> {
-                        val current = currentFrame.lexicalEnv.getBinding(target.name)
-                            ?: throw referenceError("${target.name} is not defined")
+                        val current = readIdentifierReference(owner, target.name)
                         val right = evaluate(expression.value)
                         val result = applyBinary(operator.dropLast(1), current, right)
-                        assignIdentifier(target.name, result)
+                        writeIdentifierReference(owner, target.name, result)
                         result
                     }
                 }
             }
 
             is MemberExpr -> {
-                val base = evaluate(target.obj)
-                val key = memberKey(target)
+                if (target.obj is SuperExpr) {
+                    if (!currentFrame.thisInitialized) {
+                        throw referenceError("Must call super constructor before accessing 'super'")
+                    }
+                    val base = superPropertyBase()
+                    val key = memberKey(target)
+                    return when {
+                        operator == "=" -> {
+                            val value = evaluate(expression.value)
+                            putSuperProperty(base, currentFrame.thisValue, key, value, currentFrame.strict)
+                            value
+                        }
+
+                        isLogicalAssignment(operator) -> {
+                            val current = getV(base, key)
+                            if (!shouldAssignLogical(operator, current)) {
+                                current
+                            } else {
+                                val value = evaluate(expression.value)
+                                putSuperProperty(base, currentFrame.thisValue, key, value, currentFrame.strict)
+                                value
+                            }
+                        }
+
+                        else -> {
+                            val current = getV(base, key)
+                            val right = evaluate(expression.value)
+                            val result = applyBinary(operator.dropLast(1), current, right)
+                            putSuperProperty(base, currentFrame.thisValue, key, result, currentFrame.strict)
+                            result
+                        }
+                    }
+                }
+                // 引用求值：base 与计算属性表达式先求值，ToPropertyKey 延迟到读写时；
+                // null/undefined 基对象在键转换之前抛 TypeError（规范 PutValue/GetValue 顺序）
+                val reference = preEvaluateMemberReference(target)
+                    ?: throw syntaxError("Invalid assignment target")
+                val base = reference.base
+                suspend fun key(): PropertyKey =
+                    reference.staticKey ?: toPropertyKey(reference.keyValue ?: JSUndefined)
                 when {
                     operator == "=" -> {
                         val value = evaluate(expression.value)
-                        putV(base, key, value, currentFrame.strict)
+                        if (base is JSNull || base is JSUndefined) {
+                            throw typeError("Cannot set properties of null or undefined")
+                        }
+                        putV(base, key(), value, currentFrame.strict)
                         value
                     }
 
                     isLogicalAssignment(operator) -> {
-                        val current = getV(base, key)
+                        if (base is JSNull || base is JSUndefined) {
+                            throw typeError("Cannot read properties of null or undefined")
+                        }
+                        val current = getV(base, key())
                         if (!shouldAssignLogical(operator, current)) {
                             current
                         } else {
                             val value = evaluate(expression.value)
-                            putV(base, key, value, currentFrame.strict)
+                            putV(base, key(), value, currentFrame.strict)
                             value
                         }
                     }
 
                     else -> {
-                        val current = getV(base, key)
+                        if (base is JSNull || base is JSUndefined) {
+                            throw typeError("Cannot read properties of null or undefined")
+                        }
+                        val current = getV(base, key())
                         val right = evaluate(expression.value)
                         val result = applyBinary(operator.dropLast(1), current, right)
-                        putV(base, key, result, currentFrame.strict)
+                        putV(base, key(), result, currentFrame.strict)
                         result
                     }
                 }
@@ -1932,11 +2878,35 @@ class Interpreter(
      * @param kind 声明种类；null 表示赋值模式
      * @param environment 声明目标环境（kind 为 null 时忽略）
      */
+    /**
+     * 解构赋值中预先求值的成员引用（引用求值必须早于 IteratorStep）。
+     * 计算键的属性名表达式会先求值，但 ToPropertyKey 延迟到真正写入时。
+     */
+    private class MemberReference(
+        val base: JSValue,
+        val staticKey: PropertyKey?,
+        val keyValue: JSValue?,
+    )
+
+    private suspend fun preEvaluateMemberReference(target: Expression): MemberReference? = when (target) {
+        is MemberExpr -> {
+            val base = evaluate(target.obj)
+            if (target.computed) {
+                MemberReference(base, null, evaluate(target.property))
+            } else {
+                MemberReference(base, memberKey(target), null)
+            }
+        }
+        is AssignmentExpr -> preEvaluateMemberReference(target.target)
+        else -> null
+    }
+
     private suspend fun bindPattern(
         pattern: Expression,
         value: JSValue,
         kind: DeclarationKind?,
         environment: Environment?,
+        reference: MemberReference? = null,
     ) {
         when (pattern) {
             is Identifier -> {
@@ -1965,41 +2935,98 @@ class Interpreter(
             }
 
             is AssignmentExpr -> {
-                // 模式中的默认值：仅当值为 undefined 时求值
-                val actualValue = if (value is JSUndefined) evaluate(pattern.value) else value
-                bindPattern(pattern.target, actualValue, kind, environment)
+                // 模式中的默认值：仅当值为 undefined 时求值；
+                // 匿名函数/类默认值按绑定标识符推断名称
+                val actualValue = if (value is JSUndefined) {
+                    val evaluated = evaluate(pattern.value)
+                    (pattern.target as? Identifier)?.let { target ->
+                        applyInferredFunctionName(pattern.value, evaluated, target.name)
+                    }
+                    evaluated
+                } else {
+                    value
+                }
+                bindPattern(pattern.target, actualValue, kind, environment, reference)
             }
 
             is ArrayLiteral -> {
-                val values = iterateValues(value)
-                var index = 0
+                // 数组解构按迭代器协议逐项消费；迭代器已 done 时不再 close，
+                // next() 自身的异常直接传播，绑定异常在未 done 时 close 后重抛
+                val record = getIterator(value)
+                var done = false
                 for (element in pattern.elements) {
                     if (element == null) {
-                        index++
+                        if (!done) {
+                            val next = iteratorNext(record)
+                            if (next == null) done = true
+                        }
                         continue
                     }
                     if (element is SpreadElement) {
-                        val restValues = ArrayList<JSValue?>()
-                        while (index < values.size) {
-                            restValues.add(values[index])
-                            index++
+                        // 赋值模式下 rest 目标引用先于迭代求值
+                        val reference = if (kind == null) {
+                            try {
+                                preEvaluateMemberReference(element.argument)
+                            } catch (error: JSException) {
+                                if (!done) iteratorClose(record, throwCompletion = true)
+                                throw error
+                            }
+                        } else {
+                            null
                         }
-                        bindPattern(
-                            element.argument,
-                            JSArray(restValues, prototype = intrinsics.arrayPrototype),
-                            kind,
-                            environment,
-                        )
+                        val restValues = ArrayList<JSValue?>()
+                        while (!done) {
+                            val next = iteratorNext(record)
+                            if (next == null) {
+                                done = true
+                            } else {
+                                restValues.add(next)
+                            }
+                        }
+                        try {
+                            bindPattern(
+                                element.argument,
+                                JSArray(restValues, prototype = intrinsics.arrayPrototype),
+                                kind,
+                                environment,
+                                reference,
+                            )
+                        } catch (error: JSException) {
+                            if (!done) iteratorClose(record, throwCompletion = true)
+                            throw error
+                        }
                     } else {
-                        bindPattern(
-                            element,
-                            values.getOrElse(index) { JSUndefined },
-                            kind,
-                            environment,
-                        )
-                        index++
+                        // 赋值模式下目标引用先于 IteratorStep
+                        val reference = if (kind == null) {
+                            try {
+                                preEvaluateMemberReference(element)
+                            } catch (error: JSException) {
+                                if (!done) iteratorClose(record, throwCompletion = true)
+                                throw error
+                            }
+                        } else {
+                            null
+                        }
+                        val elementValue = if (done) {
+                            JSUndefined
+                        } else {
+                            val next = iteratorNext(record)
+                            if (next == null) {
+                                done = true
+                                JSUndefined
+                            } else {
+                                next
+                            }
+                        }
+                        try {
+                            bindPattern(element, elementValue, kind, environment, reference)
+                        } catch (error: JSException) {
+                            if (!done) iteratorClose(record, throwCompletion = true)
+                            throw error
+                        }
                     }
                 }
+                if (!done) iteratorClose(record, throwCompletion = false)
             }
 
             is ObjectLiteral -> {
@@ -2041,8 +3068,10 @@ class Interpreter(
 
             is MemberExpr -> {
                 if (kind != null) throw syntaxError("Invalid destructuring declaration target")
-                val base = evaluate(pattern.obj)
-                val key = memberKey(pattern)
+                val base = reference?.base ?: evaluate(pattern.obj)
+                val key = reference?.let { ref ->
+                    ref.staticKey ?: toPropertyKey(ref.keyValue ?: JSUndefined)
+                } ?: memberKey(pattern)
                 putV(base, key, value, currentFrame.strict)
             }
 
@@ -2055,64 +3084,106 @@ class Interpreter(
      *
      * Map/Set 与自定义迭代器在后续批次接入。
      */
-    suspend fun iterateValues(value: JSValue): List<JSValue> {
-        return when (value) {
-            is JSArray -> {
-                val values = ArrayList<JSValue>(value.length)
-                for (index in 0 until value.length) {
-                    values.add(value.getElement(index) ?: JSUndefined)
-                }
-                values
-            }
+    /** 迭代器记录：[[Iterator]] 与 [[NextMethod]]。 */
+    private class IteratorRecord(val iterator: JSObject, val nextMethod: JSValue)
 
-            is JSString -> value.value.map { JSString(it.toString()) }
-
-            is JSWeakMap, is JSWeakSet ->
-                throw typeError("${describeValue(value)} is not iterable")
-
-            is JSMap -> value.entries.map { (key, entryValue) ->
-                JSArray(
-                    mutableListOf<JSValue?>(key, entryValue),
-                    prototype = intrinsics.arrayPrototype,
-                )
-            }
-
-            is JSSet -> value.values.toList()
-
-            is JSObject -> {
-                val iteratorMethod = getV(value, PropertyKey.Sym(intrinsics.symbolIterator))
-                if (isCallable(iteratorMethod)) {
-                    val iterator = toObject(callFunction(iteratorMethod, value, emptyList()))
-                    val results = ArrayList<JSValue>()
-                    var guard = 0
-                    while (guard < 1_000_000) {
-                        guard++
-                        val nextMethod = getV(iterator, PropertyKey.Str("next"))
-                        if (!isCallable(nextMethod)) {
-                            throw typeError("Iterator does not have a next method")
-                        }
-                        val nextResult = toObject(callFunction(nextMethod, iterator, emptyList()))
-                        if (toBoolean(getV(nextResult, PropertyKey.Str("done")))) break
-                        results.add(getV(nextResult, PropertyKey.Str("value")))
-                    }
-                    results
-                } else {
-                    val lengthValue = getV(value, PropertyKey.LENGTH)
-                    if (lengthValue is JSNumber && lengthValue.value.isFinite()) {
-                        val length = lengthValue.value.toInt().coerceAtLeast(0)
-                        val values = ArrayList<JSValue>(length)
-                        for (index in 0 until length) {
-                            values.add(getV(value, PropertyKey.Str(index.toString())))
-                        }
-                        values
-                    } else {
-                        throw typeError("${describeValue(value)} is not iterable")
-                    }
-                }
-            }
-
-            else -> throw typeError("${typeOf(value)} is not iterable")
+    /** GetIterator：要求对象具有可调用的 @@iterator。 */
+    private suspend fun getIterator(value: JSValue): IteratorRecord {
+        if (value is JSNull || value is JSUndefined) {
+            throw typeError("Cannot convert undefined or null to object")
         }
+        val objectValue = if (value is JSObject) value else toObject(value)
+        val iteratorMethod = getV(objectValue, PropertyKey.Sym(intrinsics.symbolIterator))
+        if (!isCallable(iteratorMethod)) {
+            throw typeError("${describeValue(value)} is not iterable")
+        }
+        val iteratorValue = callFunction(iteratorMethod, objectValue, emptyList())
+        if (iteratorValue !is JSObject) {
+            throw typeError("Result of the Symbol.iterator method is not an object")
+        }
+        val nextMethod = getV(iteratorValue, PropertyKey.Str("next"))
+        if (!isCallable(nextMethod)) {
+            throw typeError("Iterator does not have a next method")
+        }
+        return IteratorRecord(iteratorValue, nextMethod)
+    }
+
+    /** 取下一个迭代值；返回 null 表示迭代完成，否则返回 value（非空）。 */
+    private suspend fun iteratorNext(record: IteratorRecord): JSValue? {
+        val result = callFunction(record.nextMethod, record.iterator, emptyList())
+        if (result !is JSObject) {
+            throw typeError("Iterator result is not an object")
+        }
+        if (toBoolean(getV(result, PropertyKey.Str("done")))) return null
+        return getV(result, PropertyKey.Str("value"))
+    }
+
+    /**
+     * IteratorClose。
+     *
+     * @param throwCompletion 因异常关闭时，return 方法自身的错误不覆盖原异常；
+     *   正常完成（for-of break/return、解构正常结束）时要求 return() 返回对象。
+     */
+    private suspend fun iteratorClose(record: IteratorRecord, throwCompletion: Boolean) {
+        val returnMethod = try {
+            getV(record.iterator, PropertyKey.Str("return"))
+        } catch (error: JSException) {
+            if (throwCompletion) return
+            throw error
+        }
+        if (returnMethod is JSUndefined || returnMethod is JSNull) return
+        if (!isCallable(returnMethod)) {
+            if (throwCompletion) return
+            throw typeError("Iterator return is not a function")
+        }
+        val result = try {
+            callFunction(returnMethod, record.iterator, emptyList())
+        } catch (error: JSException) {
+            if (throwCompletion) return
+            throw error
+        }
+        if (!throwCompletion && result !is JSObject) {
+            throw typeError("Iterator result is not an object")
+        }
+    }
+
+    /** 是否具有可调用的 @@iterator（Array.from 的数组式回退判断）。 */
+    suspend fun isIterable(value: JSValue): Boolean {
+        if (value is JSNull || value is JSUndefined) return false
+        val objectValue = if (value is JSObject) value else toObject(value)
+        return isCallable(getV(objectValue, PropertyKey.Sym(intrinsics.symbolIterator)))
+    }
+
+    /** 按迭代器协议逐项消费；consumer 抛错时关闭迭代器并保留原异常。 */
+    suspend fun consumeIterator(value: JSValue, consumer: suspend (JSValue) -> Unit) {
+        val record = getIterator(value)
+        while (true) {
+            val next = iteratorNext(record) ?: break
+            try {
+                consumer(next)
+            } catch (error: JSException) {
+                iteratorClose(record, throwCompletion = true)
+                throw error
+            }
+        }
+    }
+
+    /** 按迭代器协议收集全部值（abrupt 时关闭迭代器并保留原异常）。 */
+    suspend fun iterateValues(value: JSValue): List<JSValue> {
+        val record = getIterator(value)
+        val results = ArrayList<JSValue>()
+        try {
+            var guard = 0
+            while (guard < 1_000_000) {
+                guard++
+                val next = iteratorNext(record) ?: break
+                results.add(next)
+            }
+        } catch (error: JSException) {
+            iteratorClose(record, throwCompletion = true)
+            throw error
+        }
+        return results
     }
 
     private fun isLogicalAssignment(operator: String): Boolean =
@@ -2129,11 +3200,11 @@ class Interpreter(
         val delta = if (expression.operator == "++") 1.0 else -1.0
         return when (val target = expression.target) {
             is Identifier -> {
-                val oldValue = currentFrame.lexicalEnv.getBinding(target.name)
-                    ?: throw referenceError("${target.name} is not defined")
+                val owner = findBindingOwner(target.name)
+                val oldValue = readIdentifierReference(owner, target.name)
                 val oldNumber = toNumber(oldValue)
                 val newValue = JSNumber(oldNumber + delta)
-                assignIdentifier(target.name, newValue)
+                writeIdentifierReference(owner, target.name, newValue)
                 if (expression.prefix) newValue else JSNumber(oldNumber)
             }
 
@@ -2160,6 +3231,11 @@ class Interpreter(
             return JSString(if (value == null) "undefined" else typeOf(value))
         }
 
+        // delete 不能先读取成员值，否则会触发 getter（delete obj.x 应只删除属性）
+        if (operator == "delete") {
+            return evaluateDelete(expression.operand)
+        }
+
         val operand = evaluate(expression.operand)
         return when (operator) {
             "typeof" -> JSString(typeOf(operand))
@@ -2168,10 +3244,17 @@ class Interpreter(
             "!" -> JSBoolean.getJsBoolean(!toBoolean(operand))
             "~" -> JSNumber(toInt32(operand).inv().toDouble())
             "void" -> JSUndefined
-            "delete" -> evaluateDelete(expression.operand)
             "await" -> {
+                // 规范 Await：非 Promise 值先经 PromiseResolve 采纳（thenable 通过微任务调用 then）
+                val awaited = if (operand is JSPromise) {
+                    operand
+                } else {
+                    val promise = JSPromise(intrinsics.promisePrototype)
+                    PromiseSupport.resolve(this, promise, operand)
+                    promise
+                }
                 val value = try {
-                    if (operand is JSPromise) operand.awaitResult() else operand
+                    awaited.awaitResult()
                 } catch (error: JSException) {
                     // 拒绝同样要经过一个微任务周期后再抛给 JS 层
                     context.eventLoop.awaitMicrotask()
@@ -2192,10 +3275,22 @@ class Interpreter(
                 if (currentFrame.strict) {
                     throw syntaxError("Delete of an unqualified identifier in strict mode")
                 }
-                JSBoolean.FALSE
+                // with 环境中的标识符删除的是绑定对象的属性；普通声明绑定不可删除
+                val owner = findBindingOwner(operand.name)
+                when {
+                    owner == null -> JSBoolean.TRUE // 无法解析的引用删除返回 true
+                    owner is ObjectEnvironment -> JSBoolean.getJsBoolean(
+                        owner.bindingObject.deleteOwnProperty(PropertyKey.Str(operand.name))
+                    )
+                    else -> JSBoolean.FALSE
+                }
             }
 
             is MemberExpr -> {
+                // delete super.prop 在运行时抛 ReferenceError
+                if (operand.obj is SuperExpr) {
+                    throw referenceError("Unsupported reference to 'super'")
+                }
                 val base = evaluate(operand.obj)
                 val key = memberKey(operand)
                 if (base is JSObject) {
@@ -2206,6 +3301,43 @@ class Interpreter(
                     JSBoolean.getJsBoolean(deleted)
                 } else {
                     JSBoolean.TRUE
+                }
+            }
+
+            is OptionalChainExpr -> {
+                val lastIndex = operand.operations.lastIndex
+                val prefix = evaluateOptionalChainInternal(operand, lastIndex)
+                val value = prefix.value
+                if (prefix.shortCircuited) {
+                    JSBoolean.TRUE
+                } else {
+                    when (val last = operand.operations[lastIndex]) {
+                        is OptionalChainMember -> {
+                            if (last.optional && (value is JSNull || value is JSUndefined)) {
+                                return JSBoolean.TRUE
+                            }
+                            val key = if (last.computed) {
+                                toPropertyKey(evaluate(last.property))
+                            } else {
+                                PropertyKey.Str((last.property as Identifier).name)
+                            }
+                            if (value is JSObject) {
+                                val deleted = value.deleteOwnProperty(key)
+                                if (!deleted && currentFrame.strict) {
+                                    throw typeError("Cannot delete property '$key'")
+                                }
+                                JSBoolean.getJsBoolean(deleted)
+                            } else {
+                                JSBoolean.TRUE
+                            }
+                        }
+
+                        is OptionalChainCall -> {
+                            // delete a?.b()：调用后按值删除，结果恒为 true
+                            evaluateOptionalChain(operand)
+                            JSBoolean.TRUE
+                        }
+                    }
                 }
             }
 
@@ -2277,18 +3409,22 @@ class Interpreter(
             "|" -> JSNumber((toInt32(left) or toInt32(right)).toDouble())
             "^" -> JSNumber((toInt32(left) xor toInt32(right)).toDouble())
             "<<" -> {
+                // 规范顺序：先 ToInt32(left)，再 ToUint32(right)
+                val leftInt = toInt32(left)
                 val shift = (toUint32(right) and 31L).toInt()
-                JSNumber((toInt32(left) shl shift).toDouble())
+                JSNumber((leftInt shl shift).toDouble())
             }
 
             ">>" -> {
+                val leftInt = toInt32(left)
                 val shift = (toUint32(right) and 31L).toInt()
-                JSNumber((toInt32(left) shr shift).toDouble())
+                JSNumber((leftInt shr shift).toDouble())
             }
 
             ">>>" -> {
+                val leftInt = toUint32(left)
                 val shift = (toUint32(right) and 31L).toInt()
-                JSNumber((toUint32(left) shr shift).toDouble())
+                JSNumber((leftInt shr shift).toDouble())
             }
 
             "in" -> {
@@ -2318,11 +3454,14 @@ class Interpreter(
             }
         }
 
-        val prototypeObject = when (constructor) {
-            is JSFunction -> constructor.functionPrototypeObject
-            is JSNativeFunction -> constructor.functionPrototypeObject
-            else -> throw typeError("Right-hand side of 'instanceof' is not callable")
-        } ?: return false
+        if (!isCallable(constructor)) {
+            throw typeError("Right-hand side of 'instanceof' is not callable")
+        }
+        // 使用构造器当前的 prototype（可能已被重新赋值）
+        val prototypeValue = getV(constructor as JSObject, PropertyKey.PROTOTYPE)
+        val prototypeObject = prototypeValue as? JSObject
+            ?: throw typeError("Function has non-object prototype in instanceof check")
+        if (value !is JSObject) return false
 
         if (value !is JSObject) return false
         var prototype = value.prototype
@@ -2358,6 +3497,45 @@ class Interpreter(
         }
     }
 
+    /** 查找当前作用域链中拥有该绑定/属性的环境（Reference 的基环境）。 */
+    private fun findBindingOwner(name: String): Environment? {
+        var environment: Environment? = currentFrame.lexicalEnv
+        while (environment != null) {
+            if (environment.hasOwnBinding(name)) return environment
+            environment = environment.parent
+        }
+        return null
+    }
+
+    /** 读取标识符 Reference；不存在时抛 ReferenceError。 */
+    private suspend fun readIdentifierReference(owner: Environment?, name: String): JSValue {
+        val value = when (owner) {
+            is ObjectEnvironment -> getV(owner.bindingObject, PropertyKey.Str(name))
+            null -> null
+            else -> owner.getBinding(name)
+        }
+        return value ?: throw referenceError("$name is not defined")
+    }
+
+    /** 写回标识符 Reference；对象环境即使属性已被删除也写回基对象。 */
+    private suspend fun writeIdentifierReference(
+        owner: Environment?,
+        name: String,
+        value: JSValue,
+    ) {
+        when (owner) {
+            is ObjectEnvironment ->
+                putV(owner.bindingObject, PropertyKey.Str(name), value, currentFrame.strict)
+
+            null -> assignIdentifier(name, value)
+            else -> {
+                if (!owner.setBinding(name, value, currentFrame.strict)) {
+                    assignIdentifier(name, value)
+                }
+            }
+        }
+    }
+
     /** 对标识符赋值；未声明时按严格模式处理。 */
     private suspend fun assignIdentifier(name: String, value: JSValue) {
         val handled = currentFrame.lexicalEnv.setBinding(name, value, currentFrame.strict)
@@ -2378,16 +3556,17 @@ class Interpreter(
     // ================================================================
 
     /** 解析规范数组索引（"0" 或非前导零的十进制非负整数）。 */
-    private fun canonicalIndex(key: PropertyKey): Int? {
+    private fun canonicalIndex(key: PropertyKey): Long? {
         val text = (key as? PropertyKey.Str)?.value ?: return null
         if (text.isEmpty() || text.length > 10) return null
         if (text != "0" && text[0] == '0') return null
-        var value = 0
+        var value = 0L
         for (c in text) {
             if (c !in '0'..'9') return null
             value = value * 10 + (c - '0')
         }
-        return value
+        // 2^32-1 及以上不是字符串索引
+        return if (value >= 4294967295L) null else value
     }
 
     /** 给 for-in/of 的赋值目标写值。 */
@@ -2410,10 +3589,14 @@ class Interpreter(
     /** 收集对象自身与原型链上的可枚举字符串键（for-in）。 */
     private fun enumerableStringKeysIncludingPrototype(objectValue: JSObject): List<String> {
         val keys = LinkedHashSet<String>()
+        // 非枚举的自有属性同样会遮蔽原型上的同名属性，因此单独记录已访问键
+        val visited = HashSet<String>()
         var current: JSObject? = objectValue
         while (current != null) {
             for (key in current.ownPropertyKeys()) {
-                if (key is PropertyKey.Str && current.getOwnProperty(key)?.enumerable == true) {
+                if (key !is PropertyKey.Str) continue
+                if (!visited.add(key.value)) continue
+                if (current.getOwnProperty(key)?.enumerable == true) {
                     keys.add(key.value)
                 }
             }
@@ -2429,6 +3612,10 @@ class Interpreter(
      * 这里覆盖 ES5 常用的匹配、捕获与全局搜索行为。
      */
     fun createRegExp(pattern: String, flags: String): JSValue {
+        validateJsRegexSyntax(pattern)
+        if ('u' in flags) {
+            validateUnicodeRegexSyntax(pattern)
+        }
         val seen = mutableSetOf<Char>()
         val options = mutableSetOf<RegexOption>()
         for (flag in flags) {
@@ -2443,17 +3630,286 @@ class Interpreter(
                 else -> throw syntaxError("Invalid regular expression flags")
             }
         }
-        val regex = try {
-            Regex(pattern, options)
-        } catch (_: Throwable) {
-            throw syntaxError("Invalid regular expression: /$pattern/$flags")
+        fun buildFallback(): JsRegex = try {
+            JsRegexEngine(pattern, flags)
+        } catch (fallbackError: Throwable) {
+            val detail = fallbackError.message?.lineSequence()?.firstOrNull()?.trim()
+            throw syntaxError(
+                "Invalid regular expression: /$pattern/$flags" +
+                    if (detail.isNullOrEmpty()) "" else " ($detail)"
+            )
+        }
+
+        // 已知 JS 专属语法（空字符类、\0、前向反向引用等）直接使用回退引擎，
+        // 因为 Kotlin/Java 的语义与 JS 不同或无法编译
+        val matcher = if (requiresJsRegexEngine(pattern)) {
+            buildFallback()
+        } else {
+            val kotlinRegex = try {
+                Regex(pattern, options)
+            } catch (_: Throwable) {
+                null
+            }
+            if (kotlinRegex != null) {
+                KotlinJsRegex(kotlinRegex)
+            } else {
+                // 仅在 Kotlin Regex 明确不支持、且是已知 JS-only 构造时启用回退，
+                // 避免错误接受非法正则。
+                if (!hasLookaheadBackReference(pattern) && !requiresJsRegexEngine(pattern)) {
+                    throw syntaxError("Invalid regular expression: /$pattern/$flags")
+                }
+                buildFallback()
+            }
         }
         return JSRegExp(
             pattern = pattern,
             flags = flags,
-            regex = regex,
+            matcher = matcher,
             prototype = intrinsics.regexpPrototype,
         )
+    }
+
+    /** lookahead 中包含数字反向引用的模式（Java 对反向引用语义与 JS 不同）。 */
+    private fun hasLookaheadBackReference(pattern: String): Boolean {
+        if (!pattern.contains("(?=") && !pattern.contains("(?!")) return false
+        return Regex("""\\[1-9]""").containsMatchIn(pattern)
+    }
+
+    /**
+     * 判断是否必须使用纯 Kotlin 正则引擎：
+     * - Kotlin/Java 不支持的空字符类 `[]`、`[^]`、字符类内 `\b`、`\0`；
+     * - 前向反向引用（引用尚未参与匹配的捕获组）。
+     */
+    private fun requiresJsRegexEngine(pattern: String): Boolean {
+        val hasJsClassSyntax = pattern.contains("[]") || pattern.contains("[^]") ||
+            pattern.contains("\\0") || pattern.contains("\\c") || pattern.contains("\\u{") ||
+            hasBackspaceInsideClass(pattern) || hasBracketInsideClass(pattern)
+        if (hasJsClassSyntax) return true
+        if (hasLookaheadBackReference(pattern)) return true
+        if (hasForwardBackReference(pattern)) return true
+        // Java 在量词组内保留上一轮捕获值，JS 要求每轮重置
+        return hasQuantifiedCapturingGroup(pattern)
+    }
+
+    /** 是否存在被量词的捕获组（其内部捕获需要在每轮迭代前重置）。 */
+    private fun hasQuantifiedCapturingGroup(pattern: String): Boolean {
+        val stack = mutableListOf<Boolean>()
+        var inClass = false
+        var index = 0
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> index++
+                inClass -> Unit
+                c == '[' -> inClass = true
+                c == ']' -> inClass = false
+                c == '(' -> {
+                    val capturing = index + 1 >= pattern.length || pattern[index + 1] != '?'
+                    stack.add(capturing)
+                }
+                c == ')' -> {
+                    val hasCapture = if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) else false
+                    if (hasCapture && stack.isNotEmpty()) {
+                        stack[stack.size - 1] = true
+                    }
+                    if (hasCapture && isQuantifierStart(pattern, index + 1)) return true
+                }
+            }
+            index++
+        }
+        return false
+    }
+
+    private fun isQuantifierStart(pattern: String, index: Int): Boolean {
+        if (index >= pattern.length) return false
+        return when (pattern[index]) {
+            '*', '+', '?' -> true
+            '{' -> validBraceQuantifierEnd(pattern, index) != null
+            else -> false
+        }
+    }
+
+    /**
+     * JS 正则基础语法校验：Kotlin/Java 会接受一些 JS 非法的量词组合
+     * （例如 a++、x{1}{1,}），这里在编译前拒绝。
+     */
+    private fun validateJsRegexSyntax(pattern: String) {
+        var index = 0
+        var inClass = false
+        var lastQuantifier = false
+        var lastLazy = false
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> {
+                    index += 2
+                    lastQuantifier = false
+                    lastLazy = false
+                    continue
+                }
+                c == '[' && !inClass -> {
+                    inClass = true
+                    lastQuantifier = false
+                    lastLazy = false
+                }
+                c == ']' && inClass -> {
+                    inClass = false
+                    lastQuantifier = false
+                    lastLazy = false
+                }
+                inClass -> Unit
+                c == '*' || c == '+' || c == '?' -> {
+                    if (lastQuantifier) {
+                        if (c == '?' && !lastLazy) {
+                            lastLazy = true
+                            lastQuantifier = false
+                        } else {
+                            throw syntaxError("Invalid regular expression: /$pattern/")
+                        }
+                    } else if (lastLazy) {
+                        throw syntaxError("Invalid regular expression: /$pattern/")
+                    } else {
+                        lastQuantifier = true
+                    }
+                }
+                c == '{' -> {
+                    val end = validBraceQuantifierEnd(pattern, index)
+                    if (end != null) {
+                        if (lastQuantifier || lastLazy) {
+                            throw syntaxError("Invalid regular expression: /$pattern/")
+                        }
+                        lastQuantifier = true
+                        lastLazy = false
+                        index = end
+                        continue
+                    }
+                    lastQuantifier = false
+                    lastLazy = false
+                }
+                c == ')' -> {
+                    lastQuantifier = false
+                    lastLazy = false
+                }
+                else -> {
+                    lastQuantifier = false
+                    lastLazy = false
+                }
+            }
+            index++
+        }
+    }
+
+    /** Unicode 模式（u 标志）的额外早期错误，复用词法器共享校验。 */
+    private fun validateUnicodeRegexSyntax(pattern: String) {
+        val error = JsRegexSyntax.unicodeError(pattern)
+        if (error != null) throw syntaxError(error)
+    }
+
+    /** 若 index 处是合法的 {m} / {m,} / {m,n}，返回 '}' 之后的索引。 */
+    private fun validBraceQuantifierEnd(pattern: String, index: Int): Int? {
+        var cursor = index + 1
+        val minStart = cursor
+        while (cursor < pattern.length && pattern[cursor] in '0'..'9') cursor++
+        if (cursor == minStart) return null
+        if (cursor < pattern.length && pattern[cursor] == ',') {
+            cursor++
+            while (cursor < pattern.length && pattern[cursor] in '0'..'9') cursor++
+        }
+        if (cursor < pattern.length && pattern[cursor] == '}') return cursor + 1
+        return null
+    }
+
+    /** JS 允许字符类内部出现未转义的 '['，Kotlin/Java 会拒绝。 */
+    private fun hasBracketInsideClass(pattern: String): Boolean {
+        var inClass = false
+        var index = 0
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> index++
+                c == '[' && inClass -> return true
+                c == '[' -> inClass = true
+                c == ']' && inClass -> inClass = false
+            }
+            index++
+        }
+        return false
+    }
+
+    private fun hasBackspaceInsideClass(pattern: String): Boolean {
+        var inClass = false
+        var index = 0
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> {
+                    if (inClass && index + 1 < pattern.length && pattern[index + 1] == 'b') return true
+                    index++
+                }
+                c == '[' && !inClass -> inClass = true
+                c == ']' && inClass -> inClass = false
+            }
+            index++
+        }
+        return false
+    }
+
+    private fun hasForwardBackReference(pattern: String): Boolean {
+        var totalGroups = 0
+        var index = 0
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> index++
+                c == '[' -> {
+                    index++
+                    while (index < pattern.length && pattern[index] != ']') {
+                        if (pattern[index] == '\\') index++
+                        index++
+                    }
+                }
+                c == '(' && (index + 1 >= pattern.length || pattern[index + 1] != '?') -> totalGroups++
+            }
+            index++
+        }
+        if (totalGroups == 0) return false
+
+        var groupsSeen = 0
+        index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' && index + 1 < pattern.length -> {
+                    val next = pattern[index + 1]
+                    if (!inClass && next in '1'..'9') {
+                        var reference = next - '0'
+                        var lookahead = index + 2
+                        while (lookahead < pattern.length && pattern[lookahead] in '0'..'9' &&
+                            reference * 10 + (pattern[lookahead] - '0') <= totalGroups
+                        ) {
+                            reference = reference * 10 + (pattern[lookahead] - '0')
+                            lookahead++
+                        }
+                        if (reference > groupsSeen) return true
+                    }
+                    index++
+                }
+                c == '[' && !inClass -> inClass = true
+                c == ']' && inClass -> inClass = false
+                c == '(' && !inClass && (index + 1 >= pattern.length || pattern[index + 1] != '?') ->
+                    groupsSeen++
+            }
+            index++
+        }
+        return false
+    }
+
+    /** 判断值是否可作为构造器（[[Construct]] 是否存在）。 */
+    fun isConstructor(value: JSValue): Boolean = when (value) {
+        is JSFunction -> !value.isArrow && !value.isAsync && !value.isMethod
+        is JSNativeFunction -> value.functionPrototypeObject != null || value.constructFunction != null
+        else -> false
     }
 
     /** 错误值的可读描述（用于 "xxx is not a function" 之类消息）。 */
@@ -2463,14 +3919,31 @@ class Interpreter(
         typeOf(value)
     }
 
-    private fun pushStackFrame(name: String) {
-        callStack.add(StackFrame(name))
+    private fun pushStackFrame(name: String, range: SourceRange? = null) {
+        callStack.add(StackFrame(name, range))
     }
 
     private fun popStackFrame() {
         if (callStack.isNotEmpty()) {
             callStack.removeAt(callStack.lastIndex)
         }
+    }
+
+    /** 为内部构造的 JSError 补齐内建错误原型，保证 catch 后 constructor 身份正确。 */
+    fun normalizeErrorValue(value: JSValue): JSValue {
+        if (value !is JSError) return value
+        val current = value.prototype
+        if (current != null && current !== intrinsics.errorPrototype) return value
+        value.prototype = when (value.errorName) {
+            "EvalError" -> intrinsics.evalErrorPrototype
+            "RangeError" -> intrinsics.rangeErrorPrototype
+            "ReferenceError" -> intrinsics.referenceErrorPrototype
+            "SyntaxError" -> intrinsics.syntaxErrorPrototype
+            "TypeError" -> intrinsics.typeErrorPrototype
+            "URIError" -> intrinsics.uriErrorPrototype
+            else -> intrinsics.errorPrototype
+        }
+        return value
     }
 
     /** 抛出 TypeError。 */

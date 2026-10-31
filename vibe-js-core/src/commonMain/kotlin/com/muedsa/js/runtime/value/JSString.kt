@@ -77,5 +77,6 @@ internal fun isJsWhitespace(c: Char): Boolean = when (c) {
     ' ', '\t', '\r', '\n', '\u000B', '\u000C', '\u00A0', '\uFEFF',
     '\u2028', '\u2029' -> true
 
-    else -> false
+    // Unicode 空白分隔符（Zs），例如 U+1680、U+2000..U+200A、U+202F、U+205F、U+3000
+    else -> c.category == CharCategory.SPACE_SEPARATOR
 }

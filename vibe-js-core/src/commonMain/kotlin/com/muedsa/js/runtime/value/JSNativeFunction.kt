@@ -15,22 +15,27 @@ class JSNativeFunction(
     val length: Int = 0,
     prototype: JSObject? = null,
     val functionPrototypeObject: JSObject? = null,
+    /** 自定义 [[Construct]]（如 bind 生成的绑定函数）；null 表示按普通内建构造规则处理。 */
+    val constructFunction: (suspend (interpreter: Interpreter, args: List<JSValue>) -> JSValue)? = null,
+    /** bind 生成的绑定函数所指向的目标函数（供 @@hasInstance 解包）。 */
+    val boundTarget: JSValue? = null,
     val function: suspend (interpreter: Interpreter, thisValue: JSValue, args: List<JSValue>) -> JSValue,
 ) : JSObject(prototype) {
 
     override fun toPrimitiveString(): String = "function $name() { [native code] }"
 
     init {
+        // 规范顺序：length 在 name 之前
         defineDataProperty(
-            PropertyKey.NAME,
-            JSString(name),
+            PropertyKey.LENGTH,
+            JSNumber(length.toDouble()),
             writable = false,
             enumerable = false,
             configurable = true,
         )
         defineDataProperty(
-            PropertyKey.LENGTH,
-            JSNumber(length.toDouble()),
+            PropertyKey.NAME,
+            JSString(name),
             writable = false,
             enumerable = false,
             configurable = true,

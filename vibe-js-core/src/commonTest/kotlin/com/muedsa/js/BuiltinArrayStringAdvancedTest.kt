@@ -133,6 +133,78 @@ class BuiltinArrayStringAdvancedTest {
     }
 
     @Test
+    fun `Array 只读方法支持 array-like 对象`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "2,4",
+            runtime.evalString(
+                "Array.prototype.map.call({ 0: 1, 1: 2, length: 2 }, function (x) { return x * 2; }).join(',')"
+            )
+        )
+        assertEquals(
+            "2",
+            runtime.evalString(
+                "Array.prototype.filter.call({ 0: 1, 1: 2, length: 2 }, function (x) { return x > 1; }).join(',')"
+            )
+        )
+        assertEquals(
+            "b",
+            runtime.evalString("Array.prototype.slice.call({ 0: 'a', 1: 'b', length: 2 }, 1).join(',')")
+        )
+        assertEquals(
+            // concat 是泛型方法：非数组 this 作为单个元素，而不是按 array-like 展开
+            "[object Object],b",
+            runtime.evalString("Array.prototype.concat.call({ 0: 'a', length: 1 }, ['b']).join(',')")
+        )
+        assertEquals(
+            "a-b",
+            runtime.evalString("Array.prototype.join.call({ 0: 'a', 1: 'b', length: 2 }, '-')")
+        )
+        assertEquals(
+            false,
+            runtime.evalBoolean(
+                "Array.prototype.every.call({ 0: 9, length: 1 }, function (x) { return x > 10; })"
+            )
+        )
+    }
+
+    @Test
+    fun `Array 写方法回写 array-like 对象`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "3:3",
+            runtime.evalString(
+                """
+                var o = { 0: 1, 1: 2, length: 2 };
+                var length = Array.prototype.push.call(o, 3);
+                length + ':' + o[2];
+                """.trimIndent()
+            )
+        )
+        assertEquals(
+            "2:3",
+            runtime.evalString(
+                """
+                var o = { 0: 1, 1: 2, 2: 3, length: 3 };
+                var popped = Array.prototype.pop.call(o);
+                o.length + ':' + popped;
+                """.trimIndent()
+            )
+        )
+        assertEquals(
+            true,
+            runtime.evalBoolean(
+                """
+                var o = { 0: 1, length: 1 };
+                var same = false;
+                Array.prototype.map.call(o, function (value, index, obj) { same = (obj === o); return value; });
+                same;
+                """.trimIndent()
+            )
+        )
+    }
+
+    @Test
     fun `数组迭代器的 done 与 value`() = runTest {
         val runtime = TestRuntime()
         assertEquals(
@@ -266,6 +338,77 @@ class BuiltinArrayStringAdvancedTest {
         assertEquals(-1.0, runtime.evalNumber("'banana'.indexOf('an', 4)"))
         assertEquals(true, runtime.evalBoolean("'banana'.includes('na', 4)"))
         assertEquals(false, runtime.evalBoolean("'banana'.includes('na', 6)"))
+    }
+
+    @Test
+    fun `String 包装对象的 toString 与 valueOf`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "abc:abc:abc",
+            runtime.evalString(
+                "var s = new String('abc'); s.toString() + ':' + s.valueOf() + ':' + String(s)"
+            )
+        )
+        val error = assertFailsWith<JSException> {
+            runtime.eval("String.prototype.toString.call(1)")
+        }
+        assertEquals("TypeError", (error.value as JSError).errorName)
+    }
+
+    @Test
+    fun `内建方法不能被 new 调用`() = runTest {
+        val runtime = TestRuntime()
+        for (code in listOf(
+            "new (String.prototype.charAt)",
+            "new (Array.prototype.map)",
+            "new (Number.prototype.toFixed)",
+            "new (Object.prototype.toString)",
+        )) {
+            val error = assertFailsWith<JSException> { runtime.eval(code) }
+            assertEquals("TypeError", (error.value as JSError).errorName)
+        }
+        assertEquals(0.0, runtime.evalNumber("new Date(0).getTime()"))
+    }
+
+    @Test
+    fun `Number 与 Boolean 原型的接收者语义`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("2", runtime.evalString("new Number(2).toString()"))
+        assertEquals(2.0, runtime.evalNumber("new Number(2).valueOf()"))
+        assertEquals(0.0, runtime.evalNumber("Number.prototype.valueOf()"))
+        assertEquals(false, runtime.evalBoolean("Boolean.prototype.valueOf()"))
+        assertEquals("false", runtime.evalString("new Boolean(false).toString()"))
+        for (code in listOf(
+            "Number.prototype.toString.call({})",
+            "Number.prototype.valueOf.call('1')",
+            "Boolean.prototype.toString.call({})",
+            "Boolean.prototype.valueOf.call(0)",
+        )) {
+            val error = assertFailsWith<JSException> { runtime.eval(code) }
+            assertEquals("TypeError", (error.value as JSError).errorName)
+        }
+    }
+
+    @Test
+    fun `URI 编解码函数`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("a%20b", runtime.evalString("encodeURIComponent('a b')"))
+        assertEquals("%E4%B8%AD", runtime.evalString("encodeURIComponent('中')"))
+        assertEquals(
+            "https://example.com/?q=%E4%B8%AD&x=1",
+            runtime.evalString("encodeURI('https://example.com/?q=中&x=1')")
+        )
+        assertEquals("中", runtime.evalString("decodeURIComponent('%E4%B8%AD')"))
+        assertEquals(
+            "https://example.com/?q=中&x=1",
+            runtime.evalString("decodeURI('https://example.com/?q=%E4%B8%AD&x=1')")
+        )
+        assertEquals("?", runtime.evalString("decodeURIComponent('%3F')"))
+        assertEquals("%3F", runtime.evalString("decodeURI('%3F')"))
+        val error = assertFailsWith<JSException> {
+            runtime.eval("decodeURIComponent('%E4')")
+        }
+        assertEquals("URIError", (error.value as JSError).errorName)
     }
 
     @Test

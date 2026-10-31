@@ -2,9 +2,11 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.value.JSArray
+import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSFunction
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNull
+import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
@@ -26,12 +28,13 @@ object FunctionBuiltins {
             length = 1,
             prototypeObject = functionPrototype,
         ) { interpreter, _, args ->
-            val body = if (args.isEmpty()) "" else interpreter.toStringValue(args.last())
+            // 规范顺序：先 ToString 全部参数，再 ToString 函数体（异常顺序有测试覆盖）
             val params = if (args.size > 1) {
                 args.dropLast(1).map { interpreter.toStringValue(it) }
             } else {
                 emptyList()
             }
+            val body = if (args.isEmpty()) "" else interpreter.toStringValue(args.last())
             interpreter.createDynamicFunction(params, body)
         }
 
@@ -41,6 +44,59 @@ object FunctionBuiltins {
             writable = true,
             enumerable = false,
             configurable = true,
+        )
+
+        // ES2015 15.3.5.4：严格函数（以及绑定/内建函数）读取 caller/arguments 必须抛 TypeError
+        val restrictedAccessor = JSNativeFunction(
+            name = "",
+            length = 0,
+            prototype = functionPrototype,
+        ) { interpreter, _, _ ->
+            interpreter.typeError(
+                "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions"
+            )
+        }
+        functionPrototype.defineAccessorProperty(
+            key = PropertyKey.Str("caller"),
+            get = restrictedAccessor,
+            set = restrictedAccessor,
+            enumerable = false,
+            configurable = true,
+        )
+        functionPrototype.defineAccessorProperty(
+            key = PropertyKey.Str("arguments"),
+            get = restrictedAccessor,
+            set = restrictedAccessor,
+            enumerable = false,
+            configurable = true,
+        )
+
+        // Function.prototype[@@hasInstance](V)：OrdinaryHasInstance
+        functionPrototype.defineDataProperty(
+            key = PropertyKey.Sym(intrinsics.symbolHasInstance),
+            value = BuiltinHelpers.method(intrinsics, "[Symbol.hasInstance]", 1) { interpreter, thisValue, args ->
+                val value = args.getOrElse(0) { JSUndefined }
+                // BoundFunction 的 @@hasInstance 委托给 [[BoundTargetFunction]]
+                var target = thisValue
+                while (target is JSNativeFunction && target.boundTarget != null) {
+                    target = target.boundTarget
+                }
+                if (!interpreter.isCallable(target) || value !is JSObject) {
+                    return@method JSBoolean.FALSE
+                }
+                val prototype = interpreter.getV(target, PropertyKey.PROTOTYPE)
+                if (prototype !is JSObject) {
+                    interpreter.typeError("Function has non-object prototype in instanceof check")
+                }
+                var current: JSObject? = value.prototype
+                while (current != null) {
+                    if (current === prototype) return@method JSBoolean.TRUE
+                    current = current.prototype
+                }
+                JSBoolean.FALSE
+            },
+            writable = false,
+            configurable = false,
         )
 
         // Function.prototype.call(thisArg, ...args)
@@ -61,7 +117,7 @@ object FunctionBuiltins {
                 val argumentArray = args.getOrNull(1)
                 val callArguments = when (argumentArray) {
                     null, is JSUndefined, is JSNull -> emptyList()
-                    is JSArray -> argumentArray.elements.filterNotNull()
+                    is JSArray -> argumentArray.presentValues()
                     is JSObject -> {
                         val length = interpreter.toNumber(
                             interpreter.getV(argumentArray, PropertyKey.LENGTH)
@@ -94,10 +150,27 @@ object FunctionBuiltins {
                 } else {
                     emptyList()
                 }
-                val targetName = (thisValue as? JSObject)
-                    ?.getOwnDataValue(PropertyKey.NAME)
-                    ?.toPrimitiveString() ?: "function"
-                BuiltinHelpers.method(intrinsics, "bound $targetName", 0) { inner, _, callArgs ->
+                val targetObject = thisValue as? JSObject
+                // 规范：目标 name 不是字符串时按空串处理
+                val targetName = (targetObject?.getOwnDataValue(PropertyKey.NAME) as? JSString)?.value ?: ""
+                // 绑定函数 length = max(0, 目标 length - 已绑定参数个数)
+                val targetLength = (targetObject?.getOwnDataValue(PropertyKey.LENGTH) as? JSNumber)?.value ?: 0.0
+                val boundLength = (targetLength - boundArguments.size).coerceAtLeast(0.0).toInt()
+                // 目标是构造器时，绑定函数也可用 new 调用（转交给目标的 [[Construct]]）
+                val constructable = interpreter.isConstructor(thisValue)
+                JSNativeFunction(
+                    name = "bound $targetName",
+                    length = boundLength,
+                    prototype = functionPrototype,
+                    constructFunction = if (constructable) {
+                        { inner, constructArgs ->
+                            inner.construct(thisValue, boundArguments + constructArgs)
+                        }
+                    } else {
+                        null
+                    },
+                    boundTarget = thisValue,
+                ) { inner, _, callArgs ->
                     inner.callFunction(thisValue, boundThis, boundArguments + callArgs)
                 }
             },

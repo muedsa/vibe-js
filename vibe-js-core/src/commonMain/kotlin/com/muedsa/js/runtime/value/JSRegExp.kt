@@ -1,15 +1,17 @@
 package com.muedsa.js.runtime.value
 
+import com.muedsa.js.runtime.regex.JsRegex
+
 /**
  * 正则表达式对象。
  *
- * 使用 Kotlin 的 Regex 作为匹配引擎，保留 JS 的 source/flags 与 lastIndex 语义。
- * 说明：Kotlin Regex 与 JS RegExp 在命名组等少数语法上存在差异，阶段 B 覆盖常用 ES5 行为。
+ * 使用 [JsRegex] 作为匹配引擎（优先 Kotlin Regex，必要时回退到纯 Kotlin 引擎），
+ * 保留 JS 的 source/flags 与 lastIndex 语义。
  */
 class JSRegExp(
     val pattern: String,
     val flags: String,
-    val regex: Regex,
+    val matcher: JsRegex,
     prototype: JSObject?,
 ) : JSObject(prototype) {
 
@@ -21,26 +23,8 @@ class JSRegExp(
     val dotAll: Boolean = flags.contains('s')
 
     init {
-        defineDataProperty(
-            key = PropertyKey.Str("source"),
-            value = JSString(if (pattern.isEmpty()) "(?:)" else pattern),
-            writable = false,
-            enumerable = false,
-            configurable = false,
-        )
-        defineDataProperty(
-            key = PropertyKey.Str("flags"),
-            value = JSString(flags),
-            writable = false,
-            enumerable = false,
-            configurable = false,
-        )
-        defineDataProperty(PropertyKey.Str("global"), JSBoolean.getJsBoolean(global), false, false, false)
-        defineDataProperty(PropertyKey.Str("ignoreCase"), JSBoolean.getJsBoolean(ignoreCase), false, false, false)
-        defineDataProperty(PropertyKey.Str("multiline"), JSBoolean.getJsBoolean(multiline), false, false, false)
-        defineDataProperty(PropertyKey.Str("sticky"), JSBoolean.getJsBoolean(sticky), false, false, false)
-        defineDataProperty(PropertyKey.Str("unicode"), JSBoolean.getJsBoolean(unicode), false, false, false)
-        defineDataProperty(PropertyKey.Str("dotAll"), JSBoolean.getJsBoolean(dotAll), false, false, false)
+        // 规范：source/flags/global 等均为原型访问器（读取内部槽）；
+        // 实例只拥有 lastIndex 自有属性
         defineDataProperty(
             key = PropertyKey.Str("lastIndex"),
             value = JSNumber.ZERO,
@@ -59,5 +43,12 @@ class JSRegExp(
         setOwnDataValue(PropertyKey.Str("lastIndex"), JSNumber(value.toDouble()))
     }
 
-    override fun toPrimitiveString(): String = "/$pattern/$flags"
+    /** 规范 flags 的规范顺序（d g i m s u v y；引擎仅支持其中部分）。 */
+    fun canonicalFlags(): String = FLAG_ORDER.filter { flags.contains(it) }
+
+    override fun toPrimitiveString(): String = "/$pattern/${canonicalFlags()}"
+
+    private companion object {
+        const val FLAG_ORDER = "dgimsuvy"
+    }
 }

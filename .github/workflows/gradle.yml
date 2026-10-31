@@ -54,8 +54,9 @@ jobs:
       if: runner.os != 'Windows'
 
     - name: Run Gradle tasks
-      run: ./gradlew ${{ matrix.tasks }}
-      continue-on-error: true
+      # --continue 保证所有测试任务都执行并产出报告；测试失败会让 Job 失败
+      run: ./gradlew ${{ matrix.tasks }} --continue
+      timeout-minutes: 45
 
     # 发布测试结果到 PR/Commit 中（仅在 Linux 上运行）
     - name: Publish Test Results

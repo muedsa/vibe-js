@@ -113,7 +113,7 @@ object MathBuiltins {
         unary("log1p") { value -> ln1p(value) }
         unary("log10") { value -> log10(value) }
         unary("log2") { value -> log2(value) }
-        unary("round") { value -> floor(value + 0.5) }
+        unary("round") { value -> mathRound(value) }
         unary("sign") { value -> sign(value) }
         unary("sin") { value -> sin(value) }
         unary("sinh") { value -> sinh(value) }
@@ -209,4 +209,14 @@ object MathBuiltins {
             },
         )
     }
+    /** Math.round：-0.5 <= x < 0 返回 -0，0 <= x < 0.5 返回 +0。 */
+    private fun mathRound(value: Double): Double {
+        if (value.isNaN() || value.isInfinite() || value == 0.0) return value
+        // |x| 超过 2^52 时 x + 0.5 会因精度丢失而改变结果
+        if (kotlin.math.abs(value) >= 4503599627370496.0) return value
+        if (value > 0.0 && value < 0.5) return 0.0
+        if (value >= -0.5 && value < 0.0) return -0.0
+        return floor(value + 0.5)
+    }
+
 }

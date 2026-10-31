@@ -1,5 +1,6 @@
 package com.muedsa.js
 
+import com.muedsa.js.parser.ParseException
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSError
 import kotlinx.coroutines.test.runTest
@@ -83,16 +84,12 @@ class RuntimeSemanticsTest {
     @Test
     fun `词法声明与 var function 同名冲突`() = runTest {
         val runtime = TestRuntime()
-        val topLevel = assertFailsWith<JSException> { runtime.eval("let c; var c;") }
-        assertEquals("SyntaxError", (topLevel.value as JSError).errorName)
-
-        val block = assertFailsWith<JSException> { runtime.eval("{ let d; var d; }") }
-        assertEquals("SyntaxError", (block.value as JSError).errorName)
-
-        val function = assertFailsWith<JSException> {
+        // 同一作用域内的词法/var/function 冲突属于解析期早期错误
+        assertFailsWith<ParseException> { runtime.eval("let c; var c;") }
+        assertFailsWith<ParseException> { runtime.eval("{ let d; var d; }") }
+        assertFailsWith<ParseException> {
             runtime.eval("function f() { let e; function e() {} } f();")
         }
-        assertEquals("SyntaxError", (function.value as JSError).errorName)
     }
 
     @Test
@@ -104,38 +101,30 @@ class RuntimeSemanticsTest {
                 "function f() { switch (1) { case 1: let x = 1; break; } return typeof x; } f()"
             )
         )
-        assertEquals(
-            "SyntaxError",
-            runtime.evalString(
+        // 同一 switch 的不同 case 共享词法作用域，重复 let 属于解析期错误
+        assertFailsWith<ParseException> {
+            runtime.eval(
                 """
-                var name = '';
-                try {
-                    switch (1) {
-                        case 1: let dup = 1; break;
-                        case 2: let dup = 2;
-                    }
-                } catch (e) {
-                    name = e.name;
+                switch (1) {
+                    case 1: let dup = 1; break;
+                    case 2: let dup = 2;
                 }
-                name;
                 """.trimIndent()
             )
-        )
+        }
     }
 
     @Test
     fun `同一作用域重复声明词法变量抛 SyntaxError`() = runTest {
         val runtime = TestRuntime()
-        val blockError = assertFailsWith<JSException> {
+        assertFailsWith<ParseException> {
             runtime.eval("{ let a = 1; let a = 2; }")
         }
-        assertEquals("SyntaxError", (blockError.value as JSError).errorName)
-
-        val constError = assertFailsWith<JSException> {
+        assertFailsWith<ParseException> {
             runtime.eval("{ const b = 1; const b = 2; }")
         }
-        assertEquals("SyntaxError", (constError.value as JSError).errorName)
 
+        // 跨脚本的全局词法重名仍由运行时全局环境拒绝
         runtime.eval("let once = 1;")
         val globalError = assertFailsWith<JSException> { runtime.eval("let once = 2;") }
         assertEquals("SyntaxError", (globalError.value as JSError).errorName)
@@ -172,8 +161,38 @@ class RuntimeSemanticsTest {
         val runtime = TestRuntime()
         assertEquals(2.0, runtime.evalNumber("const o = { a: 1 }; o.a = 2; o.a"))
         assertEquals(1.0, runtime.evalNumber("const a = [1]; a.push(2); a.length - 1"))
-        val error = assertFailsWith<JSException> { runtime.eval("const x = 1; x = 2;") }
+        // 规范：const 是不可变严格绑定，非严格代码赋值同样抛 TypeError
+        val error = assertFailsWith<JSException> {
+            runtime.eval("const x = 1; x = 2;")
+        }
         assertEquals("TypeError", (error.value as JSError).errorName)
+    }
+
+    @Test
+    fun `eval 在调用方作用域执行并返回完成值`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(3.0, runtime.evalNumber("eval('1 + 2')"))
+        assertEquals(42.0, runtime.evalNumber("eval('42')"))
+        assertEquals(
+            2.0,
+            runtime.evalNumber("function f() { var x = 1; eval('x = 2'); return x; } f()")
+        )
+        assertEquals(
+            3.0,
+            runtime.evalNumber("eval('var evaluated = 3'); evaluated")
+        )
+        assertEquals(
+            4.0,
+            runtime.evalNumber("eval('function evaluatedFn() { return 4; }'); evaluatedFn()")
+        )
+        assertEquals(6.0, runtime.evalNumber("eval('var s = 5; eval(\\'s + 1\\')')"))
+    }
+
+    @Test
+    fun `eval 非字符串参数原样返回`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(7.0, runtime.evalNumber("eval(7)"))
+        assertEquals(true, runtime.evalBoolean("eval(true)"))
     }
 
     // ================================================================
@@ -194,6 +213,53 @@ class RuntimeSemanticsTest {
             runtime.evalString("function g(a = 1) { return '' + arguments.length; } g()")
         )
         assertEquals(3.0, runtime.evalNumber("function f(a) { return arguments.length; } f(1, 2, 3)"))
+    }
+
+    @Test
+    fun `sloppy 简单参数列表的 arguments 映射`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(10.0, runtime.evalNumber("function f(a, b) { a = 10; return arguments[0]; } f(1, 2)"))
+        assertEquals(5.0, runtime.evalNumber("function f(a) { arguments[0] = 5; return a; } f(1)"))
+        assertEquals(2.0, runtime.evalNumber("function f(a) { return arguments[1]; } f(1, 2)"))
+        assertEquals(
+            3.0,
+            runtime.evalNumber("function f(a) { arguments[0] = 3; return arguments[0]; } f(1)")
+        )
+    }
+
+    @Test
+    fun `非简单参数与严格模式的 arguments 不映射`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            1.0,
+            runtime.evalNumber("function f(a = 1) { a = 2; return arguments[0]; } f(1)")
+        )
+        assertEquals(
+            1.0,
+            runtime.evalNumber("'use strict'; function f(a) { a = 2; return arguments[0]; } f(1)")
+        )
+        assertEquals(
+            "TypeError",
+            runtime.evalString(
+                "'use strict'; function f() { try { arguments.callee; } catch (e) { return e.name; } } f()"
+            )
+        )
+        assertEquals(
+            3.0,
+            runtime.evalNumber("function f(a, ...rest) { a = 9; return arguments[0]; } f(3, 4)")
+        )
+    }
+
+    @Test
+    fun `严格模式下 eval 与 arguments 赋值在解析期拒绝`() {
+        val parser = { code: String ->
+            com.muedsa.js.parser.Parser(com.muedsa.js.lexer.Lexer(code).tokenize()).parseProgram()
+        }
+        assertFailsWith<ParseException> { parser("'use strict'; eval = 1;") }
+        assertFailsWith<ParseException> { parser("'use strict'; arguments = 1;") }
+        assertFailsWith<ParseException> { parser("'use strict'; arguments++;") }
+        assertFailsWith<ParseException> { parser("'use strict'; ++eval;") }
+        assertFailsWith<ParseException> { parser("'use strict'; var eval = 1;") }
     }
 
     @Test
@@ -241,6 +307,50 @@ class RuntimeSemanticsTest {
         assertEquals(
             "1,2,10,b",
             runtime.evalString("var o = { b: 1, 2: 2, 1: 3, 10: 4 }; Object.getOwnPropertyNames(o).join(',')")
+        )
+    }
+
+    @Test
+    fun `with 环境复合赋值保持最初的对象基引用`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "6:0",
+            runtime.evalString(
+                """
+                var outer = 0;
+                var scope = {
+                    get x() {
+                        delete this.x;
+                        return 2;
+                    }
+                };
+                with (scope) { x *= 3; }
+                scope.x + ':' + outer;
+                """.trimIndent()
+            )
+        )
+        assertEquals(
+            5.0,
+            runtime.evalNumber(
+                "var o = { a: 1 }; with (o) { a = (delete o.a, 5); } o.a"
+            )
+        )
+    }
+
+    @Test
+    fun `delete 成员不会触发 getter`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "true:0:false",
+            runtime.evalString(
+                """
+                var calls = 0;
+                var o = {
+                    get x() { calls++; delete this.x; return 1; }
+                };
+                (delete o.x) + ':' + calls + ':' + ('x' in o);
+                """.trimIndent()
+            )
         )
     }
 

@@ -31,13 +31,12 @@ object WeakSetBuiltins {
             val set = JSWeakSet(prototype = prototype)
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
-                for (value in interpreter.iterateValues(iterable)) {
-                    if (value !is JSObject) {
-                        interpreter.typeError("Invalid value used in WeakSet")
-                    }
-                    if (set.values.none { interpreter.conversions.sameValueZero(it, value) }) {
-                        set.values.add(value)
-                    }
+                val adder = interpreter.getV(set, PropertyKey.Str("add"))
+                if (!interpreter.isCallable(adder)) {
+                    interpreter.typeError("'add' is not a function")
+                }
+                interpreter.consumeIterator(iterable) { value ->
+                    interpreter.callFunction(adder, set, listOf(value))
                 }
             }
             set
@@ -54,7 +53,7 @@ object WeakSetBuiltins {
         prototype.defineDataProperty(
             PropertyKey.Str("add"),
             value = BuiltinHelpers.method(intrinsics, "add", 1) { interpreter, thisValue, args ->
-                val set = thisValue as? JSSet
+                val set = thisValue as? JSWeakSet
                     ?: interpreter.typeError("WeakSet.prototype.add requires that 'this' be a WeakSet")
                 val value = args.getOrElse(0) { JSUndefined }
                 if (value !is JSObject) {
@@ -69,7 +68,7 @@ object WeakSetBuiltins {
         prototype.defineDataProperty(
             PropertyKey.Str("has"),
             value = BuiltinHelpers.method(intrinsics, "has", 1) { interpreter, thisValue, args ->
-                val set = thisValue as? JSSet
+                val set = thisValue as? JSWeakSet
                     ?: interpreter.typeError("WeakSet.prototype.has requires that 'this' be a WeakSet")
                 JSBoolean.getJsBoolean(
                     set.values.any {
@@ -81,7 +80,7 @@ object WeakSetBuiltins {
         prototype.defineDataProperty(
             PropertyKey.Str("delete"),
             value = BuiltinHelpers.method(intrinsics, "delete", 1) { interpreter, thisValue, args ->
-                val set = thisValue as? JSSet
+                val set = thisValue as? JSWeakSet
                     ?: interpreter.typeError("WeakSet.prototype.delete requires that 'this' be a WeakSet")
                 val index = set.values.indexOfFirst {
                     interpreter.conversions.sameValueZero(it, args.getOrElse(0) { JSUndefined })

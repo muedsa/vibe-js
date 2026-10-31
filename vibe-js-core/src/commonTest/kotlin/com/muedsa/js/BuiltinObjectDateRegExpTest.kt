@@ -89,6 +89,133 @@ class BuiltinObjectDateRegExpTest {
     }
 
     @Test
+    fun `defineProperty 省略字段时保留已有属性特征`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "2:true:true:true",
+            runtime.evalString(
+                """
+                var o = {};
+                Object.defineProperty(o, 'x', { value: 1, writable: true, enumerable: true, configurable: true });
+                Object.defineProperty(o, 'x', { value: 2 });
+                var d = Object.getOwnPropertyDescriptor(o, 'x');
+                d.value + ':' + d.writable + ':' + d.enumerable + ':' + d.configurable;
+                """.trimIndent()
+            )
+        )
+        assertEquals(
+            "1:true:true:true",
+            runtime.evalString(
+                """
+                var o = {};
+                Object.defineProperty(o, 'x', { get: function () { return 1; }, enumerable: true, configurable: true });
+                Object.defineProperty(o, 'x', { enumerable: true });
+                var d = Object.getOwnPropertyDescriptor(o, 'x');
+                o.x + ':' + (typeof d.get === 'function') + ':' + d.enumerable + ':' + d.configurable;
+                """.trimIndent()
+            )
+        )
+    }
+
+    @Test
+    fun `不可配置属性重新定义违反不变量时抛 TypeError`() = runTest {
+        val runtime = TestRuntime()
+        for (code in listOf(
+            "var o = {}; Object.defineProperty(o, 'x', { value: 1 }); Object.defineProperty(o, 'x', { value: 2 });",
+            "var o = {}; Object.defineProperty(o, 'x', { value: 1 }); Object.defineProperty(o, 'x', { enumerable: true });",
+            "var o = {}; Object.defineProperty(o, 'x', { get: function () { return 1; } }); Object.defineProperty(o, 'x', { get: function () { return 2; } });",
+        )) {
+            val error = assertFailsWith<JSException> { runtime.eval(code) }
+            assertEquals("TypeError", (error.value as JSError).errorName)
+        }
+    }
+
+    @Test
+    fun `defineProperties 忽略非枚举描述符条目`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            false,
+            runtime.evalBoolean(
+                """
+                var props = {};
+                Object.defineProperty(props, 'x', {
+                    value: { value: 7 },
+                    enumerable: false
+                });
+                Object.defineProperties({}, props).hasOwnProperty('x');
+                """.trimIndent()
+            )
+        )
+    }
+
+    @Test
+    fun `描述符 getter 与 setter 必须是函数`() = runTest {
+        val runtime = TestRuntime()
+        for (code in listOf(
+            "Object.defineProperty({}, 'x', { get: 1 })",
+            "Object.defineProperty({}, 'x', { set: 's' })",
+            "Object.defineProperties({}, { x: { get: {} } })",
+        )) {
+            val error = assertFailsWith<JSException> { runtime.eval(code) }
+            assertEquals("TypeError", (error.value as JSError).errorName)
+        }
+        assertEquals(
+            "undefined",
+            runtime.evalString(
+                "var o = {}; Object.defineProperty(o, 'x', { get: undefined, set: undefined, configurable: true }); typeof o.x"
+            )
+        )
+    }
+
+    @Test
+    fun `String 原型自身作为字符串接收者`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("", runtime.evalString("String.prototype.valueOf()"))
+        assertEquals("", runtime.evalString("String.prototype.toString()"))
+    }
+
+    @Test
+    fun `混合数据与访问器描述符抛 TypeError`() = runTest {
+        val runtime = TestRuntime()
+        val error = assertFailsWith<JSException> {
+            runtime.eval(
+                "Object.defineProperty({}, 'x', { get: function () { return 1; }, value: 2 })"
+            )
+        }
+        assertEquals("TypeError", (error.value as JSError).errorName)
+    }
+
+    @Test
+    fun `defineProperties 接受原始值作为属性表`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(1.0, runtime.evalNumber("var o = { a: 1 }; Object.defineProperties(o, false) === o ? o.a : 0"))
+        val error = assertFailsWith<JSException> {
+            runtime.eval("Object.defineProperties({}, null)")
+        }
+        assertEquals("TypeError", (error.value as JSError).errorName)
+    }
+
+    @Test
+    fun `Object_create 从继承描述符字段读取属性特征`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "9:false",
+            runtime.evalString(
+                """
+                var proto = { value: 9 };
+                Object.defineProperty(proto, 'writable', { set: function () {} });
+                var F = function () {};
+                F.prototype = proto;
+                var desc = new F();
+                var o = Object.create({}, { x: desc });
+                var d = Object.getOwnPropertyDescriptor(o, 'x');
+                d.value + ':' + d.writable;
+                """.trimIndent()
+            )
+        )
+    }
+
+    @Test
     fun `Object_setPrototypeOf 与 getPrototypeOf`() = runTest {
         val runtime = TestRuntime()
         assertEquals(
@@ -415,6 +542,27 @@ class BuiltinObjectDateRegExpTest {
             runtime.evalString(
                 "'b'.replace(/(a)?b/, function (match, group) { return typeof group; })"
             )
+        )
+    }
+
+    @Test
+    fun `回退引擎用于 Kotlin Regex 不支持的反向引用 lookahead`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            true,
+            runtime.evalBoolean("""var r = /(["'])(?:(?!\1)[^\\]|\\.)*?\1/; r.test('"a"')""")
+        )
+        assertEquals(
+            true,
+            runtime.evalBoolean("""var r = /(["'])(?:(?!\1)[^\\]|\\.)*?\1/; r.test("'b'")""")
+        )
+        assertEquals(
+            """"a"""",
+            runtime.evalString("""var r = /(["'])(?:(?!\1)[^\\]|\\.)*?\1/; r.exec('x "a" y')[0]""")
+        )
+        assertEquals(
+            "[\"a\"]",
+            runtime.evalString("""'"a"'.replace(/(["'])(?:(?!\1)[^\\]|\\.)*?\1/, '[$&]')""")
         )
     }
 

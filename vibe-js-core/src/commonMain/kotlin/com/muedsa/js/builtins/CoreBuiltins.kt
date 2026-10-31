@@ -14,6 +14,7 @@ object CoreBuiltins {
     fun install(registry: BuiltinRegistry) {
         ObjectBuiltins.install(registry)
         FunctionBuiltins.install(registry)
+        AsyncFunctionBuiltins.install(registry)
         SymbolBuiltins.install(registry)
         ArrayBuiltins.install(registry)
         StringBuiltins.install(registry)

@@ -112,7 +112,7 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 - `EventLoop`：微任务队列 + 宏任务调度，支撑 Promise 与定时器；
 - `PropertyDescriptor` + `JSObject`：属性描述符与原型链模型。
 
-详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，兼容性矩阵见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
+详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，兼容性矩阵见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)，解析一致性基线见 [docs/CONFORMANCE.md](docs/CONFORMANCE.md)。
 
 ## 构建与测试
 
@@ -129,6 +129,24 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 
 # 基准测试编译
 ./gradlew :vibe-js-core:jvmBenchmarkClasses
+
+# 解析一致性基线（首次运行自动下载 test262-parser-tests）
+./gradlew :vibe-js-conformance:parserConformance
+# 存在语法不一致时失败（后续门禁使用）
+./gradlew :vibe-js-conformance:parserConformance -Pstrict
+
+# Test262 ES5 语义基线（首次运行自动下载 test262）
+./gradlew :vibe-js-conformance:test262Conformance
+# 限制用例数/并行度
+./gradlew :vibe-js-conformance:test262Conformance -Ptest262Limit=1000 -Ptest262Jobs=4
+
+# Test262 ES2015 特性子集（报告模式）
+./gradlew :vibe-js-conformance:test262Es2015Conformance
+
+# 真实库 UMD 冒烟（首次自动下载固定版本）
+./gradlew :vibe-js-conformance:librarySmoke
+# 与 Node 的差分基线
+./gradlew :vibe-js-conformance:differentialConformance
 ```
 
 ## 目录结构
@@ -145,6 +163,9 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 - `vibe-js-host/`（Gradle 模块 `:vibe-js-host`）
   - `src/commonMain/kotlin/com/muedsa/js/host/`：宿主模块（console/timer/window 等）
   - `src/commonTest/`：宿主模块测试
+- `vibe-js-conformance/`（Gradle 模块 `:vibe-js-conformance`）
+  - JVM-only 一致性基线：test262-parser-tests 运行器、语料下载与报告生成
+  - `docs/CONFORMANCE.md`：基线数字、已知缺口与推进顺序
 
 ## 说明
 

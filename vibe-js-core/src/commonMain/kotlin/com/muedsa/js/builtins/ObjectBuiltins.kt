@@ -1,6 +1,9 @@
 package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
+import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.value.JSArguments
+import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSError
@@ -9,6 +12,7 @@ import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSRegExp
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSSymbol
 import com.muedsa.js.runtime.value.JSUndefined
@@ -33,7 +37,12 @@ object ObjectBuiltins {
             prototypeObject = objectPrototype,
         ) { interpreter, _, args ->
             val value = args.getOrNull(0) ?: JSUndefined
-            if (value is JSObject) value else interpreter.toObject(value)
+            // 规范：无参或 undefined/null 时创建普通新对象；对象原样返回，原始值装箱
+            when (value) {
+                is JSObject -> value
+                is JSUndefined, is JSNull -> JSObject(prototype = objectPrototype)
+                else -> interpreter.toObject(value)
+            }
         }
 
         installPrototypeMethods(registry, objectConstructor)
@@ -50,8 +59,9 @@ object ObjectBuiltins {
         objectPrototype.defineDataProperty(
             key = PropertyKey.Str("hasOwnProperty"),
             value = BuiltinHelpers.method(intrinsics, "hasOwnProperty", 1) { interpreter, thisValue, args ->
-                val objectValue = interpreter.toObject(thisValue)
+                // 规范顺序：先 ToPropertyKey(V)，再 ToObject(O)
                 val key = interpreter.toPropertyKey(args.getOrElse(0) { JSUndefined })
+                val objectValue = interpreter.toObject(thisValue)
                 JSBoolean.getJsBoolean(objectValue.hasOwnProperty(key))
             },
         )
@@ -80,27 +90,33 @@ object ObjectBuiltins {
         objectPrototype.defineDataProperty(
             key = PropertyKey.Str("propertyIsEnumerable"),
             value = BuiltinHelpers.method(intrinsics, "propertyIsEnumerable", 1) { interpreter, thisValue, args ->
-                val objectValue = interpreter.toObject(thisValue)
                 val key = interpreter.toPropertyKey(args.getOrElse(0) { JSUndefined })
+                val objectValue = interpreter.toObject(thisValue)
                 JSBoolean.getJsBoolean(objectValue.getOwnProperty(key)?.enumerable == true)
             },
         )
 
         objectPrototype.defineDataProperty(
             key = PropertyKey.Str("valueOf"),
-            value = BuiltinHelpers.method(intrinsics, "valueOf", 0) { _, thisValue, _ ->
-                thisValue
+            value = BuiltinHelpers.method(intrinsics, "valueOf", 0) { interpreter, thisValue, _ ->
+                if (thisValue is JSNull || thisValue is JSUndefined) {
+                    interpreter.typeError("Object.prototype.valueOf called on null or undefined")
+                }
+                if (thisValue is JSObject) thisValue else interpreter.toObject(thisValue)
             },
         )
 
         objectPrototype.defineDataProperty(
             key = PropertyKey.Str("toString"),
             value = BuiltinHelpers.method(intrinsics, "toString", 0) { interpreter, thisValue, _ ->
-                val tagValue = if (thisValue is JSObject) {
-                    interpreter.getV(thisValue, PropertyKey.Sym(intrinsics.symbolToStringTag))
-                } else {
-                    JSUndefined
-                }
+                if (thisValue is JSUndefined) return@method JSString("[object Undefined]")
+                if (thisValue is JSNull) return@method JSString("[object Null]")
+                // 原始值按 ToObject 读取 @@toStringTag（Symbol 包装等）
+                val objectValue = interpreter.toObject(thisValue)
+                val tagValue = interpreter.getV(
+                    objectValue,
+                    PropertyKey.Sym(intrinsics.symbolToStringTag),
+                )
                 val tag = if (tagValue is JSString) {
                     tagValue.value
                 } else {
@@ -110,15 +126,23 @@ object ObjectBuiltins {
             },
         )
 
-        objectPrototype.getOwnDataValue(PropertyKey.Str("toString"))?.let { toStringFunction ->
-            objectPrototype.defineDataProperty(
-                key = PropertyKey.Str("toLocaleString"),
-                value = toStringFunction,
-                writable = true,
-                enumerable = false,
-                configurable = true,
-            )
-        }
+        objectPrototype.defineDataProperty(
+            key = PropertyKey.Str("toLocaleString"),
+            value = BuiltinHelpers.method(intrinsics, "toLocaleString", 0) { interpreter, thisValue, _ ->
+                if (thisValue is JSNull || thisValue is JSUndefined) {
+                    interpreter.typeError("Object.prototype.toLocaleString called on null or undefined")
+                }
+                val objectValue = interpreter.toObject(thisValue)
+                val method = interpreter.getV(objectValue, PropertyKey.Str("toString"))
+                if (!interpreter.isCallable(method)) {
+                    interpreter.typeError("toString is not a function")
+                }
+                interpreter.callFunction(method, objectValue, emptyList())
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
 
         // __proto__ 访问器（常见写法；规范中位于 Object.prototype）
         objectPrototype.defineAccessorProperty(
@@ -126,10 +150,14 @@ object ObjectBuiltins {
             get = BuiltinHelpers.method(intrinsics, "get __proto__", 0) { _, thisValue, _ ->
                 (thisValue as? JSObject)?.prototype ?: JSNull
             },
-            set = BuiltinHelpers.method(intrinsics, "set __proto__", 1) { _, thisValue, args ->
+            set = BuiltinHelpers.method(intrinsics, "set __proto__", 1) { interpreter, thisValue, args ->
                 val target = thisValue
                 val newPrototype = args.getOrNull(0)
                 if (target is JSObject && (newPrototype is JSObject || newPrototype is JSNull)) {
+                    // 不可扩展对象不能修改原型；规范 setter 在失败时抛 TypeError
+                    if (!target.isExtensible() && target.prototype !== newPrototype) {
+                        interpreter.typeError("Cannot set prototype of non-extensible object")
+                    }
                     target.prototype = newPrototype as? JSObject
                 }
                 JSUndefined
@@ -221,7 +249,8 @@ object ObjectBuiltins {
                 }
                 val result = JSObject(prototype = prototype)
                 val propertiesValue = args.getOrNull(1)
-                if (propertiesValue != null && propertiesValue !is JSUndefined && propertiesValue !is JSNull) {
+                if (propertiesValue != null && propertiesValue !is JSUndefined) {
+                    // 与规范一致：非 undefined 的第二参数先做 ToObject（null 会抛 TypeError）
                     val properties = interpreter.toObject(propertiesValue)
                     applyDescriptors(interpreter, result, properties)
                 }
@@ -240,16 +269,23 @@ object ObjectBuiltins {
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("setPrototypeOf"),
             value = BuiltinHelpers.method(intrinsics, "setPrototypeOf", 2) { interpreter, _, args ->
-                val objectValue = args.getOrNull(0)
-                val prototypeValue = args.getOrNull(1)
-                if (objectValue !is JSObject) {
-                    interpreter.typeError("Object.setPrototypeOf called on non-object")
+                val objectValue = args.getOrElse(0) { JSUndefined }
+                val prototypeValue = args.getOrElse(1) { JSUndefined }
+                if (objectValue is JSNull || objectValue is JSUndefined) {
+                    interpreter.typeError("Object.setPrototypeOf called on null or undefined")
                 }
-                when (prototypeValue) {
-                    is JSNull -> objectValue.prototype = null
-                    is JSObject -> objectValue.prototype = prototypeValue
+                val newPrototype = when (prototypeValue) {
+                    is JSNull -> null
+                    is JSObject -> prototypeValue
                     else -> interpreter.typeError("Object prototype may only be an Object or null")
                 }
+                // 原始值按 ES2015 返回自身（不做包装）
+                if (objectValue !is JSObject) return@method objectValue
+                // 不可扩展对象只能保持原原型
+                if (!objectValue.isExtensible() && objectValue.prototype !== newPrototype) {
+                    interpreter.typeError("Cannot set prototype of non-extensible object")
+                }
+                objectValue.prototype = newPrototype
                 objectValue
             },
         )
@@ -259,27 +295,27 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "getOwnPropertyDescriptor", 2) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
                 val key = interpreter.toPropertyKey(args.getOrElse(1) { JSUndefined })
-                val descriptor = objectValue.getOwnProperty(key)
+                createDescriptorObject(interpreter, objectValue, key)
                     ?: return@method JSUndefined
+            },
+        )
+
+        objectConstructor.defineDataProperty(
+            key = PropertyKey.Str("getOwnPropertyDescriptors"),
+            value = BuiltinHelpers.method(intrinsics, "getOwnPropertyDescriptors", 1) { interpreter, _, args ->
+                val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
                 val result = JSObject(prototype = objectPrototype)
-                if (descriptor.isAccessor) {
-                    result.defineDataProperty(PropertyKey.Str("get"), descriptor.get ?: JSUndefined)
-                    result.defineDataProperty(PropertyKey.Str("set"), descriptor.set ?: JSUndefined)
-                } else {
-                    result.defineDataProperty(PropertyKey.Str("value"), descriptor.value ?: JSUndefined)
+                for (key in objectValue.ownPropertyKeys()) {
+                    val descriptorObject = createDescriptorObject(interpreter, objectValue, key)
+                        ?: continue
                     result.defineDataProperty(
-                        PropertyKey.Str("writable"),
-                        JSBoolean.getJsBoolean(descriptor.writable),
+                        key = key,
+                        value = descriptorObject,
+                        writable = true,
+                        enumerable = true,
+                        configurable = true,
                     )
                 }
-                result.defineDataProperty(
-                    PropertyKey.Str("enumerable"),
-                    JSBoolean.getJsBoolean(descriptor.enumerable),
-                )
-                result.defineDataProperty(
-                    PropertyKey.Str("configurable"),
-                    JSBoolean.getJsBoolean(descriptor.configurable),
-                )
                 result
             },
         )
@@ -330,10 +366,12 @@ object ObjectBuiltins {
                 if (objectValue !is JSObject) {
                     interpreter.typeError("Object.defineProperties called on non-object")
                 }
-                val propertiesObject = args.getOrNull(1)
-                if (propertiesObject !is JSObject) {
+                val propertiesValue = args.getOrNull(1)
+                if (propertiesValue == null || propertiesValue is JSUndefined || propertiesValue is JSNull) {
                     interpreter.typeError("Object.defineProperties requires a properties object")
                 }
+                // 原始值通过 ToObject 包装；布尔/数字通常没有可枚举自有属性
+                val propertiesObject = interpreter.toObject(propertiesValue)
                 applyDescriptors(interpreter, objectValue, propertiesObject)
                 objectValue
             },
@@ -348,13 +386,58 @@ object ObjectBuiltins {
             },
         )
 
+        // Object.hasOwn(obj, key)：HasOwnProperty(ToObject(obj), ToPropertyKey(key))
+        objectConstructor.defineDataProperty(
+            key = PropertyKey.Str("hasOwn"),
+            value = BuiltinHelpers.method(intrinsics, "hasOwn", 2) { interpreter, _, args ->
+                val objectValue = interpreter.toObject(args.getOrElse(0) { JSUndefined })
+                val key = interpreter.toPropertyKey(args.getOrElse(1) { JSUndefined })
+                JSBoolean.getJsBoolean(objectValue.hasOwnProperty(key))
+            },
+        )
+
+        // Object.fromEntries(iterable)：把 [key, value] 序列写入新对象
+        objectConstructor.defineDataProperty(
+            key = PropertyKey.Str("fromEntries"),
+            value = BuiltinHelpers.method(intrinsics, "fromEntries", 1) { interpreter, _, args ->
+                val target = JSObject(prototype = intrinsics.objectPrototype)
+                interpreter.consumeIterator(args.getOrElse(0) { JSUndefined }) { entry ->
+                    if (entry !is JSObject) {
+                        interpreter.typeError("Iterator value is not an entry object")
+                    }
+                    val keyValue = interpreter.getV(entry, PropertyKey.Str("0"))
+                    val value = interpreter.getV(entry, PropertyKey.Str("1"))
+                    val key = interpreter.toPropertyKey(keyValue)
+                    val defined = interpreter.defineOwnPropertyOn(
+                        target,
+                        key,
+                        PropertyDescriptor.data(value),
+                    )
+                    if (!defined) {
+                        interpreter.typeError("Cannot create property '$key'")
+                    }
+                }
+                target
+            },
+        )
+
         // 冻结 / 密封 / 防扩展
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("freeze"),
             value = BuiltinHelpers.method(intrinsics, "freeze", 1) { _, _, args ->
                 val value = args.getOrNull(0) ?: JSUndefined
                 when (value) {
-                    is JSArray -> value.freezeArray()
+                    is JSArray -> {
+                        value.freezeArray()
+                        // 数组的普通自有属性（如 arr.foo）同样需要冻结
+                        for (key in value.ownPropertyKeys()) {
+                            if (key == PropertyKey.LENGTH) continue
+                            val descriptor = value.getOwnProperty(key) ?: continue
+                            descriptor.configurable = false
+                            if (descriptor.isData) descriptor.writable = false
+                        }
+                    }
+
                     is JSObject -> {
                         for (key in value.ownPropertyKeys()) {
                             val descriptor = value.getOwnProperty(key) ?: continue
@@ -374,7 +457,14 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "seal", 1) { _, _, args ->
                 val value = args.getOrNull(0) ?: JSUndefined
                 when (value) {
-                    is JSArray -> value.sealArray()
+                    is JSArray -> {
+                        value.sealArray()
+                        for (key in value.ownPropertyKeys()) {
+                            if (key == PropertyKey.LENGTH) continue
+                            value.getOwnProperty(key)?.configurable = false
+                        }
+                    }
+
                     is JSObject -> {
                         for (key in value.ownPropertyKeys()) {
                             value.getOwnProperty(key)?.configurable = false
@@ -438,33 +528,185 @@ object ObjectBuiltins {
         )
     }
 
-    /** 从描述符对象读取属性描述符并定义到目标对象。 */
+    /**
+     * 从描述符对象读取属性描述符并定义到目标对象。
+     *
+     * 与规范一致：
+     * - 描述符对象通过 [[Get]] 读取（包括继承字段）；
+     * - 未提供的字段在已有属性上保留当前值；
+     * - 检查不可配置属性的不变量。
+     */
     private suspend fun definePropertyFromDescriptor(
         interpreter: com.muedsa.js.runtime.Interpreter,
         objectValue: JSObject,
         key: PropertyKey,
         descriptorObject: JSObject,
     ) {
+        suspend fun has(name: String): Boolean =
+            descriptorObject.hasProperty(PropertyKey.Str(name))
+
+        suspend fun read(name: String): JSValue =
+            interpreter.getV(descriptorObject, PropertyKey.Str(name))
+
+        val hasValue = has("value")
+        val hasWritable = has("writable")
+        val hasGet = has("get")
+        val hasSet = has("set")
+        val hasEnumerable = has("enumerable")
+        val hasConfigurable = has("configurable")
+
+        val value = if (hasValue) read("value") else null
+        val writable = if (hasWritable) interpreter.toBoolean(read("writable")) else null
+        val getter = if (hasGet) read("get") else null
+        val setter = if (hasSet) read("set") else null
+        val enumerable = if (hasEnumerable) interpreter.toBoolean(read("enumerable")) else null
+        val configurable = if (hasConfigurable) interpreter.toBoolean(read("configurable")) else null
+
+        if (hasGet && getter != null && getter !is JSUndefined && !interpreter.isCallable(getter)) {
+            interpreter.typeError("Getter must be a function")
+        }
+        if (hasSet && setter != null && setter !is JSUndefined && !interpreter.isCallable(setter)) {
+            interpreter.typeError("Setter must be a function")
+        }
+        val isAccessorDescriptor = hasGet || hasSet
+        val isDataDescriptor = hasValue || hasWritable
+        if (isAccessorDescriptor && isDataDescriptor) {
+            interpreter.typeError("Invalid property descriptor: cannot be both accessor and data")
+        }
+        var current = objectValue.getOwnProperty(key)
+        // ES5 10.6：arguments 的映射索引在描述符层面视为可写数据属性，
+        // 否则从映射访问器合并会错误保留参数 setter
+        if (objectValue is JSArguments && current != null) {
+            val mapping = objectValue.parameterMapping(key)
+            if (mapping != null) {
+                current = PropertyDescriptor.data(
+                    value = mapping.read(),
+                    writable = true,
+                    enumerable = current.enumerable,
+                    configurable = true,
+                )
+            }
+        }
+
+        if (current != null && !current.configurable) {
+            if (hasConfigurable && configurable == true) {
+                interpreter.typeError("Cannot redefine property: $key")
+            }
+            if (hasEnumerable && enumerable != current.enumerable) {
+                interpreter.typeError("Cannot redefine property: $key")
+            }
+            if (isAccessorDescriptor && current.isData) {
+                interpreter.typeError("Cannot redefine property: $key")
+            }
+            if (isDataDescriptor && current.isAccessor) {
+                interpreter.typeError("Cannot redefine property: $key")
+            }
+            if (current.isData) {
+                if (!current.writable) {
+                    if (hasWritable && writable == true) {
+                        interpreter.typeError("Cannot redefine property: $key")
+                    }
+                    if (hasValue && !sameDescriptorValue(
+                            interpreter,
+                            value ?: JSUndefined,
+                            current.value ?: JSUndefined,
+                        )
+                    ) {
+                        interpreter.typeError("Cannot redefine property: $key")
+                    }
+                }
+            } else {
+                if (hasGet && !sameDescriptorValue(
+                        interpreter,
+                        getter ?: JSUndefined,
+                        current.get ?: JSUndefined,
+                    )
+                ) {
+                    interpreter.typeError("Cannot redefine property: $key")
+                }
+                if (hasSet && !sameDescriptorValue(
+                        interpreter,
+                        setter ?: JSUndefined,
+                        current.set ?: JSUndefined,
+                    )
+                ) {
+                    interpreter.typeError("Cannot redefine property: $key")
+                }
+            }
+        }
+
         val descriptor = PropertyDescriptor()
-        val has = { name: String -> descriptorObject.hasProperty(PropertyKey.Str(name)) }
-        if (has("value")) descriptor.value = interpreter.getV(descriptorObject, PropertyKey.Str("value"))
-        if (has("get")) {
-            val getter = interpreter.getV(descriptorObject, PropertyKey.Str("get"))
-            descriptor.get = if (getter is JSUndefined) null else getter
+        // 访问器类型必须显式记录：get/set 可以都为 undefined
+        descriptor.accessor = isAccessorDescriptor || (!isDataDescriptor && current?.isAccessor == true)
+        descriptor.enumerable = enumerable ?: current?.enumerable ?: false
+        descriptor.configurable = configurable ?: current?.configurable ?: false
+
+        when {
+            current == null -> {
+                if (isAccessorDescriptor) {
+                    descriptor.get = if (hasGet && getter !is JSUndefined) getter else null
+                    descriptor.set = if (hasSet && setter !is JSUndefined) setter else null
+                } else {
+                    descriptor.value = value ?: JSUndefined
+                    descriptor.writable = writable ?: false
+                }
+            }
+
+            isAccessorDescriptor -> {
+                if (current.isData) {
+                    descriptor.get = if (hasGet && getter !is JSUndefined) getter else null
+                    descriptor.set = if (hasSet && setter !is JSUndefined) setter else null
+                } else {
+                    descriptor.get = if (hasGet) {
+                        if (getter is JSUndefined) null else getter
+                    } else {
+                        current.get
+                    }
+                    descriptor.set = if (hasSet) {
+                        if (setter is JSUndefined) null else setter
+                    } else {
+                        current.set
+                    }
+                }
+            }
+
+            isDataDescriptor -> {
+                if (current.isAccessor) {
+                    descriptor.value = value ?: JSUndefined
+                    descriptor.writable = writable ?: false
+                } else {
+                    descriptor.value = if (hasValue) value else current.value
+                    descriptor.writable = if (hasWritable) writable ?: false else current.writable
+                }
+            }
+
+            else -> {
+                // 通用描述符只修改 enumerable/configurable
+                descriptor.value = current.value
+                descriptor.writable = current.writable
+                descriptor.get = current.get
+                descriptor.set = current.set
+            }
         }
-        if (has("set")) {
-            val setter = interpreter.getV(descriptorObject, PropertyKey.Str("set"))
-            descriptor.set = if (setter is JSUndefined) null else setter
-        }
-        descriptor.writable = has("writable") &&
-            interpreter.toBoolean(interpreter.getV(descriptorObject, PropertyKey.Str("writable")))
-        descriptor.enumerable = has("enumerable") &&
-            interpreter.toBoolean(interpreter.getV(descriptorObject, PropertyKey.Str("enumerable")))
-        descriptor.configurable = has("configurable") &&
-            interpreter.toBoolean(interpreter.getV(descriptorObject, PropertyKey.Str("configurable")))
-        if (!objectValue.defineOwnProperty(key, descriptor)) {
+
+        if (!interpreter.defineOwnPropertyOn(objectValue, key, descriptor)) {
             interpreter.typeError("Cannot define property '${key}'")
         }
+    }
+
+    /** 描述符不变量比较使用 SameValue（区分 -0，NaN 视为相等）。 */
+    private fun sameDescriptorValue(
+        interpreter: com.muedsa.js.runtime.Interpreter,
+        left: JSValue,
+        right: JSValue,
+    ): Boolean {
+        if (left is JSNumber && right is JSNumber) {
+            if (left.value.isNaN() && right.value.isNaN()) return true
+            if (left.value == 0.0 && right.value == 0.0) {
+                return 1.0 / left.value == 1.0 / right.value
+            }
+        }
+        return interpreter.strictEquals(left, right)
     }
 
     /** 批量应用描述符对象（Object.create / Object.defineProperties）。 */
@@ -474,7 +716,7 @@ object ObjectBuiltins {
         properties: JSObject,
     ) {
         for (key in properties.ownPropertyKeys()) {
-            if (key !is PropertyKey.Str) continue
+            // Object.defineProperties/Object.create 只处理可枚举的自有描述符条目
             if (properties.getOwnProperty(key)?.enumerable != true) continue
             val descriptorValue = interpreter.getV(properties, key)
             val descriptorObject = descriptorValue as? JSObject
@@ -496,22 +738,90 @@ object ObjectBuiltins {
     }
 
     /** Object.prototype.toString 的类型标签。 */
+    /** 构造属性描述符对象（getOwnPropertyDescriptor(s) 共用）。 */
+    private suspend fun createDescriptorObject(
+        interpreter: Interpreter,
+        objectValue: JSObject,
+        key: PropertyKey,
+    ): JSObject? {
+        var descriptor = objectValue.getOwnProperty(key) ?: return null
+        if (objectValue is JSArguments && descriptor.isAccessor) {
+            val mapping = objectValue.parameterMapping(key)
+            if (mapping != null) {
+                // ES5 10.6：映射索引在描述符层面是数据属性
+                descriptor = PropertyDescriptor.data(
+                    value = mapping.read(),
+                    writable = true,
+                    enumerable = descriptor.enumerable,
+                    configurable = true,
+                )
+            }
+        }
+        val result = JSObject(prototype = interpreter.intrinsics.objectPrototype)
+        // 规范：描述符对象的属性通过 CreateDataProperty 创建，全部可枚举
+        if (descriptor.isAccessor) {
+            result.defineDataProperty(
+                PropertyKey.Str("get"), descriptor.get ?: JSUndefined,
+                writable = true, enumerable = true, configurable = true,
+            )
+            result.defineDataProperty(
+                PropertyKey.Str("set"), descriptor.set ?: JSUndefined,
+                writable = true, enumerable = true, configurable = true,
+            )
+        } else {
+            result.defineDataProperty(
+                PropertyKey.Str("value"), descriptor.value ?: JSUndefined,
+                writable = true, enumerable = true, configurable = true,
+            )
+            result.defineDataProperty(
+                PropertyKey.Str("writable"),
+                JSBoolean.getJsBoolean(descriptor.writable),
+                writable = true, enumerable = true, configurable = true,
+            )
+        }
+        result.defineDataProperty(
+            PropertyKey.Str("enumerable"),
+            JSBoolean.getJsBoolean(descriptor.enumerable),
+            writable = true, enumerable = true, configurable = true,
+        )
+        result.defineDataProperty(
+            PropertyKey.Str("configurable"),
+            JSBoolean.getJsBoolean(descriptor.configurable),
+            writable = true, enumerable = true, configurable = true,
+        )
+        return result
+    }
+
     private fun objectTag(intrinsics: com.muedsa.js.runtime.Intrinsics, value: JSValue): String = when (value) {
         is JSUndefined -> "Undefined"
         is JSNull -> "Null"
         is JSBoolean -> "Boolean"
         is JSNumber -> "Number"
         is JSString -> "String"
-        is JSSymbol -> "Symbol"
+        is JSSymbol -> "Object"
         is JSArray -> "Array"
         is JSFunction, is JSNativeFunction -> "Function"
+        is JSRegExp -> "RegExp"
+        is com.muedsa.js.runtime.value.JSDate -> "Date"
         is JSError -> "Error"
+        is JSArguments -> "Arguments"
+        is JSBoxedPrimitive -> when (value.primitive) {
+            is JSNumber -> "Number"
+            is JSString -> "String"
+            is JSBoolean -> "Boolean"
+            else -> "Object"
+        }
         is JSObject -> when (value.prototype) {
             intrinsics.stringPrototype -> "String"
             intrinsics.numberPrototype -> "Number"
             intrinsics.booleanPrototype -> "Boolean"
-            intrinsics.symbolPrototype -> "Symbol"
-            else -> "Object"
+            else -> when (value) {
+                // 原型对象本身也是对应的内建包装对象（ES5 15.7.4/15.5.4）
+                intrinsics.stringPrototype -> "String"
+                intrinsics.numberPrototype -> "Number"
+                intrinsics.booleanPrototype -> "Boolean"
+                else -> "Object"
+            }
         }
     }
 

@@ -39,6 +39,8 @@ class TemplateLiteral(
 class StringLiteral(
     val value: String,
     override val range: SourceRange,
+    /** 源码中是否包含转义（指令序言要求源码字面形式一致）。 */
+    val containsEscape: Boolean = false,
 ) : Expression()
 
 /** 布尔字面量。 */
@@ -71,6 +73,8 @@ class SpreadElement(
 class ArrayLiteral(
     val elements: List<Expression?>,
     override val range: SourceRange,
+    /** 解构模式校验需要知道 rest 后是否出现尾逗号（表达式数组允许）。 */
+    val restFollowedByComma: Boolean = false,
 ) : Expression()
 
 /** 对象字面量属性的种类。 */
@@ -99,6 +103,8 @@ class ObjectProperty(
     val value: Expression,
     val computed: Boolean,
     override val range: SourceRange,
+    /** 是否为方法语法（含访问器），方法不是构造器且没有 prototype */
+    val method: Boolean = false,
 ) : ObjectLiteralElement()
 
 /** 对象展开属性 `...expr`。 */
@@ -111,6 +117,8 @@ class ObjectSpreadProperty(
 class ObjectLiteral(
     val properties: List<ObjectLiteralElement>,
     override val range: SourceRange,
+    /** 剩余元素后出现逗号；对象字面量合法，对象模式为早期错误 */
+    val restFollowedByComma: Boolean = false,
 ) : Expression()
 
 /**
@@ -130,6 +138,8 @@ class FunctionExpression(
     val varDeclarations: List<String>,
     val functionDeclarations: List<FunctionDeclaration>,
     override val range: SourceRange,
+    /** 对象/类方法语法：名字仅用于 SetFunctionName，不建立词法名字绑定 */
+    val isMethodDefinition: Boolean = false,
 ) : Expression()
 
 /**
@@ -146,6 +156,8 @@ class ArrowFunction(
     val varDeclarations: List<String>,
     val functionDeclarations: List<FunctionDeclaration>,
     override val range: SourceRange,
+    /** 箭头函数体所处的 new.target 语法上下文 */
+    val allowsNewTarget: Boolean = false,
 ) : Expression()
 
 /** 成员访问，例如 `obj.prop` 或 `obj[key]`。 */
@@ -167,6 +179,33 @@ class CallExpr(
 class NewExpr(
     val constructor: Expression,
     val arguments: List<Expression>,
+    override val range: SourceRange,
+) : Expression()
+
+/** 可选链中的一个后续操作（成员访问或调用）。 */
+sealed class OptionalChainOperation
+
+/** 可选链成员访问；optional 表示该段前有 `?.`。 */
+class OptionalChainMember(
+    val property: Expression,
+    val computed: Boolean,
+    val optional: Boolean,
+) : OptionalChainOperation()
+
+/** 可选链调用；optional 表示 `?.(...)`。 */
+class OptionalChainCall(
+    val arguments: List<Expression>,
+    val optional: Boolean,
+) : OptionalChainOperation()
+
+/**
+ * 可选链表达式 `a?.b[c]?.(d)`。
+ *
+ * 整条链在任一 optional 段遇到 null/undefined 时短路，后续成员/参数不再求值。
+ */
+class OptionalChainExpr(
+    val base: Expression,
+    val operations: List<OptionalChainOperation>,
     override val range: SourceRange,
 ) : Expression()
 

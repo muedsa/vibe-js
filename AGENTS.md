@@ -38,6 +38,12 @@
 - **JS 目标测试**: `./gradlew :vibe-js-core:jsNodeTest`、`./gradlew :vibe-js-host:jsNodeTest`
 - **Wasm 目标测试**: `./gradlew :vibe-js-core:wasmJsNodeTest`、`./gradlew :vibe-js-host:wasmJsNodeTest`
 - **编译基准测试**: `./gradlew :vibe-js-core:jvmBenchmarkClasses`
+- **解析一致性基线**: `./gradlew :vibe-js-conformance:parserConformance`（首次自动下载 test262-parser-tests）
+- **解析一致性门禁**: `./gradlew :vibe-js-conformance:parserConformance -Pstrict`
+- **Test262 ES5 语义基线**: `./gradlew :vibe-js-conformance:test262Conformance`（首次自动下载 test262）
+- **Test262 ES2015 特性子集**: `./gradlew :vibe-js-conformance:test262Es2015Conformance`（报告模式）
+- **真实库 UMD 冒烟**: `./gradlew :vibe-js-conformance:librarySmoke`
+- **Node 差分基线**: `./gradlew :vibe-js-conformance:differentialConformance`
 - **依赖变化后更新 JS/Wasm 锁文件**: `./gradlew kotlinUpgradeYarnLock kotlinWasmUpgradeYarnLock`
 
 ## 项目介绍
@@ -47,9 +53,11 @@
 - `README.md`: 功能、结构、用法与阶段说明。
 - `docs/ARCHITECTURE.md`: 内核设计、执行流程与扩展点。
 - `docs/COMPATIBILITY.md`: 兼容性矩阵与已知差异。
+- `docs/CONFORMANCE.md`: test262-parser-tests 解析一致性基线、已知缺口与推进顺序。
 - `vibe-js-core/build.gradle.kts`: 核心 KMP 库构建脚本（JVM/Android/JS/Wasm/Native 目标）。
 - `vibe-js-host/build.gradle.kts`: 宿主模块构建脚本（console/timer/window 等）。
-- `settings.gradle.kts`: 模块 `:vibe-js-core` 与 `:vibe-js-host`（目录同名）。
+- `vibe-js-conformance/build.gradle.kts`: JVM-only 解析一致性基线模块（语料下载、报告生成）。
+- `settings.gradle.kts`: 模块 `:vibe-js-core`、`:vibe-js-host` 与 `:vibe-js-conformance`（目录同名）。
 - `gradle/libs.versions.toml`: 依赖版本目录。
 
 ### 核心源码结构 (`vibe-js-core/src/commonMain/kotlin/com/muedsa/js/`)

@@ -22,6 +22,9 @@ sealed class TemplatePart {
  *           供 Parser 实现自动分号插入（ASI）与 `return` 换行规则。
  * @property regexFlags 正则字面量的 flags（仅 REGEX 使用）
  * @property templateParts 模板字符串分段（仅 TEMPLATE 使用）
+ * @property containsEscape 字符串字面量源码中是否包含转义序列
+ *           （指令序言要求源码文本完全一致，转义形式不算 "use strict"）
+ * @property legacyOctal 字符串字面量中是否包含旧式八进制转义（严格模式禁止）
  */
 data class Token(
     val type: TokenType,
@@ -30,6 +33,8 @@ data class Token(
     val precededByNewline: Boolean = false,
     val regexFlags: String = "",
     val templateParts: List<TemplatePart> = emptyList(),
+    val containsEscape: Boolean = false,
+    val legacyOctal: Boolean = false,
 ) {
     /** 起始行号（1 开始），保留该便捷属性便于错误信息与测试使用。 */
     val line: Int get() = range.start.line

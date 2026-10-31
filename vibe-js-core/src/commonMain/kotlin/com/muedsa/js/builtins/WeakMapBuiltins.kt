@@ -30,18 +30,17 @@ object WeakMapBuiltins {
             val map = JSWeakMap(prototype = prototype)
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
-                for (entry in interpreter.iterateValues(iterable)) {
-                    val pair = interpreter.iterateValues(entry)
-                    val key = pair.getOrElse(0) { JSUndefined }
-                    val value = pair.getOrElse(1) { JSUndefined }
-                    if (key !is JSObject) {
-                        interpreter.typeError("Invalid value used as WeakMap key")
+                val adder = interpreter.getV(map, PropertyKey.Str("set"))
+                if (!interpreter.isCallable(adder)) {
+                    interpreter.typeError("'set' is not a function")
+                }
+                interpreter.consumeIterator(iterable) { entry ->
+                    if (entry !is JSObject) {
+                        interpreter.typeError("Iterator value is not an entry object")
                     }
-                    val index = map.entries.indexOfFirst {
-                        interpreter.conversions.sameValueZero(it.first, key)
-                    }
-                    if (index >= 0) map.entries[index] = key to value
-                    else map.entries.add(key to value)
+                    val key = interpreter.getV(entry, PropertyKey.Str("0"))
+                    val value = interpreter.getV(entry, PropertyKey.Str("1"))
+                    interpreter.callFunction(adder, map, listOf(key, value))
                 }
             }
             map
@@ -58,7 +57,7 @@ object WeakMapBuiltins {
         prototype.defineDataProperty(
             PropertyKey.Str("set"),
             value = BuiltinHelpers.method(intrinsics, "set", 2) { interpreter, thisValue, args ->
-                val map = thisValue as? JSMap
+                val map = thisValue as? JSWeakMap
                     ?: interpreter.typeError("WeakMap.prototype.set requires that 'this' be a WeakMap")
                 val key = args.getOrElse(0) { JSUndefined }
                 val value = args.getOrElse(1) { JSUndefined }
@@ -75,7 +74,7 @@ object WeakMapBuiltins {
         prototype.defineDataProperty(
             PropertyKey.Str("get"),
             value = BuiltinHelpers.method(intrinsics, "get", 1) { interpreter, thisValue, args ->
-                val map = thisValue as? JSMap
+                val map = thisValue as? JSWeakMap
                     ?: interpreter.typeError("WeakMap.prototype.get requires that 'this' be a WeakMap")
                 val index = map.entries.indexOfFirst {
                     interpreter.conversions.sameValueZero(it.first, args.getOrElse(0) { JSUndefined })
@@ -86,7 +85,7 @@ object WeakMapBuiltins {
         prototype.defineDataProperty(
             PropertyKey.Str("has"),
             value = BuiltinHelpers.method(intrinsics, "has", 1) { interpreter, thisValue, args ->
-                val map = thisValue as? JSMap
+                val map = thisValue as? JSWeakMap
                     ?: interpreter.typeError("WeakMap.prototype.has requires that 'this' be a WeakMap")
                 com.muedsa.js.runtime.value.JSBoolean.getJsBoolean(
                     map.entries.any {
@@ -98,7 +97,7 @@ object WeakMapBuiltins {
         prototype.defineDataProperty(
             PropertyKey.Str("delete"),
             value = BuiltinHelpers.method(intrinsics, "delete", 1) { interpreter, thisValue, args ->
-                val map = thisValue as? JSMap
+                val map = thisValue as? JSWeakMap
                     ?: interpreter.typeError("WeakMap.prototype.delete requires that 'this' be a WeakMap")
                 val index = map.entries.indexOfFirst {
                     interpreter.conversions.sameValueZero(it.first, args.getOrElse(0) { JSUndefined })

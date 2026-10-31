@@ -1,0 +1,132 @@
+name: Conformance
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每周一 02:00 UTC 运行解析一致性基线，避免阻塞日常 PR
+    - cron: '0 2 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  parser-conformance:
+    name: Parser Conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v6
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v6
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Run parser conformance
+      run: ./gradlew :vibe-js-conformance:parserConformance --console=plain
+
+    - name: Publish summary
+      if: always()
+      run: |
+        if [ -f vibe-js-conformance/build/reports/conformance/parser-summary.md ]; then
+          cat vibe-js-conformance/build/reports/conformance/parser-summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload conformance report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: parser-conformance-report
+        path: vibe-js-conformance/build/reports/conformance/
+        retention-days: 30
+
+  test262-es5:
+    name: Test262 ES5 Subset
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v6
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v6
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Run Test262 ES5 subset
+      run: ./gradlew :vibe-js-conformance:test262Conformance --console=plain
+
+    - name: Publish summary
+      if: always()
+      run: |
+        if [ -f vibe-js-conformance/build/reports/conformance/test262-summary.md ]; then
+          cat vibe-js-conformance/build/reports/conformance/test262-summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload Test262 report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: test262-es5-report
+        path: vibe-js-conformance/build/reports/conformance/
+        retention-days: 30
+
+  libraries-differential:
+    name: Libraries & Node Differential
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v6
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v6
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Run library smoke and differential tests
+      run: ./gradlew :vibe-js-conformance:librarySmoke :vibe-js-conformance:differentialConformance --continue --console=plain
+
+    - name: Publish summaries
+      if: always()
+      run: |
+        for file in libraries-summary.md differential-summary.md; do
+          if [ -f "vibe-js-conformance/build/reports/conformance/$file" ]; then
+            cat "vibe-js-conformance/build/reports/conformance/$file" >> "$GITHUB_STEP_SUMMARY"
+          fi
+        done
+
+    - name: Upload reports
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: libraries-differential-report
+        path: vibe-js-conformance/build/reports/conformance/
+        retention-days: 30

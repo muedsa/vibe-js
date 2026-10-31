@@ -47,13 +47,6 @@ object BooleanBuiltins {
             },
         )
 
-        booleanPrototype.defineDataProperty(
-            key = PropertyKey.Sym(intrinsics.symbolToStringTag),
-            value = JSString("Boolean"),
-            writable = false,
-            enumerable = false,
-            configurable = true,
-        )
 
         registry.defineGlobal("Boolean", booleanConstructor)
     }
@@ -62,10 +55,10 @@ object BooleanBuiltins {
         return when (thisValue) {
             is JSBoolean -> thisValue.value
             is JSBoxedPrimitive -> (thisValue.primitive as? JSBoolean)?.value
-                ?: interpreter.toBoolean(thisValue.primitive)
+                ?: interpreter.typeError("Boolean.prototype method requires that 'this' be a Boolean")
             // Boolean.prototype 自身代表 false
             interpreter.intrinsics.booleanPrototype -> false
-            else -> interpreter.toBoolean(thisValue)
+            else -> interpreter.typeError("Boolean.prototype method requires that 'this' be a Boolean")
         }
     }
 

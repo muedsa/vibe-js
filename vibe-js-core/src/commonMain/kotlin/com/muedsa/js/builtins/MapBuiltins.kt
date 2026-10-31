@@ -32,12 +32,17 @@ object MapBuiltins {
             val map = JSMap(prototype = mapPrototype)
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
-                for (entry in interpreter.iterateValues(iterable)) {
-                    val pair = interpreter.iterateValues(entry)
-                    if (pair.size < 2) {
+                val adder = interpreter.getV(map, PropertyKey.Str("set"))
+                if (!interpreter.isCallable(adder)) {
+                    interpreter.typeError("'set' is not a function")
+                }
+                interpreter.consumeIterator(iterable) { entry ->
+                    if (entry !is JSObject) {
                         interpreter.typeError("Iterator value is not an entry object")
                     }
-                    setEntry(interpreter, map, pair[0], pair[1])
+                    val key = interpreter.getV(entry, PropertyKey.Str("0"))
+                    val value = interpreter.getV(entry, PropertyKey.Str("1"))
+                    interpreter.callFunction(adder, map, listOf(key, value))
                 }
             }
             map
@@ -47,6 +52,16 @@ object MapBuiltins {
             key = PropertyKey.CONSTRUCTOR,
             value = mapConstructor,
             writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        // Map[@@species]：返回 this
+        mapConstructor.defineAccessorProperty(
+            key = PropertyKey.Sym(intrinsics.symbolSpecies),
+            get = BuiltinHelpers.method(intrinsics, "get [Symbol.species]", 0) { _, thisValue, _ ->
+                thisValue
+            },
+            set = null,
             enumerable = false,
             configurable = true,
         )
@@ -135,11 +150,29 @@ object MapBuiltins {
 
         fun iteratorMethod(
             name: String,
-            values: (JSMap) -> List<JSValue>,
+            valueFor: (Pair<JSValue, JSValue>) -> JSValue,
         ) {
             val method = BuiltinHelpers.method(intrinsics, name, 0) { interpreter, thisValue, _ ->
                 val map = requireMap(interpreter, thisValue, "Map.prototype.$name")
-                IteratorBuiltins.createIterator(intrinsics, values(map), "Map Iterator")
+                var index = 0
+                IteratorBuiltins.createIteratorWithNext(intrinsics, "Map Iterator") { _, _, _ ->
+                    val result = JSObject(prototype = intrinsics.objectPrototype)
+                    val done = index >= map.entries.size
+                    val value = if (done) {
+                        JSUndefined
+                    } else {
+                        val entry = map.entries[index]
+                        index++
+                        valueFor(entry)
+                    }
+                    result.defineDataProperty(
+                        PropertyKey.Str("value"), value, true, true, true,
+                    )
+                    result.defineDataProperty(
+                        PropertyKey.Str("done"), JSBoolean.getJsBoolean(done), true, true, true,
+                    )
+                    result
+                }
             }
             mapPrototype.defineDataProperty(PropertyKey.Str(name), method)
             if (name == "entries") {
@@ -147,22 +180,24 @@ object MapBuiltins {
             }
         }
 
-        iteratorMethod("keys") { map -> map.entries.map { it.first } }
-        iteratorMethod("values") { map -> map.entries.map { it.second } }
-        iteratorMethod("entries") { map ->
-            map.entries.map { (key, value) ->
-                JSArray(
-                    mutableListOf<JSValue?>(key, value),
-                    prototype = intrinsics.arrayPrototype,
-                )
-            }
+        iteratorMethod("keys") { entry -> entry.first }
+        iteratorMethod("values") { entry -> entry.second }
+        iteratorMethod("entries") { entry ->
+            JSArray(
+                mutableListOf<JSValue?>(entry.first, entry.second),
+                prototype = intrinsics.arrayPrototype,
+            )
         }
 
         registry.defineGlobal("Map", mapConstructor)
     }
 
-    private fun requireMap(interpreter: Interpreter, thisValue: JSValue, name: String): JSMap =
-        thisValue as? JSMap ?: interpreter.typeError("$name requires that 'this' be a Map")
+    private fun requireMap(interpreter: Interpreter, thisValue: JSValue, name: String): JSMap {
+        if (thisValue is com.muedsa.js.runtime.value.JSWeakMap) {
+            interpreter.typeError("$name requires that 'this' be a Map")
+        }
+        return thisValue as? JSMap ?: interpreter.typeError("$name requires that 'this' be a Map")
+    }
 
     private fun findEntryIndex(interpreter: Interpreter, map: JSMap, key: JSValue): Int =
         map.entries.indexOfFirst { interpreter.conversions.sameValueZero(it.first, key) }

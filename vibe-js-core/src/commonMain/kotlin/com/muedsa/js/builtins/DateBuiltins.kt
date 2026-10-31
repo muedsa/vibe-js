@@ -2,11 +2,13 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.PreferredType
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSDate
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
+import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
@@ -59,16 +61,34 @@ object DateBuiltins {
             enumerable = false,
             configurable = true,
         )
-        datePrototype.defineDataProperty(
-            key = PropertyKey.Sym(intrinsics.symbolToStringTag),
-            value = JSString("Date"),
-            writable = false,
-            enumerable = false,
-            configurable = true,
-        )
 
         installStaticMethods(intrinsics, dateConstructor)
         installPrototypeMethods(intrinsics, datePrototype)
+
+        // ES2015 Date.prototype[@@toPrimitive]：default 按 string 顺序转换
+        datePrototype.defineDataProperty(
+            key = PropertyKey.Sym(intrinsics.symbolToPrimitive),
+            value = BuiltinHelpers.method(intrinsics, "[Symbol.toPrimitive]", 1) { interpreter, thisValue, args ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("Date.prototype[Symbol.toPrimitive] called on non-object")
+                }
+                val hint = (args.getOrElse(0) { JSUndefined } as? JSString)?.value
+                val order = when (hint) {
+                    "string", "default" -> listOf("toString", "valueOf")
+                    "number" -> listOf("valueOf", "toString")
+                    else -> interpreter.typeError("Invalid hint for Date.prototype[Symbol.toPrimitive]")
+                }
+                for (name in order) {
+                    val method = interpreter.getV(thisValue, PropertyKey.Str(name))
+                    if (interpreter.isCallable(method)) {
+                        val result = interpreter.callFunction(method, thisValue, emptyList())
+                        if (result !is JSObject) return@method result
+                    }
+                }
+                interpreter.typeError("Cannot convert object to primitive value")
+            },
+            writable = false,
+        )
 
         registry.defineGlobal("Date", dateConstructor)
     }
@@ -121,7 +141,7 @@ object DateBuiltins {
 
         method("valueOf", 0) { _, thisValue, _ -> JSNumber(requireDate(thisValue).timeValue) }
         method("getTime", 0) { _, thisValue, _ -> JSNumber(requireDate(thisValue).timeValue) }
-        method("getTimezoneOffset", 0) { _, _, _ -> JSNumber.ZERO }
+        method("getTimezoneOffset", 0) { _, thisValue, _ -> requireDate(thisValue); JSNumber.ZERO }
 
         fun getter(name: String, selector: (DateMath.Parts) -> Double) {
             method(name, 0) { _, thisValue, _ ->
@@ -272,9 +292,21 @@ object DateBuiltins {
             JSString(isoString(date.timeValue) ?: interpreter.rangeError("Invalid time value"))
         }
 
-        method("toJSON", 1) { _, thisValue, _ ->
-            val date = requireDate(thisValue)
-            if (!date.isValid) JSNull else JSString(isoString(date.timeValue) ?: return@method JSNull)
+        method("toJSON", 1) { interpreter, thisValue, _ ->
+            if (thisValue is JSNull || thisValue is JSUndefined) {
+                interpreter.typeError("Date.prototype.toJSON called on null or undefined")
+            }
+            val objectValue = interpreter.toObject(thisValue)
+            val primitive = interpreter.conversions.toPrimitive(objectValue, PreferredType.NUMBER)
+            if (primitive is JSNumber && !primitive.value.isFinite()) {
+                JSNull
+            } else {
+                val toIsoString = interpreter.getV(objectValue, PropertyKey.Str("toISOString"))
+                if (!interpreter.isCallable(toIsoString)) {
+                    interpreter.typeError("toISOString is not a function")
+                }
+                interpreter.callFunction(toIsoString, objectValue, emptyList())
+            }
         }
 
         method("toString", 0) { _, thisValue, _ ->
@@ -337,6 +369,16 @@ object DateBuiltins {
     private suspend fun parseDateValue(interpreter: Interpreter, value: JSValue): Double = when (value) {
         is JSDate -> value.timeValue
         is JSString -> DateMath.parseDateString(value.value)
+        is JSObject -> {
+            // Date(value)：对象先按 default hint 做 ToPrimitive，字符串则解析日期
+            val primitive = interpreter.conversions.toPrimitive(value, PreferredType.DEFAULT)
+            if (primitive is JSString) {
+                DateMath.parseDateString(primitive.value)
+            } else {
+                interpreter.toNumber(primitive)
+            }
+        }
+
         else -> interpreter.toNumber(value)
     }
 

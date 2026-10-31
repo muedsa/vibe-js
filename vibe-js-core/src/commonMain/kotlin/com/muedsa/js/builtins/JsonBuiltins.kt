@@ -1,10 +1,5 @@
 package com.muedsa.js.builtins
 
-import com.muedsa.js.ast.ExpressionStatement
-import com.muedsa.js.lexer.Lexer
-import com.muedsa.js.lexer.LexerException
-import com.muedsa.js.parser.ParseException
-import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArray
@@ -19,6 +14,7 @@ import com.muedsa.js.runtime.value.JSSymbol
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.NumberFormatting
+import com.muedsa.js.runtime.value.PropertyDescriptor
 import com.muedsa.js.runtime.value.PropertyKey
 import kotlin.math.min
 
@@ -48,16 +44,9 @@ object JsonBuiltins {
             value = BuiltinHelpers.method(intrinsics, "JSON.parse", 2) { interpreter, _, args ->
                 val text = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
                 val value = try {
-                    // 用括号包裹，确保顶层对象被解析为对象字面量而不是块语句
-                    val program = Parser(Lexer("($text)").tokenize()).parseProgram()
-                    val statement = program.body.singleOrNull()
-                    if (statement !is ExpressionStatement) {
-                        interpreter.syntaxError("Unexpected JSON token")
-                    }
-                    interpreter.evaluateStandalone(statement.expression)
-                } catch (error: LexerException) {
-                    interpreter.syntaxError(error.message ?: "Invalid JSON")
-                } catch (error: ParseException) {
+                    // 使用严格 JSON 语法，而不是宽松的 JS 表达式解析器
+                    JsonParser(text, intrinsics.objectPrototype, intrinsics.arrayPrototype).parse()
+                } catch (error: JsonParseException) {
                     interpreter.syntaxError(error.message ?: "Invalid JSON")
                 }
 
@@ -113,11 +102,21 @@ object JsonBuiltins {
             if (value is JSArray) {
                 for (index in 0 until value.length) {
                     val elementKey = index.toString()
+                    val elementKeyRef = PropertyKey.Str(elementKey)
                     val newElement = internalize(interpreter, value, elementKey, reviver)
                     if (newElement is JSUndefined) {
-                        value.deleteOwnProperty(PropertyKey.Str(elementKey))
+                        value.deleteOwnProperty(elementKeyRef)
                     } else {
-                        value.defineDataProperty(PropertyKey.Str(elementKey), newElement)
+                        val existing = value.getOwnProperty(elementKeyRef)
+                        value.defineOwnProperty(
+                            elementKeyRef,
+                            PropertyDescriptor.data(
+                                value = newElement,
+                                writable = existing?.writable ?: true,
+                                enumerable = true,
+                                configurable = existing?.configurable ?: true,
+                            ),
+                        )
                     }
                 }
             } else {
@@ -128,7 +127,16 @@ object JsonBuiltins {
                     if (newValue is JSUndefined) {
                         value.deleteOwnProperty(propertyKey)
                     } else {
-                        value.defineDataProperty(propertyKey, newValue)
+                        val existing = value.getOwnProperty(propertyKey)
+                        value.defineOwnProperty(
+                            propertyKey,
+                            PropertyDescriptor.data(
+                                value = newValue,
+                                writable = existing?.writable ?: true,
+                                enumerable = true,
+                                configurable = existing?.configurable ?: true,
+                            ),
+                        )
                     }
                 }
             }

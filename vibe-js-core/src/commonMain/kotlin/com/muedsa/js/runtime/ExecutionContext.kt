@@ -13,8 +13,10 @@ import com.muedsa.js.runtime.value.JSValue
  */
 class ExecutionContext(
     var lexicalEnv: Environment,
-    val thisValue: JSValue,
+    var thisValue: JSValue,
     val strict: Boolean,
     val function: JSFunction? = null,
     val newTarget: JSValue? = null,
+    /** 派生类构造器在 super() 之前 this 未初始化 */
+    var thisInitialized: Boolean = true,
 )

@@ -18,7 +18,7 @@
 | 正则字面量 | ✅ | 通过"上一 Token"启发式区分除法/正则 |
 | 注释：单行/多行 | ✅ | 未闭合报错 |
 | 未闭合字符串/模板/正则 | ✅ | 抛出 `LexerException` |
-| 标识符：Unicode 字母 | ✅ | 不支持 `\uXXXX` 标识符转义 |
+| 标识符：Unicode 字母、`\uXXXX`、`\u{...}` 与 astral | ✅ | astral 范围采用近似表 |
 | 自动分号插入（ASI） | ⚠️ | 覆盖 return/throw/break/continue/++/-- 换行与常规语句分隔；极少数边界未覆盖 |
 | BigInt 字面量 | ❌ | 后续阶段 |
 
@@ -34,9 +34,9 @@
 | switch（default 任意位置） | ✅ | |
 | 标签语句、带标签 break/continue | ✅ | |
 | try/catch/finally、throw | ✅ | |
-| 函数声明/表达式、闭包、arguments | ✅ | 命名函数表达式的内部名暂不绑定 |
+| 函数声明/表达式、闭包、arguments | ✅ | 命名函数表达式内部名、参数映射（sloppy）均已支持 |
 | 箭头函数（块体/表达式体、词法 this、词法 arguments） | ✅ | |
-| 默认参数、rest 参数、函数 length | ✅ | |
+| 默认参数、rest 参数（含解构 rest）、函数 length | ✅ | |
 | 解构：声明/赋值/for-of/函数参数/catch、默认值、嵌套、数组 rest、对象 rest | ✅ | |
 | spread：数组/调用/new/对象 | ✅ | |
 | class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、默认派生构造器；类字段不支持 |
@@ -50,7 +50,7 @@
 | Generator（`function*` / `yield`） | ❌ | 明确排除 |
 | import / export | ❌ | 明确排除（单脚本目标） |
 | Proxy / Reflect | ❌ | 明确排除 |
-| 严格模式 `"use strict"` | ⚠️ | this/未声明赋值/只读属性/const/with/delete 已实现；其余细节（参数重复等）阶段后续补齐 |
+| 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
 
 ## 3. 标准内建
 
@@ -85,7 +85,7 @@
 | 原型链继承（Object.create / setPrototypeOf / `__proto__`） | ✅ |
 | getter/setter、属性描述符 | ⚠️ 基础实现；复杂描述符冲突校验有限 |
 | instanceof、in、delete | ✅ |
-| arguments | ⚠️ 类数组对象；未实现参数映射 |
+| arguments | ✅ | 类数组对象；sloppy 参数映射与 defineProperty 联动 |
 | 箭头函数词法 this/arguments | ✅ |
 | class 构造器调用限制、super、new.target | ✅ |
 | Symbol.toPrimitive | ✅ |
@@ -96,18 +96,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 284 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 284 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 284 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 377 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 377 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 377 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
 ## 6. 已知差异
 
 - `Date` 的本地时间方法按 UTC 实现（common 代码无法获取时区），`getTimezoneOffset()` 恒为 0；
-- `JSON.parse` 复用 JS Parser，会接受尾逗号等非严格 JSON；
+- `JSON.parse` 使用独立严格 JSON 语法，不再复用宽松的 JS Parser；
 - 类字段、可选链未实现；
-- RegExp 的 `s`/`u` 标志暂不生效，命名捕获组有限；
+- RegExp 的 `s`/`u` 标志暂不生效，命名捕获组有限；纯 Kotlin 回退引擎按 JS-only 构造启用（空字符类、`\0`/`\c`、前向反向引用、量词组捕获重置等）；
 - `String.prototype.normalize` 未实现；
 - Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷），未实现未处理拒绝上报；
 - 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度。
@@ -135,6 +135,7 @@
 | `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
 | `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
+| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界与 Object 接收者 |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `HostModuleTest`（:vibe-js-host） | window/self、console、定时器/setInterval、queueMicrotask、atob/btoa、时钟注入 |

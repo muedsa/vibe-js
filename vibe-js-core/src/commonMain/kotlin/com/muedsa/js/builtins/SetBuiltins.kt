@@ -1,6 +1,7 @@
 package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
+import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
@@ -33,8 +34,12 @@ object SetBuiltins {
             val set = JSSet(prototype = setPrototype)
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
-                for (value in interpreter.iterateValues(iterable)) {
-                    addValue(interpreter, set, value)
+                val adder = interpreter.getV(set, PropertyKey.Str("add"))
+                if (!interpreter.isCallable(adder)) {
+                    interpreter.typeError("'add' is not a function")
+                }
+                interpreter.consumeIterator(iterable) { value ->
+                    interpreter.callFunction(adder, set, listOf(value))
                 }
             }
             set
@@ -44,6 +49,16 @@ object SetBuiltins {
             key = PropertyKey.CONSTRUCTOR,
             value = setConstructor,
             writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        // Set[@@species]：返回 this
+        setConstructor.defineAccessorProperty(
+            key = PropertyKey.Sym(intrinsics.symbolSpecies),
+            get = BuiltinHelpers.method(intrinsics, "get [Symbol.species]", 0) { _, thisValue, _ ->
+                thisValue
+            },
+            set = null,
             enumerable = false,
             configurable = true,
         )
@@ -124,11 +139,29 @@ object SetBuiltins {
 
         fun iteratorMethod(
             name: String,
-            values: (JSSet) -> List<JSValue>,
+            valueFor: (JSValue) -> JSValue,
         ) {
             val method = BuiltinHelpers.method(intrinsics, name, 0) { interpreter, thisValue, _ ->
                 val set = requireSet(interpreter, thisValue, "Set.prototype.$name")
-                IteratorBuiltins.createIterator(intrinsics, values(set), "Set Iterator")
+                var index = 0
+                IteratorBuiltins.createIteratorWithNext(intrinsics, "Set Iterator") { _, _, _ ->
+                    val result = JSObject(prototype = intrinsics.objectPrototype)
+                    val done = index >= set.values.size
+                    val value = if (done) {
+                        JSUndefined
+                    } else {
+                        val element = set.values[index]
+                        index++
+                        valueFor(element)
+                    }
+                    result.defineDataProperty(
+                        PropertyKey.Str("value"), value, true, true, true,
+                    )
+                    result.defineDataProperty(
+                        PropertyKey.Str("done"), JSBoolean.getJsBoolean(done), true, true, true,
+                    )
+                    result
+                }
             }
             setPrototype.defineDataProperty(PropertyKey.Str(name), method)
             if (name == "values") {
@@ -136,22 +169,24 @@ object SetBuiltins {
             }
         }
 
-        iteratorMethod("values") { it.values.toList() }
-        iteratorMethod("keys") { it.values.toList() }
-        iteratorMethod("entries") { set ->
-            set.values.map { value ->
-                JSArray(
-                    mutableListOf<JSValue?>(value, value),
-                    prototype = intrinsics.arrayPrototype,
-                )
-            }
+        iteratorMethod("values") { it }
+        iteratorMethod("keys") { it }
+        iteratorMethod("entries") { value ->
+            JSArray(
+                mutableListOf<JSValue?>(value, value),
+                prototype = intrinsics.arrayPrototype,
+            )
         }
 
         registry.defineGlobal("Set", setConstructor)
     }
 
-    private fun requireSet(interpreter: Interpreter, thisValue: JSValue, name: String): JSSet =
-        thisValue as? JSSet ?: interpreter.typeError("$name requires that 'this' be a Set")
+    private fun requireSet(interpreter: Interpreter, thisValue: JSValue, name: String): JSSet {
+        if (thisValue is com.muedsa.js.runtime.value.JSWeakSet) {
+            interpreter.typeError("$name requires that 'this' be a Set")
+        }
+        return thisValue as? JSSet ?: interpreter.typeError("$name requires that 'this' be a Set")
+    }
 
     private fun addValue(interpreter: Interpreter, set: JSSet, value: JSValue) {
         if (set.values.none { interpreter.conversions.sameValueZero(it, value) }) {

@@ -34,15 +34,8 @@ class Conversions(private val interpreter: Interpreter) {
     suspend fun toPrimitive(value: JSValue, hint: PreferredType = PreferredType.DEFAULT): JSValue {
         if (value.isPrimitive) return value
 
-        // 包装对象直接取出内部原始值
-        if (value is JSBoxedPrimitive) return value.primitive
-
-        // Date 的默认 hint 为 string（规范行为）
-        val effectiveHint = if (hint == PreferredType.DEFAULT && value is JSDate) {
-            PreferredType.STRING
-        } else {
-            hint
-        }
+        // 原样把 hint 传给 @@toPrimitive；Date 自身的 @@toPrimitive 负责 default→string
+        val effectiveHint = hint
 
         // Symbol.toPrimitive 优先
         if (value is JSObject) {
@@ -50,6 +43,9 @@ class Conversions(private val interpreter: Interpreter) {
                 value,
                 PropertyKey.Sym(interpreter.intrinsics.symbolToPrimitive),
             )
+            if (exotic !is JSUndefined && exotic !is JSNull && !interpreter.isCallable(exotic)) {
+                interpreter.typeError("@@toPrimitive must be a function")
+            }
             if (interpreter.isCallable(exotic)) {
                 val hintName = when (effectiveHint) {
                     PreferredType.STRING -> "string"
@@ -116,8 +112,11 @@ class Conversions(private val interpreter: Interpreter) {
     fun toBoolean(value: JSValue): Boolean = value.toPrimitiveBoolean()
 
     /** ToPropertyKey。 */
-    suspend fun toPropertyKey(value: JSValue): PropertyKey =
-        if (value is JSSymbol) PropertyKey.Sym(value) else PropertyKey.Str(toString(value))
+    suspend fun toPropertyKey(value: JSValue): PropertyKey {
+        // 先 ToPrimitive(string)，Symbol 结果保留为 Symbol 键（不能 ToString）
+        val key = toPrimitive(value, PreferredType.STRING)
+        return if (key is JSSymbol) PropertyKey.Sym(key) else PropertyKey.Str(toString(key))
+    }
 
     /**
      * ToObject：原始值包装为对象（用于 Object.prototype 方法等场景）。
@@ -176,6 +175,8 @@ class Conversions(private val interpreter: Interpreter) {
         return when {
             a is JSNull && b is JSUndefined -> true
             a is JSUndefined && b is JSNull -> true
+            // 规范：null/undefined 与其他类型（含对象）宽松比较直接为 false，不做 ToPrimitive
+            a is JSNull || a is JSUndefined || b is JSNull || b is JSUndefined -> false
             a is JSNumber && b is JSString -> a.value == b.toPrimitiveNumber()
             a is JSString && b is JSNumber -> a.toPrimitiveNumber() == b.value
             a is JSBoolean -> abstractEquals(JSNumber(if (a.value) 1.0 else 0.0), b)

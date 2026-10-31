@@ -1,7 +1,9 @@
 package com.muedsa.js.builtins
 
+import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.Intrinsics
 import com.muedsa.js.runtime.value.JSBoolean
+import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
@@ -18,6 +20,44 @@ internal object IteratorBuiltins {
      *
      * @param toStringTag 可选的 Symbol.toStringTag
      */
+    /** 创建使用自定义 next 的迭代器对象（Map/Set 的实时迭代器）。 */
+    fun createIteratorWithNext(
+        intrinsics: Intrinsics,
+        toStringTag: String? = null,
+        next: suspend (Interpreter, JSValue, List<JSValue>) -> JSValue,
+    ): JSObject {
+        val iterator = JSObject(prototype = intrinsics.objectPrototype)
+        iterator.defineDataProperty(
+            PropertyKey.Str("next"),
+            JSNativeFunction(
+                name = "next",
+                length = 0,
+                prototype = intrinsics.functionPrototype,
+                function = next,
+            ),
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        iterator.defineDataProperty(
+            PropertyKey.Sym(intrinsics.symbolIterator),
+            BuiltinHelpers.method(intrinsics, "[Symbol.iterator]", 0) { _, _, _ -> iterator },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        if (toStringTag != null) {
+            iterator.defineDataProperty(
+                key = PropertyKey.Sym(intrinsics.symbolToStringTag),
+                value = JSString(toStringTag),
+                writable = false,
+                enumerable = false,
+                configurable = true,
+            )
+        }
+        return iterator
+    }
+
     fun createIterator(
         intrinsics: Intrinsics,
         values: List<JSValue>,

@@ -2,6 +2,7 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSObject
@@ -20,13 +21,6 @@ object ErrorBuiltins {
         val functionPrototype = intrinsics.functionPrototype
 
         // Error.prototype.toString
-        intrinsics.errorPrototype.defineDataProperty(
-            key = PropertyKey.Sym(intrinsics.symbolToStringTag),
-            value = com.muedsa.js.runtime.value.JSString("Error"),
-            writable = false,
-            enumerable = false,
-            configurable = true,
-        )
         intrinsics.errorPrototype.defineDataProperty(
             key = PropertyKey.Str("toString"),
             value = BuiltinHelpers.method(intrinsics, "toString", 0) { interpreter, thisValue, _ ->
@@ -68,6 +62,55 @@ object ErrorBuiltins {
         val uriErrorConstructor = createErrorConstructor(
             registry, "URIError", intrinsics.uriErrorPrototype,
         )
+        // AggregateError(errors, message)：errors 为可迭代对象，实例带 errors 数组
+        val aggregateErrorPrototype = JSObject(prototype = intrinsics.errorPrototype)
+        aggregateErrorPrototype.defineDataProperty(
+            key = PropertyKey.NAME,
+            value = JSString("AggregateError"),
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        aggregateErrorPrototype.defineDataProperty(
+            key = PropertyKey.MESSAGE,
+            value = JSString(""),
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        val aggregateErrorConstructor = BuiltinHelpers.constructor(
+            intrinsics = intrinsics,
+            name = "AggregateError",
+            length = 2,
+            prototypeObject = aggregateErrorPrototype,
+        ) { interpreter, _, args ->
+            val errorsValue = args.getOrElse(0) { JSUndefined }
+            val message = if (args.size < 2 || args[1] is JSUndefined) {
+                ""
+            } else {
+                interpreter.toStringValue(args[1])
+            }
+            val errors = interpreter.iterateValues(errorsValue)
+            val error = JSError("AggregateError", message, aggregateErrorPrototype)
+            error.defineDataProperty(
+                key = PropertyKey.Str("errors"),
+                value = JSArray(errors.toMutableList(), prototype = intrinsics.arrayPrototype),
+                writable = true,
+                enumerable = false,
+                configurable = true,
+            )
+            error
+        }
+        intrinsics.aggregateErrorConstructor = aggregateErrorConstructor
+
+        // ES5 15.11.3：标准错误子构造器的 [[Prototype]] 是 Error 构造器
+        for (constructor in listOf(
+            typeErrorConstructor, rangeErrorConstructor, referenceErrorConstructor,
+            syntaxErrorConstructor, evalErrorConstructor, uriErrorConstructor,
+            aggregateErrorConstructor,
+        )) {
+            constructor.prototype = errorConstructor
+        }
 
         registry.defineGlobal("Error", errorConstructor)
         registry.defineGlobal("TypeError", typeErrorConstructor)
@@ -76,6 +119,7 @@ object ErrorBuiltins {
         registry.defineGlobal("SyntaxError", syntaxErrorConstructor)
         registry.defineGlobal("EvalError", evalErrorConstructor)
         registry.defineGlobal("URIError", uriErrorConstructor)
+        registry.defineGlobal("AggregateError", aggregateErrorConstructor)
     }
 
     private fun createErrorConstructor(

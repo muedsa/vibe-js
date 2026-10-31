@@ -102,9 +102,13 @@ open class JSObject(
         return true
     }
 
+    /** 内部使用：无视属性标志移除自有属性（用于创建后修正内建语义）。 */
+    fun removeOwnPropertyIgnoringAttributes(key: PropertyKey) {
+        ownProperties.remove(key)
+    }
+
     /** 便捷方法：定义数据属性。 */
-    fun defineDataProperty(
-        key: PropertyKey,
+    fun defineDataProperty(        key: PropertyKey,
         value: JSValue,
         writable: Boolean = true,
         enumerable: Boolean = false,

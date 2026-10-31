@@ -66,6 +66,20 @@ class AsyncSemanticsTest {
             """.trimIndent()
         )
         assertEquals("AggregateError", runtime.evalString("emptyName"))
+
+        // AggregateError 携带 message 与 errors 列表
+        runtime.eval(
+            """
+            var anyMessage = '';
+            var anyErrors = '';
+            Promise.any([Promise.reject('a'), Promise.reject('b')]).catch(function (e) {
+                anyMessage = e.message;
+                anyErrors = e.errors.join(',');
+            });
+            """.trimIndent()
+        )
+        assertEquals("All promises were rejected", runtime.evalString("anyMessage"))
+        assertEquals("a,b", runtime.evalString("anyErrors"))
     }
 
     @Test
@@ -376,5 +390,97 @@ class AsyncSemanticsTest {
         )
         assertTrue(runtime.evalBoolean("Promise.reject(1).catch(function () {}) instanceof Promise"))
         assertEquals(true, runtime.evalBoolean("Promise.resolve(1) !== Promise.resolve(1)"))
+    }
+
+    @Test
+    fun `await 采纳 thenable 并保持与 Promise 链的微任务交错`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var actual = [];
+            var thenCallCount = 0;
+            var patched = { then: function (fulfill) { thenCallCount++; fulfill(thenCallCount); } };
+            async function trigger() {
+                actual.push('Await: ' + await patched);
+                actual.push('Await: ' + await patched);
+            }
+            trigger();
+            new Promise(function (resolve) {
+                actual.push('Promise: 1');
+                resolve();
+            }).then(function () {
+                actual.push('Promise: 2');
+            }).then(function () {
+                actual.push('Promise: 3');
+            }).then(function () {
+                actual.push('Promise: 4');
+            });
+            """.trimIndent()
+        )
+        assertEquals(
+            "Promise: 1,Promise: 2,Await: 1,Promise: 3,Promise: 4,Await: 2",
+            runtime.evalString("actual.join(',')"),
+        )
+        assertEquals(2.0, runtime.evalNumber("thenCallCount"))
+    }
+
+    @Test
+    fun `Promise 解析函数只生效一次且 thenable 采纳在微任务`() = runTest {
+        val runtime = TestRuntime()
+        // 先 resolve(thenable) 再 reject：后者必须被 [[AlreadyResolved]] 忽略
+        runtime.eval(
+            """
+            var state = '';
+            new Promise(function (resolve, reject) {
+                resolve({ then: function (fulfill) { fulfill('ok'); } });
+                reject('bad');
+            }).then(function (v) { state = 'fulfilled:' + v; }, function (e) { state = 'rejected:' + e; });
+            """.trimIndent()
+        )
+        assertEquals("fulfilled:ok", runtime.evalString("state"))
+        // thenable 的 then 在微任务中调用，而不是在 resolve 时同步调用
+        runtime.eval(
+            """
+            var sync = true;
+            var thenCalled = false;
+            new Promise(function (resolve) {
+                resolve({ then: function (fulfill) { thenCalled = !sync; fulfill(1); } });
+            });
+            sync = false;
+            """.trimIndent()
+        )
+        assertEquals(true, runtime.evalBoolean("thenCalled"))
+    }
+
+    @Test
+    fun `Promise allSettled capability 与同步 thenable`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            function C(executor) {
+                executor(function (values) {
+                    log.push('resolve:' + values.length + ':' + values[0].status + ':' + values[0].value);
+                }, function (e) { log.push('reject:' + e); });
+            }
+            C.resolve = function (v) { return v; };
+            var p = { then: function (onFulfilled) { onFulfilled('a'); onFulfilled('b'); } };
+            Promise.allSettled.call(C, [p]);
+            """.trimIndent()
+        )
+        assertEquals("resolve:1:fulfilled:a", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
+    fun `async 函数参数 TDZ 拒绝为 ReferenceError`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var ctorName = '';
+            async function f(x = y, y) {}
+            f().then(null, function (e) { ctorName = e.constructor.name; });
+            """.trimIndent()
+        )
+        assertEquals("ReferenceError", runtime.evalString("ctorName"))
     }
 }

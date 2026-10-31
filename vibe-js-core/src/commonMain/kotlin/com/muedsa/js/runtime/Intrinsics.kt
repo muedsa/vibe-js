@@ -7,6 +7,7 @@ import com.muedsa.js.runtime.value.JSSymbol
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSUndefined
+import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyKey
 
 /**
@@ -21,6 +22,9 @@ class Intrinsics(val globalObject: GlobalObject) {
 
     lateinit var objectPrototype: JSObject
     lateinit var functionPrototype: JSNativeFunction
+
+    /** Array.prototype.values（arguments 的 @@iterator 复用同一函数）。 */
+    var arrayValuesFunction: JSValue? = null
     lateinit var arrayPrototype: JSArray
     lateinit var stringPrototype: JSObject
     lateinit var numberPrototype: JSObject
@@ -43,6 +47,15 @@ class Intrinsics(val globalObject: GlobalObject) {
     lateinit var weakSetPrototype: JSObject
     lateinit var promisePrototype: JSObject
 
+    /** %AsyncFunction.prototype%：普通对象，async 函数的 [[Prototype]]。 */
+    lateinit var asyncFunctionPrototype: JSObject
+
+    /** %Promise% 构造器（SpeciesConstructor 的默认值）。 */
+    lateinit var promiseConstructor: JSNativeFunction
+
+    /** %AggregateError% 构造器（Promise.any 聚合拒绝原因）。 */
+    lateinit var aggregateErrorConstructor: JSNativeFunction
+
     lateinit var symbolIterator: JSSymbol
     lateinit var symbolToStringTag: JSSymbol
     lateinit var symbolSpecies: JSSymbol
@@ -50,6 +63,14 @@ class Intrinsics(val globalObject: GlobalObject) {
     lateinit var symbolToPrimitive: JSSymbol
     lateinit var symbolIsConcatSpreadable: JSSymbol
     lateinit var symbolUnscopables: JSSymbol
+    lateinit var symbolMatch: JSSymbol
+    lateinit var symbolReplace: JSSymbol
+    lateinit var symbolSearch: JSSymbol
+    lateinit var symbolSplit: JSSymbol
+    lateinit var symbolMatchAll: JSSymbol
+
+    /** %RegExp% 构造器（RegExp @@split 的 SpeciesConstructor 默认值）。 */
+    lateinit var regexpConstructor: JSNativeFunction
 
     /**
      * 创建原型骨架。必须在安装任何内建之前调用一次。
@@ -83,6 +104,7 @@ class Intrinsics(val globalObject: GlobalObject) {
         numberPrototype = JSObject(prototype = objectPrototype)
         booleanPrototype = JSObject(prototype = objectPrototype)
         symbolPrototype = JSObject(prototype = objectPrototype)
+        // RegExp.prototype 是普通对象；source/global 等由 RegExpBuiltins 安装为访问器
         regexpPrototype = JSObject(prototype = objectPrototype)
         datePrototype = JSObject(prototype = objectPrototype)
 
@@ -116,6 +138,8 @@ class Intrinsics(val globalObject: GlobalObject) {
         weakMapPrototype = JSObject(prototype = objectPrototype)
         weakSetPrototype = JSObject(prototype = objectPrototype)
         promisePrototype = JSObject(prototype = objectPrototype)
+        // 规范：%AsyncFunction.prototype% 是普通对象（非函数），其 [[Prototype]] 为 Function.prototype
+        asyncFunctionPrototype = JSObject(prototype = functionPrototype)
 
         symbolIterator = JSSymbol("Symbol.iterator")
         symbolToStringTag = JSSymbol("Symbol.toStringTag")
@@ -124,6 +148,11 @@ class Intrinsics(val globalObject: GlobalObject) {
         symbolToPrimitive = JSSymbol("Symbol.toPrimitive")
         symbolIsConcatSpreadable = JSSymbol("Symbol.isConcatSpreadable")
         symbolUnscopables = JSSymbol("Symbol.unscopables")
+        symbolMatch = JSSymbol("Symbol.match")
+        symbolReplace = JSSymbol("Symbol.replace")
+        symbolSearch = JSSymbol("Symbol.search")
+        symbolSplit = JSSymbol("Symbol.split")
+        symbolMatchAll = JSSymbol("Symbol.matchAll")
     }
 
     /** 创建错误子类原型（链到 Error.prototype）。 */

@@ -79,7 +79,7 @@ class StrictModeTest {
     fun `const 重新赋值抛错`() = runTest {
         val runtime = TestRuntime()
         val error = assertFailsWith<JSException> {
-            runtime.eval("const a = 1; a = 2;")
+            runtime.eval("\"use strict\"; const a = 1; a = 2;")
         }
         assertEquals("TypeError", (error.value as JSError).errorName)
     }
