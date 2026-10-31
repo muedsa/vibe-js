@@ -30,6 +30,7 @@ object CoreBuiltins {
         PromiseBuiltins.install(registry)
         ErrorBuiltins.install(registry)
         DisposableStackBuiltins.install(registry)
+        AsyncDisposableStackBuiltins.install(registry)
         MathBuiltins.install(registry)
         JsonBuiltins.install(registry)
         GlobalBuiltins.install(registry)

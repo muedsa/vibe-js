@@ -622,14 +622,7 @@ private class Test262Runner(
             "large-typed-array.js",
             "small-typed-array.js",
             "test/built-ins/AsyncIteratorPrototype/",
-            // AsyncDisposableStack 与 using 声明语法暂未实现（后续阶段）
-            "test/built-ins/AsyncDisposableStack/",
-            // 依赖 AsyncDisposableStack 的跨栈内部槽校验，待异步版本实现后启用
-            "DisposableStack/prototype/adopt/this-does-not-have-internal-disposablestate-throws.js",
-            "DisposableStack/prototype/defer/this-does-not-have-internal-disposablestate-throws.js",
-            "DisposableStack/prototype/dispose/this-does-not-have-internal-disposablestate-throws.js",
-            "DisposableStack/prototype/move/this-does-not-have-internal-disposablestate-throws.js",
-            "DisposableStack/prototype/use/this-does-not-have-internal-disposablestate-throws.js",
+            // using / await using 声明语法暂未实现（后续阶段）
             "language/statements/using/",
             "language/statements/await-using/",
             "language/statements/for-of/head-using-",

@@ -1213,6 +1213,51 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `AsyncDisposableStack 异步释放与错误聚合`() = runTest {
+        val runtime = TestRuntime()
+        // defer 结果会被 Await：先完成 Promise 再释放下一个资源
+        runtime.eval(
+            "var out = '';" +
+                "var stack = new AsyncDisposableStack();" +
+                "stack.defer(function () { out += '1'; });" +
+                "stack.defer(function () {" +
+                " return Promise.resolve().then(function () { out += '2'; }); });" +
+                "stack.disposeAsync().then(function () { out += '3'; });"
+        )
+        assertEquals("213", runtime.evalString("out"))
+        // use 优先 @@asyncDispose，缺失时回退 @@dispose
+        runtime.eval(
+            "out = '';" +
+                "var both = { [Symbol.asyncDispose]: function () { out += 'a'; }," +
+                " [Symbol.dispose]: function () { out += 's'; } };" +
+                "var syncOnly = { [Symbol.dispose]: function () { out += 'd'; } };" +
+                "var stack = new AsyncDisposableStack();" +
+                "stack.use(both); stack.use(syncOnly);" +
+                "stack.disposeAsync();"
+        )
+        assertEquals("da", runtime.evalString("out"))
+        // 多个异步释放错误嵌套为 SuppressedError
+        runtime.eval(
+            "var e1 = new Error('1'), e2 = new Error('2');" +
+                "var stack = new AsyncDisposableStack();" +
+                "stack.defer(function () { return Promise.reject(e1); });" +
+                "stack.defer(function () { throw e2; });" +
+                "stack.disposeAsync().then(function () { out = 'fulfilled'; }," +
+                " function (e) { out = String(e instanceof SuppressedError &&" +
+                " e.error === e1 && e.suppressed === e2); });"
+        )
+        assertEquals("true", runtime.evalString("out"))
+        // move 转移资源并标记旧栈 disposed
+        assertEquals(true, runtime.evalBoolean(
+            "var stack = new AsyncDisposableStack();" +
+                "stack.defer(function () { return undefined; });" +
+                "var moved = stack.move();" +
+                "stack.disposed === true && moved.disposed === false &&" +
+                " moved instanceof AsyncDisposableStack"
+        ))
+    }
+
+    @Test
     fun `DisposableStack 逆序释放并聚合 SuppressedError`() = runTest {
         val runtime = TestRuntime()
         // use + defer 按加入顺序逆序释放
