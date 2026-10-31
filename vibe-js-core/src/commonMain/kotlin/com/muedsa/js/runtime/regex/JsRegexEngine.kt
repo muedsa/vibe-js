@@ -52,7 +52,7 @@ class JsRegexEngine(
         inputForMatch = input
         for (index in startIndex..input.length) {
             var resultCaps: Array<IntRange?>? = null
-            val matched = matchNode(root, index, arrayOfNulls(groupCount + 1), baseFlags) { end, captures ->
+            val matched = matchNode(root, index, arrayOfNulls(groupCount + 1), baseFlags, false) { end, captures ->
                 resultCaps = captures
                 internalMatchEnd = end
                 true
@@ -107,61 +107,114 @@ class JsRegexEngine(
     // 匹配结果结束位置的临时通道，避免在每个节点中传递额外的可变对象。
     private var internalMatchEnd: Int = 0
 
+    /**
+     * 节点匹配。reverse=true 时按 JS lookbehind 语义从右向左消费字符
+     * （用于 (?<=...)/(?<!...)）；字符序、量词迭代与捕获覆盖顺序随之反向。
+     */
     private fun matchNode(
         node: Node,
         pos: Int,
         captures: Array<IntRange?>,
         flags: MatchFlags,
+        reverse: Boolean,
         continuation: (Int, Array<IntRange?>) -> Boolean,
     ): Boolean {
         return when (node) {
             is Node.CharNode -> {
-                if (pos >= inputForMatch.length) false
-                else if (!charEquals(inputForMatch[pos], node.character, flags.ignoreCase)) false
-                else continuation(pos + 1, captures)
+                if (reverse) {
+                    if (pos <= 0) {
+                        false
+                    } else if (!charEquals(inputForMatch[pos - 1], node.character, flags.ignoreCase)) {
+                        false
+                    } else {
+                        continuation(pos - 1, captures)
+                    }
+                } else {
+                    if (pos >= inputForMatch.length) false
+                    else if (!charEquals(inputForMatch[pos], node.character, flags.ignoreCase)) false
+                    else continuation(pos + 1, captures)
+                }
             }
 
             is Node.AnyNode -> {
-                if (pos >= inputForMatch.length) {
-                    false
-                } else if (!flags.dotAll && isLineTerminator(inputForMatch[pos])) {
-                    false
-                } else {
-                    // u 模式下 . 匹配完整码点（代理项对整体消耗）
-                    val next = if (unicode && inputForMatch[pos].isHighSurrogate() &&
-                        pos + 1 < inputForMatch.length &&
-                        inputForMatch[pos + 1].isLowSurrogate()
-                    ) {
-                        pos + 2
+                if (reverse) {
+                    if (pos <= 0) {
+                        false
+                    } else if (!flags.dotAll && isLineTerminator(inputForMatch[pos - 1])) {
+                        false
                     } else {
-                        pos + 1
+                        val next = if (unicode && pos >= 2 &&
+                            inputForMatch[pos - 2].isHighSurrogate() &&
+                            inputForMatch[pos - 1].isLowSurrogate()
+                        ) {
+                            pos - 2
+                        } else {
+                            pos - 1
+                        }
+                        continuation(next, captures)
                     }
-                    continuation(next, captures)
+                } else {
+                    if (pos >= inputForMatch.length) {
+                        false
+                    } else if (!flags.dotAll && isLineTerminator(inputForMatch[pos])) {
+                        false
+                    } else {
+                        // u 模式下 . 匹配完整码点（代理项对整体消耗）
+                        val next = if (unicode && inputForMatch[pos].isHighSurrogate() &&
+                            pos + 1 < inputForMatch.length &&
+                            inputForMatch[pos + 1].isLowSurrogate()
+                        ) {
+                            pos + 2
+                        } else {
+                            pos + 1
+                        }
+                        continuation(next, captures)
+                    }
                 }
             }
 
             is Node.ClassNode -> {
-                if (pos >= inputForMatch.length) false
-                else {
-                    val matched = node.items.any { it.matches(inputForMatch[pos], flags.ignoreCase) }
-                    if (matched != node.negated) continuation(pos + 1, captures) else false
+                if (reverse) {
+                    if (pos <= 0) {
+                        false
+                    } else {
+                        val matched = node.items.any { it.matches(inputForMatch[pos - 1], flags.ignoreCase) }
+                        if (matched != node.negated) continuation(pos - 1, captures) else false
+                    }
+                } else {
+                    if (pos >= inputForMatch.length) false
+                    else {
+                        val matched = node.items.any { it.matches(inputForMatch[pos], flags.ignoreCase) }
+                        if (matched != node.negated) continuation(pos + 1, captures) else false
+                    }
                 }
             }
 
-            is Node.SequenceNode -> matchSequence(node.nodes, 0, pos, captures, flags, continuation)
+            is Node.SequenceNode ->
+                matchSequence(
+                    node.nodes,
+                    if (reverse) node.nodes.size - 1 else 0,
+                    pos,
+                    captures,
+                    flags,
+                    reverse,
+                    continuation,
+                )
 
             is Node.AlternationNode -> {
                 for (branch in node.branches) {
-                    if (matchNode(branch, pos, captures.copyOf(), flags, continuation)) return true
+                    if (matchNode(branch, pos, captures.copyOf(), flags, reverse, continuation)) {
+                        return true
+                    }
                 }
                 false
             }
 
             is Node.GroupNode -> {
-                matchNode(node.child, pos, captures, flags) { end, innerCaptures ->
+                matchNode(node.child, pos, captures, flags, reverse) { end, innerCaptures ->
                     val updated = innerCaptures.copyOf()
                     if (node.index != null) {
-                        updated[node.index] = pos until end
+                        updated[node.index] = minOf(pos, end) until maxOf(pos, end)
                     }
                     continuation(end, updated)
                 }
@@ -186,14 +239,30 @@ class JsRegexEngine(
                         else -> flags.dotAll
                     },
                 )
-                matchNode(node.child, pos, captures, nested, continuation)
+                matchNode(node.child, pos, captures, nested, reverse, continuation)
             }
 
-            is Node.QuantifierNode -> matchQuantifier(node, 0, pos, captures, flags, continuation)
+            is Node.QuantifierNode ->
+                matchQuantifier(node, 0, pos, captures, flags, reverse, continuation)
 
             is Node.LookaheadNode -> {
+                // 前向断言始终从当前位置向右匹配
                 var lookedCaptures: Array<IntRange?>? = null
-                val matched = matchNode(node.child, pos, captures.copyOf(), flags) { _, inner ->
+                val matched = matchNode(node.child, pos, captures.copyOf(), flags, false) { _, inner ->
+                    lookedCaptures = inner
+                    true
+                }
+                if (node.positive) {
+                    if (matched) continuation(pos, lookedCaptures ?: captures) else false
+                } else {
+                    if (matched) false else continuation(pos, captures)
+                }
+            }
+
+            is Node.LookbehindNode -> {
+                // 后向断言从当前位置向左匹配，匹配成功不消耗字符
+                var lookedCaptures: Array<IntRange?>? = null
+                val matched = matchNode(node.child, pos, captures.copyOf(), flags, true) { _, inner ->
                     lookedCaptures = inner
                     true
                 }
@@ -247,10 +316,18 @@ class JsRegexEngine(
                     continuation(pos, captures)
                 } else {
                     val expected = inputForMatch.substring(range.first, range.last + 1)
-                    if (matchesAt(pos, expected, flags.ignoreCase)) {
-                        continuation(pos + expected.length, captures)
+                    if (reverse) {
+                        if (matchesEndingAt(pos, expected, flags.ignoreCase)) {
+                            continuation(pos - expected.length, captures)
+                        } else {
+                            false
+                        }
                     } else {
-                        false
+                        if (matchesAt(pos, expected, flags.ignoreCase)) {
+                            continuation(pos + expected.length, captures)
+                        } else {
+                            false
+                        }
                     }
                 }
             }
@@ -259,16 +336,24 @@ class JsRegexEngine(
 
     private fun matchSequence(
         nodes: List<Node>,
-        index: Int,
+        startIndex: Int,
         pos: Int,
         captures: Array<IntRange?>,
         flags: MatchFlags,
+        reverse: Boolean,
         continuation: (Int, Array<IntRange?>) -> Boolean,
     ): Boolean {
-        if (index >= nodes.size) return continuation(pos, captures)
-        return matchNode(nodes[index], pos, captures, flags) { nextPos, nextCaptures ->
-            matchSequence(nodes, index + 1, nextPos, nextCaptures, flags, continuation)
+        val step = if (reverse) -1 else 1
+        fun recurse(index: Int, currentPos: Int, currentCaptures: Array<IntRange?>): Boolean {
+            if (if (reverse) index < 0 else index >= nodes.size) {
+                return continuation(currentPos, currentCaptures)
+            }
+            return matchNode(nodes[index], currentPos, currentCaptures, flags, reverse) {
+                    nextPos, nextCaptures ->
+                recurse(index + step, nextPos, nextCaptures)
+            }
         }
+        return recurse(startIndex, pos, captures)
     }
 
     private fun matchQuantifier(
@@ -277,9 +362,10 @@ class JsRegexEngine(
         pos: Int,
         captures: Array<IntRange?>,
         flags: MatchFlags,
+        reverse: Boolean,
         continuation: (Int, Array<IntRange?>) -> Boolean,
     ): Boolean {
-        // 规范：量词每次迭代前清除其内部捕获组的值
+        // 规范：量词每次迭代前清除其内部捕获组的值（反向匹配时迭代自右向左）
         val innerGroups = mutableSetOf<Int>()
         collectGroupIndices(node.child, innerGroups)
         fun iterationCaptures(base: Array<IntRange?>): Array<IntRange?> {
@@ -292,12 +378,15 @@ class JsRegexEngine(
         }
 
         fun repeat(nextPos: Int, nextCaptures: Array<IntRange?>): Boolean {
-            if (nextPos == pos) return false
-            return matchQuantifier(node, count + 1, nextPos, nextCaptures, flags, continuation)
+            if (nextPos == pos) {
+                // 零宽迭代：如 /(a*)b+/ 中的空反向引用，接受一次后停止以避免死循环
+                return continuation(nextPos, nextCaptures)
+            }
+            return matchQuantifier(node, count + 1, nextPos, nextCaptures, flags, reverse, continuation)
         }
 
         if (count < node.min) {
-            return matchNode(node.child, pos, iterationCaptures(captures), flags) { nextPos, nextCaptures ->
+            return matchNode(node.child, pos, iterationCaptures(captures), flags, reverse) { nextPos, nextCaptures ->
                 repeat(nextPos, nextCaptures)
             }
         }
@@ -309,6 +398,7 @@ class JsRegexEngine(
                     pos,
                     iterationCaptures(captures),
                     flags,
+                    reverse,
                 ) { nextPos, nextCaptures ->
                     repeat(nextPos, nextCaptures)
                 }
@@ -319,7 +409,7 @@ class JsRegexEngine(
 
         if (continuation(pos, captures)) return true
         if (count < node.max) {
-            return matchNode(node.child, pos, iterationCaptures(captures), flags) { nextPos, nextCaptures ->
+            return matchNode(node.child, pos, iterationCaptures(captures), flags, reverse) { nextPos, nextCaptures ->
                 repeat(nextPos, nextCaptures)
             }
         }
@@ -337,9 +427,20 @@ class JsRegexEngine(
             is Node.AlternationNode -> node.branches.forEach { collectGroupIndices(it, result) }
             is Node.QuantifierNode -> collectGroupIndices(node.child, result)
             is Node.LookaheadNode -> collectGroupIndices(node.child, result)
+            is Node.LookbehindNode -> collectGroupIndices(node.child, result)
             is Node.FlagGroupNode -> collectGroupIndices(node.child, result)
             else -> Unit
         }
+    }
+
+    /** 反向匹配：expected 是否恰好结束于 pos。 */
+    private fun matchesEndingAt(pos: Int, expected: String, ignoreCase: Boolean): Boolean {
+        if (pos - expected.length < 0) return false
+        val start = pos - expected.length
+        for (index in expected.indices) {
+            if (!charEquals(inputForMatch[start + index], expected[index], ignoreCase)) return false
+        }
+        return true
     }
 
     private fun matchesAt(pos: Int, expected: String, ignoreCase: Boolean): Boolean {
@@ -391,6 +492,9 @@ class JsRegexEngine(
 
         /** 作用域修饰符组：(?ims-ims:child)。 */
         data class FlagGroupNode(val add: Int, val remove: Int, val child: Node) : Node()
+
+        /** 后向断言：(?<=child) / (?<!child)。 */
+        data class LookbehindNode(val positive: Boolean, val child: Node) : Node()
         data class QuantifierNode(
             val child: Node,
             val min: Int,
@@ -577,6 +681,7 @@ class JsRegexEngine(
             position++ // '('
             var capturing = true
             var lookahead: Boolean? = null
+            var lookbehind: Boolean? = null
             var groupName: String? = null
             var modifierAdd = 0
             var modifierRemove = 0
@@ -646,21 +751,23 @@ class JsRegexEngine(
                     position < pattern.length && peek() == '<' -> {
                         position++
                         if (position < pattern.length && (peek() == '=' || peek() == '!')) {
-                            throw IllegalArgumentException("Lookbehind is not supported by fallback regex engine")
+                            lookbehind = peek() == '='
+                            position++
+                        } else {
+                            val nameStart = position
+                            while (position < pattern.length && peek() != '>') position++
+                            if (position >= pattern.length) {
+                                throw IllegalArgumentException("Unterminated named group")
+                            }
+                            groupName = pattern.substring(nameStart, position)
+                            position++
                         }
-                        val nameStart = position
-                        while (position < pattern.length && peek() != '>') position++
-                        if (position >= pattern.length) {
-                            throw IllegalArgumentException("Unterminated named group")
-                        }
-                        groupName = pattern.substring(nameStart, position)
-                        position++
                     }
 
                     else -> throw IllegalArgumentException("Unsupported group extension at index $position")
                 }
             }
-            val index = if (capturing && lookahead == null) ++groupCount else null
+            val index = if (capturing && lookahead == null && lookbehind == null) ++groupCount else null
             if (index != null && groupName != null) {
                 val list = namedGroups.getOrPut(groupName) { mutableListOf() }
                 if (index !in list) list.add(index)
@@ -670,6 +777,9 @@ class JsRegexEngine(
                 throw IllegalArgumentException("Unterminated group")
             }
             position++
+            if (lookbehind != null) {
+                return Node.LookbehindNode(lookbehind, child)
+            }
             return if (lookahead != null) {
                 Node.GroupNode(
                     index = null,

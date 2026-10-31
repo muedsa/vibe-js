@@ -2124,6 +2124,36 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `RegExp 后向断言支持变长与反向捕获语义`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "/(?<=a)b/.test('ab') && !/(?<=a)b/.test('cb') &&" +
+                " /(?<!a)b/.test('cb') && !/(?<!a)b/.test('ab') &&" +
+                " /(?<=a+)b/.test('aaab') && /(?<=fo*)o/.test('fooo')"
+        ))
+        // 反向匹配的贪婪与迭代顺序：组内量词从右向左覆盖捕获
+        assertEquals(true, runtime.evalBoolean(
+            "'abcdef'.match(/(?<=(\\w){3})def/)[1] === 'a' &&" +
+                " 'abcdef'.match(/(?<=(\\w{2}))def/)[1] === 'bc'"
+        ))
+        // 备选分支按模式顺序在反向匹配中尝试
+        assertEquals(true, runtime.evalBoolean(
+            "var m = 'xabcd'.match(/.*(?<=(..|...|....))(.*)/);" +
+                " m[1] === 'cd' && m[2] === ''"
+        ))
+        // 嵌套 lookaround 与锚点
+        assertEquals(true, runtime.evalBoolean(
+            "'foo'.match(/^f.o(?<=foo)$/) !== null &&" +
+                " 'foo'.match(/^f.o(?<!foo)$/) === null &&" +
+                " 'abcCd'.match(/(?<=\\1(\\w))d/i)[1] === 'C'"
+        ))
+        // 自引用数字反向引用按空串匹配
+        assertEquals(true, runtime.evalBoolean(
+            "/(abc\\1)/.exec('abc')[1] === 'abc'"
+        ))
+    }
+
+    @Test
     fun `RegExp 重复命名捕获组仅允许互斥分支`() = runTest {
         val runtime = TestRuntime()
         // 同一分支中的重复组名是语法错误；不同备选分支合法

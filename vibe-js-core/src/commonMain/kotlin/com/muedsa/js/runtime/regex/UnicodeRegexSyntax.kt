@@ -129,9 +129,15 @@ internal object JsRegexSyntax {
                     // 跳过组前缀中的 '?'/'?'+标记，避免被当作量词
                     if (index + 1 < pattern.length && pattern[index + 1] == '?') {
                         if (index + 2 < pattern.length && pattern[index + 2] == '<') {
-                            val close = pattern.indexOf('>', index + 3)
-                            if (close < 0) return invalid(pattern)
-                            index = close
+                            val marker = pattern.getOrNull(index + 3)
+                            if (marker == '=' || marker == '!') {
+                                // 后向断言前缀 (?<= / (?<!
+                                index += 3
+                            } else {
+                                val close = pattern.indexOf('>', index + 3)
+                                if (close < 0) return invalid(pattern)
+                                index = close
+                            }
                         } else if (index + 2 < pattern.length &&
                             pattern[index + 2] != ':' && pattern[index + 2] != '=' &&
                             pattern[index + 2] != '!'

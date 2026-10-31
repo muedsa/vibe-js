@@ -4397,6 +4397,7 @@ class Interpreter(
         // 因此同样统一使用回退引擎
         val matcher = if ('d' in flags || namedAnalysis.hasNamedGroups ||
             namedAnalysis.hasModifiers || namedGroupNeedsFallback ||
+            hasLookbehind(pattern) || hasNumericBackReference(pattern) ||
             hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
         ) {
             buildFallback()
@@ -4424,6 +4425,38 @@ class Interpreter(
             prototype = intrinsics.regexpPrototype,
         )
     }
+
+    /** 是否存在数字反向引用（Java 对前向/自引用语义与 JS 不同，统一由回退引擎处理）。 */
+    private fun hasNumericBackReference(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            when (pattern[index]) {
+                '\\' -> {
+                    val next = pattern.getOrNull(index + 1)
+                    if (!inClass && next != null && next in '1'..'9') return true
+                    index += 2
+                }
+
+                '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                ']' -> {
+                    inClass = false
+                    index++
+                }
+
+                else -> index++
+            }
+        }
+        return false
+    }
+
+    /** 是否包含后向断言（变长语义由回退引擎实现）。 */
+    private fun hasLookbehind(pattern: String): Boolean =
+        pattern.contains("(?<=") || pattern.contains("(?<!")
 
     /** 是否存在字符类之外的 `.`（Kotlin/Java 引擎按码点匹配，与 JS 码元语义不同）。 */
     private fun hasDotOutsideClass(pattern: String): Boolean {

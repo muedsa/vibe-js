@@ -42,7 +42,7 @@
 | class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、静态初始化块 `static { }`、公有/私有实例与静态字段（含计算键与字段初始化器）、私有方法与访问器、`#x in obj`、默认派生构造器 |
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
 | 模板字符串 / 标签模板 | ✅ | |
-| 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；`\p{...}` 暂不支持 |
+| 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；`\p{...}` 暂不支持 |
 | 赋值/复合赋值/逻辑赋值（`??=`/`&&=`/`||=`/`**=` 等） | ✅ | |
 | typeof、delete、void、in、instanceof | ✅ | 自定义 `Symbol.hasInstance` 未支持 |
 | 可选链 `?.` | ✅ | 含短路、this 保留与 delete |
@@ -100,9 +100,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 431 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 431 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 431 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 432 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 432 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 432 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

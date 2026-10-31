@@ -595,7 +595,7 @@ private class Test262Runner(
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
             "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
             "regexp-dotall", "class-static-block", "regexp-match-indices", "regexp-named-groups",
-            "regexp-modifiers", "regexp-duplicate-named-groups", "__proto__", "AggregateError", "coalesce-expression",
+            "regexp-modifiers", "regexp-duplicate-named-groups", "regexp-lookbehind", "__proto__", "AggregateError", "coalesce-expression",
             "u180e", "legacy-regexp", "caller", "well-formed-json-stringify",
             "class-fields-public", "class-static-fields-public",
             "class-fields-private", "class-methods-private", "class-static-fields-private",
