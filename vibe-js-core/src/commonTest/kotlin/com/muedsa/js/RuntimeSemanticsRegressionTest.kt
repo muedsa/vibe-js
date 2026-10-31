@@ -1213,6 +1213,38 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Annex B 对象访问器方法与描述符保留`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("g2,s", runtime.evalString(
+            "var o = {};" +
+                "o.__defineGetter__('z', function () { return 'g2'; });" +
+                "o.__defineSetter__('w', function (v) { this.y = v; });" +
+                "o.w = 's';" +
+                "o.z + ',' + o.y"
+        ))
+        // 重定义单侧访问器时保留另一侧；lookup 沿原型链查找
+        assertEquals(true, runtime.evalBoolean(
+            "var setter = function (v) { this.y = v; };" +
+                "var proto = {};" +
+                "Object.defineProperty(proto, 'a'," +
+                " { get: function () { return 1; }, set: setter, configurable: true });" +
+                "var child = Object.create(proto);" +
+                "Object.defineProperty(child, 'a'," +
+                " { get: function () { return 1; }, set: setter, configurable: true });" +
+                "child.__defineGetter__('a', function () { return 2; });" +
+                "var inheritedGetter = proto.__lookupGetter__('a');" +
+                "child.a === 2 && child.__lookupSetter__('a') === setter &&" +
+                " typeof inheritedGetter === 'function'"
+        ))
+        // 不可配置属性无法通过 __defineGetter__ 重定义
+        assertEquals(true, runtime.evalBoolean(
+            "var o = Object.defineProperty({}, 'x', { value: 1, configurable: false });" +
+                "try { o.__defineGetter__('x', function () { return 2; }); false }" +
+                " catch (e) { e instanceof TypeError }"
+        ))
+    }
+
+    @Test
     fun `AsyncDisposableStack 异步释放与错误聚合`() = runTest {
         val runtime = TestRuntime()
         // defer 结果会被 Await：先完成 Promise 再释放下一个资源

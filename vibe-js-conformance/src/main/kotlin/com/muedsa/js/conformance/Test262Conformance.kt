@@ -583,7 +583,7 @@ private class Test262Runner(
             "Symbol.matchAll", "String.prototype.matchAll",
             "Symbol.unscopables", "set-methods", "RegExp.escape", "iterator-helpers",
             "iterator-sequencing", "joint-iteration", "symbols-as-weakmap-keys",
-            "explicit-resource-management",
+            "explicit-resource-management", "__getter__", "__setter__",
             "Symbol.prototype.description", "Math.sumPrecise",
             "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",

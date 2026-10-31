@@ -166,6 +166,64 @@ object ObjectBuiltins {
             configurable = true,
         )
 
+        // Annex B 访问器方法：__defineGetter__/__defineSetter__/__lookupGetter__/__lookupSetter__
+        objectPrototype.defineDataProperty(
+            key = PropertyKey.Str("__defineGetter__"),
+            value = BuiltinHelpers.method(intrinsics, "__defineGetter__", 2) { interpreter, thisValue, args ->
+                val objectValue = interpreter.toObject(thisValue)
+                val getter = args.getOrElse(1) { JSUndefined }
+                if (!interpreter.isCallable(getter)) {
+                    interpreter.typeError("__defineGetter__ requires a callable getter")
+                }
+                val key = interpreter.toPropertyKey(args.getOrElse(0) { JSUndefined })
+                defineAccessorPropertyOrThrow(
+                    interpreter, objectValue, key, getter, null,
+                    preserveGet = false, preserveSet = true,
+                )
+                JSUndefined
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        objectPrototype.defineDataProperty(
+            key = PropertyKey.Str("__defineSetter__"),
+            value = BuiltinHelpers.method(intrinsics, "__defineSetter__", 2) { interpreter, thisValue, args ->
+                val objectValue = interpreter.toObject(thisValue)
+                val setter = args.getOrElse(1) { JSUndefined }
+                if (!interpreter.isCallable(setter)) {
+                    interpreter.typeError("__defineSetter__ requires a callable setter")
+                }
+                val key = interpreter.toPropertyKey(args.getOrElse(0) { JSUndefined })
+                defineAccessorPropertyOrThrow(
+                    interpreter, objectValue, key, null, setter,
+                    preserveGet = true, preserveSet = false,
+                )
+                JSUndefined
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        objectPrototype.defineDataProperty(
+            key = PropertyKey.Str("__lookupGetter__"),
+            value = BuiltinHelpers.method(intrinsics, "__lookupGetter__", 1) { interpreter, thisValue, args ->
+                lookupAccessor(interpreter, thisValue, args.getOrElse(0) { JSUndefined }, getter = true)
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        objectPrototype.defineDataProperty(
+            key = PropertyKey.Str("__lookupSetter__"),
+            value = BuiltinHelpers.method(intrinsics, "__lookupSetter__", 1) { interpreter, thisValue, args ->
+                lookupAccessor(interpreter, thisValue, args.getOrElse(0) { JSUndefined }, getter = false)
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+
         // Object.prototype.constructor
         objectPrototype.defineDataProperty(
             key = PropertyKey.CONSTRUCTOR,
@@ -733,6 +791,67 @@ object ObjectBuiltins {
         if (!interpreter.defineOwnPropertyOn(objectValue, key, descriptor)) {
             interpreter.typeError("Cannot define property '${key}'")
         }
+    }
+
+    /** Annex B：定义访问器并保留未指定的另一侧访问器。 */
+    private suspend fun defineAccessorPropertyOrThrow(
+        interpreter: Interpreter,
+        objectValue: JSObject,
+        key: PropertyKey,
+        getter: JSValue?,
+        setter: JSValue?,
+        preserveGet: Boolean,
+        preserveSet: Boolean,
+    ) {
+        val existing = objectValue.getOwnProperty(key)
+        // 描述符固定带 configurable: true；不可配置属性无法重新定义
+        if (existing != null && !existing.configurable) {
+            interpreter.typeError("Cannot redefine property: ${key}")
+        }
+        val finalGet = if (preserveGet && existing != null && existing.isAccessor) {
+            existing.get
+        } else {
+            getter
+        }
+        val finalSet = if (preserveSet && existing != null && existing.isAccessor) {
+            existing.set
+        } else {
+            setter
+        }
+        val defined = interpreter.defineOwnPropertyOn(
+            objectValue,
+            key,
+            PropertyDescriptor.accessor(
+                finalGet,
+                finalSet,
+                enumerable = true,
+                configurable = true,
+            ),
+        )
+        if (!defined) {
+            interpreter.typeError("Cannot define property '${key}'")
+        }
+    }
+
+    /** __lookupGetter__/__lookupSetter__：沿原型链查找访问器。 */
+    private suspend fun lookupAccessor(
+        interpreter: Interpreter,
+        thisValue: JSValue,
+        keyValue: JSValue,
+        getter: Boolean,
+    ): JSValue {
+        val objectValue = interpreter.toObject(thisValue)
+        val key = interpreter.toPropertyKey(keyValue)
+        var current: JSObject? = objectValue
+        while (current != null) {
+            val descriptor = current.getOwnProperty(key)
+            if (descriptor != null) {
+                if (!descriptor.isAccessor) return JSUndefined
+                return (if (getter) descriptor.get else descriptor.set) ?: JSUndefined
+            }
+            current = current.prototype
+        }
+        return JSUndefined
     }
 
     /** 描述符不变量比较使用 SameValue（区分 -0，NaN 视为相等）。 */
