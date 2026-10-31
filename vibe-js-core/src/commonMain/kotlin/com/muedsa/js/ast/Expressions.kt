@@ -151,6 +151,8 @@ class FunctionExpression(
     override val range: SourceRange,
     /** 对象/类方法语法：名字仅用于 SetFunctionName，不建立词法名字绑定 */
     val isMethodDefinition: Boolean = false,
+    /** class 字段初始化表达式（仅 FIELD 成员使用；null 表示初始化为 undefined） */
+    val fieldInitializer: Expression? = null,
 ) : Expression()
 
 /**

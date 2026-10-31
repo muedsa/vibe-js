@@ -39,7 +39,7 @@
 | 默认参数、rest 参数（含解构 rest）、函数 length | ✅ | |
 | 解构：声明/赋值/for-of/函数参数/catch、默认值、嵌套、数组 rest、对象 rest | ✅ | |
 | spread：数组/调用/new/对象 | ✅ | |
-| class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、静态初始化块 `static { }`、默认派生构造器；类字段不支持 |
+| class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、静态初始化块 `static { }`、公有实例/静态字段（含计算键与字段初始化器）、默认派生构造器 |
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
 | 模板字符串 / 标签模板 | ✅ | |
 | 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`y` 标志；`indices` 捕获区间与 hasIndices；命名组有限 |
@@ -47,7 +47,7 @@
 | typeof、delete、void、in、instanceof | ✅ | 自定义 `Symbol.hasInstance` 未支持 |
 | 可选链 `?.` | ✅ | 含短路、this 保留与 delete |
 | Iterator helpers | ✅ | `Iterator.from`、map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find；内建迭代器独立原型与访问器 |
-| class 字段 / 私有字段 | ❌ | 后续阶段 |
+| 私有字段 | ❌ | 后续阶段 |
 | Generator（`function*` / `yield`） | ❌ | 明确排除 |
 | import / export | ❌ | 明确排除（单脚本目标） |
 | Proxy / Reflect | ❌ | 明确排除 |
@@ -99,9 +99,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 413 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 413 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 413 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 415 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 415 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 415 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

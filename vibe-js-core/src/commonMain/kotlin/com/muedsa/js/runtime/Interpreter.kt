@@ -73,6 +73,7 @@ import com.muedsa.js.runtime.regex.JsRegex
 import com.muedsa.js.runtime.regex.JsRegexSyntax
 import com.muedsa.js.runtime.regex.JsRegexEngine
 import com.muedsa.js.runtime.regex.KotlinJsRegex
+import com.muedsa.js.runtime.value.InstanceField
 import com.muedsa.js.runtime.value.JSArguments
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
@@ -96,6 +97,7 @@ import com.muedsa.js.runtime.value.JSWeakSet
 import com.muedsa.js.runtime.value.NumberFormatting
 import com.muedsa.js.runtime.value.PropertyDescriptor
 import com.muedsa.js.runtime.value.PropertyKey
+import com.muedsa.js.runtime.value.ThisBindingSource
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlin.math.pow
@@ -125,6 +127,9 @@ class Interpreter(
 
     /** 调用栈（用于错误信息）。 */
     private val callStack = mutableListOf<StackFrame>()
+
+    /** NamedEvaluation 的名称提示栈：匿名 class 求值前压入，供静态字段/块读取类名。 */
+    private val classNameHints = ArrayList<String>()
 
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
@@ -220,6 +225,8 @@ class Interpreter(
                     it.isClassConstructor && it.superConstructor != null
                 } == true,
                 newTargetContext = callerFunction != null && callerFunction.allowsNewTarget,
+                // 字段初始化器/静态块（含其箭头函数）内的直接 eval 同样禁止 arguments
+                argumentsForbiddenContext = callerFunction?.forbidsArguments == true,
             ).parseProgram()
         } catch (error: ParseException) {
             syntaxError(error.message ?: "Invalid eval code")
@@ -702,7 +709,9 @@ class Interpreter(
         }
 
         val effectiveThis = if (function.isArrow) {
-            function.lexicalThis ?: JSUndefined
+            // this 绑定来源由词法环境提供（派生构造器中 super() 前访问会抛 ReferenceError）
+            val source = function.lexicalThisSource
+            source?.boundThis ?: function.lexicalThis ?: JSUndefined
         } else if (function.strict) {
             thisValue
         } else if (thisValue is JSUndefined || thisValue is JSNull) {
@@ -768,6 +777,8 @@ class Interpreter(
             function.strict,
             function,
             newTarget = if (function.isArrow) function.lexicalNewTarget else null,
+            // 箭头函数继承 this 绑定的初始化状态
+            thisInitialized = function.lexicalThisSource?.thisBound ?: true,
         )
         pushStackFrame(function.name.ifEmpty { "anonymous" }, callRange)
         try {
@@ -792,7 +803,9 @@ class Interpreter(
 
             val expressionBody = function.expressionBody
             if (expressionBody != null) {
-                return evaluate(expressionBody)
+                // 字段初始化器按字段名做 NamedEvaluation（匿名 class 需在静态初始化前带名）
+                val hint = function.namedEvaluationHint
+                return if (hint != null) evaluateNamed(expressionBody, hint) else evaluate(expressionBody)
             }
 
             val body = function.body ?: return JSUndefined
@@ -894,6 +907,11 @@ class Interpreter(
             bindParameters(function, args, callEnv)
             hoistDeclarations(callEnv, function.functionDeclarations, function.varDeclarations)
 
+            // 基类构造器：this 已初始化，先按源码顺序初始化实例字段
+            if (!derived) {
+                initializeInstanceFields(function, activeFrame.thisValue)
+            }
+
             // 默认派生类构造器：隐式调用父构造器（动态读取当前 [[Prototype]]）
             if (function.isDefaultDerivedConstructor) {
                 val superConstructorValue: JSValue = function.prototype ?: intrinsics.functionPrototype
@@ -903,6 +921,8 @@ class Interpreter(
                 val result = callSuperConstructor(superConstructorValue, activeFrame.thisValue, args)
                 activeFrame.thisValue = result
                 activeFrame.thisInitialized = true
+                // super() 返回后初始化本类的实例字段
+                initializeInstanceFields(function, activeFrame.thisValue)
             }
 
             val body = function.body
@@ -944,8 +964,12 @@ class Interpreter(
         isAsync: Boolean = false,
         isMethod: Boolean = false,
         lexicalThis: JSValue? = null,
+        lexicalThisSource: ThisBindingSource? = null,
+        lexicalFunction: JSFunction? = null,
         lexicalNewTarget: JSValue? = null,
         allowsNewTarget: Boolean = true,
+        forbidsArguments: Boolean = false,
+        namedEvaluationHint: String? = null,
         isClassConstructor: Boolean = false,
         isDefaultDerivedConstructor: Boolean = false,
         homeObject: JSObject? = null,
@@ -975,8 +999,12 @@ class Interpreter(
             isAsync = isAsync,
             isMethod = isMethod,
             lexicalThis = lexicalThis,
+            lexicalThisSource = lexicalThisSource,
+            lexicalFunction = lexicalFunction,
             lexicalNewTarget = lexicalNewTarget,
             allowsNewTarget = allowsNewTarget,
+            forbidsArguments = forbidsArguments,
+            namedEvaluationHint = namedEvaluationHint,
             isClassConstructor = isClassConstructor,
             isDefaultDerivedConstructor = isDefaultDerivedConstructor,
             homeObject = homeObject,
@@ -1419,16 +1447,14 @@ class Interpreter(
                             currentFrame.lexicalEnv.findVarScope().ensureVarBinding(name)
                         } else {
                             // 初始化器是赋值语义：在 with 作用域内应优先写入 with 对象
-                            val value = evaluate(initializer)
-                            applyInferredFunctionName(initializer, value, name)
+                            val value = evaluateNamed(initializer, name)
                             writeIdentifierReference(findBindingOwner(name), name, value)
                         }
                     }
 
                     DeclarationKind.LET -> {
                         val initializer = declaration.initializer
-                        val value = initializer?.let { evaluate(it) } ?: JSUndefined
-                        initializer?.let { applyInferredFunctionName(it, value, name) }
+                        val value = initializer?.let { evaluateNamed(it, name) } ?: JSUndefined
                         if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, name, value)) {
                             currentFrame.lexicalEnv.createLetBinding(name, value)
                         }
@@ -1437,8 +1463,7 @@ class Interpreter(
                     DeclarationKind.CONST -> {
                         val initializer = declaration.initializer
                             ?: throw syntaxError("Missing initializer in const declaration")
-                        val value = evaluate(initializer)
-                        applyInferredFunctionName(initializer, value, name)
+                        val value = evaluateNamed(initializer, name)
                         if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, name, value)) {
                             currentFrame.lexicalEnv.createConstBinding(name, value)
                         }
@@ -2060,6 +2085,13 @@ class Interpreter(
                 isArrow = true,
                 isAsync = expression.isAsync,
                 lexicalThis = currentFrame.thisValue,
+                // 箭头函数继承最近的 this 绑定来源（跳过中间箭头，保留构造器 TDZ 状态）
+                lexicalThisSource = (currentFrame.function as? JSFunction)
+                    ?.takeIf { it.isArrow }?.lexicalThisSource ?: currentFrame,
+                lexicalFunction = (currentFrame.function as? JSFunction)
+                    ?.takeIf { it.isArrow }?.lexicalFunction ?: currentFrame.function,
+                // arguments 语法限制同样穿过箭头函数
+                forbidsArguments = currentFrame.function?.forbidsArguments == true,
                 // 箭头函数继承 super 绑定与 new.target
                 lexicalNewTarget = currentFrame.newTarget,
                 allowsNewTarget = expression.allowsNewTarget,
@@ -2237,9 +2269,45 @@ class Interpreter(
         else -> false
     }
 
+    /** NamedEvaluation：先带入名称提示再求值，保证匿名 class 的静态初始化能看到名称。 */
+    private suspend fun evaluateNamed(expression: Expression, name: String): JSValue {
+        val hinted = expression is ClassExpression && expression.name == null
+        if (hinted) classNameHints.add(name)
+        try {
+            val value = evaluate(expression)
+            applyInferredFunctionName(expression, value, name)
+            return value
+        } finally {
+            // 正常路径由 evaluateClass 在入口消费；异常路径在这里清理残留提示
+            if (hinted && classNameHints.lastOrNull() == name) {
+                classNameHints.removeAt(classNameHints.lastIndex)
+            }
+        }
+    }
+
+    /** DefineField：CreateDataPropertyOrThrow 语义，定义失败时抛 TypeError。 */
+    private fun defineFieldOrThrow(receiver: JSObject, key: PropertyKey, value: JSValue) {
+        val existing = receiver.getOwnProperty(key)
+        if (existing != null && !existing.configurable) {
+            throw typeError("Cannot define property '${key}'")
+        }
+        val defined = receiver.defineOwnProperty(
+            key,
+            PropertyDescriptor.data(
+                value = value,
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            ),
+        )
+        if (!defined) {
+            throw typeError("Cannot define property '${key}'")
+        }
+    }
+
     /** 为匿名函数/类设置推断名称；具名函数表达式保持自己的名字。 */
-    private fun applyInferredFunctionName(expression: Expression, value: JSValue, name: String) {
-        if (!isAnonymousFunctionDefinition(expression)) return
+    private fun applyInferredFunctionName(expression: Expression?, value: JSValue, name: String) {
+        if (expression == null || !isAnonymousFunctionDefinition(expression)) return
         (value as? JSFunction)?.setName(name)
     }
 
@@ -2305,13 +2373,17 @@ class Interpreter(
     }
 
     /**
-     * 创建 class 构造器与原型方法。
+     * 创建 class 构造器与原型方法/字段。
      */
     private suspend fun evaluateClass(
         name: String?,
         superClassExpression: Expression?,
         members: List<ClassMember>,
     ): JSValue {
+        // 匿名 class 表达式在 NamedEvaluation 场景（如 var C = class {...}）中
+        // 需要在静态初始化之前就带上名称
+        val inferredName = if (name == null) classNameHints.removeLastOrNull() else null
+        val effectiveName = name ?: inferredName
         val superClassValue = superClassExpression?.let { evaluate(it) }
         if (superClassValue != null && superClassValue !is JSNull &&
             !isConstructor(superClassValue)
@@ -2336,7 +2408,7 @@ class Interpreter(
         val constructorMember = members.firstOrNull { it.kind == ClassMemberKind.CONSTRUCTOR }
         val constructor = if (constructorMember != null) {
             createFunction(
-                name = name ?: "",
+                name = effectiveName ?: "",
                 params = constructorMember.value.params,
                 body = constructorMember.value.body,
                 closure = classEnvironment,
@@ -2350,7 +2422,7 @@ class Interpreter(
             )
         } else {
             createFunction(
-                name = name ?: "",
+                name = effectiveName ?: "",
                 params = emptyList(),
                 body = BlockStatement(emptyList(), SourceRange.NONE),
                 closure = classEnvironment,
@@ -2370,11 +2442,13 @@ class Interpreter(
             constructor.prototype = superClassValue
         }
 
-        val staticBlocks = ArrayList<ClassMember>()
+        // 静态字段与静态块按源码顺序执行；实例字段在构造时按源码顺序初始化
+        val staticElements = ArrayList<StaticElement>()
+        val instanceFields = ArrayList<InstanceField>()
         for (member in members) {
             if (member.kind == ClassMemberKind.CONSTRUCTOR) continue
             if (member.kind == ClassMemberKind.STATIC_BLOCK) {
-                staticBlocks.add(member)
+                staticElements.add(StaticElement(member, null))
                 continue
             }
             val key = if (member.computed) {
@@ -2387,6 +2461,32 @@ class Interpreter(
                 superClassValue as? JSObject
             } else {
                 superPrototype
+            }
+            if (member.kind == ClassMemberKind.FIELD) {
+                if (member.isStatic) {
+                    staticElements.add(StaticElement(member, key))
+                } else {
+                    // 实例字段初始化器在类求值时创建一次，构造实例时复用
+                    instanceFields.add(
+                        InstanceField(
+                            key,
+                            createFunction(
+                                name = "",
+                                params = emptyList(),
+                                body = null,
+                                closure = classEnvironment,
+                                strict = true,
+                                expressionBody = member.value.fieldInitializer,
+                                isMethod = true,
+                                superBase = superBase,
+                                homeObject = target,
+                                forbidsArguments = true,
+                                namedEvaluationHint = functionNameFromPropertyKey(key),
+                            ),
+                        )
+                    )
+                }
+                continue
             }
             val function = createFunction(
                 name = methodFunctionName(key, member.kind),
@@ -2425,30 +2525,56 @@ class Interpreter(
                     configurable = true,
                 )
 
-                ClassMemberKind.CONSTRUCTOR -> Unit
-
-                ClassMemberKind.STATIC_BLOCK -> Unit
+                ClassMemberKind.CONSTRUCTOR,
+                ClassMemberKind.STATIC_BLOCK,
+                ClassMemberKind.FIELD -> Unit
             }
         }
+        constructor.instanceFields = instanceFields
 
-        // 静态初始化块按源码顺序执行：this 为类构造器，super 基为父构造器
-        for (block in staticBlocks) {
+        // 静态字段与静态初始化块按源码顺序执行：this 为类构造器，super 基为父构造器
+        for (element in staticElements) {
+            val member = element.member
             val function = createFunction(
                 name = "",
                 params = emptyList(),
-                body = block.value.body,
+                body = if (member.kind == ClassMemberKind.STATIC_BLOCK) member.value.body else null,
                 closure = classEnvironment,
                 strict = true,
-                varDeclarations = block.value.varDeclarations,
-                functionDeclarations = block.value.functionDeclarations,
+                varDeclarations = member.value.varDeclarations,
+                functionDeclarations = member.value.functionDeclarations,
+                expressionBody = member.value.fieldInitializer,
                 isMethod = true,
                 superBase = superClassValue as? JSObject,
                 homeObject = constructor,
+                forbidsArguments = true,
+                namedEvaluationHint = if (member.kind == ClassMemberKind.FIELD) {
+                    functionNameFromPropertyKey(element.key!!)
+                } else {
+                    null
+                },
             )
-            callFunction(function, constructor, emptyList())
+            val value = callFunction(function, constructor, emptyList())
+            if (member.kind == ClassMemberKind.FIELD) {
+                // DefineField：CreateDataPropertyOrThrow 语义
+                defineFieldOrThrow(constructor, element.key!!, value)
+            }
         }
 
         return constructor
+    }
+
+    /** 类求值时的静态元素（静态字段或静态初始化块）；字段携带已求值的属性键。 */
+    private class StaticElement(val member: ClassMember, val key: PropertyKey?)
+
+    /** 在构造实例时按源码顺序执行 class 实例字段初始化器（DefineField 语义）。 */
+    private suspend fun initializeInstanceFields(function: JSFunction, instance: JSValue) {
+        if (function.instanceFields.isEmpty()) return
+        val receiver = instance as? JSObject ?: return
+        for (field in function.instanceFields) {
+            val value = callFunction(field.initializer, receiver, emptyList())
+            defineFieldOrThrow(receiver, field.key, value)
+        }
     }
 
     /**
@@ -2486,6 +2612,10 @@ class Interpreter(
                         superConstructor.functionDeclarations,
                         superConstructor.varDeclarations,
                     )
+                    // 基类父构造器：先初始化其字段，再执行构造器体
+                    if (!derived) {
+                        initializeInstanceFields(superConstructor, activeFrame.thisValue)
+                    }
                     if (superConstructor.isDefaultDerivedConstructor) {
                         val parentValue: JSValue =
                             superConstructor.prototype ?: intrinsics.functionPrototype
@@ -2495,6 +2625,8 @@ class Interpreter(
                         val result = callSuperConstructor(parentValue, activeFrame.thisValue, args)
                         activeFrame.thisValue = result
                         activeFrame.thisInitialized = true
+                        // 默认派生父构造器的 super() 之后初始化其字段
+                        initializeInstanceFields(superConstructor, activeFrame.thisValue)
                     }
                     val body = superConstructor.body
                     if (body != null) {
@@ -2547,20 +2679,35 @@ class Interpreter(
 
         // super(...)：调用父构造器（使用当前 this）
         if (calleeExpression is SuperExpr) {
-            val function = currentFrame.function
+            val activeFunction = currentFrame.function
                 ?: throw syntaxError("'super' keyword unexpected here")
-            if (currentFrame.thisInitialized) {
-                throw referenceError("Super constructor may only be called once")
+            // 箭头函数中的 super() 使用外层非箭头构造器的 [[Prototype]] 与 this 绑定
+            val function = if (activeFunction.isArrow) {
+                activeFunction.lexicalFunction
+                    ?: throw syntaxError("'super' keyword unexpected here")
+            } else {
+                activeFunction
             }
-            // 参数列表先求值；随后动态读取 [[Prototype]] 并校验可构造性
+            val thisBinding: ThisBindingSource = if (activeFunction.isArrow) {
+                activeFunction.lexicalThisSource ?: currentFrame
+            } else {
+                currentFrame
+            }
+            // 规范顺序：先求值参数并调用父构造器，BindThisValue 发现 this 已初始化时才抛错
+            val alreadyInitialized = thisBinding.thisBound
             val arguments = evaluateArguments(expression.arguments)
             val superConstructorValue: JSValue = function.prototype ?: intrinsics.functionPrototype
             if (!isConstructor(superConstructorValue)) {
                 throw typeError("Super constructor is not a constructor")
             }
-            val result = callSuperConstructor(superConstructorValue, currentFrame.thisValue, arguments)
-            currentFrame.thisValue = result
-            currentFrame.thisInitialized = true
+            val result = callSuperConstructor(superConstructorValue, thisBinding.boundThis, arguments)
+            if (alreadyInitialized) {
+                throw referenceError("Super constructor may only be called once")
+            }
+            thisBinding.boundThis = result
+            thisBinding.thisBound = true
+            // super() 返回后按源码顺序初始化派生类的实例字段
+            initializeInstanceFields(function, thisBinding.boundThis)
             return result
         }
 
@@ -2784,8 +2931,7 @@ class Interpreter(
                 val owner = findBindingOwner(target.name)
                 when {
                     operator == "=" -> {
-                        val value = evaluate(expression.value)
-                        applyInferredFunctionName(expression.value, value, target.name)
+                        val value = evaluateNamed(expression.value, target.name)
                         writeIdentifierReference(owner, target.name, value)
                         value
                     }
@@ -2795,8 +2941,7 @@ class Interpreter(
                         if (!shouldAssignLogical(operator, current)) {
                             current
                         } else {
-                            val value = evaluate(expression.value)
-                            applyInferredFunctionName(expression.value, value, target.name)
+                            val value = evaluateNamed(expression.value, target.name)
                             writeIdentifierReference(owner, target.name, value)
                             value
                         }

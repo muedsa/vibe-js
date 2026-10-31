@@ -26,6 +26,8 @@ class Parser(
     superPropertyContext: Boolean = false,
     superCallContext: Boolean = false,
     newTargetContext: Boolean = false,
+    /** 直接 eval 继承 class 字段初始化器/静态块的 arguments 限制 */
+    argumentsForbiddenContext: Boolean = false,
 ) {
 
     /** 当前解析位置（tokens 下标）。 */
@@ -65,7 +67,7 @@ class Parser(
      * class 静态初始化块内禁止引用 arguments（箭头函数不作为解除限制的函数边界）。
      * 该限制跨普通函数/方法边界时解除。
      */
-    private var argumentsForbidden = false
+    private var argumentsForbidden = argumentsForbiddenContext
 
     /**
      * class 静态初始化块内禁止把 await 用作标识符。
@@ -970,6 +972,49 @@ class Parser(
                     }
                 }
 
+                // class 字段：没有参数列表（可选初始化表达式，ASI 结束）
+                if (!check(TokenType.LPAREN)) {
+                    if (kind != ClassMemberKind.METHOD || isAsync) {
+                        throw error("Expected '(' in class member")
+                    }
+                    if (isConstructor) {
+                        throw error("Classes may not have a field named 'constructor'")
+                    }
+                    // 静态字段同样不能命名为 constructor（静态方法允许）
+                    if (isStatic && !computed && keyName == "constructor") {
+                        throw error("Classes may not have a field named 'constructor'")
+                    }
+                    var initializer: Expression? = null
+                    if (match(TokenType.ASSIGN)) {
+                        initializer = withFieldInitializerContext { parseAssignment() }
+                    }
+                    consumeSemicolon()
+                    val function = FunctionExpression(
+                        name = if (!computed && key is Identifier) key.name else "",
+                        params = emptyList(),
+                        // 无初始化表达式时使用空块体（求值为 undefined）
+                        body = BlockStatement(emptyList(), SourceRange.NONE),
+                        strict = true,
+                        isAsync = false,
+                        varDeclarations = emptyList(),
+                        functionDeclarations = emptyList(),
+                        range = SourceRange(key.range.start, previous().range.end),
+                        isMethodDefinition = true,
+                        fieldInitializer = initializer,
+                    )
+                    members.add(
+                        ClassMember(
+                            kind = ClassMemberKind.FIELD,
+                            isStatic = isStatic,
+                            key = key,
+                            computed = computed,
+                            value = function,
+                            range = SourceRange(memberStart, previous().range.end),
+                        )
+                    )
+                    continue
+                }
+
                 consume(TokenType.LPAREN, "Expected '(' in class member")
                 val allowSuperCall = isConstructor && classDerived
                 val (params, bodyInfo) = withFunctionContext(true, allowSuperCall, true) {
@@ -1185,7 +1230,38 @@ class Parser(
     }
 
     /**
-     * 解析函数体，并返回函数体元信息（严格模式、变量提升）。
+     * class 字段初始化表达式的解析上下文：
+     * - 禁止引用 arguments（等价 ContainsArguments 早期错误）；
+     * - 允许 super 属性，禁止 super() 调用；
+     * - 允许 new.target（运行期取 undefined）；
+     * - 恢复 [~Await] 语境，await 只能作为普通标识符。
+     */
+    private inline fun <T> withFieldInitializerContext(block: () -> T): T {
+        val outerArgumentsForbidden = argumentsForbidden
+        val outerAwaitForbidden = awaitIdentifierForbidden
+        val outerSuperProperty = superPropertyAllowed
+        val outerSuperCall = superCallAllowed
+        val outerNewTarget = newTargetAllowed
+        val outerAsync = asyncContext
+        argumentsForbidden = true
+        awaitIdentifierForbidden = false
+        superPropertyAllowed = true
+        superCallAllowed = false
+        newTargetAllowed = true
+        asyncContext = false
+        return try {
+            block()
+        } finally {
+            argumentsForbidden = outerArgumentsForbidden
+            awaitIdentifierForbidden = outerAwaitForbidden
+            superPropertyAllowed = outerSuperProperty
+            superCallAllowed = outerSuperCall
+            newTargetAllowed = outerNewTarget
+            asyncContext = outerAsync
+        }
+    }
+
+    /** 解析函数体，并返回函数体元信息（严格模式、变量提升）。
      *
      * 严格模式标志需要在解析函数体之前确定，以便嵌套函数正确继承，
      * 因此这里先扫描函数体开头的指令序言，再正式解析。

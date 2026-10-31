@@ -1,0 +1,6 @@
+# test262-parser-tests fail 允许列表（语料过期负例）
+# 每行一个文件名（不含目录）；strict 模式下这些文件被接受不计为门禁失败。
+# 98204d734f8c72b3.js: (class {a}) —— ES2022 公有字段语法，现行规范合法
+# ef81b93cf9bdb4ec.js: (class {a=0}) —— ES2022 公有字段初始化，现行规范合法
+98204d734f8c72b3.js
+ef81b93cf9bdb4ec.js

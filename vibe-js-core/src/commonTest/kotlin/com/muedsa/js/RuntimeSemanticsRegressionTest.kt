@@ -1707,6 +1707,79 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `class 公有字段按源码顺序初始化且支持 this super 与命名推断`() = runTest {
+        val runtime = TestRuntime()
+        // 静态字段与静态块按源码顺序执行；实例字段在构造时初始化
+        assertEquals(true, runtime.evalBoolean(
+            "var seq = [];" +
+                "class C1 { static a = seq.push('a'); static { seq.push('b'); } static c = seq.push('c'); }" +
+                "var c = new C1(); seq.join(',') === 'a,b,c' && C1.a === 1 && C1.c === 3"
+        ))
+        // 实例字段按序初始化：可引用 this 与前置字段；未初始化字段仍创建自有属性
+        assertEquals(true, runtime.evalBoolean(
+            "class C2 { a = 1; b = this.a + 1; c; }" +
+                "var o = new C2(); o.a === 1 && o.b === 2 && o.c === undefined && o.hasOwnProperty('c')"
+        ))
+        // 基类字段先于构造器体；派生类字段在 super() 返回后、构造器体剩余部分之前
+        assertEquals(true, runtime.evalBoolean(
+            "var order = [];" +
+                "class Base { constructor() { order.push('base-body'); } }" +
+                "class Sub extends Base {" +
+                "  x = order.push('derived-field');" +
+                "  constructor() { super(); order.push('derived-body'); }" +
+                "}" +
+                "var b2order = [];" +
+                "class Base2 { f = b2order.push('base-field'); constructor() { b2order.push('base-body'); } }" +
+                "new Sub(); new Base2();" +
+                "order.join(',') === 'base-body,derived-field,derived-body' &&" +
+                " b2order.join(',') === 'base-field,base-body'"
+        ))
+        // super 属性、new.target 与匿名函数命名推断
+        assertEquals(true, runtime.evalBoolean(
+            "class E { get v() { return 5; } }" +
+                "class F extends E { x = super.v; y = new.target; f = function () {}; g = () => {}; }" +
+                "var o = new F();" +
+                "o.x === 5 && o.y === undefined && o.f.name === 'f' && o.g.name === 'g'"
+        ))
+        // 计算键在类定义阶段按序求值
+        assertEquals(true, runtime.evalBoolean(
+            "var keys = [];" +
+                "class G { [(keys.push('k1'), 'a')] = 1; static [(keys.push('k2'), 'b')] = 2; }" +
+                "keys.join(',') === 'k1,k2' && new G().a === 1 && G.b === 2"
+        ))
+        // 字段描述符为可写/可枚举/可配置
+        assertEquals(true, runtime.evalBoolean(
+            "var d = Object.getOwnPropertyDescriptor(new (class { x = 1 })(), 'x');" +
+                "d.writable && d.enumerable && d.configurable"
+        ))
+    }
+
+    @Test
+    fun `class 字段早期错误与 arguments await 限制`() = runTest {
+        val runtime = TestRuntime()
+        // arguments 在字段初始化器中非法（箭头不解除、普通函数解除）
+        assertFailsWith<ParseException> { runtime.eval("class C { x = arguments; }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { x = () => arguments; }") }
+        assertEquals(true, runtime.evalBoolean(
+            "class C1 { x = function () { return arguments.length; }; } new C1().x(1, 2) === 2"
+        ))
+        // 字段名为 constructor、静态字段名为 prototype、访问器缺参数列表均非法
+        assertFailsWith<ParseException> { runtime.eval("class C { constructor = 1; }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { static prototype = 1; }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { get x = 1; }") }
+        // await 作为标识符合法；await 表达式在字段初始化器中非法
+        assertEquals(true, runtime.evalBoolean("class C2 { x = typeof await; } new C2().x === 'undefined'"))
+        assertFailsWith<ParseException> {
+            runtime.eval("async function f() { class C { x = await 1; } }")
+        }
+        // super() 调用与块内 arguments 引用限制
+        assertFailsWith<ParseException> { runtime.eval("class C extends Object { x = super(); }") }
+        assertEquals(true, runtime.evalBoolean(
+            "class C3 { static { class D { x = await; } } } true"
+        ))
+    }
+
+    @Test
     fun `RegExp d 标志生成 indices 数组与 hasIndices 访问器`() = runTest {
         val runtime = TestRuntime()
         // exec 结果：indices 元素为 [start, end]，未参与匹配的组为 undefined

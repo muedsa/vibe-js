@@ -51,11 +51,19 @@ fun main(args: Array<String>) {
  */
 private val parserPassAllowlist: Set<String> = loadParserPassAllowlist()
 
+/**
+ * fail 负例允许列表（按文件名匹配）：语料早于 ES2022 公有字段，
+ * 这类文件在现行规范下合法，strict 模式下不计为门禁失败。
+ */
+private val parserFailAllowlist: Set<String> = loadAllowlist("parser-fail-allowlist.txt")
+
 private object AllowlistResources
 
-private fun loadParserPassAllowlist(): Set<String> {
+private fun loadParserPassAllowlist(): Set<String> = loadAllowlist("parser-pass-allowlist.txt")
+
+private fun loadAllowlist(resource: String): Set<String> {
     val stream = AllowlistResources::class.java.classLoader
-        .getResourceAsStream("parser-pass-allowlist.txt")
+        .getResourceAsStream(resource)
         ?: return emptySet()
     return stream.bufferedReader().useLines { lines ->
         lines.map { it.trim() }
@@ -138,19 +146,25 @@ private class ParserConformanceRunner(
         val files = scriptFiles(directory)
         var passed = 0
         var failed = 0
+        var allowed = 0
         var crashes = 0
         val failures = mutableListOf<TestFailure>()
+        val allowedFailures = mutableListOf<TestFailure>()
         val startedAt = System.nanoTime()
         for (file in files) {
             try {
                 parse(file)
-                failed++
-                failures.add(
-                    TestFailure(
-                        path = relativePath(file),
-                        message = "期望解析失败，但解析器接受了该文件",
-                    )
+                val item = TestFailure(
+                    path = relativePath(file),
+                    message = "期望解析失败，但解析器接受了该文件",
                 )
+                if (file.name in parserFailAllowlist) {
+                    allowed++
+                    allowedFailures.add(item)
+                } else {
+                    failed++
+                    failures.add(item)
+                }
             } catch (_: ParseException) {
                 passed++
             } catch (_: LexerException) {
@@ -169,6 +183,8 @@ private class ParserConformanceRunner(
             crashes = crashes,
             failures = failures,
             elapsedMillis = elapsedMillis(startedAt),
+            allowed = allowed,
+            allowedFailures = allowedFailures,
         )
     }
 
@@ -307,7 +323,7 @@ private data class ParserRunReport(
                     )
                 }
                 appendLine()
-                appendLine("“允许”为 `parser-pass-allowlist.txt` 中的明确排除项（Generator），不计入门禁失败。")
+                appendLine("“允许”为允许列表中的明确排除项（Generator 语法与公有字段的过期负例），不计入门禁失败。")
                 appendLine()
                 appendLine(
                     "早期错误用例（early）：共 ${early.total}，解析成功 ${early.parsed}，" +

@@ -40,10 +40,18 @@ class JSFunction(
     val isAsync: Boolean = false,
     isMethod: Boolean = false,
     val lexicalThis: JSValue? = null,
+    /** 箭头函数捕获的 this 绑定来源（用于派生构造器中 this 的 TDZ 判定） */
+    val lexicalThisSource: ThisBindingSource? = null,
+    /** 箭头函数继承的最近非箭头函数（super() 调用需要找到外层构造器） */
+    val lexicalFunction: JSFunction? = null,
     /** 箭头函数捕获的 new.target */
     val lexicalNewTarget: JSValue? = null,
     /** 函数体语法上是否允许 new.target（箭头函数继承外层） */
     val allowsNewTarget: Boolean = true,
+    /** class 字段初始化器/静态块语境：直接 eval 内也禁止 arguments 引用 */
+    val forbidsArguments: Boolean = false,
+    /** 字段初始化器的 NamedEvaluation 名称提示（如 x = class {} 的 "x"） */
+    val namedEvaluationHint: String? = null,
     val isClassConstructor: Boolean = false,
     val isDefaultDerivedConstructor: Boolean = false,
     homeObject: JSObject? = null,
@@ -102,6 +110,9 @@ class JSFunction(
     /** 动态构造（Function/AsyncFunction）保留的源码文本，供 Function.prototype.toString 使用。 */
     var sourceText: String? = null
 
+    /** class 实例字段初始化记录（class 求值时按源码顺序创建）。 */
+    var instanceFields: List<InstanceField> = emptyList()
+
     override fun toPrimitiveString(): String =
         sourceText
             ?: "function ${if (name.isEmpty()) "" else name}(${params.joinToString(", ") { it.name ?: "[pattern]" }}) { [native code] }"
@@ -141,3 +152,15 @@ class JSFunction(
         }
     }
 }
+
+/** 箭头函数捕获的 this 绑定来源（Execution Context 实现；支持 this 的 TDZ 语义）。 */
+interface ThisBindingSource {
+    var boundThis: JSValue
+    var thisBound: Boolean
+}
+
+/** class 实例字段的初始化记录：属性键与初始化器函数。 */
+class InstanceField(
+    val key: PropertyKey,
+    val initializer: JSFunction,
+)

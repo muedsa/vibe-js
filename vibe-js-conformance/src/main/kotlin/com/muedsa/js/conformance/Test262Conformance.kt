@@ -595,6 +595,7 @@ private class Test262Runner(
             "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
             "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
             "regexp-dotall", "class-static-block", "regexp-match-indices",
+            "class-fields-public", "class-static-fields-public",
             "Symbol.prototype.description", "Math.sumPrecise",
             "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",
@@ -656,7 +657,7 @@ private class Test262Runner(
         private val unsupportedFeatures = setOf(
             "Reflect.construct", "Reflect", "Proxy", "BigInt",
             "TypedArray", "ArrayBuffer", "DataView", "SharedArrayBuffer", "Atomics",
-            "Intl", "WeakRef", "FinalizationRegistry", "class-fields-public",
+            "Intl", "WeakRef", "FinalizationRegistry",
             "class-fields-private",
             "decorators",
             "Symbol.asyncIterator", "generator", "async-iteration",
