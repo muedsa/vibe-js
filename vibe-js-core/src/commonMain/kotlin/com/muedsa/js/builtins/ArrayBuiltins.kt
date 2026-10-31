@@ -2,16 +2,21 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.PromiseSupport
+import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSPromise
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyDescriptor
 import com.muedsa.js.runtime.value.PropertyKey
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import kotlin.math.floor
 
 /**
@@ -1221,6 +1226,220 @@ object ArrayBuiltins {
                 array
             },
         )
+
+        arrayConstructor.defineDataProperty(
+            key = PropertyKey.Str("fromAsync"),
+            value = BuiltinHelpers.method(intrinsics, "fromAsync", 1) { interpreter, thisValue, args ->
+                arrayFromAsync(
+                    interpreter = interpreter,
+                    constructor = thisValue,
+                    items = args.getOrElse(0) { JSUndefined },
+                    mapFunction = args.getOrElse(1) { JSUndefined },
+                    thisArg = args.getOrElse(2) { JSUndefined },
+                )
+            },
+        )
+    }
+
+    /**
+     * Array.fromAsync：立即返回 Promise，并在协程中同步执行到首个 Await，
+     * 与 async 函数的执行语义保持一致。
+     */
+    private suspend fun arrayFromAsync(
+        interpreter: Interpreter,
+        constructor: JSValue,
+        items: JSValue,
+        mapFunction: JSValue,
+        thisArg: JSValue,
+    ): JSValue {
+        val promise = JSPromise(interpreter.intrinsics.promisePrototype)
+        val (resolveFunction, rejectFunction) =
+            PromiseSupport.createResolvingFunctions(interpreter, promise)
+        interpreter.context.eventLoop.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                val result = performArrayFromAsync(
+                    interpreter = interpreter,
+                    constructor = constructor,
+                    items = items,
+                    mapFunction = mapFunction,
+                    thisArg = thisArg,
+                )
+                interpreter.callFunction(resolveFunction, JSUndefined, listOf(result))
+            } catch (error: JSException) {
+                interpreter.callFunction(rejectFunction, JSUndefined, listOf(error.value))
+            }
+        }
+        return promise
+    }
+
+    /** Array.fromAsync 主体：异步迭代 / 同步迭代 / array-like 三条路径。 */
+    private suspend fun performArrayFromAsync(
+        interpreter: Interpreter,
+        constructor: JSValue,
+        items: JSValue,
+        mapFunction: JSValue,
+        thisArg: JSValue,
+    ): JSObject {
+        if (items is JSNull || items is JSUndefined) {
+            interpreter.typeError("Array.fromAsync requires an iterable or array-like object")
+        }
+        val mapping = mapFunction !is JSUndefined
+        if (mapping && !interpreter.isCallable(mapFunction)) {
+            interpreter.typeError("Array.fromAsync: mapfn is not a function")
+        }
+        val intrinsics = interpreter.intrinsics
+        val objectItems = interpreter.toObject(items)
+        // 先 GetMethod(@@asyncIterator)，再回退到 @@iterator
+        val asyncMethod = getIteratorMethod(
+            interpreter, objectItems, PropertyKey.Sym(intrinsics.symbolAsyncIterator),
+        )
+        val syncMethod = if (asyncMethod == null) {
+            getIteratorMethod(
+                interpreter, objectItems, PropertyKey.Sym(intrinsics.symbolIterator),
+            )
+        } else {
+            null
+        }
+
+        if (asyncMethod != null || syncMethod != null) {
+            val usingAsyncIterator = asyncMethod != null
+            val array = if (interpreter.isConstructor(constructor)) {
+                interpreter.construct(constructor, emptyList()) as? JSObject
+                    ?: interpreter.typeError("Array.fromAsync constructor did not return an object")
+            } else {
+                JSArray(prototype = intrinsics.arrayPrototype)
+            }
+            val method = asyncMethod ?: syncMethod!!
+            val iteratorValue = interpreter.callFunction(method, objectItems, emptyList())
+            val iterator = iteratorValue as? JSObject
+                ?: interpreter.typeError("Iterator method did not return an object")
+            val nextMethod = interpreter.getV(iterator, PropertyKey.Str("next"))
+            var index = 0L
+            try {
+                while (true) {
+                    val nextResult = interpreter.callFunction(nextMethod, iterator, emptyList())
+                    // 异步迭代器需要 Await(next())；同步迭代器的结果对象已就绪
+                    val settled = if (usingAsyncIterator) {
+                        awaitJsValue(interpreter, nextResult)
+                    } else {
+                        nextResult
+                    }
+                    if (settled !is JSObject) {
+                        interpreter.typeError("Iterator result is not an object")
+                    }
+                    if (interpreter.toBoolean(
+                            interpreter.getV(settled, PropertyKey.Str("done")),
+                        )
+                    ) {
+                        break
+                    }
+                    var value = interpreter.getV(settled, PropertyKey.Str("value"))
+                    // 仅同步迭代器（AsyncFromSync）会 await 输入值
+                    if (!usingAsyncIterator) {
+                        value = awaitJsValue(interpreter, value)
+                    }
+                    if (mapping) {
+                        value = interpreter.callFunction(
+                            mapFunction,
+                            thisArg,
+                            listOf(value, JSNumber(index.toDouble())),
+                        )
+                        value = awaitJsValue(interpreter, value)
+                    }
+                    createDataPropertyOrThrow(interpreter, array, index, value)
+                    index++
+                }
+                interpreter.putV(array, PropertyKey.LENGTH, JSNumber(index.toDouble()), true)
+                return array
+            } catch (error: JSException) {
+                closeAsyncIterator(interpreter, iterator)
+                throw error
+            }
+        }
+
+        // array-like 路径：LengthOfArrayLike 先于构造
+        val lengthValue = interpreter.getV(objectItems, PropertyKey.LENGTH)
+        val lengthNumber = interpreter.toNumber(lengthValue)
+        val length = when {
+            lengthNumber.isNaN() || lengthNumber <= 0.0 -> 0L
+            lengthNumber >= MAX_SAFE_INTEGER.toDouble() -> MAX_SAFE_INTEGER
+            else -> floor(lengthNumber).toLong()
+        }
+        val array: JSObject = if (interpreter.isConstructor(constructor)) {
+            interpreter.construct(constructor, listOf(JSNumber(length.toDouble()))) as? JSObject
+                ?: interpreter.typeError("Array.fromAsync constructor did not return an object")
+        } else {
+            if (length > 4294967295L) {
+                interpreter.rangeError("Invalid array length")
+            }
+            JSArray(prototype = intrinsics.arrayPrototype).also { it.defineLength(length, true) }
+        }
+        var index = 0L
+        while (index < length) {
+            var value = interpreter.getV(objectItems, PropertyKey.Str(index.toString()))
+            value = awaitJsValue(interpreter, value)
+            if (mapping) {
+                value = interpreter.callFunction(
+                    mapFunction,
+                    thisArg,
+                    listOf(value, JSNumber(index.toDouble())),
+                )
+                value = awaitJsValue(interpreter, value)
+            }
+            createDataPropertyOrThrow(interpreter, array, index, value)
+            index++
+        }
+        interpreter.putV(array, PropertyKey.LENGTH, JSNumber(length.toDouble()), true)
+        return array
+    }
+
+    /** GetMethod：null/undefined 返回 null，非可调用抛 TypeError。 */
+    private suspend fun getIteratorMethod(
+        interpreter: Interpreter,
+        objectValue: JSObject,
+        key: PropertyKey,
+    ): JSValue? {
+        val method = interpreter.getV(objectValue, key)
+        if (method is JSUndefined || method is JSNull) return null
+        if (!interpreter.isCallable(method)) {
+            interpreter.typeError("Property '${key}' is not a function")
+        }
+        return method
+    }
+
+    /** Await：把非 Promise 值经 PromiseResolve 采纳，并至少让出一个微任务周期。 */
+    private suspend fun awaitJsValue(interpreter: Interpreter, value: JSValue): JSValue {
+        val promise = if (value is JSPromise) {
+            value
+        } else {
+            val created = JSPromise(interpreter.intrinsics.promisePrototype)
+            PromiseSupport.resolve(interpreter, created, value)
+            created
+        }
+        val result = try {
+            promise.awaitResult()
+        } catch (error: JSException) {
+            interpreter.context.eventLoop.awaitMicrotask()
+            throw error
+        }
+        interpreter.context.eventLoop.awaitMicrotask()
+        return result
+    }
+
+    /** AsyncIteratorClose（throw 完成）：关闭错误被忽略，保留原始异常。 */
+    private suspend fun closeAsyncIterator(interpreter: Interpreter, iterator: JSObject) {
+        val returnMethod = try {
+            interpreter.getV(iterator, PropertyKey.Str("return"))
+        } catch (_: JSException) {
+            return
+        }
+        if (returnMethod is JSUndefined || returnMethod is JSNull) return
+        if (!interpreter.isCallable(returnMethod)) return
+        try {
+            interpreter.callFunction(returnMethod, iterator, emptyList())
+        } catch (_: JSException) {
+            // 保留原始错误
+        }
     }
 
     /** 要求 this 是数组。 */

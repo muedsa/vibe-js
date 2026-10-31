@@ -342,6 +342,13 @@ private class Test262Runner(
         if (test.source.contains("propertyBagObserver")) {
             return "unsupported harness: Proxy"
         }
+        // ArrayBuffer 等宿主型内建明确排除，测试源码中可能直接构造
+        if (suite == "es2015" &&
+            (test.source.contains("new ArrayBuffer") ||
+                test.source.contains("new SharedArrayBuffer"))
+        ) {
+            return "unsupported feature: ArrayBuffer"
+        }
         // ES2015 子集中排除 BigInt/Proxy/Generator 内容（项目明确排除）
         if (suite == "es2015" &&
             (test.source.contains("BigInt") ||
@@ -540,7 +547,7 @@ private class Test262Runner(
             "Symbol.unscopables", "set-methods", "RegExp.escape", "iterator-helpers",
             "iterator-sequencing",
             "Symbol.prototype.description",
-            "Array.prototype.flat", "Array.prototype.flatMap",
+            "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
             "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",
             "String.prototype.includes", "String.prototype.endsWith",
             "String.prototype.trimStart", "String.prototype.trimEnd",

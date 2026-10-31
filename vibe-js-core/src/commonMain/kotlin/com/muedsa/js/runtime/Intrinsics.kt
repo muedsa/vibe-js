@@ -76,6 +76,7 @@ class Intrinsics(val globalObject: GlobalObject) {
     lateinit var aggregateErrorConstructor: JSNativeFunction
 
     lateinit var symbolIterator: JSSymbol
+    lateinit var symbolAsyncIterator: JSSymbol
     lateinit var symbolToStringTag: JSSymbol
     lateinit var symbolSpecies: JSSymbol
     lateinit var symbolHasInstance: JSSymbol
@@ -169,6 +170,7 @@ class Intrinsics(val globalObject: GlobalObject) {
         asyncFunctionPrototype = JSObject(prototype = functionPrototype)
 
         symbolIterator = JSSymbol("Symbol.iterator")
+        symbolAsyncIterator = JSSymbol("Symbol.asyncIterator")
         symbolToStringTag = JSSymbol("Symbol.toStringTag")
         symbolSpecies = JSSymbol("Symbol.species")
         symbolHasInstance = JSSymbol("Symbol.hasInstance")

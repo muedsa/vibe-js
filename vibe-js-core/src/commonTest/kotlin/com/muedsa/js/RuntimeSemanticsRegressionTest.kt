@@ -1114,6 +1114,53 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Array fromAsync 支持同步、异步与 array-like 输入`() = runTest {
+        val runtime = TestRuntime()
+        // 同步迭代器的值会逐个 await
+        runtime.eval(
+            "var out = '';" +
+                "Array.fromAsync([Promise.resolve(1), 2]).then(function (a) {" +
+                " out = a.join(','); });"
+        )
+        assertEquals("1,2", runtime.evalString("out"))
+        // 异步迭代器的值不再二次 await，保留原 Promise
+        runtime.eval(
+            "var p = Promise.resolve(9);" +
+                "var asyncItems = { [Symbol.asyncIterator]: function () {" +
+                " var i = 0;" +
+                " return { next: function () {" +
+                "  if (i++ === 0) return Promise.resolve({ done: false, value: p });" +
+                "  return Promise.resolve({ done: true });" +
+                " } };" +
+                "} };" +
+                "Array.fromAsync(asyncItems).then(function (a) {" +
+                " out = (a[0] === p) + ':' + a.length; });"
+        )
+        assertEquals("true:1", runtime.evalString("out"))
+        // array-like：空洞按 undefined，值与映射结果都会被 await
+        runtime.eval(
+            "Array.fromAsync({ length: 2, 1: Promise.resolve(3) }," +
+                " function (v) { return v * 2; }).then(function (a) {" +
+                " out = String(a[0]) + ',' + a[1]; });"
+        )
+        assertEquals("NaN,6", runtime.evalString("out"))
+        // 自定义构造器：一次构造并设置 length 与元素
+        runtime.eval(
+            "function MyArray(n) { this.created = n; }" +
+                "Array.fromAsync.call(MyArray, [1, 2]).then(function (a) {" +
+                " out = (a instanceof MyArray) + ':' + a.length + ':' + a[1]; });"
+        )
+        assertEquals("true:2:2", runtime.evalString("out"))
+        // 错误以 Promise 拒绝的形式返回
+        runtime.eval(
+            "Array.fromAsync(null).then(function () { out = 'fulfilled'; }," +
+                " function (e) { out = String(e instanceof TypeError); });"
+        )
+        assertEquals("true", runtime.evalString("out"))
+        assertEquals(true, runtime.evalBoolean("typeof Symbol.asyncIterator === 'symbol'"))
+    }
+
+    @Test
     fun `BigInt 字面量可被解析但求值抛出 TypeError`() = runTest {
         val runtime = TestRuntime()
         // 保留语法识别以便解析包含 BigInt 字面量的宿主脚本

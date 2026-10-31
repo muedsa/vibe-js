@@ -95,6 +95,7 @@ object SymbolBuiltins {
             )
         }
         wellKnown("iterator", intrinsics.symbolIterator)
+        wellKnown("asyncIterator", intrinsics.symbolAsyncIterator)
         wellKnown("toStringTag", intrinsics.symbolToStringTag)
         wellKnown("species", intrinsics.symbolSpecies)
         wellKnown("hasInstance", intrinsics.symbolHasInstance)
