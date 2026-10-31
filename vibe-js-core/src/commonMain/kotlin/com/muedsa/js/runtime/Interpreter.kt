@@ -4405,7 +4405,7 @@ class Interpreter(
             namedAnalysis.hasModifiers || namedGroupNeedsFallback ||
             hasLookbehind(pattern) || hasNumericBackReference(pattern) ||
             ('u' in flags && hasUnicodePropertyEscape(pattern)) ||
-            hasLiteralBrace(enginePattern) ||
+            hasWhitespaceEscape(pattern) || hasLiteralBrace(enginePattern) ||
             hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
         ) {
             buildFallback()
@@ -4497,6 +4497,26 @@ class Interpreter(
 
                 c == '}' -> return true
                 else -> index++
+            }
+        }
+        return false
+    }
+
+    /**
+     * 是否包含 `\s` / `\S`。
+     *
+     * Java 的 `\s` 仅覆盖 ASCII 空白，与 JS 的 WhiteSpace/LineTerminator 集合不同，
+     * 统一交由回退引擎保证跨平台一致。
+     */
+    private fun hasWhitespaceEscape(pattern: String): Boolean {
+        var index = 0
+        while (index < pattern.length) {
+            if (pattern[index] == '\\') {
+                val next = pattern.getOrNull(index + 1)
+                if (next == 's' || next == 'S') return true
+                index += 2
+            } else {
+                index++
             }
         }
         return false
