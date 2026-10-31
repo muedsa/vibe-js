@@ -1071,6 +1071,49 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Iterator concat 惰性打开并在 return 时关闭当前内层`() = runTest {
+        val runtime = TestRuntime()
+        // 各 iterable 仅在需要时按顺序打开
+        assertEquals(true, runtime.evalBoolean(
+            "var opened = [];" +
+                "var a = { [Symbol.iterator]: function () {" +
+                " opened.push('a'); return [1][Symbol.iterator](); } };" +
+                "var b = { [Symbol.iterator]: function () {" +
+                " opened.push('b'); return [2][Symbol.iterator](); } };" +
+                "var it = Iterator.concat(a, b);" +
+                "var before = opened.length === 0;" +
+                "var r1 = it.next(); var afterA = opened.join(',');" +
+                "var r2 = it.next(); var afterB = opened.join(',');" +
+                "before && r1.value === 1 && afterA === 'a' &&" +
+                " r2.value === 2 && afterB === 'a,b'"
+        ))
+        // return 关闭当前内层；helper 完成后不再转发
+        assertEquals("1", runtime.evalString(
+            "var closes = 0;" +
+                "var inner = { next: function () { return { done: false, value: 1 }; }," +
+                " return: function () { closes++; return {}; } };" +
+                "var it = Iterator.concat({ [Symbol.iterator]: function () { return inner; } });" +
+                "it.next(); it.return(); it.return();" +
+                "String(closes)"
+        ))
+        // 返回值为共享 %IteratorHelperPrototype% 的 helper
+        assertEquals(true, runtime.evalBoolean(
+            "var proto = Object.getPrototypeOf([].values().map(function (v) { return v; }));" +
+                "var it = Iterator.concat();" +
+                "Object.getPrototypeOf(it) === proto &&" +
+                " it.next === proto.next && it.return === proto.return &&" +
+                " Object.prototype.toString.call(it) === '[object Iterator Helper]'"
+        ))
+        // 参数立即校验：非对象或无 @@iterator 抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "var bad = 0;" +
+                "try { Iterator.concat(null); } catch (e) { if (e instanceof TypeError) bad++; }" +
+                "try { Iterator.concat({}); } catch (e) { if (e instanceof TypeError) bad++; }" +
+                "bad === 2"
+        ))
+    }
+
+    @Test
     fun `BigInt 字面量可被解析但求值抛出 TypeError`() = runTest {
         val runtime = TestRuntime()
         // 保留语法识别以便解析包含 BigInt 字面量的宿主脚本

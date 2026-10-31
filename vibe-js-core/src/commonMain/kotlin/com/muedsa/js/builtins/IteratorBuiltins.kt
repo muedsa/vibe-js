@@ -24,11 +24,71 @@ internal object IteratorBuiltins {
     /** 迭代器直接记录：[[Iterator]] 与缓存的 next 方法（可调用性延迟到调用时校验）。 */
     private class DirectIterator(val iterator: JSObject, val nextMethod: JSValue)
 
-    /** 辅助迭代器状态。 */
-    private class HelperState(val record: DirectIterator) {
-        var done: Boolean = false
-        var running: Boolean = false
+    /**
+     * Iterator Helper 的内部状态：共享原型 next/return 通过它分发，
+     * 同时承载生成器状态（done/running）。
+     */
+    private interface HelperState {
+        var done: Boolean
+        var running: Boolean
+
+        /** 推进并返回值；null 表示正常完成。 */
+        suspend fun advance(interpreter: Interpreter): JSValue?
+
+        /** return() 时的关闭逻辑（正常完成语义）。 */
+        suspend fun close(interpreter: Interpreter)
     }
+
+    /** map/filter/take/drop/flatMap 的 helper 状态。 */
+    private class ProducerHelperState(
+        private val record: DirectIterator,
+        private val advanceFn: suspend (Interpreter) -> JSValue?,
+        private val onReturn: (suspend (Interpreter) -> Unit)?,
+    ) : HelperState {
+        override var done: Boolean = false
+        override var running: Boolean = false
+
+        override suspend fun advance(interpreter: Interpreter): JSValue? = advanceFn(interpreter)
+
+        override suspend fun close(interpreter: Interpreter) {
+            onReturn?.invoke(interpreter)
+            closeDirect(interpreter, record, throwCompletion = false)
+        }
+    }
+
+    /** Iterator.concat 的 helper 状态：按顺序惰性打开各 iterable。 */
+    private class ConcatHelperState(
+        private val records: List<Pair<JSObject, JSValue>>,
+    ) : HelperState {
+        override var done: Boolean = false
+        override var running: Boolean = false
+        private var nextIndex: Int = 0
+        private var inner: DirectIterator? = null
+
+        override suspend fun advance(interpreter: Interpreter): JSValue? {
+            while (true) {
+                val current = inner
+                if (current != null) {
+                    val value = nextValue(interpreter, current)
+                    if (value != null) return value
+                    inner = null
+                }
+                if (nextIndex >= records.size) return null
+                val (iterable, method) = records[nextIndex++]
+                val iteratorValue = interpreter.callFunction(method, iterable, emptyList())
+                val iterator = iteratorValue as? JSObject
+                    ?: interpreter.typeError("Iterator method did not return an object")
+                inner = getIteratorDirect(interpreter, iterator)
+            }
+        }
+
+        override suspend fun close(interpreter: Interpreter) {
+            inner?.let { closeDirect(interpreter, it, throwCompletion = false) }
+        }
+    }
+
+    /** Iterator.from 包装器的内部状态（[[Iterated]]）。 */
+    private class WrapState(val record: DirectIterator)
 
     private fun doneResult(interpreter: Interpreter): JSObject =
         createIterResult(interpreter, JSUndefined, done = true)
@@ -154,73 +214,15 @@ internal object IteratorBuiltins {
         closeDirect(interpreter, DirectIterator(record, JSUndefined), throwCompletion = true)
     }
 
-    /** 创建辅助迭代器：next 推进值，return 转发到被包装迭代器。 */
+    /** 创建辅助迭代器：next/return 由共享原型方法分发到内部状态。 */
     private fun createHelper(
         interpreter: Interpreter,
         record: DirectIterator,
         onReturn: (suspend (Interpreter) -> Unit)? = null,
-        advance: suspend (HelperState) -> JSValue?,
+        advance: suspend (Interpreter) -> JSValue?,
     ): JSObject {
-        val state = HelperState(record)
         val helper = JSObject(prototype = interpreter.intrinsics.iteratorHelperPrototype)
-        helper.defineDataProperty(
-            PropertyKey.Str("next"),
-            JSNativeFunction(
-                name = "next",
-                length = 0,
-                prototype = interpreter.intrinsics.functionPrototype,
-            ) { inner, thisValue, _ ->
-                if (thisValue !== helper) {
-                    inner.typeError("Iterator Helper next called on incompatible receiver")
-                }
-                if (state.done) return@JSNativeFunction doneResult(inner)
-                if (state.running) {
-                    // 对应 GeneratorValidate 的 executing 状态检查
-                    inner.typeError("Iterator Helper is already running")
-                }
-                state.running = true
-                try {
-                    val value = try {
-                        advance(state)
-                    } catch (error: JSException) {
-                        // 生成器因异常而完成，后续 next 直接返回 done
-                        state.done = true
-                        throw error
-                    }
-                    if (value == null) {
-                        state.done = true
-                        doneResult(inner)
-                    } else {
-                        createIterResult(inner, value, done = false)
-                    }
-                } finally {
-                    state.running = false
-                }
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-        helper.defineDataProperty(
-            PropertyKey.Str("return"),
-            JSNativeFunction(
-                name = "return",
-                length = 0,
-                prototype = interpreter.intrinsics.functionPrototype,
-            ) { inner, thisValue, _ ->
-                if (thisValue !== helper) {
-                    inner.typeError("Iterator Helper return called on incompatible receiver")
-                }
-                if (state.done) return@JSNativeFunction doneResult(inner)
-                state.done = true
-                onReturn?.invoke(inner)
-                closeDirect(inner, record, throwCompletion = false)
-                doneResult(inner)
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
+        helper.internalState = ProducerHelperState(record, advance, onReturn)
         return helper
     }
 
@@ -365,34 +367,109 @@ internal object IteratorBuiltins {
 
         installIteratorNext(intrinsics)
 
-        for (helperPrototype in listOf(
-            intrinsics.iteratorHelperPrototype,
-            intrinsics.wrapForValidIteratorPrototype,
-        )) {
-            helperPrototype.defineDataProperty(
-                key = PropertyKey.Str("next"),
-                value = BuiltinHelpers.method(intrinsics, "next", 0) { interpreter, _, _ ->
-                    interpreter.typeError("next method called on incompatible receiver")
-                },
-                writable = true,
-                enumerable = false,
-                configurable = true,
-            )
-            helperPrototype.defineDataProperty(
-                key = PropertyKey.Str("return"),
-                value = BuiltinHelpers.method(intrinsics, "return", 0) { interpreter, _, _ ->
-                    interpreter.typeError("return method called on incompatible receiver")
-                },
-                writable = true,
-                enumerable = false,
-                configurable = true,
-            )
-        }
+        intrinsics.iteratorHelperPrototype.defineDataProperty(
+            key = PropertyKey.Str("next"),
+            value = BuiltinHelpers.method(intrinsics, "next", 0) { interpreter, thisValue, _ ->
+                val state = (thisValue as? JSObject)?.internalState as? HelperState
+                    ?: interpreter.typeError("next method called on incompatible receiver")
+                if (state.running) interpreter.typeError("Iterator Helper is already running")
+                if (state.done) return@method doneResult(interpreter)
+                state.running = true
+                try {
+                    val value = try {
+                        state.advance(interpreter)
+                    } catch (error: JSException) {
+                        // 生成器因异常而完成，后续 next 直接返回 done
+                        state.done = true
+                        throw error
+                    }
+                    if (value == null) {
+                        state.done = true
+                        doneResult(interpreter)
+                    } else {
+                        createIterResult(interpreter, value, done = false)
+                    }
+                } finally {
+                    state.running = false
+                }
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        intrinsics.iteratorHelperPrototype.defineDataProperty(
+            key = PropertyKey.Str("return"),
+            value = BuiltinHelpers.method(intrinsics, "return", 0) { interpreter, thisValue, _ ->
+                val state = (thisValue as? JSObject)?.internalState as? HelperState
+                    ?: interpreter.typeError("return method called on incompatible receiver")
+                if (state.running) interpreter.typeError("Iterator Helper is already running")
+                if (state.done) return@method doneResult(interpreter)
+                state.done = true
+                state.running = true
+                try {
+                    state.close(interpreter)
+                } finally {
+                    state.running = false
+                }
+                doneResult(interpreter)
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        intrinsics.wrapForValidIteratorPrototype.defineDataProperty(
+            key = PropertyKey.Str("next"),
+            value = BuiltinHelpers.method(intrinsics, "next", 0) { interpreter, thisValue, _ ->
+                val state = (thisValue as? JSObject)?.internalState as? WrapState
+                    ?: interpreter.typeError("next method called on incompatible receiver")
+                val result = interpreter.callFunction(
+                    state.record.nextMethod, state.record.iterator, emptyList(),
+                )
+                if (result !is JSObject) {
+                    interpreter.typeError("Iterator result is not an object")
+                }
+                result
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        intrinsics.wrapForValidIteratorPrototype.defineDataProperty(
+            key = PropertyKey.Str("return"),
+            value = BuiltinHelpers.method(intrinsics, "return", 0) { interpreter, thisValue, _ ->
+                val state = (thisValue as? JSObject)?.internalState as? WrapState
+                    ?: interpreter.typeError("return method called on incompatible receiver")
+                val returnMethod = getMethod(
+                    interpreter, state.record.iterator, PropertyKey.Str("return"),
+                )
+                if (returnMethod == null) return@method doneResult(interpreter)
+                val result = interpreter.callFunction(
+                    returnMethod, state.record.iterator, emptyList(),
+                )
+                if (result !is JSObject) {
+                    interpreter.typeError("Iterator return result is not an object")
+                }
+                result
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
 
         iteratorConstructor.defineDataProperty(
             key = PropertyKey.Str("from"),
             value = BuiltinHelpers.method(intrinsics, "from", 1) { interpreter, _, args ->
                 iteratorFrom(interpreter, args.getOrElse(0) { JSUndefined })
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+
+        iteratorConstructor.defineDataProperty(
+            key = PropertyKey.Str("concat"),
+            value = BuiltinHelpers.method(intrinsics, "concat", 0) { interpreter, _, args ->
+                iteratorConcat(interpreter, args)
             },
             writable = true,
             enumerable = false,
@@ -537,6 +614,31 @@ internal object IteratorBuiltins {
         return createWrapper(interpreter, record)
     }
 
+    /**
+     * Iterator.concat：先对所有参数做对象与 @@iterator 校验，
+     * 返回惰性打开的 Iterator Helper。
+     */
+    private suspend fun iteratorConcat(
+        interpreter: Interpreter,
+        args: List<JSValue>,
+    ): JSObject {
+        val records = ArrayList<Pair<JSObject, JSValue>>(args.size)
+        for (item in args) {
+            if (item !is JSObject) {
+                interpreter.typeError("Iterator.concat argument is not an object")
+            }
+            val method = getMethod(
+                interpreter,
+                item,
+                PropertyKey.Sym(interpreter.intrinsics.symbolIterator),
+            ) ?: interpreter.typeError("Iterator.concat argument is not iterable")
+            records.add(item to method)
+        }
+        val helper = JSObject(prototype = interpreter.intrinsics.iteratorHelperPrototype)
+        helper.internalState = ConcatHelperState(records)
+        return helper
+    }
+
     /** 沿原型链判断实例是否继承自 %IteratorPrototype%。 */
     private fun isIteratorInstance(value: JSObject, iteratorPrototype: JSObject): Boolean {
         var current: JSObject? = value.prototype
@@ -550,50 +652,7 @@ internal object IteratorBuiltins {
     /** %WrapForValidIteratorPrototype% 实例：转发 next/return 到底层迭代器记录。 */
     private fun createWrapper(interpreter: Interpreter, record: DirectIterator): JSObject {
         val wrapper = JSObject(prototype = interpreter.intrinsics.wrapForValidIteratorPrototype)
-        wrapper.defineDataProperty(
-            PropertyKey.Str("next"),
-            JSNativeFunction(
-                name = "next",
-                length = 0,
-                prototype = interpreter.intrinsics.functionPrototype,
-            ) { inner, thisValue, _ ->
-                if (thisValue !== wrapper) {
-                    inner.typeError("next method called on incompatible receiver")
-                }
-                val result = inner.callFunction(record.nextMethod, record.iterator, emptyList())
-                if (result !is JSObject) {
-                    inner.typeError("Iterator result is not an object")
-                }
-                result
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-        wrapper.defineDataProperty(
-            PropertyKey.Str("return"),
-            JSNativeFunction(
-                name = "return",
-                length = 0,
-                prototype = interpreter.intrinsics.functionPrototype,
-            ) { inner, thisValue, _ ->
-                if (thisValue !== wrapper) {
-                    inner.typeError("return method called on incompatible receiver")
-                }
-                val returnMethod = getMethod(inner, record.iterator, PropertyKey.Str("return"))
-                if (returnMethod == null) {
-                    return@JSNativeFunction doneResult(inner)
-                }
-                val result = inner.callFunction(returnMethod, record.iterator, emptyList())
-                if (result !is JSObject) {
-                    inner.typeError("Iterator return result is not an object")
-                }
-                result
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
+        wrapper.internalState = WrapState(record)
         return wrapper
     }
 
@@ -709,10 +768,9 @@ internal object IteratorBuiltins {
                 }
                 var remaining = toLimit(interpreter, args.getOrElse(0) { JSUndefined }, thisValue)
                 val record = getIteratorDirect(interpreter, thisValue)
-                createHelper(interpreter, record) { state ->
+                createHelper(interpreter, record) { _ ->
                     if (remaining <= 0.0) {
                         // 正常完成关闭底层迭代器：return 结果必须是对象
-                        state.done = true
                         closeDirect(interpreter, record, throwCompletion = false)
                         return@createHelper null
                     }
@@ -766,7 +824,7 @@ internal object IteratorBuiltins {
                     onReturn = { innerInterpreter ->
                         inner?.let { closeDirect(innerInterpreter, it, throwCompletion = false) }
                     },
-                ) { state ->
+                ) { _ ->
                     while (true) {
                         val currentInner = inner
                         if (currentInner != null) {
@@ -774,7 +832,6 @@ internal object IteratorBuiltins {
                                 nextValue(interpreter, currentInner)
                             } catch (error: JSException) {
                                 // 内层 step 抛错：只关闭外层，内层保持原状
-                                state.done = true
                                 closeDirect(interpreter, record, throwCompletion = true)
                                 throw error
                             }
@@ -790,7 +847,6 @@ internal object IteratorBuiltins {
                                 listOf(value, JSNumber(index)),
                             )
                         } catch (error: JSException) {
-                            state.done = true
                             closeDirect(interpreter, record, throwCompletion = true)
                             throw error
                         }
@@ -798,7 +854,6 @@ internal object IteratorBuiltins {
                         val innerRecord = try {
                             getIteratorFlattenable(interpreter, mapped, rejectStrings = true)
                         } catch (error: JSException) {
-                            state.done = true
                             closeDirect(interpreter, record, throwCompletion = true)
                             throw error
                         }
