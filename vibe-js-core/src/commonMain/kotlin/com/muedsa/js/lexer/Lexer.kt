@@ -171,6 +171,9 @@ class Lexer(private val input: String) {
             current == '`' ->
                 readTemplate(startLine, startColumn, startOffset, newlineBefore)
 
+            // 私有名标识符 #name（上下文合法性由 Parser 校验）
+            current == '#' -> readPrivateIdentifier(startLine, startColumn, startOffset, newlineBefore)
+
             // 标识符 / 关键字（支持 \uXXXX / \u{...} 转义与 astral 起始）
             isIdentifierStart(current) || (current == '\\' && peek(1) == 'u') ||
                 isAstralPairAt(pos) ->
@@ -1291,6 +1294,34 @@ class Lexer(private val input: String) {
     /**
      * 读取标识符或关键字。
      */
+    /**
+     * 读取私有名标识符：# 后必须是合法标识符起始（允许 \u 转义与 astral 起始）。
+     * 词法层不校验 class 上下文，由 Parser 决定合法性。
+     */
+    private fun readPrivateIdentifier(
+        startLine: Int,
+        startColumn: Int,
+        startOffset: Int,
+        newlineBefore: Boolean,
+    ): Token {
+        val identifierStart = isIdentifierStart(peek(1)) ||
+            (peek(1) == '\\' && peek(2) == 'u') || isAstralPairAt(pos + 1)
+        if (!identifierStart) {
+            throw lexerError("Invalid or unexpected token", startLine, startColumn, startOffset)
+        }
+        advance() // '#'
+        val inner = readIdentifierOrKeyword(startLine, startColumn, startOffset, newlineBefore)
+        return makeToken(
+            type = TokenType.PRIVATE_IDENTIFIER,
+            value = inner.value,
+            startLine = startLine,
+            startColumn = startColumn,
+            startOffset = startOffset,
+            newlineBefore = newlineBefore,
+            containsEscape = inner.containsEscape,
+        )
+    }
+
     private fun readIdentifierOrKeyword(
         startLine: Int,
         startColumn: Int,

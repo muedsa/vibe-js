@@ -36,6 +36,27 @@ open class JSObject(
     /** 是否具有 [[IsRawJSON]] 内部槽（供 JSON.isRawJSON/stringify 判断）。 */
     var isRawJson: Boolean = false
 
+    /** 私有元素槽位表（按 [PrivateName] 引用相等查找，不参与属性枚举）。 */
+    private var privateSlots: MutableMap<PrivateName, PrivateSlot>? = null
+
+    /** 查找私有槽位（同时用作品牌检查）。 */
+    fun findPrivateSlot(name: PrivateName): PrivateSlot? = privateSlots?.get(name)
+
+    /** 安装/覆盖私有槽位（实例构造时安装方法，或定义字段时使用）。 */
+    fun putPrivateSlot(name: PrivateName, slot: PrivateSlot) {
+        val slots = privateSlots ?: LinkedHashMap<PrivateName, PrivateSlot>().also {
+            privateSlots = it
+        }
+        slots[name] = slot
+    }
+
+    /** 定义私有字段（每次定义创建独立槽位）。 */
+    fun definePrivateField(name: PrivateName, value: JSValue) {
+        val slot = PrivateSlot(PrivateElementKind.FIELD)
+        slot.value = value
+        putPrivateSlot(name, slot)
+    }
+
     override val isPrimitive: Boolean = false
 
     override fun toPrimitiveBoolean(): Boolean = true

@@ -52,6 +52,8 @@ class JSFunction(
     val forbidsArguments: Boolean = false,
     /** 字段初始化器的 NamedEvaluation 名称提示（如 x = class {} 的 "x"） */
     val namedEvaluationHint: String? = null,
+    /** 闭包捕获的私有名环境（class 成员与嵌套函数使用） */
+    val privateEnvironment: PrivateEnvironment? = null,
     val isClassConstructor: Boolean = false,
     val isDefaultDerivedConstructor: Boolean = false,
     homeObject: JSObject? = null,
@@ -113,6 +115,9 @@ class JSFunction(
     /** class 实例字段初始化记录（class 求值时按源码顺序创建）。 */
     var instanceFields: List<InstanceField> = emptyList()
 
+    /** 实例私有方法/访问器：构造实例时先于字段安装（品牌检查立即可用）。 */
+    var privateMethods: List<Pair<PrivateName, PrivateSlot>> = emptyList()
+
     override fun toPrimitiveString(): String =
         sourceText
             ?: "function ${if (name.isEmpty()) "" else name}(${params.joinToString(", ") { it.name ?: "[pattern]" }}) { [native code] }"
@@ -159,8 +164,9 @@ interface ThisBindingSource {
     var thisBound: Boolean
 }
 
-/** class 实例字段的初始化记录：属性键与初始化器函数。 */
+/** class 实例字段的初始化记录：公有属性键或私有名，二者恰有一个非空。 */
 class InstanceField(
-    val key: PropertyKey,
+    val key: PropertyKey?,
+    val privateName: PrivateName?,
     val initializer: JSFunction,
 )

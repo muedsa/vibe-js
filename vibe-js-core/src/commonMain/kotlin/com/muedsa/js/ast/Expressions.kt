@@ -285,6 +285,24 @@ class SuperExpr(
     override val range: SourceRange,
 ) : Expression()
 
+/**
+ * 私有名引用 `#name`。
+ *
+ * 仅作为成员访问的属性（obj.#x）或 `#x in obj` 的左操作数出现；
+ * 其余位置由 Parser 报早期错误。
+ */
+class PrivateIdentifier(
+    val name: String,
+    override val range: SourceRange,
+) : Expression()
+
+/** 私有名品牌检查 `#name in obj`。 */
+class PrivateInExpr(
+    val name: String,
+    val objectExpression: Expression,
+    override val range: SourceRange,
+) : Expression()
+
 /** new.target 元属性。 */
 class NewTargetExpr(
     override val range: SourceRange,

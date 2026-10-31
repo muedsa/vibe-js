@@ -1779,6 +1779,108 @@ class RuntimeSemanticsRegressionTest {
         ))
     }
 
+
+    @Test
+    fun `class 私有字段支持读写品牌检查与 in 运算`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "class C { #x = 1; get() { return this.#x; } set(v) { this.#x = v; } has(o) { return #x in o; } }" +
+                "var c = new C(); var before = c.get(); c.set(5);" +
+                "before === 1 && c.get() === 5 && c.has(c) === true && c.has({}) === false"
+        ))
+        // 品牌检查失败与跨实例访问（同一 class 的不同实例共享私有名）
+        assertEquals(true, runtime.evalBoolean(
+            "class D { #x = 1; read(o) { return o.#x; } }" +
+                "var d1 = new D(); var d2 = new D();" +
+                "d1.read(d2) === 1 && (function () {" +
+                "  try { d1.read({}); return false } catch (e) { return e instanceof TypeError }" +
+                "})()"
+        ))
+        // 字段初始化顺序：#a 在 #b 尚未初始化时不可访问
+        assertEquals(true, runtime.evalBoolean(
+            "class E { #a; #b = this.#a; } var e = new E(); e instanceof E"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "class F { #a = this.#b; #b = 1; }" +
+                "var threw = false; try { new F(); } catch (e) { threw = e instanceof TypeError } threw"
+        ))
+        // 私有字段不受 Object.freeze/preventExtensions 影响
+        assertEquals(true, runtime.evalBoolean(
+            "class G { #x = 1; constructor() { Object.freeze(this); } bump() { this.#x++; return this.#x; } }" +
+                "new G().bump() === 2"
+        ))
+    }
+
+    @Test
+    fun `class 私有方法与访问器`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "class C { #m() { return this.v } #get() { return 'g' } #set(v) { this.v = v }" +
+                "  run() { this.#set('v'); return this.#m() + this.#get(); }" +
+                "  get #value() { return 7 } set #value(v) { this.stored = v }" +
+                "  access() { var before = this.#value; this.#value = 9; return [before, this.stored]; }" +
+                "}" +
+                "var c = new C(); var acc = c.access();" +
+                "c.run() === 'vg' && acc[0] === 7 && acc[1] === 9"
+        ))
+        // 私有方法不可写、访问器缺 setter 时写入抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "class D { #m() {} tryAssign() { try { this.#m = 1; return false } catch (e) { return e instanceof TypeError } }" +
+                "  get #g() { return 1 } trySet() { try { this.#g = 2; return false } catch (e) { return e instanceof TypeError } } }" +
+                "var d = new D(); d.tryAssign() === true && d.trySet() === true"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "class E { #m() { return 1 } call(o) { return o.#m() } }" +
+                "new E().call(new E()) === 1 &&" +
+                "(function () { try { new E().call({}); return false } catch (e) { return e instanceof TypeError } })()"
+        ))
+        // 私有方法名带 # 前缀；方法不可构造、不可写
+        assertEquals("#m", runtime.evalString(
+            "class F { #m() {} name() { return this.#m.name } } new F().name()"
+        ))
+    }
+
+    @Test
+    fun `class 私有静态成员与嵌套类作用域`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "class C { static #x = 1; static #m() { return this.#x }" +
+                "  static get() { this.#x = 2; return this.#m() }" +
+                "  static has(o) { return #x in o }" +
+                "}" +
+                "C.get() === 2 && C.has(C) === true && C.has(C.prototype) === false"
+        ))
+        // 嵌套 class 可以访问外层 class 的私有名
+        assertEquals(true, runtime.evalBoolean(
+            "class Outer { #x = 5; make() { return class { read(o) { return o.#x } } } }" +
+                "var Reader = new Outer().make(); Reader.prototype.constructor;" +
+                "new Reader().read(new Outer()) === 5"
+        ))
+        // 私有名按 class 求值唯一：同名不同 class 不共享
+        assertEquals(true, runtime.evalBoolean(
+            "function make() { return class { #x = 1; has(o) { return #x in o } } }" +
+                "var A = make(); var B = make(); new A().has(new A()) === true && new A().has(new B()) === false"
+        ))
+    }
+
+    @Test
+    fun `class 私有名的早期错误`() = runTest {
+        val runtime = TestRuntime()
+        assertFailsWith<ParseException> { runtime.eval("class C { #x; #x; }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { #x; #x() {} }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { #constructor; }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { m() { return this.#x } }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { m() { return #x in this } }") }
+        assertFailsWith<ParseException> { runtime.eval("class C { #x; m() { delete this.#x } }") }
+        assertFailsWith<ParseException> { runtime.eval("this.#x;") }
+        assertFailsWith<ParseException> { runtime.eval("class C extends Object { m() { return super.#x } }") }
+        // getter/setter 成对声明合法；实例与静态同名私有仍属重名
+        runtime.eval("class C { get #x() { return 1 } set #x(v) {} }")
+        assertFailsWith<ParseException> { runtime.eval("class C { #y; static #y; }") }
+        // 私有名可在嵌套 class 中解析到外层声明
+        runtime.eval("class Z { #z; m() { return class { r(o) { return o.#z } } } }")
+    }
+
     @Test
     fun `RegExp d 标志生成 indices 数组与 hasIndices 访问器`() = runTest {
         val runtime = TestRuntime()

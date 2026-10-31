@@ -28,6 +28,8 @@ class Parser(
     newTargetContext: Boolean = false,
     /** 直接 eval 继承 class 字段初始化器/静态块的 arguments 限制 */
     argumentsForbiddenContext: Boolean = false,
+    /** 直接 eval 继承调用方词法可见的私有名（null 表示普通脚本解析） */
+    evalPrivateNames: Set<String>? = null,
 ) {
 
     /** 当前解析位置（tokens 下标）。 */
@@ -80,6 +82,24 @@ class Parser(
      * 块内 return 非法，但块内嵌套函数/方法中的 return 合法。
      */
     private val staticBlockDepths = mutableListOf<Int>()
+
+    /** 私有名作用域栈：每个 class 体一层，用于重名与未声明引用的早期错误。 */
+    private val privateNameScopes = mutableListOf<PrivateNameScope>()
+
+    /** 直接 eval 代码可引用的外层私有名（来自调用方私有环境）。 */
+    private val externalPrivateNames = evalPrivateNames
+
+    /** 私有元素类别（用于允许 getter/setter 成对同名）。 */
+    private enum class PrivateElementKind { FIELD, METHOD, GETTER, SETTER }
+
+    /** class 体的私有名作用域：声明与延迟解析的引用。 */
+    private class PrivateNameScope(
+        val parent: PrivateNameScope?,
+        val declarations: MutableMap<String, MutableSet<PrivateElementKind>> = mutableMapOf(),
+        /** 每种元素声明的静态性：getter/setter 成对时要求一致 */
+        val staticness: MutableMap<String, MutableMap<PrivateElementKind, Boolean>> = mutableMapOf(),
+        val references: MutableList<Pair<String, SourceRange>> = mutableListOf(),
+    )
 
     /** 严格模式下不能作为标识符的未来保留字。 */
     private val STRICT_FUTURE_RESERVED_WORDS = setOf(
@@ -134,6 +154,68 @@ class Parser(
         }
         if (awaitIdentifierForbidden && name == "await") {
             throw error("Unexpected 'await' in class static block")
+        }
+    }
+
+    /** 声明私有名：禁止 #constructor，重名仅允许同静态性的 getter/setter 成对。 */
+    private fun declarePrivateName(
+        name: String,
+        kind: PrivateElementKind,
+        isStatic: Boolean,
+        range: SourceRange,
+    ) {
+        if (name == "constructor") {
+            throw ParseException("Classes may not have a private field named '#constructor'", range)
+        }
+        val scope = privateNameScopes.lastOrNull()
+            ?: throw ParseException("Private names are only allowed in class bodies", range)
+        val kinds = scope.declarations.getOrPut(name) { mutableSetOf() }
+        val kindsStaticness = scope.staticness.getOrPut(name) { mutableMapOf() }
+        val allowed = when {
+            kinds.isEmpty() -> true
+            kind == PrivateElementKind.GETTER && kinds == setOf(PrivateElementKind.SETTER) ->
+                kindsStaticness[PrivateElementKind.SETTER] == isStatic
+
+            kind == PrivateElementKind.SETTER && kinds == setOf(PrivateElementKind.GETTER) ->
+                kindsStaticness[PrivateElementKind.GETTER] == isStatic
+
+            else -> false
+        }
+        if (!allowed) {
+            throw ParseException("Identifier '#$name' has already been declared", range)
+        }
+        kinds.add(kind)
+        kindsStaticness[kind] = isStatic
+    }
+
+    /** 记录私有名引用；未声明检查在 class 体解析结束后统一完成。 */
+    private fun recordPrivateNameReference(name: String, range: SourceRange) {
+        val scope = privateNameScopes.lastOrNull()
+        if (scope == null) {
+            // 直接 eval：引用调用方词法作用域内的私有名
+            val external = externalPrivateNames
+            if (external != null && name in external) return
+            throw ParseException(
+                "Private field '#$name' must be declared in an enclosing class",
+                range,
+            )
+        }
+        scope.references.add(name to range)
+    }
+
+    /** 校验并合并子作用域引用；未解析的引用交给外层 class，最外层仍无声明则报错。 */
+    private fun closePrivateNameScope(scope: PrivateNameScope) {
+        for ((name, range) in scope.references) {
+            if (name in scope.declarations) continue
+            val parent = scope.parent
+            if (parent != null) {
+                parent.references.add(name to range)
+            } else if (externalPrivateNames?.contains(name) != true) {
+                throw ParseException(
+                    "Private field '#$name' must be declared in an enclosing class",
+                    range,
+                )
+            }
         }
     }
 
@@ -874,6 +956,9 @@ class Parser(
         classDerived = derived
         val members = mutableListOf<ClassMember>()
         var constructorSeen = false
+        // class 体是私有名的语法作用域（允许引用外层 class 的私有名）
+        val privateScope = PrivateNameScope(parent = privateNameScopes.lastOrNull())
+        privateNameScopes.add(privateScope)
         try {
             while (!check(TokenType.RBRACE) && !isAtEnd()) {
                 if (match(TokenType.SEMICOLON)) continue
@@ -945,7 +1030,13 @@ class Parser(
                     }
                 }
 
-                val (key, computed) = parsePropertyKeyExpression()
+                val (key, computed) = if (check(TokenType.PRIVATE_IDENTIFIER)) {
+                    val token = advance()
+                    PrivateIdentifier(token.value, token.range) to false
+                } else {
+                    parsePropertyKeyExpression()
+                }
+                val privateKey = key as? PrivateIdentifier
                 val keyName = when (key) {
                     is Identifier -> key.name
                     is StringLiteral -> key.value
@@ -984,6 +1075,9 @@ class Parser(
                     if (isStatic && !computed && keyName == "constructor") {
                         throw error("Classes may not have a field named 'constructor'")
                     }
+                    privateKey?.let {
+                        declarePrivateName(it.name, PrivateElementKind.FIELD, isStatic, it.range)
+                    }
                     var initializer: Expression? = null
                     if (match(TokenType.ASSIGN)) {
                         initializer = withFieldInitializerContext { parseAssignment() }
@@ -1015,6 +1109,14 @@ class Parser(
                     continue
                 }
 
+                privateKey?.let {
+                    val elementKind = when (kind) {
+                        ClassMemberKind.GET -> PrivateElementKind.GETTER
+                        ClassMemberKind.SET -> PrivateElementKind.SETTER
+                        else -> PrivateElementKind.METHOD
+                    }
+                    declarePrivateName(it.name, elementKind, isStatic, it.range)
+                }
                 consume(TokenType.LPAREN, "Expected '(' in class member")
                 val allowSuperCall = isConstructor && classDerived
                 val (params, bodyInfo) = withFunctionContext(true, allowSuperCall, true) {
@@ -1059,9 +1161,11 @@ class Parser(
             }
             consume(TokenType.RBRACE, "Expected '}' after class body")
         } finally {
+            privateNameScopes.removeAt(privateNameScopes.lastIndex)
             strict = outerStrict
             classDerived = outerDerived
         }
+        closePrivateNameScope(privateScope)
         return members
     }
 
@@ -1070,7 +1174,7 @@ class Parser(
         val token = peek(offset)
         return when {
             token.type in setOf(
-                TokenType.IDENTIFIER, TokenType.STRING,
+                TokenType.IDENTIFIER, TokenType.PRIVATE_IDENTIFIER, TokenType.STRING,
                 TokenType.NUMBER, TokenType.NUMBER_HEX,
                 TokenType.NUMBER_OCT, TokenType.NUMBER_BIN, TokenType.BIGINT,
                 TokenType.LBRACKET,
@@ -2234,14 +2338,41 @@ class Parser(
             ::parseComparison,
         )
 
-    private fun parseComparison(): Expression =
-        parseLeftAssociative(
-            setOf(
+    private fun parseComparison(): Expression {
+        // 私有名品牌检查：PrivateIdentifier in ShiftExpression 是关系表达式的一种，
+        // 结果可继续参与后续关系运算
+        var expression: Expression = if (check(TokenType.PRIVATE_IDENTIFIER)) {
+            val privateToken = advance()
+            if (!check(TokenType.IN)) {
+                throw error("Unexpected private name")
+            }
+            advance() // in
+            val right = parseShift()
+            recordPrivateNameReference(privateToken.value, privateToken.range)
+            PrivateInExpr(
+                privateToken.value,
+                right,
+                SourceRange(privateToken.range.start, right.range.end),
+            )
+        } else {
+            parseShift()
+        }
+        while (true) {
+            val operator = when (peek().type) {
                 TokenType.LT, TokenType.LTE, TokenType.GT, TokenType.GTE,
-                TokenType.IN, TokenType.INSTANCEOF,
-            ),
-            ::parseShift,
-        )
+                TokenType.IN, TokenType.INSTANCEOF -> advance()
+                else -> break
+            }
+            val right = parseShift()
+            expression = BinaryOp(
+                expression,
+                operator.value,
+                right,
+                SourceRange(expression.range.start, right.range.end),
+            )
+        }
+        return expression
+    }
 
     private fun parseShift(): Expression =
         parseLeftAssociative(
@@ -2321,6 +2452,11 @@ class Parser(
             TokenType.DELETE, TokenType.VOID -> {
                 advance()
                 val operand = parseUnary()
+                if (token.type == TokenType.DELETE && operand is MemberExpr &&
+                    operand.property is PrivateIdentifier
+                ) {
+                    throw error("Private fields can not be deleted")
+                }
                 if (token.type == TokenType.DELETE && strict && operand is Identifier) {
                     throw error("Delete of an unqualified identifier in strict mode")
                 }
@@ -2376,13 +2512,27 @@ class Parser(
                 }
 
                 match(TokenType.DOT) -> {
-                    val propertyToken = parsePropertyName()
-                    expression = MemberExpr(
-                        obj = expression,
-                        property = Identifier(propertyToken.value, propertyToken.range),
-                        computed = false,
-                        range = SourceRange(expression.range.start, propertyToken.range.end),
-                    )
+                    if (check(TokenType.PRIVATE_IDENTIFIER)) {
+                        if (expression is SuperExpr) {
+                            throw error("'super' keyword unexpected here")
+                        }
+                        val privateToken = advance()
+                        recordPrivateNameReference(privateToken.value, privateToken.range)
+                        expression = MemberExpr(
+                            obj = expression,
+                            property = PrivateIdentifier(privateToken.value, privateToken.range),
+                            computed = false,
+                            range = SourceRange(expression.range.start, privateToken.range.end),
+                        )
+                    } else {
+                        val propertyToken = parsePropertyName()
+                        expression = MemberExpr(
+                            obj = expression,
+                            property = Identifier(propertyToken.value, propertyToken.range),
+                            computed = false,
+                            range = SourceRange(expression.range.start, propertyToken.range.end),
+                        )
+                    }
                 }
 
                 match(TokenType.LBRACKET) -> {
@@ -2440,13 +2590,24 @@ class Parser(
         while (true) {
             when {
                 match(TokenType.DOT) -> {
-                    val propertyToken = parsePropertyName()
-                    constructor = MemberExpr(
-                        constructor,
-                        Identifier(propertyToken.value, propertyToken.range),
-                        false,
-                        SourceRange(constructor.range.start, propertyToken.range.end),
-                    )
+                    if (check(TokenType.PRIVATE_IDENTIFIER)) {
+                        val privateToken = advance()
+                        recordPrivateNameReference(privateToken.value, privateToken.range)
+                        constructor = MemberExpr(
+                            constructor,
+                            PrivateIdentifier(privateToken.value, privateToken.range),
+                            false,
+                            SourceRange(constructor.range.start, privateToken.range.end),
+                        )
+                    } else {
+                        val propertyToken = parsePropertyName()
+                        constructor = MemberExpr(
+                            constructor,
+                            Identifier(propertyToken.value, propertyToken.range),
+                            false,
+                            SourceRange(constructor.range.start, propertyToken.range.end),
+                        )
+                    }
                 }
 
                 match(TokenType.LBRACKET) -> {
@@ -2503,6 +2664,18 @@ class Parser(
                     )
                 }
 
+                check(TokenType.PRIVATE_IDENTIFIER) -> {
+                    val privateToken = advance()
+                    recordPrivateNameReference(privateToken.value, privateToken.range)
+                    operations.add(
+                        OptionalChainMember(
+                            property = PrivateIdentifier(privateToken.value, privateToken.range),
+                            computed = false,
+                            optional = true,
+                        )
+                    )
+                }
+
                 else -> {
                     val propertyToken = parsePropertyName()
                     operations.add(
@@ -2522,14 +2695,26 @@ class Parser(
                     }
 
                     match(TokenType.DOT) -> {
-                        val propertyToken = parsePropertyName()
-                        operations.add(
-                            OptionalChainMember(
-                                property = Identifier(propertyToken.value, propertyToken.range),
-                                computed = false,
-                                optional = false,
+                        if (check(TokenType.PRIVATE_IDENTIFIER)) {
+                            val privateToken = advance()
+                            recordPrivateNameReference(privateToken.value, privateToken.range)
+                            operations.add(
+                                OptionalChainMember(
+                                    property = PrivateIdentifier(privateToken.value, privateToken.range),
+                                    computed = false,
+                                    optional = false,
+                                )
                             )
-                        )
+                        } else {
+                            val propertyToken = parsePropertyName()
+                            operations.add(
+                                OptionalChainMember(
+                                    property = Identifier(propertyToken.value, propertyToken.range),
+                                    computed = false,
+                                    optional = false,
+                                )
+                            )
+                        }
                     }
 
                     match(TokenType.LBRACKET) -> {
@@ -2654,6 +2839,9 @@ class Parser(
                 advance()
                 Identifier("let", token.range)
             }
+
+            TokenType.PRIVATE_IDENTIFIER ->
+                throw error("Unexpected private name")
 
             TokenType.IDENTIFIER -> {
                 validateIdentifierToken(token)

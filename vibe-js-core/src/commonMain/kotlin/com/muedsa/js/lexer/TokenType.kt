@@ -11,6 +11,7 @@ enum class TokenType {
     STRING,     // 字符串字面量，如 "hello", 'world'
     NULL,       // null 字面量
     IDENTIFIER, // 标识符，如变量名、函数名等
+    PRIVATE_IDENTIFIER, // 私有名，如 #x（仅 class 内合法）
 
     // 关键字 (Keywords)
     VAR,        // var 声明变量关键字

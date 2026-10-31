@@ -42,6 +42,8 @@ import com.muedsa.js.ast.OptionalChainCall
 import com.muedsa.js.ast.OptionalChainExpr
 import com.muedsa.js.ast.OptionalChainMember
 import com.muedsa.js.ast.Parameter
+import com.muedsa.js.ast.PrivateIdentifier
+import com.muedsa.js.ast.PrivateInExpr
 import com.muedsa.js.ast.Program
 import com.muedsa.js.ast.PropertyKind
 import com.muedsa.js.ast.RegExpLiteral
@@ -96,6 +98,10 @@ import com.muedsa.js.runtime.value.JSWeakMap
 import com.muedsa.js.runtime.value.JSWeakSet
 import com.muedsa.js.runtime.value.NumberFormatting
 import com.muedsa.js.runtime.value.PropertyDescriptor
+import com.muedsa.js.runtime.value.PrivateElementKind
+import com.muedsa.js.runtime.value.PrivateEnvironment
+import com.muedsa.js.runtime.value.PrivateName
+import com.muedsa.js.runtime.value.PrivateSlot
 import com.muedsa.js.runtime.value.PropertyKey
 import com.muedsa.js.runtime.value.ThisBindingSource
 import kotlinx.coroutines.CoroutineStart
@@ -130,6 +136,9 @@ class Interpreter(
 
     /** NamedEvaluation 的名称提示栈：匿名 class 求值前压入，供静态字段/块读取类名。 */
     private val classNameHints = ArrayList<String>()
+
+    /** 类求值期间生效的私有名环境（计算属性名求值等场景）。 */
+    private val privateEnvironmentOverrides = ArrayList<PrivateEnvironment>()
 
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
@@ -227,6 +236,12 @@ class Interpreter(
                 newTargetContext = callerFunction != null && callerFunction.allowsNewTarget,
                 // 字段初始化器/静态块（含其箭头函数）内的直接 eval 同样禁止 arguments
                 argumentsForbiddenContext = callerFunction?.forbidsArguments == true,
+                // 直接 eval 可引用调用方词法作用域内的私有名
+                evalPrivateNames = callerFunction?.privateEnvironment?.let { environment ->
+                    val names = mutableSetOf<String>()
+                    environment.collectNames(names)
+                    names
+                } ?: emptySet(),
             ).parseProgram()
         } catch (error: ParseException) {
             syntaxError(error.message ?: "Invalid eval code")
@@ -970,6 +985,7 @@ class Interpreter(
         allowsNewTarget: Boolean = true,
         forbidsArguments: Boolean = false,
         namedEvaluationHint: String? = null,
+        privateEnvironment: PrivateEnvironment? = null,
         isClassConstructor: Boolean = false,
         isDefaultDerivedConstructor: Boolean = false,
         homeObject: JSObject? = null,
@@ -1005,6 +1021,7 @@ class Interpreter(
             allowsNewTarget = allowsNewTarget,
             forbidsArguments = forbidsArguments,
             namedEvaluationHint = namedEvaluationHint,
+            privateEnvironment = privateEnvironment,
             isClassConstructor = isClassConstructor,
             isDefaultDerivedConstructor = isDefaultDerivedConstructor,
             homeObject = homeObject,
@@ -1219,6 +1236,8 @@ class Interpreter(
                 varDeclarations = declaration.varDeclarations,
                 functionDeclarations = declaration.functionDeclarations,
                 isAsync = declaration.isAsync,
+                // 函数声明同样闭包捕获当前上下文的私有名环境
+                privateEnvironment = frame?.function?.privateEnvironment,
             )
             varScope.createVarBinding(declaration.name, function)
         }
@@ -2053,6 +2072,7 @@ class Interpreter(
                         functionDeclarations = expression.functionDeclarations,
                         isAsync = expression.isAsync,
                         isMethod = expression.isMethodDefinition,
+                        privateEnvironment = currentFrame.function?.privateEnvironment,
                     )
                 } else {
                     // ES5 13：具名函数表达式的名字只在其自身作用域内可见（用于递归），
@@ -2067,6 +2087,7 @@ class Interpreter(
                         varDeclarations = expression.varDeclarations,
                         functionDeclarations = expression.functionDeclarations,
                         isAsync = expression.isAsync,
+                        privateEnvironment = currentFrame.function?.privateEnvironment,
                     )
                     nameEnvironment.createFunctionNameBinding(name, function)
                     function
@@ -2097,10 +2118,15 @@ class Interpreter(
                 allowsNewTarget = expression.allowsNewTarget,
                 homeObject = currentFrame.function?.homeObject,
                 superBase = currentFrame.function?.superBase,
+                privateEnvironment = currentFrame.function?.privateEnvironment,
             )
 
             is MemberExpr -> {
-                if (expression.obj is SuperExpr) {
+                val privateName = (expression.property as? PrivateIdentifier)?.name
+                if (privateName != null) {
+                    val base = evaluate(expression.obj)
+                    getPrivateMember(base, resolvePrivateName(privateName))
+                } else if (expression.obj is SuperExpr) {
                     if (!currentFrame.thisInitialized) {
                         throw referenceError("Must call super constructor before accessing 'super'")
                     }
@@ -2110,6 +2136,17 @@ class Interpreter(
                     getV(base, memberKey(expression))
                 }
             }
+
+            is PrivateInExpr -> {
+                val target = evaluate(expression.objectExpression)
+                val obj = target as? JSObject
+                    ?: throw typeError("Right-hand side of 'in' must be an object")
+                val name = resolvePrivateName(expression.name)
+                JSBoolean.getJsBoolean(obj.findPrivateSlot(name) != null)
+            }
+
+            is PrivateIdentifier ->
+                throw syntaxError("Unexpected private name")
 
             is OptionalChainExpr -> evaluateOptionalChain(expression)
             is CallExpr -> evaluateCall(expression)
@@ -2305,6 +2342,87 @@ class Interpreter(
         }
     }
 
+    /** 在指定私有名环境下执行块（计算属性名等类定义阶段求值）。 */
+    private suspend fun <T> withPrivateNameEnvironment(
+        environment: PrivateEnvironment,
+        block: suspend () -> T,
+    ): T {
+        privateEnvironmentOverrides.add(environment)
+        return try {
+            block()
+        } finally {
+            privateEnvironmentOverrides.removeAt(privateEnvironmentOverrides.lastIndex)
+        }
+    }
+
+    /** 解析私有名引用（Parser 已在静态层面保证声明存在）。 */
+    private fun resolvePrivateName(name: String): PrivateName =
+        privateEnvironmentOverrides.lastOrNull()?.resolve(name)
+            ?: currentFrame.function?.privateEnvironment?.resolve(name)
+            ?: throw referenceError("Private field '#$name' must be declared in an enclosing class")
+
+    /** 品牌检查：接收者必须拥有该私有名对应的槽位。 */
+    private fun requirePrivateSlot(receiver: JSValue, name: PrivateName): PrivateSlot {
+        val missing = {
+            typeError(
+                "Cannot read private member #${name.description} from an object " +
+                    "whose class did not declare it"
+            )
+        }
+        val obj = receiver as? JSObject ?: throw missing()
+        return obj.findPrivateSlot(name) ?: throw missing()
+    }
+
+    /** PrivateFieldAdd：不可重复初始化，且接收者必须可扩展。 */
+    private fun addPrivateFieldOrThrow(receiver: JSObject, name: PrivateName, value: JSValue) {
+        if (receiver.findPrivateSlot(name) != null) {
+            throw typeError("Cannot initialize #${name.description} twice on the same object")
+        }
+        if (!receiver.extensible) {
+            throw typeError("Cannot add private field to a non-extensible object")
+        }
+        receiver.definePrivateField(name, value)
+    }
+
+    /** PrivateMethodOrAccessorAdd：接收者必须可扩展，且不可重复安装。 */
+    private fun addPrivateMethodOrThrow(receiver: JSObject, name: PrivateName, slot: PrivateSlot) {
+        if (!receiver.extensible) {
+            throw typeError("Cannot add private method to a non-extensible object")
+        }
+        if (receiver.findPrivateSlot(name) != null) {
+            throw typeError("Cannot initialize #${name.description} twice on the same object")
+        }
+        receiver.putPrivateSlot(name, slot)
+    }
+
+    /** 读取私有成员（字段/方法返回槽位值，访问器调用 getter）。 */
+    private suspend fun getPrivateMember(receiver: JSValue, name: PrivateName): JSValue {
+        val slot = requirePrivateSlot(receiver, name)
+        return when (slot.kind) {
+            PrivateElementKind.FIELD, PrivateElementKind.METHOD -> slot.value ?: JSUndefined
+            PrivateElementKind.ACCESSOR -> {
+                val getter = slot.getter
+                    ?: throw typeError("'#${name.description}' was defined without a getter")
+                callFunction(getter, receiver, emptyList())
+            }
+        }
+    }
+
+    /** 写入私有成员（字段可写；方法只读；访问器调用 setter）。 */
+    private suspend fun setPrivateMember(receiver: JSValue, name: PrivateName, value: JSValue) {
+        val slot = requirePrivateSlot(receiver, name)
+        when (slot.kind) {
+            PrivateElementKind.FIELD -> slot.value = value
+            PrivateElementKind.METHOD ->
+                throw typeError("Cannot assign to read only property '#${name.description}'")
+            PrivateElementKind.ACCESSOR -> {
+                val setter = slot.setter
+                    ?: throw typeError("'#${name.description}' was defined without a setter")
+                callFunction(setter, receiver, listOf(value))
+            }
+        }
+    }
+
     /** 为匿名函数/类设置推断名称；具名函数表达式保持自己的名字。 */
     private fun applyInferredFunctionName(expression: Expression?, value: JSValue, name: String) {
         if (expression == null || !isAnonymousFunctionDefinition(expression)) return
@@ -2325,6 +2443,13 @@ class Interpreter(
             PropertyKind.SET -> "set $base"
             else -> base
         }
+    }
+
+    /** 私有方法/访问器的函数名（带 # 前缀）。 */
+    private fun privateMemberFunctionName(name: String, kind: ClassMemberKind): String = when (kind) {
+        ClassMemberKind.GET -> "get #$name"
+        ClassMemberKind.SET -> "set #$name"
+        else -> "#$name"
     }
 
     /** 类成员方法名称（访问器带 get/set 前缀）。 */
@@ -2404,6 +2529,8 @@ class Interpreter(
             }
         )
         val classEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+        // class 私有名环境：成员函数与嵌套 class 通过闭包捕获
+        val privateEnvironment = PrivateEnvironment(parent = currentFrame.function?.privateEnvironment)
 
         val constructorMember = members.firstOrNull { it.kind == ClassMemberKind.CONSTRUCTOR }
         val constructor = if (constructorMember != null) {
@@ -2419,6 +2546,7 @@ class Interpreter(
                 superConstructor = superClassValue,
                 superBase = superPrototype,
                 functionPrototypeObject = prototype,
+                privateEnvironment = privateEnvironment,
             )
         } else {
             createFunction(
@@ -2432,6 +2560,7 @@ class Interpreter(
                 superConstructor = superClassValue,
                 superBase = superPrototype,
                 functionPrototypeObject = prototype,
+                privateEnvironment = privateEnvironment,
             )
         }
 
@@ -2445,14 +2574,30 @@ class Interpreter(
         // 静态字段与静态块按源码顺序执行；实例字段在构造时按源码顺序初始化
         val staticElements = ArrayList<StaticElement>()
         val instanceFields = ArrayList<InstanceField>()
+        val instancePrivateMethods = LinkedHashMap<PrivateName, PrivateSlot>()
+        val staticPrivateSlots = LinkedHashMap<PrivateName, PrivateSlot>()
+        val privateAccessorSlots = LinkedHashMap<PrivateName, PrivateSlot>()
+        // 私有名在整个 class 体内可见：先声明全部名字，再求值计算属性名
+        for (member in members) {
+            val key = member.key as? PrivateIdentifier ?: continue
+            privateEnvironment.declare(key.name)
+        }
         for (member in members) {
             if (member.kind == ClassMemberKind.CONSTRUCTOR) continue
             if (member.kind == ClassMemberKind.STATIC_BLOCK) {
-                staticElements.add(StaticElement(member, null))
+                staticElements.add(StaticElement(member, null, null))
                 continue
             }
-            val key = if (member.computed) {
-                toPropertyKey(evaluate(member.key))
+            val privateKey = member.key as? PrivateIdentifier
+            val privateName = privateKey?.let { privateEnvironment.declare(it.name) }
+            val key = if (privateName != null) {
+                // 仅作为函数名与记录键使用，不作为公开属性安装
+                PropertyKey.Str("#${privateName.description}")
+            } else if (member.computed) {
+                // 计算属性名求值时，私有名引用解析到当前 class 的环境
+                withPrivateNameEnvironment(privateEnvironment) {
+                    toPropertyKey(evaluate(member.key))
+                }
             } else {
                 PropertyKey.Str(propertyName(member.key))
             }
@@ -2462,15 +2607,23 @@ class Interpreter(
             } else {
                 superPrototype
             }
+            val nameHint = if (privateName != null) {
+                "#${privateName.description}"
+            } else {
+                functionNameFromPropertyKey(key)
+            }
             if (member.kind == ClassMemberKind.FIELD) {
                 if (member.isStatic) {
-                    staticElements.add(StaticElement(member, key))
+                    staticElements.add(
+                        StaticElement(member, if (privateName == null) key else null, privateName)
+                    )
                 } else {
                     // 实例字段初始化器在类求值时创建一次，构造实例时复用
                     instanceFields.add(
                         InstanceField(
-                            key,
-                            createFunction(
+                            key = if (privateName == null) key else null,
+                            privateName = privateName,
+                            initializer = createFunction(
                                 name = "",
                                 params = emptyList(),
                                 body = null,
@@ -2481,7 +2634,8 @@ class Interpreter(
                                 superBase = superBase,
                                 homeObject = target,
                                 forbidsArguments = true,
-                                namedEvaluationHint = functionNameFromPropertyKey(key),
+                                namedEvaluationHint = nameHint,
+                                privateEnvironment = privateEnvironment,
                             ),
                         )
                     )
@@ -2489,7 +2643,11 @@ class Interpreter(
                 continue
             }
             val function = createFunction(
-                name = methodFunctionName(key, member.kind),
+                name = if (privateName != null) {
+                    privateMemberFunctionName(privateName.description, member.kind)
+                } else {
+                    methodFunctionName(key, member.kind)
+                },
                 params = member.value.params,
                 body = member.value.body,
                 closure = classEnvironment,
@@ -2500,7 +2658,31 @@ class Interpreter(
                 isMethod = true,
                 superBase = superBase,
                 homeObject = target,
+                privateEnvironment = privateEnvironment,
             )
+            if (privateName != null) {
+                // 私有方法/访问器不安装为公开属性，而是安装到实例/构造器的私有槽位
+                val slot = if (member.kind == ClassMemberKind.METHOD) {
+                    PrivateSlot(PrivateElementKind.METHOD).also { it.value = function }
+                } else {
+                    val existing = privateAccessorSlots.getOrPut(privateName) {
+                        PrivateSlot(PrivateElementKind.ACCESSOR)
+                    }
+                    if (member.kind == ClassMemberKind.GET) {
+                        existing.getter = function
+                    } else {
+                        existing.setter = function
+                    }
+                    existing
+                }
+                if (member.isStatic) {
+                    // getter/setter 共享同一槽位，按名字去重后再安装
+                    staticPrivateSlots[privateName] = slot
+                } else {
+                    instancePrivateMethods[privateName] = slot
+                }
+                continue
+            }
             when (member.kind) {
                 ClassMemberKind.GET, ClassMemberKind.SET -> {
                     val existing = target.getOwnProperty(key)
@@ -2530,11 +2712,16 @@ class Interpreter(
                 ClassMemberKind.FIELD -> Unit
             }
         }
+        for ((name, slot) in staticPrivateSlots) {
+            addPrivateMethodOrThrow(constructor, name, slot)
+        }
         constructor.instanceFields = instanceFields
+        constructor.privateMethods = instancePrivateMethods.map { it.key to it.value }
 
         // 静态字段与静态初始化块按源码顺序执行：this 为类构造器，super 基为父构造器
         for (element in staticElements) {
             val member = element.member
+            val privateName = element.privateName
             val function = createFunction(
                 name = "",
                 params = emptyList(),
@@ -2548,32 +2735,51 @@ class Interpreter(
                 superBase = superClassValue as? JSObject,
                 homeObject = constructor,
                 forbidsArguments = true,
-                namedEvaluationHint = if (member.kind == ClassMemberKind.FIELD) {
-                    functionNameFromPropertyKey(element.key!!)
-                } else {
-                    null
+                namedEvaluationHint = when {
+                    privateName != null -> "#${privateName.description}"
+                    member.kind == ClassMemberKind.FIELD ->
+                        functionNameFromPropertyKey(element.key!!)
+
+                    else -> null
                 },
+                privateEnvironment = privateEnvironment,
             )
             val value = callFunction(function, constructor, emptyList())
             if (member.kind == ClassMemberKind.FIELD) {
-                // DefineField：CreateDataPropertyOrThrow 语义
-                defineFieldOrThrow(constructor, element.key!!, value)
+                if (privateName != null) {
+                    addPrivateFieldOrThrow(constructor, privateName, value)
+                } else {
+                    // DefineField：CreateDataPropertyOrThrow 语义
+                    defineFieldOrThrow(constructor, element.key!!, value)
+                }
             }
         }
 
         return constructor
     }
 
-    /** 类求值时的静态元素（静态字段或静态初始化块）；字段携带已求值的属性键。 */
-    private class StaticElement(val member: ClassMember, val key: PropertyKey?)
+    /** 类求值时的静态元素（静态字段或静态初始化块）；字段携带属性键或私有名。 */
+    private class StaticElement(
+        val member: ClassMember,
+        val key: PropertyKey?,
+        val privateName: PrivateName?,
+    )
 
-    /** 在构造实例时按源码顺序执行 class 实例字段初始化器（DefineField 语义）。 */
+    /** 在构造实例时安装私有方法/访问器，并按源码顺序执行字段初始化器。 */
     private suspend fun initializeInstanceFields(function: JSFunction, instance: JSValue) {
-        if (function.instanceFields.isEmpty()) return
         val receiver = instance as? JSObject ?: return
+        // 私有方法/访问器先于字段安装，字段初始化器内即可通过品牌检查访问
+        for ((name, slot) in function.privateMethods) {
+            addPrivateMethodOrThrow(receiver, name, slot)
+        }
         for (field in function.instanceFields) {
             val value = callFunction(field.initializer, receiver, emptyList())
-            defineFieldOrThrow(receiver, field.key, value)
+            val key = field.key
+            if (key != null) {
+                defineFieldOrThrow(receiver, key, value)
+            } else {
+                addPrivateFieldOrThrow(receiver, field.privateName!!, value)
+            }
         }
     }
 
@@ -2747,8 +2953,12 @@ class Interpreter(
         if (calleeExpression is MemberExpr) {
             // 方法调用：this 为成员访问的基对象
             val base = evaluate(calleeExpression.obj)
-            val key = memberKey(calleeExpression)
-            val function = getV(base, key)
+            val privateName = (calleeExpression.property as? PrivateIdentifier)?.name
+            val function = if (privateName != null) {
+                getPrivateMember(base, resolvePrivateName(privateName))
+            } else {
+                getV(base, memberKey(calleeExpression))
+            }
             val arguments = evaluateArguments(expression.arguments)
             if (!isCallable(function)) {
                 throw typeError(
@@ -2833,14 +3043,19 @@ class Interpreter(
                         return OptionalChainResult(JSUndefined, null, false, true)
                     }
                     val base = value
-                    val key = if (operation.computed) {
-                        toPropertyKey(evaluate(operation.property))
-                    } else {
-                        PropertyKey.Str((operation.property as Identifier).name)
-                    }
+                    val privateName = (operation.property as? PrivateIdentifier)?.name
                     receiver = base
                     hasReceiver = true
-                    value = getV(base, key)
+                    value = if (privateName != null) {
+                        getPrivateMember(base, resolvePrivateName(privateName))
+                    } else {
+                        val key = if (operation.computed) {
+                            toPropertyKey(evaluate(operation.property))
+                        } else {
+                            PropertyKey.Str((operation.property as Identifier).name)
+                        }
+                        getV(base, key)
+                    }
                 }
 
                 is OptionalChainCall -> {
@@ -2991,6 +3206,37 @@ class Interpreter(
                         }
                     }
                 }
+                val privateMember = (target.property as? PrivateIdentifier)?.name
+                if (privateMember != null) {
+                    val base = evaluate(target.obj)
+                    val name = resolvePrivateName(privateMember)
+                    return when {
+                        operator == "=" -> {
+                            val value = evaluate(expression.value)
+                            setPrivateMember(base, name, value)
+                            value
+                        }
+
+                        isLogicalAssignment(operator) -> {
+                            val current = getPrivateMember(base, name)
+                            if (!shouldAssignLogical(operator, current)) {
+                                current
+                            } else {
+                                val value = evaluate(expression.value)
+                                setPrivateMember(base, name, value)
+                                value
+                            }
+                        }
+
+                        else -> {
+                            val current = getPrivateMember(base, name)
+                            val right = evaluate(expression.value)
+                            val result = applyBinary(operator.dropLast(1), current, right)
+                            setPrivateMember(base, name, result)
+                            result
+                        }
+                    }
+                }
                 // 引用求值：base 与计算属性表达式先求值，ToPropertyKey 延迟到读写时；
                 // null/undefined 基对象在键转换之前抛 TypeError（规范 PutValue/GetValue 顺序）
                 val reference = preEvaluateMemberReference(target)
@@ -3060,12 +3306,16 @@ class Interpreter(
         val base: JSValue,
         val staticKey: PropertyKey?,
         val keyValue: JSValue?,
+        val privateName: String? = null,
     )
 
     private suspend fun preEvaluateMemberReference(target: Expression): MemberReference? = when (target) {
         is MemberExpr -> {
             val base = evaluate(target.obj)
-            if (target.computed) {
+            val privateMember = (target.property as? PrivateIdentifier)?.name
+            if (privateMember != null) {
+                MemberReference(base, null, null, privateMember)
+            } else if (target.computed) {
                 MemberReference(base, null, evaluate(target.property))
             } else {
                 MemberReference(base, memberKey(target), null)
@@ -3212,13 +3462,25 @@ class Interpreter(
                 for (element in pattern.properties) {
                     when (element) {
                         is ObjectProperty -> {
+                            // 赋值模式下目标引用（含 this 检查）先于读取源属性
+                            val targetReference = if (kind == null) {
+                                preEvaluateMemberReference(element.value)
+                            } else {
+                                null
+                            }
                             val key = if (element.computed) {
                                 toPropertyKey(evaluate(element.key))
                             } else {
                                 PropertyKey.Str(propertyName(element.key))
                             }
                             usedKeys.add(key)
-                            bindPattern(element.value, getV(source, key), kind, environment)
+                            bindPattern(
+                                element.value,
+                                getV(source, key),
+                                kind,
+                                environment,
+                                targetReference,
+                            )
                         }
 
                         is ObjectSpreadProperty -> {
@@ -3242,11 +3504,17 @@ class Interpreter(
 
             is MemberExpr -> {
                 if (kind != null) throw syntaxError("Invalid destructuring declaration target")
+                val privateMember = reference?.privateName
+                    ?: (pattern.property as? PrivateIdentifier)?.name
                 val base = reference?.base ?: evaluate(pattern.obj)
-                val key = reference?.let { ref ->
-                    ref.staticKey ?: toPropertyKey(ref.keyValue ?: JSUndefined)
-                } ?: memberKey(pattern)
-                putV(base, key, value, currentFrame.strict)
+                if (privateMember != null) {
+                    setPrivateMember(base, resolvePrivateName(privateMember), value)
+                } else {
+                    val key = reference?.let { ref ->
+                        ref.staticKey ?: toPropertyKey(ref.keyValue ?: JSUndefined)
+                    } ?: memberKey(pattern)
+                    putV(base, key, value, currentFrame.strict)
+                }
             }
 
             else -> throw syntaxError("Invalid destructuring target")
@@ -3384,12 +3652,22 @@ class Interpreter(
 
             is MemberExpr -> {
                 val base = evaluate(target.obj)
-                val key = memberKey(target)
-                val oldValue = getV(base, key)
-                val oldNumber = toNumber(oldValue)
-                val newValue = JSNumber(oldNumber + delta)
-                putV(base, key, newValue, currentFrame.strict)
-                if (expression.prefix) newValue else JSNumber(oldNumber)
+                val privateMember = (target.property as? PrivateIdentifier)?.name
+                if (privateMember != null) {
+                    val name = resolvePrivateName(privateMember)
+                    val oldValue = getPrivateMember(base, name)
+                    val oldNumber = toNumber(oldValue)
+                    val newValue = JSNumber(oldNumber + delta)
+                    setPrivateMember(base, name, newValue)
+                    if (expression.prefix) newValue else JSNumber(oldNumber)
+                } else {
+                    val key = memberKey(target)
+                    val oldValue = getV(base, key)
+                    val oldNumber = toNumber(oldValue)
+                    val newValue = JSNumber(oldNumber + delta)
+                    putV(base, key, newValue, currentFrame.strict)
+                    if (expression.prefix) newValue else JSNumber(oldNumber)
+                }
             }
 
             else -> throw syntaxError("Invalid update target")
@@ -3763,8 +4041,12 @@ class Interpreter(
             is Identifier -> assignIdentifier(target.name, value)
             is MemberExpr -> {
                 val base = evaluate(target.obj)
-                val key = memberKey(target)
-                putV(base, key, value, currentFrame.strict)
+                val privateMember = (target.property as? PrivateIdentifier)?.name
+                if (privateMember != null) {
+                    setPrivateMember(base, resolvePrivateName(privateMember), value)
+                } else {
+                    putV(base, memberKey(target), value, currentFrame.strict)
+                }
             }
 
             is ArrayLiteral, is ObjectLiteral ->
