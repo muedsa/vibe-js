@@ -4491,7 +4491,8 @@ class Interpreter(
             namedAnalysis.hasModifiers || namedGroupNeedsFallback ||
             hasLookbehind(pattern) || hasNumericBackReference(pattern) ||
             ('u' in flags && hasUnicodePropertyEscape(pattern)) ||
-            hasWhitespaceEscape(pattern) || hasLiteralBrace(enginePattern) ||
+            hasWhitespaceEscape(pattern) || hasSurrogatePattern(pattern) ||
+            hasLiteralBrace(enginePattern) ||
             hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
         ) {
             buildFallback()
@@ -4584,6 +4585,45 @@ class Interpreter(
                 c == '}' -> return true
                 else -> index++
             }
+        }
+        return false
+    }
+
+    /**
+     * 是否包含孤立代理项或 `\uXXXX` 代理项转义。
+     *
+     * Java Regex 按码点迭代，无法复现 JS 的码元语义；此类模式统一回退。
+     */
+    private fun hasSurrogatePattern(pattern: String): Boolean {
+        var index = 0
+        while (index < pattern.length) {
+            val c = pattern[index]
+            if (c == '\\') {
+                val next = pattern.getOrNull(index + 1)
+                if (next == 'u' && pattern.getOrNull(index + 2) != '{' &&
+                    index + 5 < pattern.length
+                ) {
+                    val value = pattern.substring(index + 2, index + 6).toIntOrNull(16)
+                    if (value != null && value in 0xD800..0xDFFF) return true
+                }
+                index += 2
+                continue
+            }
+            if (c.isHighSurrogate()) {
+                if (index + 1 < pattern.length && pattern[index + 1].isLowSurrogate()) {
+                    index += 2
+                    continue
+                }
+                return true
+            }
+            if (c.isLowSurrogate()) {
+                if (index > 0 && pattern[index - 1].isHighSurrogate()) {
+                    index++
+                    continue
+                }
+                return true
+            }
+            index++
         }
         return false
     }

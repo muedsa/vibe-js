@@ -705,8 +705,6 @@ private class Test262Runner(
             "test/built-ins/AsyncIteratorPrototype/",
             "-from-generator-function-declaration.js",
             "-from-yield-expression.js",
-            // 孤立代理项匹配依赖引擎码元语义（当前 Kotlin Regex 近似）
-            "test/built-ins/RegExp/prototype/Symbol.match/builtin-infer-unicode.js",
             // V8/最新规范允许子类实例调用 RegExp.prototype.compile，测试基于旧草案
             "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
             // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
