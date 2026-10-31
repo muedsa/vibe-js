@@ -562,7 +562,7 @@ private class Test262Runner(
         /**
          * ES2015 子集中排除的路径片段：
          * - 未实现的宿主型内建（ArrayBuffer/DataView/TypedArray 等）；
-         * - 未暴露的迭代器内部原型；
+         * - 未实现的 AsyncIterator 原型；
          * - 内容依赖 Generator 语法的计算属性名用例（Generator 明确排除）。
          */
         private val es2015ExcludedPathFragments = listOf(
@@ -575,11 +575,6 @@ private class Test262Runner(
             // 依赖 TypedArray 的 concat 大型用例
             "large-typed-array.js",
             "small-typed-array.js",
-            "test/built-ins/ArrayIteratorPrototype/",
-            "test/built-ins/StringIteratorPrototype/",
-            "test/built-ins/MapIteratorPrototype/",
-            "test/built-ins/SetIteratorPrototype/",
-            "test/built-ins/RegExpStringIteratorPrototype/",
             "test/built-ins/AsyncIteratorPrototype/",
             "-from-generator-function-declaration.js",
             "-from-yield-expression.js",

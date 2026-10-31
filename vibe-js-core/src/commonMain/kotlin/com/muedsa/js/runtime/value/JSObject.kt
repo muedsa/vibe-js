@@ -22,6 +22,14 @@ open class JSObject(
     var extensible: Boolean = true
         private set
 
+    /**
+     * 解释器内部状态槽。
+     *
+     * 用于承载规范中的内部槽（如迭代器的 [[Iterated]] / [[NextIndex]]），
+     * 不参与属性枚举，也不会暴露给脚本代码。
+     */
+    var internalState: Any? = null
+
     override val isPrimitive: Boolean = false
 
     override fun toPrimitiveBoolean(): Boolean = true

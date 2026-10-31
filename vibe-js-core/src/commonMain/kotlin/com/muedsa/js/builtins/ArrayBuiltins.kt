@@ -1064,13 +1064,12 @@ object ArrayBuiltins {
 
 
         val valuesIterator = BuiltinHelpers.method(intrinsics, "values", 0) { interpreter, thisValue, _ ->
-            val array = requireArray(interpreter, thisValue, "Array.prototype.values")
-            // 快照数组元素；不能调用 iterateValues（会通过 @@iterator 递归回到此方法）
-            val values = ArrayList<JSValue>(array.length)
-            for (index in 0 until array.length) {
-                values.add(array.getElement(index) ?: JSUndefined)
-            }
-            IteratorBuiltins.createIterator(intrinsics, values, intrinsics.arrayIteratorPrototype)
+            val target = iteratorTarget(interpreter, thisValue, "Array.prototype.values")
+            IteratorBuiltins.createArrayIterator(
+                intrinsics,
+                target,
+                IteratorBuiltins.ArrayIteratorKind.VALUES,
+            )
         }
         arrayPrototype.defineDataProperty(PropertyKey.Str("values"), valuesIterator)
         arrayPrototype.defineDataProperty(PropertyKey.Sym(intrinsics.symbolIterator), valuesIterator)
@@ -1078,27 +1077,37 @@ object ArrayBuiltins {
         arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("keys"),
             value = BuiltinHelpers.method(intrinsics, "keys", 0) { interpreter, thisValue, _ ->
-                val array = requireArray(interpreter, thisValue, "Array.prototype.keys")
-                val indices = (0 until array.length).map { JSNumber(it.toDouble()) }
-                IteratorBuiltins.createIterator(intrinsics, indices, intrinsics.arrayIteratorPrototype)
+                val target = iteratorTarget(interpreter, thisValue, "Array.prototype.keys")
+                IteratorBuiltins.createArrayIterator(
+                    intrinsics,
+                    target,
+                    IteratorBuiltins.ArrayIteratorKind.KEYS,
+                )
             },
         )
         arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("entries"),
             value = BuiltinHelpers.method(intrinsics, "entries", 0) { interpreter, thisValue, _ ->
-                val array = requireArray(interpreter, thisValue, "Array.prototype.entries")
-                val entries = (0 until array.length).map { index ->
-                    JSArray(
-                        mutableListOf<JSValue?>(
-                            JSNumber(index.toDouble()),
-                            array.getElement(index) ?: JSUndefined,
-                        ),
-                        prototype = intrinsics.arrayPrototype,
-                    )
-                }
-                IteratorBuiltins.createIterator(intrinsics, entries, intrinsics.arrayIteratorPrototype)
+                val target = iteratorTarget(interpreter, thisValue, "Array.prototype.entries")
+                IteratorBuiltins.createArrayIterator(
+                    intrinsics,
+                    target,
+                    IteratorBuiltins.ArrayIteratorKind.ENTRIES,
+                )
             },
         )
+    }
+
+    /** 数组迭代方法的接收者：任意对象按 array-like 实时读取，不做快照。 */
+    private suspend fun iteratorTarget(
+        interpreter: Interpreter,
+        thisValue: JSValue,
+        name: String,
+    ): JSObject {
+        if (thisValue is JSNull || thisValue is JSUndefined) {
+            interpreter.typeError("$name called on null or undefined")
+        }
+        return interpreter.toObject(thisValue)
     }
 
     private fun installStaticMethods(registry: BuiltinRegistry, arrayConstructor: com.muedsa.js.runtime.value.JSNativeFunction) {

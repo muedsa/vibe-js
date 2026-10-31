@@ -133,14 +133,14 @@
 
 | 指标 | 数值 |
 |---|---:|
-| 选中测试文件 | 6657 |
-| 执行次数（含 strict/sloppy） | 12340 |
-| 通过 | 12340（100%） |
+| 选中测试文件 | 6716 |
+| 执行次数（含 strict/sloppy） | 12450 |
+| 通过 | 12450（100%） |
 | 失败 | 0 |
 | 崩溃 | 0 |
 | 跳过测试文件 | 296（unsupported flag=13 + BigInt/Proxy/Generator=279 + harness Proxy=3 + print=1） |
 
-已收敛的语义簇包括：类与 super（未初始化 this、动态父构造器、内建子类化）、Promise capability/SpeciesConstructor/NewPromiseCapability（all/race/resolve/reject/then/catch/allSettled/any/withResolvers/try/finally，含 thenable 采纳作业）、AggregateError、%AsyncFunction% 构造器与原型链、async/await（含 thenable 采纳的微任务交错与参数 TDZ）、Array/Map/Set/RegExp/Promise 的 `@@species` 与 Array 方法的 ArraySpeciesCreate、`@@isConcatSpreadable`、ES2019 `flat`/`flatMap`、幂运算与逻辑赋值、`globalThis`、对象剩余/展开、数字分隔符字面量、Map/WeakMap `getOrInsert`/`getOrInsertComputed`、Error `cause`、ES2016+ 的 String/Array/Object 方法（含 replaceAll：@@replace 分派、GetSubstitution、空串与函数替换）（includes/at/trimStart/trimEnd/fromCodePoint/findLast/findLastIndex/isWellFormed/toWellFormed/hasOwn/fromEntries）与 change-array-by-copy（toReversed/toSorted/toSpliced/with）、RegExp 的 `@@match`/`@@replace`/`@@search`/`@@split`/`@@matchAll` 协议、`RegExp.escape`、String 方法分派与 RegExp String Iterator、可选链（含短路、this 保留与 delete）、`Symbol.unscopables` 与 with 绑定解析、Object/Map.groupBy 与字符串码点迭代、ES2025 Set 方法集（union/intersection/difference/symmetricDifference/isSubsetOf/isSupersetOf/isDisjointFrom）、Iterator helpers（`Iterator.from`、map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find，含参数校验先于读取 next、IfAbruptCloseIterator 与 helper 重入检测）、内建迭代器独立原型（Array/String/Map/Set/RegExp String Iterator）与 `Iterator.prototype` 的 constructor/@@toStringTag 访问器、for-in/for-of 继承细节、解构与迭代器关闭、Map/Set 实时迭代器、`__proto__` 与方法 HomeObject、RegExp/Date 原型访问器。剩余跳过项为 module/generator 标志、async 负数用例与 BigInt/Proxy/Generator（明确排除项）。
+已收敛的语义簇包括：类与 super（未初始化 this、动态父构造器、内建子类化）、Promise capability/SpeciesConstructor/NewPromiseCapability（all/race/resolve/reject/then/catch/allSettled/any/withResolvers/try/finally，含 thenable 采纳作业）、AggregateError、%AsyncFunction% 构造器与原型链、async/await（含 thenable 采纳的微任务交错与参数 TDZ）、Array/Map/Set/RegExp/Promise 的 `@@species` 与 Array 方法的 ArraySpeciesCreate、`@@isConcatSpreadable`、ES2019 `flat`/`flatMap`、幂运算与逻辑赋值、`globalThis`、对象剩余/展开、数字分隔符字面量、Map/WeakMap `getOrInsert`/`getOrInsertComputed`、Error `cause`、ES2016+ 的 String/Array/Object 方法（含 replaceAll：@@replace 分派、GetSubstitution、空串与函数替换）（includes/at/trimStart/trimEnd/fromCodePoint/findLast/findLastIndex/isWellFormed/toWellFormed/hasOwn/fromEntries）与 change-array-by-copy（toReversed/toSorted/toSpliced/with）、RegExp 的 `@@match`/`@@replace`/`@@search`/`@@split`/`@@matchAll` 协议、`RegExp.escape`、String 方法分派与 RegExp String Iterator、可选链（含短路、this 保留与 delete）、`Symbol.unscopables` 与 with 绑定解析、Object/Map.groupBy 与字符串码点迭代、ES2025 Set 方法集（union/intersection/difference/symmetricDifference/isSubsetOf/isSupersetOf/isDisjointFrom）、Iterator helpers（`Iterator.from`、map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find，含参数校验先于读取 next、IfAbruptCloseIterator 与 helper 重入检测）、内建迭代器独立原型（Array/String/Map/Set/RegExp String Iterator，next 位于共享原型并通过内部槽做品牌校验、实时读取目标 length/元素且在耗尽后保持 done）与 `Iterator.prototype` 的 constructor/@@toStringTag 访问器、for-in/for-of 继承细节、解构与迭代器关闭、Map/Set 实时迭代器、`__proto__` 与方法 HomeObject、RegExp/Date 原型访问器。剩余跳过项为 module/generator 标志、async 负数用例与 BigInt/Proxy/Generator（明确排除项）。
 
 ## 真实库冒烟与 Node 差分
 
@@ -183,7 +183,7 @@ Node 差分基线：**176 个用例**（数字格式化/转换、字符串 Unico
 
 ## 推进顺序
 
-1. Test262 ES5 子集与解析一致性基线已收敛；特性子集执行部分已全部通过（12340/12340，覆盖 ES2015 核心语义与已实现的 ES2016+ 语法/内建），后续可继续扩展特性选择范围（如更多 ES2022+ 方法）；
+1. Test262 ES5 子集与解析一致性基线已收敛；特性子集执行部分已全部通过（12450/12450，覆盖 ES2015 核心语义与已实现的 ES2016+ 语法/内建），后续可继续扩展特性选择范围（如更多 ES2022+ 方法）；
 2. 继续扩大真实库覆盖（已加入 semver/punycode/json5，后续补充更多 UMD 构建与用例）；
 3. 严格门禁已就绪：`-Pstrict` 在 parser / Test262 / 真实库 / 差分四个基线均通过（parser 的 Generator 项走显式允许列表）；接入 PR 触发需确认 CI 反馈成本后再启用。
 

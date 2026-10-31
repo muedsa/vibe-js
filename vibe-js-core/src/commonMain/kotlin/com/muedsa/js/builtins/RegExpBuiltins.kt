@@ -688,7 +688,7 @@ object RegExpBuiltins {
         }
     }
 
-    /** 创建 RegExp String Iterator；next 闭包持有 done 状态。 */
+    /** 创建 RegExp String Iterator；next 状态保存在实例内部槽。 */
     private fun createRegExpStringIterator(
         interpreter: Interpreter,
         prototype: JSObject,
@@ -697,7 +697,6 @@ object RegExpBuiltins {
         global: Boolean,
         fullUnicode: Boolean,
     ): JSObject {
-        val iterator = JSObject(prototype = prototype)
         var done = false
         fun result(value: JSValue, isDone: Boolean): JSObject {
             val resultObject = JSObject(prototype = interpreter.intrinsics.objectPrototype)
@@ -717,13 +716,12 @@ object RegExpBuiltins {
             )
             return resultObject
         }
-        val next = JSNativeFunction(
-            name = "next",
-            length = 0,
-            prototype = interpreter.intrinsics.functionPrototype,
+        return IteratorBuiltins.createIteratorWithNext(
+            interpreter.intrinsics,
+            prototype,
         ) { inner, _, _ ->
             if (done) {
-                return@JSNativeFunction result(JSUndefined, true)
+                return@createIteratorWithNext result(JSUndefined, true)
             }
             val match = regExpExec(inner, regexp, input)
             if (match is JSNull) {
@@ -755,14 +753,6 @@ object RegExpBuiltins {
                 result(match, false)
             }
         }
-        iterator.defineDataProperty(
-            key = PropertyKey.Str("next"),
-            value = next,
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-        return iterator
     }
 
     /** RegExpExec：优先调用对象自定义 exec，否则回退内建执行。 */

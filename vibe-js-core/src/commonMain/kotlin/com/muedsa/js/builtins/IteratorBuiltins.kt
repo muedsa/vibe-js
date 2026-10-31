@@ -224,53 +224,104 @@ internal object IteratorBuiltins {
         return helper
     }
 
-    /** 普通迭代器对象（Array/String/Map/Set/RegExp）：next 由实例闭包提供。 */
+    /** 内建迭代器的内部状态：存放在 JSObject.internalState，不暴露给脚本。 */
+    private interface NextState {
+        suspend fun next(
+            interpreter: Interpreter,
+            receiver: JSObject,
+            args: List<JSValue>,
+        ): JSValue
+    }
+
+    /**
+     * 创建内建迭代器（Array/String/Map/Set/RegExp）：next 位于共享原型，
+     * 实例只保存内部状态；生产者返回 null 表示完成，此后固定返回 done。
+     */
     fun createIteratorWithNext(
         intrinsics: Intrinsics,
         prototype: JSObject,
-        next: suspend (Interpreter, JSValue, List<JSValue>) -> JSValue,
+        next: suspend (Interpreter, JSValue, List<JSValue>) -> JSValue?,
     ): JSObject {
         val iterator = JSObject(prototype = prototype)
-        iterator.defineDataProperty(
-            PropertyKey.Str("next"),
-            JSNativeFunction(
-                name = "next",
-                length = 0,
-                prototype = intrinsics.functionPrototype,
-                function = next,
-            ),
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
+        iterator.internalState = object : NextState {
+            private var done: Boolean = false
+            override suspend fun next(
+                interpreter: Interpreter,
+                receiver: JSObject,
+                args: List<JSValue>,
+            ): JSValue {
+                if (done) return doneResult(interpreter)
+                val result = next(interpreter, receiver, args) ?: run {
+                    done = true
+                    return doneResult(interpreter)
+                }
+                return result
+            }
+        }
         return iterator
     }
 
-    fun createIterator(
+    /** 数组迭代器种类：keys / values / entries。 */
+    enum class ArrayIteratorKind { KEYS, VALUES, ENTRIES }
+
+    /**
+     * 创建数组迭代器：按 [[NextIndex]] 实时读取目标对象的 length 与元素，
+     * 支持 arguments 等 array-like 对象在迭代期间的长度变化。
+     */
+    fun createArrayIterator(
         intrinsics: Intrinsics,
-        values: List<JSValue>,
-        prototype: JSObject,
+        target: JSObject,
+        kind: ArrayIteratorKind,
     ): JSObject {
+        var index = 0L
+        return createIteratorWithNext(intrinsics, intrinsics.arrayIteratorPrototype) { interpreter, _, _ ->
+            val length = arrayLikeLength(interpreter, target)
+            if (index >= length) return@createIteratorWithNext null
+            val current = index
+            index += 1
+            val key = PropertyKey.Str(current.toString())
+            val value = when (kind) {
+                ArrayIteratorKind.KEYS -> JSNumber(current.toDouble())
+                ArrayIteratorKind.VALUES -> interpreter.getV(target, key)
+                ArrayIteratorKind.ENTRIES -> JSArray(
+                    mutableListOf<JSValue?>(
+                        JSNumber(current.toDouble()),
+                        interpreter.getV(target, key),
+                    ),
+                    prototype = intrinsics.arrayPrototype,
+                )
+            }
+            createIterResult(interpreter, value, done = false)
+        }
+    }
+
+    /** 创建字符串迭代器：按码点步进（代理对作为一个元素）。 */
+    fun createStringIterator(intrinsics: Intrinsics, text: String): JSObject {
         var index = 0
-        return createIteratorWithNext(intrinsics, prototype) { _, _, _ ->
-            val result = JSObject(prototype = intrinsics.objectPrototype)
-            val done = index >= values.size
-            result.defineDataProperty(
-                key = PropertyKey.Str("value"),
-                value = if (done) JSUndefined else values[index],
-                writable = true,
-                enumerable = true,
-                configurable = true,
-            )
-            if (!done) index++
-            result.defineDataProperty(
-                key = PropertyKey.Str("done"),
-                value = JSBoolean.getJsBoolean(done),
-                writable = true,
-                enumerable = true,
-                configurable = true,
-            )
-            result
+        return createIteratorWithNext(intrinsics, intrinsics.stringIteratorPrototype) { interpreter, _, _ ->
+            if (index >= text.length) return@createIteratorWithNext null
+            val current = text[index]
+            val value = if (current.isHighSurrogate() && index + 1 < text.length &&
+                text[index + 1].isLowSurrogate()
+            ) {
+                val pair = text.substring(index, index + 2)
+                index += 2
+                JSString(pair)
+            } else {
+                index += 1
+                JSString(current.toString())
+            }
+            createIterResult(interpreter, value, done = false)
+        }
+    }
+
+    /** LengthOfArrayLike：NaN/负数取 0，向上限 2^53-1 截断。 */
+    private suspend fun arrayLikeLength(interpreter: Interpreter, target: JSObject): Long {
+        val number = interpreter.toNumber(interpreter.getV(target, PropertyKey.LENGTH))
+        return when {
+            number.isNaN() || number <= 0.0 -> 0L
+            number >= 9007199254740991.0 -> 9007199254740991L
+            else -> kotlin.math.floor(number).toLong()
         }
     }
 
@@ -311,6 +362,8 @@ internal object IteratorBuiltins {
         defineIteratorTag(intrinsics, intrinsics.setIteratorPrototype, "Set Iterator")
         defineIteratorTag(intrinsics, intrinsics.regexpStringIteratorPrototype, "RegExp String Iterator")
         defineIteratorTag(intrinsics, intrinsics.iteratorHelperPrototype, "Iterator Helper")
+
+        installIteratorNext(intrinsics)
 
         for (helperPrototype in listOf(
             intrinsics.iteratorHelperPrototype,
@@ -408,6 +461,35 @@ internal object IteratorBuiltins {
             enumerable = false,
             configurable = true,
         )
+    }
+
+    /**
+     * 在各内建迭代器原型上安装共享 next：
+     * 通过 internalState 做品牌校验并取得 [[NextIndex]] 等内部状态。
+     */
+    private fun installIteratorNext(intrinsics: Intrinsics) {
+        val nextMethod = BuiltinHelpers.method(intrinsics, "next", 0) { interpreter, thisValue, _ ->
+            val iterator = thisValue as? JSObject
+                ?: interpreter.typeError("next method called on incompatible receiver")
+            val state = iterator.internalState as? NextState
+                ?: interpreter.typeError("next method called on incompatible receiver")
+            state.next(interpreter, iterator, emptyList())
+        }
+        for (prototype in listOf(
+            intrinsics.arrayIteratorPrototype,
+            intrinsics.stringIteratorPrototype,
+            intrinsics.mapIteratorPrototype,
+            intrinsics.setIteratorPrototype,
+            intrinsics.regexpStringIteratorPrototype,
+        )) {
+            prototype.defineDataProperty(
+                key = PropertyKey.Str("next"),
+                value = nextMethod,
+                writable = true,
+                enumerable = false,
+                configurable = true,
+            )
+        }
     }
 
     /**

@@ -194,20 +194,15 @@ object MapBuiltins {
                 val map = requireMap(interpreter, thisValue, "Map.prototype.$name")
                 var index = 0
                 IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.mapIteratorPrototype) { _, _, _ ->
+                    if (index >= map.entries.size) return@createIteratorWithNext null
+                    val entry = map.entries[index]
+                    index++
                     val result = JSObject(prototype = intrinsics.objectPrototype)
-                    val done = index >= map.entries.size
-                    val value = if (done) {
-                        JSUndefined
-                    } else {
-                        val entry = map.entries[index]
-                        index++
-                        valueFor(entry)
-                    }
                     result.defineDataProperty(
-                        PropertyKey.Str("value"), value, true, true, true,
+                        PropertyKey.Str("value"), valueFor(entry), true, true, true,
                     )
                     result.defineDataProperty(
-                        PropertyKey.Str("done"), JSBoolean.getJsBoolean(done), true, true, true,
+                        PropertyKey.Str("done"), JSBoolean.FALSE, true, true, true,
                     )
                     result
                 }

@@ -790,22 +790,7 @@ object StringBuiltins {
                     interpreter.typeError("String.prototype[Symbol.iterator] called on null or undefined")
                 }
                 val text = interpreter.toStringValue(thisValue)
-                // 规范：字符串迭代按码点（代理对作为一个元素）
-                val codePoints = ArrayList<JSValue>(text.length)
-                var index = 0
-                while (index < text.length) {
-                    val current = text[index]
-                    if (current.isHighSurrogate() && index + 1 < text.length &&
-                        text[index + 1].isLowSurrogate()
-                    ) {
-                        codePoints.add(JSString(text.substring(index, index + 2)))
-                        index += 2
-                    } else {
-                        codePoints.add(JSString(current.toString()))
-                        index++
-                    }
-                }
-                IteratorBuiltins.createIterator(intrinsics, codePoints, intrinsics.stringIteratorPrototype)
+                IteratorBuiltins.createStringIterator(intrinsics, text)
             },
         )
     }

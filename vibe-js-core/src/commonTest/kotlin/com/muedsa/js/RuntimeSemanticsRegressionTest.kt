@@ -1030,6 +1030,47 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `内建迭代器 next 位于共享原型并实时读取目标`() = runTest {
+        val runtime = TestRuntime()
+        // next 是原型上的共享方法；对普通对象调用因缺少内部槽而抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "var proto = Object.getPrototypeOf([][Symbol.iterator]());" +
+                "var ok = typeof Object.getOwnPropertyDescriptor(proto, 'next').value === 'function' &&" +
+                " !Object.prototype.hasOwnProperty.call([][Symbol.iterator](), 'next');" +
+                "try { proto.next.call({}); ok = false }" +
+                " catch (e) { ok = e instanceof TypeError }" +
+                "ok"
+        ))
+        // 数组迭代器实时读取 length 与元素，耗尽后保持 done
+        assertEquals(true, runtime.evalBoolean(
+            "var a = []; var it = a[Symbol.iterator]();" +
+                "a.push('a');" +
+                "var r1 = it.next(); var r2 = it.next();" +
+                "a.push('b'); var r3 = it.next();" +
+                "r1.value === 'a' && r1.done === false &&" +
+                "r2.value === undefined && r2.done === true && r3.done === true"
+        ))
+        // arguments 的 length 变化在迭代期间可见
+        assertEquals(true, runtime.evalBoolean(
+            "(function (a, b) {" +
+                " var it = arguments[Symbol.iterator](); it.next(); it.next();" +
+                " arguments.length = 3; arguments[2] = 9;" +
+                " var r = it.next(); var r2 = it.next();" +
+                " return r.value === 9 && r.done === false && r2.done === true;" +
+                "})(1, 2)"
+        ))
+        // Map 迭代器在耗尽前可见新增条目，耗尽后固定 done
+        assertEquals(true, runtime.evalBoolean(
+            "var m = new Map([[1, 1]]); var it = m[Symbol.iterator]();" +
+                "it.next(); m.set(2, 2);" +
+                "var r = it.next(); var r2 = it.next();" +
+                "m.set(3, 3); var r3 = it.next();" +
+                "r.value[0] === 2 && r.done === false &&" +
+                "r2.done === true && r3.done === true"
+        ))
+    }
+
+    @Test
     fun `BigInt 字面量可被解析但求值抛出 TypeError`() = runTest {
         val runtime = TestRuntime()
         // 保留语法识别以便解析包含 BigInt 字面量的宿主脚本

@@ -145,20 +145,15 @@ object SetBuiltins {
                 val set = requireSet(interpreter, thisValue, "Set.prototype.$name")
                 var index = 0
                 IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.setIteratorPrototype) { _, _, _ ->
+                    if (index >= set.values.size) return@createIteratorWithNext null
+                    val element = set.values[index]
+                    index++
                     val result = JSObject(prototype = intrinsics.objectPrototype)
-                    val done = index >= set.values.size
-                    val value = if (done) {
-                        JSUndefined
-                    } else {
-                        val element = set.values[index]
-                        index++
-                        valueFor(element)
-                    }
                     result.defineDataProperty(
-                        PropertyKey.Str("value"), value, true, true, true,
+                        PropertyKey.Str("value"), valueFor(element), true, true, true,
                     )
                     result.defineDataProperty(
-                        PropertyKey.Str("done"), JSBoolean.getJsBoolean(done), true, true, true,
+                        PropertyKey.Str("done"), JSBoolean.FALSE, true, true, true,
                     )
                     result
                 }
