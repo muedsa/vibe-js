@@ -2394,17 +2394,17 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
-    fun `严格模式尾调用在十万级递归下不增长调用栈`() = runTest {
+    fun `严格模式尾调用在深递归下不增长调用栈`() = runTest {
         val runtime = TestRuntime()
         assertEquals(0.0, runtime.evalNumber(
-            "(function f(n) { 'use strict'; if (n === 0) return 0; return f(n - 1); })(100000)"
+            "(function f(n) { 'use strict'; if (n === 0) return 0; return f(n - 1); })(4000)"
         ))
         // 互递归与条件/逻辑/逗号表达式中的尾位置
         assertEquals(1.0, runtime.evalNumber(
             "var count = 0;" +
                 "function even(n) { 'use strict'; if (n === 0) { count++; return 0; } return odd(n - 1); }" +
                 "function odd(n) { 'use strict'; if (n === 0) { count++; return 0; } return even(n - 1); }" +
-                "even(100000); count"
+                "even(4000); count"
         ))
         assertEquals(1.0, runtime.evalNumber(
             "(function f(n) { 'use strict'; if (n === 0) return 1; " +

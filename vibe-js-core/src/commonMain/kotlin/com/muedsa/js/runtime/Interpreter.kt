@@ -766,7 +766,7 @@ class Interpreter(
             try {
                 return callUserFunctionOnce(target, targetThis, targetArgs, targetRange)
             } catch (signal: TailCallSignal) {
-                target = signal.callee
+                target = signal.callee ?: throw signal
                 targetThis = signal.thisValue
                 targetArgs = signal.args
                 targetRange = signal.callRange
@@ -774,13 +774,28 @@ class Interpreter(
         }
     }
 
-    /** 尾调用信号：携带被调用函数与参数，由调用循环重新进入。 */
-    private class TailCallSignal(
-        val callee: JSFunction,
-        val thisValue: JSValue,
-        val args: List<JSValue>,
-        val callRange: SourceRange?,
-    ) : RuntimeException(null, null, false, false)
+    /** 尾调用信号：复用同一实例，避免深递归中反复创建异常与采集调用栈。 */
+    private class TailCallSignal : RuntimeException() {
+        var callee: JSFunction? = null
+        var thisValue: JSValue = JSUndefined
+        var args: List<JSValue> = emptyList()
+        var callRange: SourceRange? = null
+    }
+
+    private val tailCallSignal = TailCallSignal()
+
+    private fun throwTailCall(
+        callee: JSFunction,
+        thisValue: JSValue,
+        args: List<JSValue>,
+        callRange: SourceRange?,
+    ): Nothing {
+        tailCallSignal.callee = callee
+        tailCallSignal.thisValue = thisValue
+        tailCallSignal.args = args
+        tailCallSignal.callRange = callRange
+        throw tailCallSignal
+    }
 
     /** 当前返回表达式是否处于可优化的尾位置。 */
     private fun canUseTailCall(): Boolean {
@@ -799,7 +814,7 @@ class Interpreter(
         tail: Boolean,
     ): JSValue {
         if (tail && callee is JSFunction && !callee.isAsync && !callee.isClassConstructor) {
-            throw TailCallSignal(callee, thisValue, args, callRange)
+            throwTailCall(callee, thisValue, args, callRange)
         }
         return callFunction(callee, thisValue, args, callRange)
     }
