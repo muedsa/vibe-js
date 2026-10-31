@@ -543,6 +543,7 @@ private class Test262Runner(
             // 已在解析器/运行时实现的后续版本语法
             "exponentiation", "logical-assignment-operators", "globalThis",
             "object-rest", "object-spread", "optional-chaining",
+            "numeric-separator-literal",
             "u-flag", "y-flag", "unicode-escapes",
         )
 

@@ -530,11 +530,7 @@ class Lexer(private val input: String) {
                 'x', 'X' -> {
                     sb.append(peek()); advance()
                     sb.append(peek()); advance()
-                    var digits = 0
-                    while (isHexDigit(peek()) || peek() == '_') {
-                        if (peek() != '_') digits++
-                        sb.append(peek()); advance()
-                    }
+                    val digits = scanDigits(sb, ::isHexDigit, startLine, startColumn, startOffset)
                     if (digits == 0) {
                         throw lexerError("Invalid hexadecimal number", startLine, startColumn, startOffset)
                     }
@@ -545,11 +541,13 @@ class Lexer(private val input: String) {
                 'o', 'O' -> {
                     sb.append(peek()); advance()
                     sb.append(peek()); advance()
-                    var digits = 0
-                    while (peek() in '0'..'7' || peek() == '_') {
-                        if (peek() != '_') digits++
-                        sb.append(peek()); advance()
-                    }
+                    val digits = scanDigits(
+                        sb,
+                        { it in '0'..'7' },
+                        startLine,
+                        startColumn,
+                        startOffset,
+                    )
                     if (digits == 0) {
                         throw lexerError("Invalid octal number", startLine, startColumn, startOffset)
                     }
@@ -560,11 +558,13 @@ class Lexer(private val input: String) {
                 'b', 'B' -> {
                     sb.append(peek()); advance()
                     sb.append(peek()); advance()
-                    var digits = 0
-                    while (peek() == '0' || peek() == '1' || peek() == '_') {
-                        if (peek() != '_') digits++
-                        sb.append(peek()); advance()
-                    }
+                    val digits = scanDigits(
+                        sb,
+                        { it == '0' || it == '1' },
+                        startLine,
+                        startColumn,
+                        startOffset,
+                    )
                     if (digits == 0) {
                         throw lexerError("Invalid binary number", startLine, startColumn, startOffset)
                     }
@@ -579,13 +579,19 @@ class Lexer(private val input: String) {
         val legacyCandidate = peek() == '0' && peek(1).isDigit()
         var nonOctalDecimal = false
         if (legacyCandidate) {
-            while (peek().isDigit() || peek() == '_') {
-                if (peek().isDigit()) {
-                    hasDigits = true
-                    if (peek() in '8'..'9') nonOctalDecimal = true
-                }
-                sb.append(peek())
-                advance()
+            val digits = scanDigits(sb, { it.isDigit() }, startLine, startColumn, startOffset)
+            hasDigits = digits > 0
+            if (sb.contains('_')) {
+                throw lexerError(
+                    "Numeric separator is not allowed in legacy octal literals",
+                    startLine,
+                    startColumn,
+                    startOffset,
+                )
+            }
+            // sb 仅包含整数部分（如 "09"），从第 2 个字符开始检测 8/9
+            for (index in 1 until sb.length) {
+                if (sb[index] in '8'..'9') nonOctalDecimal = true
             }
             if (!nonOctalDecimal) {
                 // legacy octal 不能带小数，但允许 01.a 属性访问
@@ -603,10 +609,17 @@ class Lexer(private val input: String) {
             }
         } else {
             // 整数部分（前导小数点时可以为空）
-            while (peek().isDigit() || peek() == '_') {
-                if (peek().isDigit()) hasDigits = true
-                sb.append(peek())
-                advance()
+            val digits = scanDigits(sb, { it.isDigit() }, startLine, startColumn, startOffset)
+            hasDigits = digits > 0
+            val integerText = sb.toString()
+            // 前导 0 后不允许数字分隔符（避免与 legacy octal 混淆）
+            if (integerText.length > 1 && integerText[0] == '0' && integerText.contains('_')) {
+                throw lexerError(
+                    "Numeric separator is not allowed after leading zero",
+                    startLine,
+                    startColumn,
+                    startOffset,
+                )
             }
         }
 
@@ -614,11 +627,8 @@ class Lexer(private val input: String) {
         if (peek() == '.') {
             sb.append('.')
             advance()
-            while (peek().isDigit() || peek() == '_') {
-                if (peek().isDigit()) hasDigits = true
-                sb.append(peek())
-                advance()
-            }
+            val digits = scanDigits(sb, { it.isDigit() }, startLine, startColumn, startOffset)
+            if (digits > 0) hasDigits = true
         }
 
         if (!hasDigits) {
@@ -633,19 +643,54 @@ class Lexer(private val input: String) {
                 sb.append(peek())
                 advance()
             }
-            var hasExponentDigits = false
-            while (peek().isDigit() || peek() == '_') {
-                if (peek().isDigit()) hasExponentDigits = true
-                sb.append(peek())
-                advance()
-            }
-            if (!hasExponentDigits) {
+            val exponentDigits = scanDigits(sb, { it.isDigit() }, startLine, startColumn, startOffset)
+            if (exponentDigits == 0) {
                 throw lexerError("Invalid exponent", startLine, startColumn, startOffset)
             }
         }
 
         rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
         return makeToken(TokenType.NUMBER, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+    }
+
+    /**
+     * 扫描一段数字并校验数字分隔符：`_` 只能出现在两个数字之间。
+     *
+     * @return 数字字符数量（不含分隔符）
+     */
+    private fun scanDigits(
+        sb: StringBuilder,
+        isDigit: (Char) -> Boolean,
+        startLine: Int,
+        startColumn: Int,
+        startOffset: Int,
+    ): Int {
+        var digits = 0
+        var previousWasDigit = false
+        while (true) {
+            val c = peek()
+            if (isDigit(c)) {
+                sb.append(c)
+                advance()
+                digits++
+                previousWasDigit = true
+            } else if (c == '_') {
+                if (!previousWasDigit || !isDigit(peek(1))) {
+                    throw lexerError(
+                        "Numeric separator must be between digits",
+                        startLine,
+                        startColumn,
+                        startOffset,
+                    )
+                }
+                sb.append(c)
+                advance()
+                previousWasDigit = false
+            } else {
+                break
+            }
+        }
+        return digits
     }
 
     /** 数字字面量后不允许直接跟标识符（如 3in）。 */

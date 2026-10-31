@@ -1,8 +1,10 @@
 package com.muedsa.js
 
+import com.muedsa.js.lexer.LexerException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 /**
  * 本轮语义收敛的回归测试：
@@ -424,6 +426,21 @@ class RuntimeSemanticsRegressionTest {
         assertEquals(true, runtime.evalBoolean(
             "Map[Symbol.species] === Map && Set[Symbol.species] === Set && RegExp[Symbol.species] === RegExp"
         ))
+    }
+
+    @Test
+    fun `数字分隔符词法规则`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(1234567.0, runtime.evalNumber("1_234_567"))
+        assertEquals(0.000123, runtime.evalNumber("1.2_3e-4"))
+        assertEquals(true, runtime.evalBoolean(
+            "0x1_0 === 16 && 0b1_0 === 2 && 0o1_0 === 8"
+        ))
+        for (invalid in listOf(
+            "1__0", "1_", "0x_1", "0b1_", "1._0", "1_.0", "1e_1", "0_1", "08_1",
+        )) {
+            assertFailsWith<LexerException>(invalid) { runtime.eval(invalid) }
+        }
     }
 
     @Test
