@@ -1476,18 +1476,10 @@ class Lexer(private val input: String) {
 
     /** astral 平面标识符起止字符的近似范围（覆盖语料中的 Deseret/CJK/数学字母等）。 */
     private fun isAstralIdentifierStart(codePoint: Int): Boolean =
-        codePoint in 0x10000..0x1004D ||
-            codePoint in 0x10480..0x104FF ||
-            codePoint in 0x1D400..0x1D7FF ||
-            codePoint in 0x1EE00..0x1EEFF ||
-            codePoint in 0x20000..0x2B81D ||
-            codePoint in 0x2B820..0x2CEAF ||
-            codePoint in 0x2CEB0..0x2EBEF ||
-            codePoint in 0x30000..0x3134F
+        UnicodeIdentifierData.isStart(codePoint)
 
-    /** astral 标识符后续字符：含变体选择符等组合字符。 */
     private fun isAstralIdentifierPart(codePoint: Int): Boolean =
-        isAstralIdentifierStart(codePoint) || codePoint in 0xE0100..0xE01EF
+        UnicodeIdentifierData.isContinue(codePoint)
 
     private fun hexDigitValue(c: Char): Int = when (c) {
         in '0'..'9' -> c - '0'
@@ -1657,31 +1649,13 @@ class Lexer(private val input: String) {
         throw lexerError("Unterminated block comment", startLine, startColumn, startOffset)
     }
 
-    /** 判断字符是否可作为标识符首字符。 */
+    /** 判断字符是否可作为标识符首字符（Unicode 17.0.0 ID_Start）。 */
     private fun isIdentifierStart(c: Char): Boolean =
-        c == '_' || c == '$' || c.isLetter() ||
-            c.category == CharCategory.LETTER_NUMBER ||
-            c in OTHER_ID_START
+        c == '_' || c == '$' || UnicodeIdentifierData.isStart(c.code)
 
-    /** 判断字符是否可作为标识符后续字符（Unicode ID_Continue 的常用近似）。 */
+    /** 判断字符是否可作为标识符后续字符（Unicode 17.0.0 ID_Continue，含 ZWNJ/ZWJ）。 */
     private fun isIdentifierPart(c: Char): Boolean =
-        isIdentifierStart(c) || c.isDigit() ||
-            c.category == CharCategory.DECIMAL_DIGIT_NUMBER ||
-            c.category == CharCategory.NON_SPACING_MARK ||
-            c.category == CharCategory.ENCLOSING_MARK ||
-            c.category == CharCategory.COMBINING_SPACING_MARK ||
-            c.category == CharCategory.CONNECTOR_PUNCTUATION ||
-            c == '\u200C' || c == '\u200D' ||
-            c in OTHER_ID_CONTINUE
-
-    private companion object {
-        /** Unicode Other_ID_Start。 */
-        val OTHER_ID_START = setOf('\u1885', '\u1886', '\u2118', '\u212E', '\u309B', '\u309C')
-
-        /** Unicode Other_ID_Continue。 */
-        val OTHER_ID_CONTINUE = setOf('\u00B7', '\u0387', '\u19DA') +
-            ('\u1369'..'\u1371').toSet()
-    }
+        c == '_' || c == '$' || UnicodeIdentifierData.isContinue(c.code)
 
     /** 判断字符是否为十六进制数字。 */
     private fun isHexDigit(c: Char): Boolean =

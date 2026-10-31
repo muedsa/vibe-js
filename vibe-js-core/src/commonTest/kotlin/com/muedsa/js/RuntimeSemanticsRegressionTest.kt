@@ -2392,6 +2392,16 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `标识符按 Unicode 17 表支持 astral 字面量与转义`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(1.0, runtime.evalNumber("var \\u{1D49C} = 1; \\u{1D49C}"))
+        assertEquals(2.0, runtime.evalNumber("var 𝒜 = 2; 𝒜"))
+        assertEquals(3.0, runtime.evalNumber("var a\\u{1E4D0} = 3; a\\u{1E4D0}"))
+        // 非 ID_Continue 字符不能参与标识符
+        assertFailsWith<LexerException> { runtime.eval("var a\\u{00A0} = 1;") }
+    }
+
+    @Test
     fun `RegExp v 标志支持属性字符串与 q 字符串析取`() = runTest {
         val runtime = TestRuntime()
         assertEquals(true, runtime.evalBoolean(

@@ -18,7 +18,7 @@
 | 正则字面量 | ✅ | 通过"上一 Token"启发式区分除法/正则 |
 | 注释：单行/多行 | ✅ | 未闭合报错；支持仅位于文件开头的 hashbang |
 | 未闭合字符串/模板/正则 | ✅ | 抛出 `LexerException` |
-| 标识符：Unicode 字母、`\uXXXX`、`\u{...}` 与 astral | ✅ | astral 范围采用近似表 |
+| 标识符：Unicode 字母、`\uXXXX`、`\u{...}` 与 astral | ✅ | Unicode 17.0.0 ID_Start/ID_Continue（含 Other_ID_* 与 ZWNJ/ZWJ） |
 | 自动分号插入（ASI） | ⚠️ | 覆盖 return/throw/break/continue/++/-- 换行与常规语句分隔；极少数边界未覆盖 |
 | BigInt 字面量 | ⚠️ | 仅语法识别（含 0x/0o/0b 后缀），求值抛 TypeError；BigInt 运行时明确排除 |
 
@@ -100,9 +100,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 435 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 435 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 435 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 436 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 436 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 436 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
