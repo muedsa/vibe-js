@@ -1161,6 +1161,58 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `数组泛型方法支持 2 的 53 次方级 array-like 长度`() = runTest {
+        val runtime = TestRuntime()
+        // pop：ToLength 裁剪到 2^53-1，并按 Long 索引读取/删除
+        assertEquals(true, runtime.evalBoolean(
+            "var o = { length: 2 ** 53 + 2, '9007199254740990': 'x' };" +
+                "var v = Array.prototype.pop.call(o);" +
+                "v === 'x' && o.length === 2 ** 53 - 2 &&" +
+                " !Object.prototype.hasOwnProperty.call(o, '9007199254740990')"
+        ))
+        // push：无新元素时把 length 收敛到 2^53-1，追加时抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "var o = { length: 2 ** 53 };" +
+                "Array.prototype.push.call(o);" +
+                "var clamped = o.length === 2 ** 53 - 1;" +
+                "var threw = false;" +
+                "try { Array.prototype.push.call(o, 1); }" +
+                " catch (e) { threw = e instanceof TypeError; }" +
+                "clamped && threw"
+        ))
+        // unshift：argCount 为 0 时仅写回裁剪后的 length
+        assertEquals(true, runtime.evalBoolean(
+            "var o = { length: 2 ** 53 + 2 };" +
+                "Array.prototype.unshift.call(o);" +
+                "o.length === 2 ** 53 - 1"
+        ))
+        // reverse/slice：只访问靠近 len-1 的索引，不对全长度循环
+        assertEquals(true, runtime.evalBoolean(
+            "var stop = {};" +
+                "var o = { get '9007199254740990'() { throw stop; }, length: 2 ** 53 + 2 };" +
+                "var threw = false;" +
+                "try { Array.prototype.reverse.call(o); } catch (e) { threw = e === stop; }" +
+                "var s = { length: 2 ** 53 + 2," +
+                " '9007199254740989': 'a', '9007199254740990': 'b' };" +
+                "var sliced = Array.prototype.slice.call(s, 9007199254740989);" +
+                "threw && sliced.join(',') === 'a,b'"
+        ))
+        // splice：收缩时搬移近端元素并删除尾部
+        assertEquals(true, runtime.evalBoolean(
+            "var o = { length: 2 ** 53 - 1, '9007199254740990': 'a' };" +
+                "var removed = Array.prototype.splice.call(o, 9007199254740990, 1);" +
+                "removed[0] === 'a' && o.length === 2 ** 53 - 2 &&" +
+                " !Object.prototype.hasOwnProperty.call(o, '9007199254740990')"
+        ))
+        // includes：len 为 0 时不读取 fromIndex
+        assertEquals(true, runtime.evalBoolean(
+            "var calls = 0;" +
+                "[].includes(0, { valueOf: function () { calls++; } });" +
+                "calls === 0"
+        ))
+    }
+
+    @Test
     fun `BigInt 字面量可被解析但求值抛出 TypeError`() = runTest {
         val runtime = TestRuntime()
         // 保留语法识别以便解析包含 BigInt 字面量的宿主脚本

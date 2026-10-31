@@ -161,18 +161,56 @@ object ArrayBuiltins {
                     )
                     return@method JSNumber(index.toDouble())
                 }
-                val array = requireArray(interpreter, thisValue, "Array.prototype.push")
-                for (argument in args) {
-                    array.setElement(array.length, argument)
+                // 泛型 array-like：按规范使用 ToLength 与 Long 索引
+                val objectValue = requireObject(interpreter, thisValue, "Array.prototype.push")
+                val length = lengthOf(interpreter, objectValue)
+                if (length + args.size > MAX_SAFE_INTEGER) {
+                    interpreter.typeError("Invalid array length")
                 }
-                syncArrayLike(interpreter, array)
-                JSNumber(array.length.toDouble())
+                args.forEachIndexed { offset, argument ->
+                    interpreter.putV(
+                        objectValue,
+                        PropertyKey.Str((length + offset).toString()),
+                        argument,
+                        strict = true,
+                    )
+                }
+                val newLength = length + args.size
+                interpreter.putV(
+                    objectValue,
+                    PropertyKey.LENGTH,
+                    JSNumber(newLength.toDouble()),
+                    strict = true,
+                )
+                JSNumber(newLength.toDouble())
             },
         )
 
         arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("pop"),
             value = BuiltinHelpers.method(intrinsics, "pop", 0) { interpreter, thisValue, _ ->
+                if (thisValue !is JSArray) {
+                    // 泛型 array-like：ToLength + Long 索引
+                    val objectValue = requireObject(interpreter, thisValue, "Array.prototype.pop")
+                    val length = lengthOf(interpreter, objectValue)
+                    if (length == 0L) {
+                        interpreter.putV(
+                            objectValue, PropertyKey.LENGTH, JSNumber(0.0), strict = true,
+                        )
+                        return@method JSUndefined
+                    }
+                    val newLength = length - 1
+                    val key = PropertyKey.Str(newLength.toString())
+                    val element = interpreter.getV(objectValue, key)
+                    deletePropertyOrThrow(interpreter, objectValue, key)
+                    interpreter.putV(
+                        objectValue,
+                        PropertyKey.LENGTH,
+                        JSNumber(newLength.toDouble()),
+                        strict = true,
+                    )
+                    return@method element
+                }
                 val array = requireArray(interpreter, thisValue, "Array.prototype.pop")
                 if (array.length == 0) {
                     JSUndefined
@@ -218,6 +256,43 @@ object ArrayBuiltins {
         arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("unshift"),
             value = BuiltinHelpers.method(intrinsics, "unshift", 1) { interpreter, thisValue, args ->
+                if (thisValue !is JSArray) {
+                    // 泛型 array-like：从尾部整体搬移
+                    val objectValue = requireObject(interpreter, thisValue, "Array.prototype.unshift")
+                    val length = lengthOf(interpreter, objectValue)
+                    val count = args.size
+                    if (count > 0) {
+                        if (length + count > MAX_SAFE_INTEGER) {
+                            interpreter.typeError("Invalid array length")
+                        }
+                        var index = length
+                        while (index > 0L) {
+                            moveIndex(
+                                interpreter,
+                                objectValue,
+                                PropertyKey.Str((index - 1).toString()),
+                                PropertyKey.Str((index + count - 1).toString()),
+                            )
+                            index--
+                        }
+                        args.forEachIndexed { offset, value ->
+                            interpreter.putV(
+                                objectValue,
+                                PropertyKey.Str(offset.toString()),
+                                value,
+                                strict = true,
+                            )
+                        }
+                    }
+                    val newLength = length + count
+                    interpreter.putV(
+                        objectValue,
+                        PropertyKey.LENGTH,
+                        JSNumber(newLength.toDouble()),
+                        strict = true,
+                    )
+                    return@method JSNumber(newLength.toDouble())
+                }
                 val array = requireArray(interpreter, thisValue, "Array.prototype.unshift")
                 val length = array.length
                 val count = args.size
@@ -368,6 +443,8 @@ object ArrayBuiltins {
                 val objectValue = requireObject(interpreter, thisValue, "Array.prototype.includes")
                 val searchElement = args.getOrNull(0) ?: JSUndefined
                 val length = lengthOf(interpreter, objectValue)
+                // 规范顺序：len 为 0 时不读取 fromIndex
+                if (length == 0L) return@method JSBoolean.FALSE
                 var fromIndex = args.getOrNull(1)?.let { interpreter.toNumber(it).toLong() } ?: 0L
                 if (fromIndex < 0) fromIndex += length
                 if (fromIndex < 0) fromIndex = 0
@@ -740,6 +817,33 @@ object ArrayBuiltins {
         arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("reverse"),
             value = BuiltinHelpers.method(intrinsics, "reverse", 0) { interpreter, thisValue, _ ->
+                if (thisValue !is JSArray) {
+                    // 泛型 array-like：Long 索引，空洞保留
+                    val objectValue = requireObject(interpreter, thisValue, "Array.prototype.reverse")
+                    val length = lengthOf(interpreter, objectValue)
+                    var lower = 0L
+                    while (lower < length / 2) {
+                        val upper = length - 1 - lower
+                        val lowerKey = PropertyKey.Str(lower.toString())
+                        val upperKey = PropertyKey.Str(upper.toString())
+                        val lowerExists = objectValue.hasProperty(lowerKey)
+                        val lowerValue = if (lowerExists) interpreter.getV(objectValue, lowerKey) else null
+                        val upperExists = objectValue.hasProperty(upperKey)
+                        val upperValue = if (upperExists) interpreter.getV(objectValue, upperKey) else null
+                        if (upperExists) {
+                            interpreter.putV(objectValue, lowerKey, upperValue!!, strict = true)
+                        } else {
+                            deletePropertyOrThrow(interpreter, objectValue, lowerKey)
+                        }
+                        if (lowerExists) {
+                            interpreter.putV(objectValue, upperKey, lowerValue!!, strict = true)
+                        } else {
+                            deletePropertyOrThrow(interpreter, objectValue, upperKey)
+                        }
+                        lower++
+                    }
+                    return@method objectValue
+                }
                 val array = requireArray(interpreter, thisValue, "Array.prototype.reverse")
                 val length = array.length
                 for (index in 0 until length / 2) {
@@ -771,6 +875,97 @@ object ArrayBuiltins {
         arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("splice"),
             value = BuiltinHelpers.method(intrinsics, "splice", 2) { interpreter, thisValue, args ->
+                if (thisValue !is JSArray) {
+                    // 泛型 array-like：完整规范算法（Long 索引）
+                    val objectValue = requireObject(interpreter, thisValue, "Array.prototype.splice")
+                    val length = lengthOf(interpreter, objectValue)
+                    val startNumber = toIntegerOrInfinityNumber(
+                        interpreter, args.getOrElse(0) { JSUndefined },
+                    )
+                    val actualStart = if (startNumber < 0) {
+                        kotlin.math.max(length + startNumber, 0.0).toLong()
+                    } else {
+                        kotlin.math.min(startNumber, length.toDouble()).toLong()
+                    }
+                    val actualDeleteCount = when {
+                        args.isEmpty() -> 0L
+                        args.size == 1 -> length - actualStart
+                        else -> {
+                            val deleteCount = toIntegerOrInfinityNumber(interpreter, args[1])
+                            kotlin.math.min(
+                                kotlin.math.max(deleteCount, 0.0),
+                                (length - actualStart).toDouble(),
+                            ).toLong()
+                        }
+                    }
+                    val items = if (args.size > 2) args.subList(2, args.size) else emptyList()
+                    val itemCount = items.size.toLong()
+                    if (length + itemCount - actualDeleteCount > MAX_SAFE_INTEGER) {
+                        interpreter.typeError("Invalid array length")
+                    }
+                    val removed = arraySpeciesCreate(interpreter, objectValue, actualDeleteCount)
+                    var index = 0L
+                    while (index < actualDeleteCount) {
+                        val from = PropertyKey.Str((actualStart + index).toString())
+                        if (objectValue.hasProperty(from)) {
+                            createDataPropertyOrThrow(
+                                interpreter, removed, index, interpreter.getV(objectValue, from),
+                            )
+                        }
+                        index++
+                    }
+                    interpreter.putV(
+                        removed,
+                        PropertyKey.LENGTH,
+                        JSNumber(actualDeleteCount.toDouble()),
+                        strict = true,
+                    )
+                    if (itemCount < actualDeleteCount) {
+                        var move = actualStart
+                        while (move < length - actualDeleteCount) {
+                            moveIndex(
+                                interpreter,
+                                objectValue,
+                                PropertyKey.Str((move + actualDeleteCount).toString()),
+                                PropertyKey.Str((move + itemCount).toString()),
+                            )
+                            move++
+                        }
+                        var tail = length
+                        while (tail > length - actualDeleteCount + itemCount) {
+                            deletePropertyOrThrow(
+                                interpreter, objectValue, PropertyKey.Str((tail - 1).toString()),
+                            )
+                            tail--
+                        }
+                    } else if (itemCount > actualDeleteCount) {
+                        var move = length - actualDeleteCount
+                        while (move > actualStart) {
+                            moveIndex(
+                                interpreter,
+                                objectValue,
+                                PropertyKey.Str((move + actualDeleteCount - 1).toString()),
+                                PropertyKey.Str((move + itemCount - 1).toString()),
+                            )
+                            move--
+                        }
+                    }
+                    items.forEachIndexed { offset, value ->
+                        interpreter.putV(
+                            objectValue,
+                            PropertyKey.Str((actualStart + offset).toString()),
+                            value,
+                            strict = true,
+                        )
+                    }
+                    interpreter.putV(
+                        objectValue,
+                        PropertyKey.LENGTH,
+                        JSNumber((length - actualDeleteCount + itemCount).toDouble()),
+                        strict = true,
+                    )
+                    return@method removed
+                }
                 val array = requireArray(interpreter, thisValue, "Array.prototype.splice")
                 val length = array.length
                 var start = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
@@ -1535,6 +1730,39 @@ object ArrayBuiltins {
     ): JSValue? {
         val key = PropertyKey.Str(index.toString())
         return if (objectValue.hasProperty(key)) interpreter.getV(objectValue, key) else null
+    }
+
+    /** DeletePropertyOrThrow：Delete 返回 false 时抛 TypeError。 */
+    private fun deletePropertyOrThrow(
+        interpreter: Interpreter,
+        objectValue: JSObject,
+        key: PropertyKey,
+    ) {
+        if (!objectValue.deleteOwnProperty(key)) {
+            interpreter.typeError("Cannot delete property '${key}'")
+        }
+    }
+
+    /** 规范化搬移：源存在则 Get/Set，否则删除目标属性。 */
+    private suspend fun moveIndex(
+        interpreter: Interpreter,
+        objectValue: JSObject,
+        from: PropertyKey,
+        to: PropertyKey,
+    ) {
+        if (objectValue.hasProperty(from)) {
+            interpreter.putV(objectValue, to, interpreter.getV(objectValue, from), strict = true)
+        } else {
+            deletePropertyOrThrow(interpreter, objectValue, to)
+        }
+    }
+
+    /** ToIntegerOrInfinity（保留 ±Infinity 的 Double 版本）。 */
+    private suspend fun toIntegerOrInfinityNumber(interpreter: Interpreter, value: JSValue): Double {
+        val number = interpreter.toNumber(value)
+        if (number.isNaN()) return 0.0
+        if (!number.isFinite()) return number
+        return kotlin.math.truncate(number)
     }
 
     /** ArrayCreate(length)：创建指定长度的稀疏数组（不读取任何用户代码）。 */

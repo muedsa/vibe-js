@@ -594,24 +594,6 @@ private class Test262Runner(
             "test/language/expressions/optional-chaining/new-target-optional-call.js",
             // 命名捕获组（(?<name>...)）尚未实现，跳过依赖其替换语义的生成用例
             "test/built-ins/String/prototype/replaceAll/searchValue-replacer-RegExp-call.js",
-            // 2^53 级长度边界：Array 泛型方法尚未按 LengthOfArrayLike 实现
-            "test/built-ins/Array/prototype/pop/clamps-to-integer-limit.js",
-            "test/built-ins/Array/prototype/pop/length-near-integer-limit.js",
-            "test/built-ins/Array/prototype/push/clamps-to-integer-limit.js",
-            "test/built-ins/Array/prototype/push/length-near-integer-limit.js",
-            "test/built-ins/Array/prototype/push/throws-if-integer-limit-exceeded.js",
-            "test/built-ins/Array/prototype/unshift/clamps-to-integer-limit.js",
-            "test/built-ins/Array/prototype/unshift/length-near-integer-limit.js",
-            "test/built-ins/Array/prototype/unshift/throws-if-integer-limit-exceeded.js",
-            "test/built-ins/Array/prototype/splice/clamps-length-to-integer-limit.js",
-            "test/built-ins/Array/prototype/splice/length-and-deleteCount-exceeding-integer-limit.js",
-            "test/built-ins/Array/prototype/splice/length-exceeding-integer-limit-shrink-array.js",
-            "test/built-ins/Array/prototype/splice/length-near-integer-limit-grow-array.js",
-            "test/built-ins/Array/prototype/splice/throws-if-integer-limit-exceeded.js",
-            "test/built-ins/Array/prototype/includes/length-boundaries.js",
-            "test/built-ins/Array/prototype/includes/length-zero-returns-false.js",
-            "test/built-ins/Array/prototype/reverse/length-exceeding-integer-limit-with-object.js",
-            "test/built-ins/Array/prototype/slice/length-exceeding-integer-limit.js",
         )
 
         /** 当前范围外或尚未实现的特性。 */
