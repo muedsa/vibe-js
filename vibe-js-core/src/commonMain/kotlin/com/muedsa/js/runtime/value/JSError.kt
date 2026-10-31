@@ -18,6 +18,7 @@ open class JSError(
 ) : JSObject(prototype) {
 
     init {
+        isErrorData = true
         // 阶段 A：name 同时定义在实例上，保证脱离原型链（例如 Environment 内部抛错）时仍可读取
         defineDataProperty(
             PropertyKey.NAME,

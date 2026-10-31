@@ -30,6 +30,9 @@ open class JSObject(
      */
     var internalState: Any? = null
 
+    /** 是否具有 [[ErrorData]] 内部槽（供 Error.isError 判断）。 */
+    var isErrorData: Boolean = false
+
     override val isPrimitive: Boolean = false
 
     override fun toPrimitiveBoolean(): Boolean = true

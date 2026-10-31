@@ -1213,6 +1213,41 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Iterator includes 与 join 及 Error isError`() = runTest {
+        val runtime = TestRuntime()
+        // includes：命中后关闭迭代器；支持 SameValueZero 与 skippedElements
+        assertEquals(true, runtime.evalBoolean(
+            "var closed = false; var count = 0;" +
+                "var it = { __proto__: Iterator.prototype," +
+                " next: function () { return { done: false, value: ++count }; }," +
+                " return: function () { closed = true; return {}; } };" +
+                "it.includes(3) && closed && count === 3"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "[1, NaN, -0].values().includes(NaN) &&" +
+                " [1, NaN, -0].values().includes(0) &&" +
+                " [1, 2, 3].values().includes(2, 1) &&" +
+                " ![1, 2].values().includes(9)"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "try { [].values().includes(0, -1); false } catch (e) { e instanceof RangeError }"
+        ))
+        // join：nullish 为空串，可自定义分隔符
+        assertEquals("one,,two,", runtime.evalString(
+            "['one', null, 'two', undefined].values().join()"
+        ))
+        assertEquals("a-b-c", runtime.evalString(
+            "['a', 'b', 'c'].values().join('-')"
+        ))
+        // Error.isError：仅真正具有 [[ErrorData]] 的对象为 true
+        assertEquals(true, runtime.evalBoolean(
+            "Error.isError(new Error()) && Error.isError(new TypeError()) &&" +
+                " !Error.isError({}) && !Error.isError(Error.prototype) &&" +
+                " !Error.isError(1) && !Error.isError(null)"
+        ))
+    }
+
+    @Test
     fun `Promise allKeyed 与 allSettledKeyed`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(

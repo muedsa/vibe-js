@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArray
+import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSObject
@@ -114,6 +115,7 @@ object ErrorBuiltins {
             val suppressedValue = args.getOrElse(1) { JSUndefined }
             val messageArg = args.getOrElse(2) { JSUndefined }
             val objectValue = JSObject(prototype = intrinsics.suppressedErrorPrototype)
+            objectValue.isErrorData = true
             if (messageArg !is JSUndefined) {
                 objectValue.defineDataProperty(
                     key = PropertyKey.MESSAGE,
@@ -158,6 +160,17 @@ object ErrorBuiltins {
         registry.defineGlobal("URIError", uriErrorConstructor)
         registry.defineGlobal("SuppressedError", suppressedErrorConstructor)
         registry.defineGlobal("AggregateError", aggregateErrorConstructor)
+
+        errorConstructor.defineDataProperty(
+            key = PropertyKey.Str("isError"),
+            value = BuiltinHelpers.method(intrinsics, "isError", 1) { _, _, args ->
+                val value = args.getOrElse(0) { JSUndefined }
+                JSBoolean.getJsBoolean(value is JSObject && value.isErrorData)
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
     }
 
     private fun createErrorConstructor(

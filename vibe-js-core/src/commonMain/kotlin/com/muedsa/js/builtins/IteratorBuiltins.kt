@@ -1190,6 +1190,98 @@ internal object IteratorBuiltins {
         )
 
         prototype.defineDataProperty(
+            PropertyKey.Str("includes"),
+            BuiltinHelpers.method(intrinsics, "includes", 1) { interpreter, thisValue, args ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("Iterator.prototype.includes called on non-object")
+                }
+                val searchElement = args.getOrElse(0) { JSUndefined }
+                val skipValue = args.getOrElse(1) { JSUndefined }
+                var toSkip = 0.0
+                if (skipValue !is JSUndefined) {
+                    if (skipValue !is JSNumber) {
+                        closeForInvalidArgument(interpreter, thisValue)
+                        interpreter.typeError("skippedElements must be a Number")
+                    }
+                    val number = skipValue.value
+                    if (!number.isInfinite() &&
+                        (!number.isFinite() || kotlin.math.floor(number) != number)
+                    ) {
+                        closeForInvalidArgument(interpreter, thisValue)
+                        interpreter.typeError("skippedElements must be an integral Number")
+                    }
+                    if (number < 0.0) {
+                        closeForInvalidArgument(interpreter, thisValue)
+                        interpreter.rangeError("skippedElements must not be negative")
+                    }
+                    if (number.isFinite() && number > 9007199254740991.0) {
+                        closeForInvalidArgument(interpreter, thisValue)
+                        interpreter.rangeError("skippedElements out of range")
+                    }
+                    toSkip = number
+                }
+                val record = getIteratorDirect(interpreter, thisValue)
+                var skipped = 0.0
+                while (true) {
+                    val value = nextValue(interpreter, record) ?: return@method JSBoolean.FALSE
+                    if (skipped < toSkip) {
+                        skipped += 1.0
+                        continue
+                    }
+                    if (interpreter.conversions.sameValueZero(value, searchElement)) {
+                        closeDirect(interpreter, record, throwCompletion = false)
+                        return@method JSBoolean.TRUE
+                    }
+                }
+                @Suppress("UNREACHABLE_CODE")
+                JSBoolean.FALSE
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+
+        prototype.defineDataProperty(
+            PropertyKey.Str("join"),
+            BuiltinHelpers.method(intrinsics, "join", 1) { interpreter, thisValue, args ->
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("Iterator.prototype.join called on non-object")
+                }
+                val separatorValue = args.getOrElse(0) { JSUndefined }
+                val separator = if (separatorValue is JSUndefined) {
+                    ","
+                } else {
+                    try {
+                        interpreter.toStringValue(separatorValue)
+                    } catch (error: JSException) {
+                        closeForInvalidArgument(interpreter, thisValue)
+                        throw error
+                    }
+                }
+                val record = getIteratorDirect(interpreter, thisValue)
+                val builder = StringBuilder()
+                var first = true
+                while (true) {
+                    val value = nextValue(interpreter, record) ?: break
+                    if (!first) builder.append(separator)
+                    first = false
+                    if (value !is JSNull && value !is JSUndefined) {
+                        try {
+                            builder.append(interpreter.toStringValue(value))
+                        } catch (error: JSException) {
+                            closeDirect(interpreter, record, throwCompletion = true)
+                            throw error
+                        }
+                    }
+                }
+                JSString(builder.toString())
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+
+        prototype.defineDataProperty(
             PropertyKey.Str("map"),
             BuiltinHelpers.method(intrinsics, "map", 1) { interpreter, thisValue, args ->
                 if (thisValue !is JSObject) {
