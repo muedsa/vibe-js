@@ -28,6 +28,50 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("num-toprecision-infinity", "(Infinity).toPrecision(1000) + '|' + (-Infinity).toPrecision(1000) + '|' + NaN.toPrecision(2)"),
     DifferentialCase("num-toprecision-negzero", "(-0).toPrecision(2) + '|' + (-0).toPrecision(1)"),
     DifferentialCase("num-shortest-subnormal", "(5e-324).toString() + '|' + (-5e-324).toString() + '|' + JSON.stringify(5e-324)"),
+    // Number 方法的接收者校验、参数转换顺序与范围检查
+    DifferentialCase(
+        "num-method-args-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { var log = []; var r = (1.005).toFixed({ valueOf: function () { " +
+            "log.push('v'); return 2; } }); return r + '|' + log.join(','); }); " +
+            "push(function () { return Number.prototype.toFixed.call('1.5', 2); }); " +
+            "push(function () { var log = []; try { Number.prototype.toFixed.call({}, { " +
+            "valueOf: function () { log.push('v'); return 2; } }); return 'none'; } " +
+            "catch (e) { return e.name + '|' + log.join(','); } }); " +
+            "push(function () { var r = []; " +
+            "r.push((1.5).toFixed(undefined)); " +
+            "try { (1.5).toFixed(101); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "try { (1.5).toFixed(-1); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "try { (1.5).toFixed(Infinity); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "return r.join(','); }); " +
+            "push(function () { var r = []; " +
+            "r.push((1.5).toExponential(undefined)); " +
+            "try { (1.5).toExponential(101); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "try { (1.5).toExponential(-1); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "return r.join(','); }); " +
+            "push(function () { var r = []; " +
+            "r.push((1.5).toPrecision(undefined)); " +
+            "try { (1.5).toPrecision(0); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "try { (1.5).toPrecision(101); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "return r.join(','); }); " +
+            "push(function () { var r = []; " +
+            "r.push((255).toString(2.9)); " +
+            "try { (255).toString(37); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "try { (255).toString(NaN); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "try { Number.prototype.toString.call('5'); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "return r.join(','); }); " +
+            "push(function () { return [Number.prototype.toFixed.length, " +
+            "Number.prototype.toExponential.length, Number.prototype.toPrecision.length, " +
+            "Number.prototype.toString.length].join(','); }); " +
+            "push(function () { return (1.25).toFixed(1, 'extra') + '|' + (-1.5).toFixed(0); }); " +
+            "push(function () { return (0).toExponential(undefined) + '|' + " +
+            "(0).toPrecision(undefined) + '|' + String(Number.prototype.valueOf.call(new Number(3))); " +
+            "}); " +
+            "push(function () { try { Number.prototype.valueOf.call('3'); return 'ok'; } " +
+            "catch (e) { return e.name; } }); " +
+            "return out.join('|'); })()"
+    ),
 
     // 字符串与 Unicode
     DifferentialCase("str-sharp-s-upper", "'ß'.toUpperCase()"),
