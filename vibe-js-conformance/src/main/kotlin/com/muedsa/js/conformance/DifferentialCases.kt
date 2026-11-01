@@ -2643,4 +2643,42 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // 正则字面量/字符类中的 ] } { 与 \q{a}、\8 等边界字符
+    DifferentialCase(
+        "regexp-class-literals",
+        """(function () {
+  var patterns = [/]/, /}/, /{/, /a{/, /a{1/, /[a~~b]/, /[\q{a}]/,
+    /[\8]/, /[\9]/, /[[]/, /[.^$]/];
+  var inputs = [']', '}', '{', 'a', '-', 'b', '~', 'q', '{a}', '8', '9', '[', 'x', 'a{', '.', '^', '$'];
+  var out = [];
+  for (var i = 0; i < patterns.length; i++) {
+    var bits = '';
+    for (var j = 0; j < inputs.length; j++) bits += patterns[i].test(inputs[j]) ? '1' : '0';
+    out.push(bits);
+  }
+  return out.join(';');
+})()""",
+    ),
+
+    // 字符类范围边界（a-b-c、a-\d、\w- 等）通过构造函数验证
+    DifferentialCase(
+        "regexp-class-ranges",
+        """(function () {
+  var sources = ['[a-b-c]', '[a-]', '[-a]', '[--]', '[a-\\d]', '[\\d-a]', '[\\w-]', '[a-\\w]', '[\\s-]'];
+  var inputs = ['a', 'b', 'c', '-', '1', '_', 'd', 'x', 'w', ' ', 'z'];
+  var out = [];
+  for (var i = 0; i < sources.length; i++) {
+    try {
+      var re = new RegExp(sources[i]);
+      var bits = '';
+      for (var j = 0; j < inputs.length; j++) bits += re.test(inputs[j]) ? '1' : '0';
+      out.push(bits);
+    } catch (e) {
+      out.push('THROW:' + e.name);
+    }
+  }
+  return out.join(';');
+})()""",
+    ),
 )
