@@ -727,6 +727,77 @@ class BuiltinObjectDateRegExpTest {
     }
 
     @Test
+    fun `Date 本地与 UTC setter 矩阵在固定正八偏移下与 V8 一致`() = runTest {
+        val engine = Engine(DefaultHostEnvironment(timeZoneOffset = { 8L * 60 * 60 * 1000 }))
+        val script = """
+            function fmt(d) {
+                return d.getTime() + '/' + d.getFullYear() + '-' + (d.getMonth() + 1) + '-' +
+                    d.getDate() + ' ' + d.getHours() + ':' + d.getMinutes() + ':' +
+                    d.getSeconds() + '.' + d.getMilliseconds();
+            }
+            var out = [];
+            function run(label, fn) {
+                try { out.push(label + '=' + fmt(fn())); }
+                catch (e) { out.push(label + '=THROW:' + e.name); }
+            }
+            run('setHours', function () { var d = new Date(0); d.setHours(1, 2, 3, 4); return d; });
+            run('setHoursOverflow', function () { var d = new Date(0); d.setHours(25); return d; });
+            run('setDate', function () { var d = new Date(0); d.setDate(2); return d; });
+            run('setDateOverflow', function () { var d = new Date(0); d.setDate(32); return d; });
+            run('setMonth', function () { var d = new Date(0); d.setMonth(1, 29); return d; });
+            run('setMonthOverflow', function () { var d = new Date(0); d.setMonth(12, 1); return d; });
+            run('setFullYear', function () { var d = new Date(0); d.setFullYear(2000, 1, 29); return d; });
+            run('setFullYearOverflow', function () { var d = new Date(0); d.setFullYear(2000, 12, 32); return d; });
+            run('setMinutes', function () { var d = new Date(0); d.setMinutes(90, 30, 500); return d; });
+            run('setSeconds', function () { var d = new Date(0); d.setSeconds(90, 500); return d; });
+            run('setMilliseconds', function () { var d = new Date(0); d.setMilliseconds(1500); return d; });
+            run('setYear', function () { var d = new Date(0); d.setYear(99); return d; });
+            run('setTime', function () { var d = new Date(0); d.setTime(123456789); return d; });
+            run('setUTCHours', function () { var d = new Date(0); d.setUTCHours(1, 2, 3, 4); return d; });
+            run('setUTCMonth', function () { var d = new Date(0); d.setUTCMonth(1, 29); return d; });
+            run('setUTCFullYear', function () { var d = new Date(0); d.setUTCFullYear(2000, 1, 29); return d; });
+            run('setUTCDate', function () { var d = new Date(0); d.setUTCDate(32); return d; });
+            run('setUTCMinutes', function () { var d = new Date(0); d.setUTCMinutes(90, 30, 500); return d; });
+            run('setUTCSeconds', function () { var d = new Date(0); d.setUTCSeconds(90, 500); return d; });
+            run('setUTCMilliseconds', function () { var d = new Date(0); d.setUTCMilliseconds(1500); return d; });
+            out.join('\n');
+        """.trimIndent()
+        val expected = """
+            setHours=-25076996/1970-1-1 1:2:3.4
+            setHoursOverflow=61200000/1970-1-2 1:0:0.0
+            setDate=86400000/1970-1-2 8:0:0.0
+            setDateOverflow=2678400000/1970-2-1 8:0:0.0
+            setMonth=5097600000/1970-3-1 8:0:0.0
+            setMonthOverflow=31536000000/1971-1-1 8:0:0.0
+            setFullYear=951782400000/2000-2-29 8:0:0.0
+            setFullYearOverflow=980985600000/2001-2-1 8:0:0.0
+            setMinutes=5430500/1970-1-1 9:30:30.500
+            setSeconds=90500/1970-1-1 8:1:30.500
+            setMilliseconds=1500/1970-1-1 8:0:1.500
+            setYear=915148800000/1999-1-1 8:0:0.0
+            setTime=123456789/1970-1-2 18:17:36.789
+            setUTCHours=3723004/1970-1-1 9:2:3.4
+            setUTCMonth=5097600000/1970-3-1 8:0:0.0
+            setUTCFullYear=951782400000/2000-2-29 8:0:0.0
+            setUTCDate=2678400000/1970-2-1 8:0:0.0
+            setUTCMinutes=5430500/1970-1-1 9:30:30.500
+            setUTCSeconds=90500/1970-1-1 8:1:30.500
+            setUTCMilliseconds=1500/1970-1-1 8:0:1.500
+        """.trimIndent()
+        assertEquals(expected, (engine.run(script) as JSString).value)
+        // V8 对 1901 年前的上海使用历史 LMT，与本宿主的固定 +08 不同；
+        // 这里只校验固定偏移下的负年份换算：本地 -0001-01-01 08:00 对应 UTC 00:00
+        assertEquals(
+            true,
+            (engine.run(
+                "var d = new Date(0); d.setYear(-1); d.getUTCFullYear() === -1 && " +
+                    "d.getUTCMonth() === 0 && d.getUTCDate() === 1 && " +
+                    "d.getUTCHours() === 0 && d.getUTCMinutes() === 0"
+            ) as JSBoolean).value,
+        )
+    }
+
+    @Test
     fun `Date 字段 setter 在 NaN 参数下仍完成其余参数转换`() = runTest {
         val runtime = TestRuntime()
         val prefix = "var log = []; function arg(n) { return { valueOf: function () { " +
