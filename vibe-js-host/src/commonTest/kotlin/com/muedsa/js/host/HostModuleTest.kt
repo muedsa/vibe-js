@@ -360,6 +360,47 @@ class HostModuleTest {
     }
 
     @Test
+    fun `setInterval 回调抛错后继续执行并记录错误`() = runTest {
+        val output = RecordingConsole()
+        val engine = Engine()
+        engine.install(HostModule(engine.eventLoop, output))
+        engine.run("var ticks = 0; var id = setInterval(function () { ticks += 1; throw new Error('boom'); }, 1);")
+        try {
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) {
+                    while ((engine.run("ticks") as JSNumber).value < 2) {
+                        delay(5)
+                    }
+                }
+            }
+        } finally {
+            engine.run("clearInterval(id);")
+        }
+        assertTrue(output.logs.isNotEmpty())
+        assertTrue(output.logs[0].startsWith("ERROR:Error: boom"))
+    }
+
+    @Test
+    fun `回调内 clearInterval 停止后续触发`() = runTest {
+        val engine = Engine()
+        engine.install(HostModule(engine.eventLoop, RecordingConsole()))
+        engine.run(
+            "var ticks = 0; var id = setInterval(function () { ticks += 1; " +
+                "if (ticks === 2) clearInterval(id); }, 1);"
+        )
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) {
+                while ((engine.run("ticks") as JSNumber).value < 2) {
+                    delay(5)
+                }
+            }
+        }
+        withContext(Dispatchers.Default) { delay(40) }
+        assertEquals(2.0, (engine.run("ticks") as JSNumber).value)
+        engine.run("clearInterval(id);")
+    }
+
+    @Test
     fun `clearInterval 可取消 setTimeout 且 clearTimeout 可取消 setInterval`() = runTest {
         // QueueScheduler 保证 setTimeout 任务在断言前不会自动执行
         val scheduler = QueueScheduler()
