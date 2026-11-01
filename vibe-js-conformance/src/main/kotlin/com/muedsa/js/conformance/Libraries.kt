@@ -2408,6 +2408,54 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
         ),
     ),
     LibrarySpec(
+        name = "d3-quadtree",
+        url = "https://unpkg.com/d3-quadtree@3.0.1/dist/d3-quadtree.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "add find size",
+                assertion(
+                    "(function () { var tree = d3.quadtree().addAll([[0, 0], [1, 1], [2, 2]]); " +
+                        "return tree.size() === 3 && JSON.stringify(tree.find(0.9, 0.9)) === '[1,1]' && " +
+                        "JSON.stringify(tree.extent()) === '[[0,0],[4,4]]'; })()"
+                ),
+            ),
+            SmokeCase(
+                "visit",
+                assertion(
+                    "(function () { var visits = 0; " +
+                        "d3.quadtree().addAll([[0, 0], [1, 1], [2, 2]]).visit(function () { visits++; }); " +
+                        "return visits === 5; })()"
+                ),
+            ),
+            SmokeCase(
+                "empty find",
+                assertion("d3.quadtree().find(1, 1) === undefined"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "d3-path",
+        url = "https://unpkg.com/d3-path@3.1.0/dist/d3-path.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "line path",
+                assertion(
+                    "(function () { var path = d3.path(); path.moveTo(0, 0); " +
+                        "path.lineTo(10, 10); path.closePath(); return path.toString() === 'M0,0L10,10Z'; })()"
+                ),
+            ),
+            SmokeCase(
+                "rect path",
+                assertion(
+                    "(function () { var path = d3.path(); path.rect(0, 0, 10, 10); " +
+                        "return path.toString() === 'M0,0h10v10h-10Z'; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
         name = "d3-time",
         url = "https://unpkg.com/d3-time@3.1.0/dist/d3-time.min.js",
         globalName = "d3",
