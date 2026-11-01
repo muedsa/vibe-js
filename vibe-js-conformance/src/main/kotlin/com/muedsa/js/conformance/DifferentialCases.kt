@@ -827,6 +827,39 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "[parseInt('11', Infinity), parseInt('11', NaN), parseInt('11', 4294967306)]" +
             ".join(',')"
     ),
+    // parseInt/parseFloat/Number() 的空白、进制、Infinity 与符号零矩阵
+    DifferentialCase(
+        "number-parse-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return [parseInt('  +12px'), parseInt('0x10'), parseInt('-0xF'), " +
+            "parseInt('08'), parseInt('z', 36), parseInt('10', 1), parseInt('10', 37), " +
+            "parseInt('', 16), parseInt('0x', 16)].join(','); }); " +
+            "push(function () { return [parseInt('11', 2), parseInt('11', 36), parseInt('1e3'), " +
+            "parseInt('.5'), parseInt('0b11'), parseInt('0b11', 2)].join(','); }); " +
+            "push(function () { return [1 / parseInt('-0'), 1 / parseInt('  -0 '), " +
+            "String(parseInt('Infinity')), String(parseInt('abc'))].join(','); }); " +
+            "push(function () { return [parseFloat(' 1.5e3x'), parseFloat('.5'), " +
+            "1 / parseFloat('-0'), parseFloat('Infinity'), parseFloat('-Infinity')].join(','); }); " +
+            "push(function () { return [String(parseFloat('1e')), String(parseFloat('1e+')), " +
+            "String(parseFloat('.')), String(parseFloat('0x10')), parseFloat('Infinityx'), " +
+            "parseFloat('+.5'), parseFloat('1_000')].join(','); }); " +
+            "push(function () { return [parseFloat('\\u00A01'), parseFloat('\\u30001'), " +
+            "parseFloat('\\uFEFF1'), parseFloat('1.2.3')].join(','); }); " +
+            "push(function () { return [Number(''), Number('  '), Number('0x10'), Number('0b11'), " +
+            "Number('0o11'), String(Number('1_000')), String(Number('+'))].join(','); }); " +
+            "push(function () { return [Number('\\u00A0'), String(Number('Infinity')), " +
+            "String(Number('-Infinity')), String(Number('infinity'))].join(','); }); " +
+            "push(function () { return [1 / parseFloat('-0'), 1 / Number('-0'), " +
+            "1 / parseInt('-0')].join(','); }); " +
+            "push(function () { return [parseInt('0x10', 10), parseInt('0x10', 16), " +
+            "parseInt('  0x10  '), parseInt('\\u00A012')].join(','); }); " +
+            "push(function () { return [String(parseInt(undefined)), String(parseInt(null)), " +
+            "String(parseInt(true)), String(parseInt([])), parseInt([12]), parseInt(['0x10'])].join(','); }); " +
+            "push(function () { return [parseInt([12]), parseInt(['0x10']), " +
+            "parseFloat([1.5])].join(','); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase(
         "parse-float-ascii-digits",
         "[String(parseFloat('\\u0661\\u0662\\u0663')), parseFloat('1\\u0661')].join(',')"
