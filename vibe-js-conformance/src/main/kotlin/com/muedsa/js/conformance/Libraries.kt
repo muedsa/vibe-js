@@ -1084,6 +1084,47 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "acorn",
+        url = "https://cdn.jsdelivr.net/npm/acorn@8.11.3/dist/acorn.js",
+        globalName = "acorn",
+        cases = listOf(
+            SmokeCase(
+                "parse script",
+                assertion("acorn.parse('var x = 1;', { ecmaVersion: 2020 }).type === 'Program'"),
+            ),
+            SmokeCase(
+                "modern syntax",
+                assertion(
+                    "acorn.parse('const f = (a = 1) => a ** 2;', { ecmaVersion: 2020 })" +
+                        ".body[0].type === 'VariableDeclaration' && " +
+                        "acorn.parse('class A { #x = 1; m() { return this.#x; } }', " +
+                        "{ ecmaVersion: 2022 }).body[0].type === 'ClassDeclaration'"
+                ),
+            ),
+            SmokeCase(
+                "parse expression",
+                assertion(
+                    "acorn.parseExpressionAt('1 + 2', 0, { ecmaVersion: 2020 }).type" +
+                        " === 'BinaryExpression'"
+                ),
+            ),
+            SmokeCase(
+                "tokenizer",
+                assertion(
+                    "acorn.tokenizer('let x = 1;', { ecmaVersion: 2020 }).getToken()" +
+                        ".type.label === 'name'"
+                ),
+            ),
+            SmokeCase(
+                "syntax error",
+                assertion(
+                    "(function () { try { acorn.parse('var =', { ecmaVersion: 2020 }); " +
+                        "return false; } catch (e) { return e.pos === 4 && e.loc.line === 1; } })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
