@@ -602,4 +602,24 @@ class BuiltinObjectDateRegExpTest {
         assertEquals(number("Date.UTC(2020, 0, 1, 8)"), number("Date.parse('2020-01-01T08:00:00Z')"))
         assertTrue((engine.run("new Date(0).toString()") as JSString).value.contains("GMT+0800"))
     }
+
+    @Test
+    fun `Date 时区偏移可随时刻变化并保持本地字符串往返`() = runTest {
+        val base = DefaultHostEnvironment()
+        val dstStart = 1_590_940_800_000L
+        val engine = Engine(object : HostEnvironment by base {
+            override fun utcOffsetMillis(epochMillis: Long): Long =
+                if (epochMillis >= dstStart) 9L * 60 * 60 * 1000 else 8L * 60 * 60 * 1000
+        })
+        suspend fun number(code: String): Double = (engine.run(code) as JSNumber).value
+        // 2020-06-01 本地 09:00（+09）对应 UTC 00:00
+        assertEquals(
+            number("Date.UTC(2020, 5, 1, 0, 0, 0)"),
+            number("new Date(2020, 5, 1, 9, 0, 0).getTime()")
+        )
+        assertEquals(23.0, number("new Date(${dstStart} - 1).getHours()"))
+        assertEquals(1.0, number("new Date(${dstStart}).getHours()"))
+        assertEquals(0.0, number("Date.parse(new Date(0).toString())"))
+        assertEquals(0.0, number("Date.parse(new Date(0).toUTCString())"))
+    }
 }
