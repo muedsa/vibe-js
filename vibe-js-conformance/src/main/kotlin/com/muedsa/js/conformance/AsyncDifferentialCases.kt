@@ -208,4 +208,98 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         globalThis.__diffResult = log;
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-promise-try",
+        """
+        var log = [];
+        Promise.try(function () { log.push('t1'); return 1; }).then(function (v) {
+          log.push('t2 ' + v);
+        });
+        Promise.resolve().then(function () { log.push('p'); });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-with-resolvers",
+        """
+        var log = [];
+        var r = Promise.withResolvers();
+        r.promise.then(function (v) { log.push('ok ' + v); });
+        Promise.resolve().then(function () { log.push('p'); r.resolve('v'); });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-any-order",
+        """
+        var log = [];
+        Promise.any([Promise.reject('a'), Promise.resolve('b')]).then(function (v) {
+          log.push('any ' + v);
+        });
+        Promise.reject('c').then(null, function (e) { log.push('rej ' + e); });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-then-throws",
+        """
+        var log = [];
+        Promise.resolve(1).then(function () { throw 'x'; }).catch(function (e) {
+          log.push('catch ' + e);
+        });
+        Promise.resolve().then(function () { log.push('t'); });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-await-thenable-throws",
+        """
+        var log = [];
+        async function f() {
+          try {
+            await { then: function (resolve, reject) { log.push('then'); reject('bad'); } };
+            log.push('after');
+          } catch (e) {
+            log.push('caught ' + e);
+          }
+        }
+        f();
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-multiple-await-order",
+        """
+        var log = [];
+        async function f() { await null; log.push(1); await null; log.push(2); }
+        async function g() { await null; log.push(3); await null; log.push(4); }
+        f();
+        g();
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-finally-reject",
+        """
+        var log = [];
+        Promise.reject('x').finally(function () { log.push('fin'); }).catch(function (e) {
+          log.push('caught ' + e);
+        });
+        Promise.resolve().then(function () { log.push('t'); });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-allsettled-thenables",
+        """
+        var log = [];
+        Promise.allSettled([
+          { then: function (resolve) { log.push('t1'); resolve(1); } },
+          Promise.resolve(2)
+        ]).then(function (v) {
+          log.push(v.map(function (x) { return x.status + ':' + x.value; }).join(','));
+        });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
 )
