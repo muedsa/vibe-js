@@ -1133,6 +1133,54 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
     DifferentialCase("regexp-source-prototype", "RegExp.prototype.source"),
     DifferentialCase(
+        "array-methods-fuzz",
+        """
+        (function () {
+          var values = [0, 1, 2, 'x', undefined, true, null];
+          var methods = ['slice', 'splice', 'concat', 'map', 'filter', 'indexOf', 'lastIndexOf',
+            'includes', 'join', 'reverse', 'copyWithin', 'fill', 'sort', 'push', 'pop',
+            'shift', 'unshift'];
+          var seed = 97531;
+          function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+          function snap(a) {
+            var parts = [];
+            for (var i = 0; i < a.length; i++) { parts.push((i in a) ? ('v' + String(a[i])) : 'h'); }
+            return a.length + ':[' + parts.join(',') + ']';
+          }
+          var out = [];
+          for (var i = 0; i < 100; i++) {
+            var len = rnd(7);
+            var array = new Array(len);
+            for (var j = 0; j < len; j++) { if (rnd(3) > 0) { array[j] = values[rnd(values.length)]; } }
+            var name = methods[rnd(methods.length)];
+            var args = [];
+            var argc = rnd(4);
+            for (var k = 0; k < argc; k++) { args.push(values[rnd(values.length)]); }
+            var result;
+            try {
+              if (name === 'map') {
+                result = array.map(function (value, index) { return index; });
+              } else if (name === 'filter') {
+                result = array.filter(function (value) { return value !== undefined; });
+              } else if (name === 'sort') {
+                result = array.sort();
+              } else if (name === 'join') {
+                result = array.join(args.length > 0 ? args[0] : '-');
+              } else {
+                result = array[name].apply(array, args);
+              }
+            } catch (e) {
+              out.push(i + ':' + name + ':THROW:' + e.name + ':' + snap(array));
+              continue;
+            }
+            out.push(i + ':' + name + ':' + snap(Array.isArray(result) ? result : [result]) +
+              ':' + snap(array));
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "regexp-string-methods-fuzz",
         """
         (function () {
