@@ -1280,6 +1280,75 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "ua-parser",
+        url = "https://unpkg.com/ua-parser-js@1.0.37/dist/ua-parser.min.js",
+        globalName = "UAParser",
+        cases = listOf(
+            SmokeCase(
+                "version",
+                assertion("UAParser.VERSION === '1.0.37' && typeof UAParser === 'function'"),
+            ),
+            SmokeCase(
+                "chrome on windows",
+                assertion(
+                    "(function () { var r = UAParser('Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'); " +
+                        "return r.browser.name === 'Chrome' && r.browser.version === '120.0.0.0' && " +
+                        "r.os.name === 'Windows' && r.os.version === '10' && " +
+                        "r.engine.name === 'Blink' && r.cpu.architecture === 'amd64'; })()"
+                ),
+            ),
+            SmokeCase(
+                "mobile safari",
+                assertion(
+                    "(function () { var r = UAParser('Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) " +
+                        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1'); " +
+                        "return r.browser.name === 'Mobile Safari' && r.os.name === 'iOS' && " +
+                        "r.os.version === '17.1' && r.device.type === 'mobile' && " +
+                        "r.device.vendor === 'Apple' && r.device.model === 'iPhone'; })()"
+                ),
+            ),
+            SmokeCase(
+                "unknown ua",
+                assertion(
+                    "(function () { var r = UAParser('Mozilla/5.0 (compatible; Googlebot/2.1; " +
+                        "+http://www.google.com/bot.html)'); " +
+                        "return r.browser.name === undefined && r.os.name === undefined && " +
+                        "r.device.type === undefined; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "fraction",
+        url = "https://unpkg.com/fraction.js@4.3.7/fraction.min.js",
+        globalName = "Fraction",
+        cases = listOf(
+            SmokeCase(
+                "add",
+                assertion("new Fraction(1, 3).add(new Fraction(1, 6)).toFraction() === '1/2'"),
+            ),
+            SmokeCase(
+                "parse decimal",
+                assertion(
+                    "new Fraction('0.75').toFraction() === '3/4' && " +
+                        "new Fraction(0.1).toFraction() === '1/10'"
+                ),
+            ),
+            SmokeCase(
+                "compare",
+                assertion("new Fraction(3, 2).compare(new Fraction(4, 3)) === 1"),
+            ),
+            SmokeCase(
+                "divide and mod",
+                assertion(
+                    "new Fraction(1.5).div('0.25').toFraction() === '6' && " +
+                        "new Fraction('1/3').mod('1/6').toFraction() === '0'"
+                ),
+            ),
+        ),
+    ),
 )
 
 
