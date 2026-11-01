@@ -2217,6 +2217,47 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "katex",
+        url = "https://unpkg.com/katex@0.16.9/dist/katex.min.js",
+        globalName = "katex",
+        cases = listOf(
+            SmokeCase(
+                "render string",
+                assertion(
+                    "(function () { var html = katex.renderToString('x^2'); " +
+                        "return html.indexOf('<span class=\"katex\">') === 0 && " +
+                        "html.indexOf('katex-mathml') >= 0 && html.indexOf('x') >= 0; })()"
+                ),
+            ),
+            SmokeCase(
+                "fraction sqrt text",
+                assertion(
+                    "(function () { var bs = String.fromCharCode(92); " +
+                        "return katex.renderToString(bs + 'frac{1}{2}').indexOf('mfrac') >= 0 && " +
+                        "katex.renderToString(bs + 'sqrt{2}').indexOf('sqrt') >= 0 && " +
+                        "katex.renderToString(bs + 'text{hi}').indexOf('hi') >= 0; })()"
+                ),
+            ),
+            SmokeCase(
+                "display mode",
+                assertion(
+                    "katex.renderToString('a+b', { displayMode: true, throwOnError: false })" +
+                        ".indexOf('<span class=\"katex-display\">') === 0"
+                ),
+            ),
+            SmokeCase(
+                "parse error",
+                assertion(
+                    "(function () { var bs = String.fromCharCode(92); var thrown = false; " +
+                        "try { katex.renderToString(bs + 'unknowncmd'); } " +
+                        "catch (e) { thrown = e.name === 'ParseError'; } " +
+                        "return thrown && katex.renderToString(bs + 'unknowncmd', " +
+                        "{ throwOnError: false }).indexOf('katex') >= 0; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
