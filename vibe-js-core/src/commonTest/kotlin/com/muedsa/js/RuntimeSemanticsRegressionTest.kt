@@ -3488,4 +3488,24 @@ class RuntimeSemanticsRegressionTest {
                 " foo instanceof Function"
         ))
     }
+
+    @Test
+    fun `delete 与计算成员访问先校验基对象`() = runTest {
+        val runtime = TestRuntime()
+        // delete 属性引用：null/undefined 基对象抛 TypeError
+        assertEquals("TypeError", runtime.evalString(
+            "try { delete Object[0][0]; 'none' } catch (e) { e.name }"
+        ))
+        assertEquals("TypeError", runtime.evalString(
+            "var base = null; try { delete base[0]; 'none' } catch (e) { e.name }"
+        ))
+        // 计算键在 ToObject(base) 之后才 ToPropertyKey
+        assertEquals("TypeError", runtime.evalString(
+            "var base = null;" +
+                " var key = { toString: function () { throw new Error('key'); } };" +
+                " try { base[key]; 'none' } catch (e) { e.name }"
+        ))
+        // 原始值基对象按 ToObject 处理，删除不存在属性返回 true
+        assertEquals(true, runtime.evalBoolean("delete true.x"))
+    }
 }

@@ -2679,6 +2679,13 @@ class Interpreter(
                     )
                 } else {
                     val base = evaluate(expression.obj)
+                    // 计算键：规范先 ToObject(base) 再 ToPropertyKey(key)
+                    if (expression.computed && (base is JSNull || base is JSUndefined)) {
+                        typeError(
+                            "Cannot read properties of " +
+                                if (base is JSNull) "null" else "undefined"
+                        )
+                    }
                     getV(base, memberKey(expression))
                 }
             }
@@ -4563,16 +4570,17 @@ class Interpreter(
                     throw referenceError("Unsupported reference to 'super'")
                 }
                 val base = evaluate(operand.obj)
-                val key = memberKey(operand)
-                if (base is JSObject) {
-                    val deleted = base.deleteOwnProperty(key)
-                    if (!deleted && currentFrame.strict) {
-                        throw typeError("Cannot delete property '${key}'")
-                    }
-                    JSBoolean.getJsBoolean(deleted)
-                } else {
-                    JSBoolean.TRUE
+                // 规范：属性引用的 delete 先 ToObject(base)，null/undefined 抛 TypeError
+                if (base is JSNull || base is JSUndefined) {
+                    typeError("Cannot convert undefined or null to object")
                 }
+                val baseObject = toObject(base)
+                val key = memberKey(operand)
+                val deleted = baseObject.deleteOwnProperty(key)
+                if (!deleted && currentFrame.strict) {
+                    throw typeError("Cannot delete property '${key}'")
+                }
+                JSBoolean.getJsBoolean(deleted)
             }
 
             is OptionalChainExpr -> {
@@ -4864,6 +4872,13 @@ class Interpreter(
                 if (privateMember != null) {
                     setPrivateMember(base, resolvePrivateName(privateMember), value)
                 } else {
+                    // 计算键：规范先 ToObject(base) 再 ToPropertyKey(key)
+                    if (target.computed && (base is JSNull || base is JSUndefined)) {
+                        typeError(
+                            "Cannot set properties of " +
+                                if (base is JSNull) "null" else "undefined"
+                        )
+                    }
                     putV(base, memberKey(target), value, currentFrame.strict)
                 }
             }

@@ -140,6 +140,18 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "Set.prototype.keys === Set.prototype.values"
     ),
     DifferentialCase(
+        "delete-unresolvable-base",
+        "(function () { try { delete Object[0][0]; return 'none'; }" +
+            " catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
+        "member-null-key-order",
+        "(function () { var base = null;" +
+            " var key = { toString: function () { throw new Error('key'); } };" +
+            " try { base[key]; return 'none'; } catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase("delete-primitive-base", "delete true.x"),
+    DifferentialCase(
         "async-function-subclass",
         "(function () { async function foo() {} var AF = foo.constructor;" +
             " return Object.getPrototypeOf(AF) === Function && foo instanceof Function; })()"
