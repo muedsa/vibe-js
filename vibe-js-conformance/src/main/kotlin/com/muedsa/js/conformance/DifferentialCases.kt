@@ -2725,4 +2725,20 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('');
 })()""",
     ),
+
+    // 正则命名组：Unicode 17 ID_Start/Continue、$/_、astral 与 ZWNJ
+    DifferentialCase(
+        "regexp-group-names",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { return new RegExp('(?<π>x)').exec('x').groups['π']; });
+  push(function () { return new RegExp('(?<𐐀>x)').exec('x').groups['𐐀']; });
+  push(function () { return new RegExp('(?<_$1x>a)').exec('a').groups['_$1x']; });
+  push(function () { return new RegExp('(?<é>x)').exec('x').groups['é']; });
+  push(function () { try { new RegExp('(?<1a>x)'); return 'ok'; } catch (e) { return e.name; } });
+  push(function () { try { new RegExp('(?<a\u200Cb>x)'); return 'ok'; } catch (e) { return e.name; } });
+  return out.join('|');
+})()""",
+    ),
 )

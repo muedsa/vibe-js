@@ -1,5 +1,7 @@
 package com.muedsa.js.runtime.regex
 
+import com.muedsa.js.lexer.UnicodeIdentifierData
+
 /** 命名捕获组分析/校验失败（由调用方转换为 SyntaxError）。 */
 internal class RegexSyntaxError(message: String) : Exception(message)
 
@@ -34,29 +36,6 @@ internal class NamedGroupAnalysis(
  *   这里统一改写为字面字符。
  */
 internal object RegexNamedGroups {
-
-    private val OTHER_ID_START = setOf('\u1885', '\u1886', '\u2118', '\u212E', '\u309B', '\u309C')
-    private val OTHER_ID_CONTINUE = setOf('\u00B7', '\u0387', '\u19DA') +
-        ('\u1369'..'\u1371').toSet()
-
-    private val ASTRAL_ID_START_RANGES = listOf(
-        0x10000..0x1004D,
-        0x10480..0x1049D,
-        0x104B0..0x104D3,
-        0x104D8..0x104FB,
-        0x1D400..0x1D7CB,
-        0x1EE00..0x1EEFF,
-        0x20000..0x2B81D,
-        0x2B820..0x2CEAF,
-        0x2CEB0..0x2EBEF,
-        0x30000..0x3134F,
-    )
-
-    /** 仅 ID_Continue 的 astral 区间（数学数字、Osmanya 数字等）。 */
-    private val ASTRAL_ID_CONTINUE_ONLY_RANGES = listOf(
-        0x104A0..0x104A9,
-        0x1D7CE..0x1D7FF,
-    )
 
     /** 允许作为 IdentityEscape 的语法字符（u 模式）。 */
     private const val SYNTAX_CHARACTERS = "^$\\.*+?()[]{}|/"
@@ -627,28 +606,11 @@ internal object RegexNamedGroups {
         }
     }
 
-    private fun isIdStart(codePoint: Int): Boolean {
-        if (codePoint > 0xFFFF) {
-            return ASTRAL_ID_START_RANGES.any { codePoint in it }
-        }
-        val c = codePoint.toChar()
-        return c == '_' || c == '$' || c.isLetter() ||
-            c.category == CharCategory.LETTER_NUMBER || c in OTHER_ID_START
-    }
+    /** RegExpIdentifierName 首字符：ID_Start 或 $/_（Unicode 17.0.0 表）。 */
+    private fun isIdStart(codePoint: Int): Boolean =
+        codePoint == 0x24 || codePoint == 0x5F || UnicodeIdentifierData.isStart(codePoint)
 
-    private fun isIdContinue(codePoint: Int): Boolean {
-        if (codePoint > 0xFFFF) {
-            if (ASTRAL_ID_START_RANGES.any { codePoint in it }) return true
-            if (ASTRAL_ID_CONTINUE_ONLY_RANGES.any { codePoint in it }) return true
-            return codePoint in 0xE0100..0xE01EF
-        }
-        val c = codePoint.toChar()
-        if (isIdStart(codePoint)) return true
-        return c.isDigit() || c.category == CharCategory.DECIMAL_DIGIT_NUMBER ||
-            c.category == CharCategory.NON_SPACING_MARK ||
-            c.category == CharCategory.ENCLOSING_MARK ||
-            c.category == CharCategory.COMBINING_SPACING_MARK ||
-            c.category == CharCategory.CONNECTOR_PUNCTUATION ||
-            c == '\u200C' || c == '\u200D' || c in OTHER_ID_CONTINUE
-    }
+    /** RegExpIdentifierName 后续字符：ID_Continue 或 $/_（含 ZWNJ/ZWJ）。 */
+    private fun isIdContinue(codePoint: Int): Boolean =
+        codePoint == 0x24 || codePoint == 0x5F || UnicodeIdentifierData.isContinue(codePoint)
 }

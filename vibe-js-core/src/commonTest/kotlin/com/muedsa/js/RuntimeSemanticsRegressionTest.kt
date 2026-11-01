@@ -191,6 +191,17 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `正则组名使用 Unicode 17 标识符规则`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("x", runtime.evalString("new RegExp('(?<π>x)').exec('x').groups.π"))
+        assertEquals("x", runtime.evalString("new RegExp('(?<𐐀>x)').exec('x').groups['𐐀']"))
+        assertEquals("a", runtime.evalString("new RegExp('(?<_$1x>a)').exec('a').groups['_$1x']"))
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { new RegExp('(?<1a>x)'); 'none' } catch (e) { e.name }"
+        ))
+    }
+
+    @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[object RegExp]", runtime.evalString("Object.prototype.toString.call(/a/) "))
