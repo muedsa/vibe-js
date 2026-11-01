@@ -598,6 +598,22 @@ class BuiltinObjectDateRegExpTest {
         assertEquals(number("Date.UTC(2020, 0, 1)"), number("Date.parse('2020-01-01T08:00:00')"))
         assertEquals(number("Date.UTC(2020, 0, 1, 8)"), number("Date.parse('2020-01-01T08:00:00Z')"))
         assertTrue((engine.run("new Date(0).toString()") as JSString).value.contains("GMT+0800"))
+        assertEquals(70.0, number("new Date(0).getYear()"))
+        assertEquals("Thu Jan 01 1970", (engine.run("new Date(0).toDateString()") as JSString).value)
+        assertTrue(
+            (engine.run("new Date(0).toTimeString()") as JSString).value
+                .startsWith("08:00:00 GMT+0800")
+        )
+        assertEquals(
+            number("Date.UTC(2020, 0, 1)"),
+            number("new Date('2020-01-01T08:00:00').getTime()")
+        )
+        assertEquals(number("Date.UTC(2020, 0, 1)"), number("Date.parse('2020-01-01 08:00:00')"))
+        assertEquals(
+            number("Date.UTC(2020, 1, 1)"),
+            number("var d = new Date(Date.UTC(2020, 0, 1)); d.setMonth(1); d.getTime()")
+        )
+        assertEquals(0.0, number("var d = new Date(NaN); d.setFullYear(1970); d.getTime()"))
     }
 
     @Test
