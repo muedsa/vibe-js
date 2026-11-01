@@ -72,7 +72,7 @@
 | JSON | ✅ | well-formed 字符串转义（孤立代理项）、 parse（reviver 与 context.source）、stringify（replacer/space）、`rawJSON`/`isRawJSON`；字符串字面量允许 U+2028/U+2029（JSON 超集） |
 | Error | ✅ | Error/TypeError/RangeError/ReferenceError/SyntaxError/EvalError/URIError、SuppressedError（error/suppressed/可选 message）、`Error.isError`、Error.prototype.stack 访问器 |
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
-| Date | ⚠️ | 构造、now/parse/UTC、常用 getter/setter、toISOString/toJSON；本地时间按 UTC 处理 |
+| Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、常用 getter/setter（无效日期的参数转换顺序）、toISOString/toJSON；本地时间按 UTC 处理 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；Weak 版本不可迭代，支持非注册 Symbol 键 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
@@ -103,9 +103,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 449 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 449 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 449 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 452 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 452 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 452 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

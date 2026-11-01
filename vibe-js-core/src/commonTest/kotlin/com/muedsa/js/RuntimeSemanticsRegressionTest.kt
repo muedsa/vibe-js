@@ -2769,4 +2769,62 @@ class RuntimeSemanticsRegressionTest {
                 " delete globalThis.evalCreated === true && typeof evalCreated === 'undefined'"
         ))
     }
+
+    @Test
+    fun `Date UTC 默认参数 双精度运算与 TimeClip`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(0.0, runtime.evalNumber("Date.UTC(1970)"))
+        assertEquals(1467331200000.0, runtime.evalNumber("Date.UTC(2016, 6)"))
+        // 非有限参数经 MakeDay/MakeTime 返回 NaN，结果再经 TimeClip 越界返回 NaN
+        assertEquals(true, runtime.evalBoolean(
+            "Number.isNaN(Date.UTC(Infinity, 0)) &&" +
+                " Number.isNaN(Date.UTC(2016, 0, 1, Infinity)) &&" +
+                " Number.isNaN(Date.UTC(275760, 8, 13, 0, 0, 0, 1))"
+        ))
+        // 大数值按 IEEE 754 双精度顺序运算
+        assertEquals(
+            29312.0,
+            runtime.evalNumber(
+                "Date.UTC(1970, 0, 1, 80063993375, 29, 1, -288230376151711740)"
+            )
+        )
+        assertEquals(
+            34447360.0,
+            runtime.evalNumber(
+                "Date.UTC(1970, 0, 213503982336, 0, 0, 0, -18446744073709552000)"
+            )
+        )
+    }
+
+    @Test
+    fun `Date 设置器的无效日期与参数转换顺序`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "var d = new Date(NaN); Number.isNaN(d.setDate(1)) && Number.isNaN(d.getTime())"
+        ))
+        // 内部时间无效也要先完成参数的 ToNumber（副作用可见）
+        assertEquals(true, runtime.evalBoolean(
+            "var called = false;" +
+                " var arg = { valueOf: function () { called = true; return 1; } };" +
+                " new Date(NaN).setMonth(arg); called"
+        ))
+        // setFullYear 在无效日期上以 +0 为基准
+        assertEquals(2020.0, runtime.evalNumber(
+            "var e = new Date(NaN); e.setFullYear(2020); e.getUTCFullYear()"
+        ))
+        assertEquals(true, runtime.evalBoolean("Number.isNaN(new Date(NaN).setFullYear(Infinity))"))
+    }
+
+    @Test
+    fun `Date 解析 toString 往返 扩展年份与取值范围`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(0.0, runtime.evalNumber("Date.parse(new Date(0).toString())"))
+        assertEquals(0.0, runtime.evalNumber("Date.parse(new Date(0).toUTCString())"))
+        // 扩展年份 0 必须带 + 号；超出 ±8.64e15 的解析结果为 NaN
+        assertEquals(true, runtime.evalBoolean(
+            "Number.isNaN(Date.parse('-000000-03-31T00:45Z')) &&" +
+                " Number.isNaN(Date.parse('-271821-04-19T23:59:59.999Z')) &&" +
+                " Date.parse('-271821-04-20T00:00:00.000Z') === -8640000000000000"
+        ))
+    }
 }

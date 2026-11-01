@@ -53,6 +53,63 @@ internal object DateMath {
         return days * MS_PER_DAY + timeOfDay
     }
 
+    /**
+     * MakeDay：由年/月/日字段计算自 1970-01-01 起的天数。
+     *
+     * 按规范使用 IEEE 754 双精度运算（大数值用例依赖精确的舍入顺序），
+     * 任一参数非有限时返回 NaN。
+     */
+    fun makeDay(year: Double, month: Double, date: Double): Double {
+        if (!year.isFinite() || !month.isFinite() || !date.isFinite()) return Double.NaN
+        val y = kotlin.math.truncate(year)
+        val m = kotlin.math.truncate(month)
+        val dt = kotlin.math.truncate(date)
+        val monthIndex = kotlin.math.floor(m / 12.0)
+        val ym = y + monthIndex
+        val mn = m - monthIndex * 12.0
+        val dayFromYear = 365.0 * (ym - 1970.0) +
+            kotlin.math.floor((ym - 1969.0) / 4.0) -
+            kotlin.math.floor((ym - 1901.0) / 100.0) +
+            kotlin.math.floor((ym - 1601.0) / 400.0)
+        val monthIndexInt = mn.toInt()
+        var dayWithinYear = DAYS_BEFORE_MONTH[monthIndexInt].toDouble()
+        val leap = (ym % 4.0 == 0.0 && ym % 100.0 != 0.0) || ym % 400.0 == 0.0
+        if (mn >= 2.0 && leap) dayWithinYear += 1.0
+        return dayFromYear + dayWithinYear + dt - 1.0
+    }
+
+    /** MakeTime：按 `((h*msPerHour + m*msPerMinute) + s*msPerSecond) + ms` 的双精度顺序计算。 */
+    fun makeTimeDouble(hour: Double, minute: Double, second: Double, millisecond: Double): Double {
+        if (!hour.isFinite() || !minute.isFinite() ||
+            !second.isFinite() || !millisecond.isFinite()
+        ) {
+            return Double.NaN
+        }
+        return ((kotlin.math.truncate(hour) * MS_PER_HOUR +
+            kotlin.math.truncate(minute) * MS_PER_MINUTE) +
+            kotlin.math.truncate(second) * MS_PER_SECOND) + kotlin.math.truncate(millisecond)
+    }
+
+    /** MakeDate：day × msPerDay + time。 */
+    fun makeDate(day: Double, time: Double): Double = day * MS_PER_DAY + time
+
+    /** Date.UTC/Date 构造器的 0..99 年映射（ToInteger 后判断）。 */
+    fun normalizeYear(year: Double): Double {
+        if (!year.isFinite()) return year
+        val integer = kotlin.math.truncate(year)
+        return if (integer >= 0.0 && integer <= 99.0) 1900.0 + integer else year
+    }
+
+    private val DAYS_BEFORE_MONTH =
+        intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
+
+    /** TimeClip：截断为整数并限制在 ±8.64e15，非有限值或越界返回 NaN。 */
+    fun timeClip(time: Double): Double {
+        if (!time.isFinite()) return Double.NaN
+        val truncated = if (time < 0) kotlin.math.ceil(time) else kotlin.math.floor(time)
+        return if (kotlin.math.abs(truncated) > 8.64e15) Double.NaN else truncated
+    }
+
     /** 把时间值拆分为日期字段；无效时间返回 null。 */
     fun parts(time: Double): Parts? {
         if (time.isNaN() || time.isInfinite()) return null
@@ -110,11 +167,32 @@ internal object DateMath {
      */
     fun parseDateString(text: String): Double {
         val trimmed = text.trim()
+        // 自身 toString/toUTCString 输出（"Thu, 01 Jan 1970 00:00:00 GMT"）
+        val human = HUMAN_DATE_PATTERN.matchEntire(trimmed)
+        if (human != null) {
+            val monthIndex = MONTH_NAMES.indexOf(human.groupValues[2])
+            if (monthIndex < 0) return Double.NaN
+            val time = makeTime(
+                human.groupValues[3].toInt(),
+                monthIndex,
+                human.groupValues[1].toInt(),
+                human.groupValues[4].toInt(),
+                human.groupValues[5].toInt(),
+                human.groupValues[6].toInt(),
+                0,
+            )
+            return timeClip(time)
+        }
         val regex = Regex(
             """^([+-]?\d{4,6})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})?)?$"""
         )
         val match = regex.matchEntire(trimmed) ?: return Double.NaN
-        val year = match.groupValues[1].toIntOrNull() ?: return Double.NaN
+        val yearText = match.groupValues[1]
+        // 规范：扩展年份 0 必须写成 +000000，"-000000" 非法
+        if (yearText.startsWith("-") && yearText.drop(1).all { it == '0' }) {
+            return Double.NaN
+        }
+        val year = yearText.toIntOrNull() ?: return Double.NaN
         val month = match.groupValues[2].toIntOrNull() ?: return Double.NaN
         val day = match.groupValues[3].toIntOrNull() ?: return Double.NaN
         if (month !in 1..12 || day !in 1..31) return Double.NaN
@@ -132,6 +210,12 @@ internal object DateMath {
             val zoneMinutes = zone.substring(if (zone.contains(':')) 4 else 3).toInt()
             time -= sign * (zoneHours * 60 + zoneMinutes) * MS_PER_MINUTE
         }
-        return time
+        return timeClip(time)
     }
+
+    private val HUMAN_DATE_PATTERN = Regex(
+        """^[A-Za-z]{3}, (\d{2}) ([A-Za-z]{3}) (\d{4}) (\d{2}):(\d{2}):(\d{2}) GMT$"""
+    )
+    private val MONTH_NAMES =
+        listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 }
