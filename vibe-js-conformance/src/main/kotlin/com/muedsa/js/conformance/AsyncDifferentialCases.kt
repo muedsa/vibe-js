@@ -398,4 +398,19 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         });
         """.trimIndent(),
     ),
+
+    AsyncDifferentialCase(
+        "async-throw-plain-object",
+        """
+        var log = [];
+        async function f() { throw { code: 'X' }; }
+        f().then(function (value) {
+          log.push('ok:' + value);
+        }, function (error) {
+          log.push('rej:' + (error && error.code));
+        });
+        Promise.resolve().then(function () { log.push('t'); });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
 )

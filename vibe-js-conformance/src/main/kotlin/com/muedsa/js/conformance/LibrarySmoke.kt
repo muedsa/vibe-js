@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyKey
@@ -114,8 +115,20 @@ private class LibrarySmokeRunner(
             for (case in spec.cases) {
                 caseResults.add(
                     try {
-                        engine.run(case.source)
-                        CaseResult(case.name, "pass", null)
+                        if (case.async) {
+                            // 异步用例：先清理结果变量，再执行脚本；Engine.run 会在结束时冲刷微任务
+                            engine.run("globalThis.__libResult = undefined;")
+                            engine.run(case.source)
+                            val result = engine.run("globalThis.__libResult")
+                            if (result is JSBoolean && result.value) {
+                                CaseResult(case.name, "pass", null)
+                            } else {
+                                CaseResult(case.name, "fail", "异步结果不为 true：$result")
+                            }
+                        } else {
+                            engine.run(case.source)
+                            CaseResult(case.name, "pass", null)
+                        }
                     } catch (error: JSException) {
                         CaseResult(case.name, "fail", error.toString())
                     } catch (error: ParseException) {

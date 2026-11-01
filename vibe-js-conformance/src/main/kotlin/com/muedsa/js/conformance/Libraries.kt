@@ -15,6 +15,8 @@ internal data class LibrarySpec(
 internal data class SmokeCase(
     val name: String,
     val source: String,
+    /** 异步用例：脚本在微任务中把布尔结果写入 globalThis.__libResult */
+    val async: Boolean = false,
 )
 
 internal val librarySpecs: List<LibrarySpec> = listOf(
@@ -1611,6 +1613,25 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
                     "(function () { try { jsonata('1 +'); return false; } catch (e) { " +
                         "return e.message === 'Unexpected end of expression'; } })()"
                 ),
+            ),
+            SmokeCase(
+                "evaluate path",
+                "(function () { jsonata('a.b').evaluate({ a: { b: 42 } }).then(function (value) { " +
+                    "globalThis.__libResult = value === 42; }); })();",
+                async = true,
+            ),
+            SmokeCase(
+                "evaluate aggregate",
+                "(function () { jsonata('$" + "sum([1, 2, 3])').evaluate({}).then(function (value) { " +
+                    "globalThis.__libResult = value === 6; }); })();",
+                async = true,
+            ),
+            SmokeCase(
+                "evaluate error",
+                "(function () { jsonata('$" + "sum()').evaluate({}).then(function () { " +
+                    "globalThis.__libResult = false; }, function (error) { " +
+                    "globalThis.__libResult = error.code === 'T0410'; }); })();",
+                async = true,
             ),
         ),
     ),
