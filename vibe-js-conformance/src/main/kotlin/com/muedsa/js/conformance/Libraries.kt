@@ -2066,6 +2066,79 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "chevrotain",
+        url = "https://unpkg.com/chevrotain@10.5.0/lib/chevrotain.min.js",
+        globalName = "chevrotain",
+        cases = listOf(
+            SmokeCase(
+                "lexer tokens",
+                assertion(
+                    "(function () { var I = chevrotain.createToken({ name: 'I', pattern: /[a-zA-Z][a-zA-Z0-9]*/ }); " +
+                        "var W = chevrotain.createToken({ name: 'W', pattern: /\\s+/, " +
+                        "group: chevrotain.Lexer.SKIPPED }); " +
+                        "var P = chevrotain.createToken({ name: 'P', pattern: /\\+/ }); " +
+                        "var lexer = new chevrotain.Lexer([W, P, I]); " +
+                        "var result = lexer.tokenize('a + b + c'); " +
+                        "return result.errors.length === 0 && " +
+                        "result.tokens.map(function (t) { return t.image; }).join(',') === 'a,+,b,+,c' && " +
+                        "result.tokens.map(function (t) { return t.startOffset; }).join(',') === '0,2,4,6,8'; })()"
+                ),
+            ),
+            SmokeCase(
+                "lexer errors",
+                assertion(
+                    "(function () { var I = chevrotain.createToken({ name: 'I', pattern: /[a-z]+/ }); " +
+                        "var W = chevrotain.createToken({ name: 'W', pattern: /\\s+/, " +
+                        "group: chevrotain.Lexer.SKIPPED }); " +
+                        "var P = chevrotain.createToken({ name: 'P', pattern: /\\+/ }); " +
+                        "var lexer = new chevrotain.Lexer([W, P, I]); " +
+                        "var result = lexer.tokenize('a @ b'); " +
+                        "return result.tokens.map(function (t) { return t.image; }).join(',') === 'a,b' && " +
+                        "result.errors.length === 1 && result.errors[0].offset === 2 && " +
+                        "result.errors[0].message.length > 0; })()"
+                ),
+            ),
+            SmokeCase(
+                "cst parser",
+                assertion(
+                    "(function () { var createToken = chevrotain.createToken, Lexer = chevrotain.Lexer, " +
+                        "CstParser = chevrotain.CstParser; " +
+                        "var I = createToken({ name: 'I', pattern: /[a-zA-Z][a-zA-Z0-9]*/ }); " +
+                        "var W = createToken({ name: 'W', pattern: /\\s+/, group: Lexer.SKIPPED }); " +
+                        "var P = createToken({ name: 'P', pattern: /\\+/ }); var all = [W, P, I]; " +
+                        "var lexer = new Lexer(all); " +
+                        "class Parser extends CstParser { constructor() { super(all); var self = this; " +
+                        "self.RULE('expr', function () { self.SUBRULE(self.term); " +
+                        "self.MANY(function () { self.CONSUME(P); self.SUBRULE2(self.term); }); }); " +
+                        "self.RULE('term', function () { self.CONSUME(I); }); " +
+                        "this.performSelfAnalysis(); } } " +
+                        "var parser = new Parser(); parser.input = lexer.tokenize('a + b + c').tokens; " +
+                        "var cst = parser.expr(); " +
+                        "return cst.children.term.length === 3 && cst.children.P.length === 2; })()"
+                ),
+            ),
+            SmokeCase(
+                "embedded actions",
+                assertion(
+                    "(function () { var createToken = chevrotain.createToken, Lexer = chevrotain.Lexer, " +
+                        "EmbeddedActionsParser = chevrotain.EmbeddedActionsParser; " +
+                        "var N = createToken({ name: 'N', pattern: /[0-9]+/ }); " +
+                        "var W = createToken({ name: 'W', pattern: /\\s+/, group: Lexer.SKIPPED }); " +
+                        "var P = createToken({ name: 'P', pattern: /\\+/ }); var all = [W, P, N]; " +
+                        "var lexer = new Lexer(all); " +
+                        "class Calc extends EmbeddedActionsParser { constructor() { super(all); var self = this; " +
+                        "self.RULE('expr', function () { var value = self.SUBRULE(self.term); " +
+                        "self.MANY(function () { self.CONSUME(P); value += self.SUBRULE2(self.term); }); " +
+                        "return value; }); " +
+                        "self.RULE('term', function () { return Number(self.CONSUME(N).image); }); " +
+                        "this.performSelfAnalysis(); } } " +
+                        "var parser = new Calc(); parser.input = lexer.tokenize('1 + 2 + 3').tokens; " +
+                        "return parser.expr() === 6; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
