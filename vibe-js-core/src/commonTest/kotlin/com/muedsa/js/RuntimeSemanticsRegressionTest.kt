@@ -181,6 +181,16 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `正则词边界只把 ASCII 单词字符视为单词`() = runTest {
+        val runtime = TestRuntime()
+        // Java 的 \b 把非 ASCII 字母当单词字符；JS 只认 ASCII
+        assertEquals(true, runtime.evalBoolean(
+            "!/\\bé/.test('é') && /\\Bé/.test('é') && /\\bé/.test('aé') && " +
+                "/\\b\\w/.test('a') && !/\\b\\w/u.test('é') && !/\\B\\w/u.test('é')"
+        ))
+    }
+
+    @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[object RegExp]", runtime.evalString("Object.prototype.toString.call(/a/) "))

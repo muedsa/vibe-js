@@ -5319,6 +5319,34 @@ class Interpreter(
         return false
     }
 
+    /** 字符类外的 `\b`/`\B`：Java 的单词边界把非 ASCII 字母视为单词字符，与 JS 不同。 */
+    private fun hasWordBoundary(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            when (pattern[index]) {
+                '\\' -> {
+                    val next = pattern.getOrNull(index + 1)
+                    if (!inClass && (next == 'b' || next == 'B')) return true
+                    index += 2
+                }
+
+                '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                ']' -> {
+                    inClass = false
+                    index++
+                }
+
+                else -> index++
+            }
+        }
+        return false
+    }
+
     /** 非 v 模式字符类中的 `&&` 是字面量，Java 会解释为集合交集。 */
     private fun hasClassIntersection(pattern: String): Boolean {
         var index = 0
@@ -5724,6 +5752,7 @@ class Interpreter(
         if (hasLegacyOctalEscape(pattern)) return true
         if (hasHugeBraceQuantifier(pattern)) return true
         if (hasClassIntersection(pattern)) return true
+        if (hasWordBoundary(pattern)) return true
         if (hasDollarAnchor(pattern)) return true
         if (hasLookaheadBackReference(pattern)) return true
         if (hasForwardBackReference(pattern)) return true

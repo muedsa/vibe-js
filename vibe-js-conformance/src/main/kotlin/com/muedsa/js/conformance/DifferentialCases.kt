@@ -2707,4 +2707,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // 非 ASCII 与 u 模式下 /\B 的词边界判定
+    DifferentialCase(
+        "regexp-word-boundary-unicode",
+        """(function () {
+  var cases = [
+    [/\bé/, 'é'], [/\bé\u0020/, 'é '], [/\bé\b/, ' é '], [/\Bé/, 'é'],
+    [/\bα/, 'α'], [/\bα\b/, ' α '], [/\Bα/, 'α'], [/\b😀/u, '😀'],
+    [/\b\w/u, 'é'], [/\b\w/u, 'a'], [/\B\w/u, 'é'], [/\b\u00E9/u, 'é'],
+    [/\b./u, 'é'], [/\B./u, 'é'], [/\b\s/, ' é'], [/\b\d/, '1']
+  ];
+  var out = [];
+  for (var i = 0; i < cases.length; i++) {
+    out.push(cases[i][0].test(cases[i][1]) ? '1' : '0');
+  }
+  return out.join('');
+})()""",
+    ),
 )
