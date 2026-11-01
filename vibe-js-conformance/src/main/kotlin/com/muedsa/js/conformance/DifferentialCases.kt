@@ -2349,6 +2349,54 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "function-binding-fuzz",
+        """
+        (function () {
+          var out = [];
+          function check(label, body) {
+            try { out.push(label + '=' + String(body())); }
+            catch (e) { out.push(label + '=THROW:' + e.name); }
+          }
+          function f(a, b) {
+            return [this && this.tag, a, b, arguments.length].join('|');
+          }
+          check('call', function () { return f.call({ tag: 'c' }, 1, 2); });
+          check('applyArray', function () { return f.apply({ tag: 'a' }, [3, 4]); });
+          check('applyArrayLike', function () {
+            return f.apply({ tag: 'l' }, { 0: 5, 1: 6, length: 2 });
+          });
+          var bound = f.bind({ tag: 'b' }, 7);
+          check('bound', function () { return bound(8); });
+          check('boundLength', function () { return bound.length; });
+          check('boundName', function () { return bound.name; });
+          function C(x) { this.x = x; if (x === 2) { return { x: 99 }; } }
+          check('newBound', function () {
+            var instance = new (C.bind(null, 1))();
+            return instance.x + ':' + (instance instanceof C);
+          });
+          check('newBoundObject', function () { return new (C.bind(null, 2))().x; });
+          function Strict() { 'use strict'; return this === undefined; }
+          check('strictThis', function () { return Strict.call(undefined); });
+          function Sloppy() { return this === globalThis; }
+          check('sloppyThis', function () { return Sloppy.call(undefined); });
+          check('method', function () { return ({ tag: 'o', m: f }).m(9); });
+          check('primitiveThis', function () {
+            function h() { return typeof this + ':' + String(this); }
+            return h.call(5);
+          });
+          function P() { }
+          P.prototype.v = 1;
+          check('boundProto', function () { return new (P.bind(null))() instanceof P; });
+          check('doubleBind', function () { return f.bind({ tag: 'x' }).bind({ tag: 'y' }, 1)(2); });
+          check('arrowThis', function () {
+            var arrow = () => typeof this;
+            return arrow.call(5);
+          });
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "iterator-close-fuzz",
         """
         (function () {
