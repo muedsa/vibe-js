@@ -2349,6 +2349,45 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "string-normalize-hangul-audit",
+        """
+        (function () {
+          var hash = 0;
+          var nfdCount = 0;
+          var nfkdCount = 0;
+          var nfcOk = 0;
+          var nfkcOk = 0;
+          function mix(text, factor) {
+            var local = 0;
+            for (var i = 0; i < text.length; i++) {
+              local = (local * 131 + text.charCodeAt(i)) | 0;
+            }
+            hash = (hash * 31 + local + factor) | 0;
+          }
+          for (var cp = 0xAC00; cp <= 0xD7A3; cp++) {
+            var syllable = String.fromCharCode(cp);
+            var nfd = syllable.normalize('NFD');
+            var nfc = nfd.normalize('NFC');
+            var nfkd = syllable.normalize('NFKD');
+            var nfkc = nfkd.normalize('NFKC');
+            if (nfd !== syllable) { nfdCount++; }
+            if (nfkd !== syllable) { nfkdCount++; }
+            if (nfc === syllable) { nfcOk++; }
+            if (nfkc === syllable) { nfkcOk++; }
+            mix(nfd, 1);
+            mix(nfkd, 2);
+          }
+          for (var mark = 0; mark < 0x70; mark++) {
+            var text = 'A' + String.fromCharCode(0x300 + mark);
+            var decomposed = text.normalize('NFD');
+            if (decomposed.normalize('NFC') === text) { nfcOk++; }
+            mix(decomposed, 3);
+          }
+          return [nfdCount, nfkdCount, nfcOk, nfkcOk, hash].join(',');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "js-expression-fuzz",
         """
         (function () {
