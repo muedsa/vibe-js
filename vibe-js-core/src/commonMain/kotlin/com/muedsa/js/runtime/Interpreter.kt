@@ -4946,7 +4946,19 @@ class Interpreter(
                 putV(owner.bindingObject, key, value, currentFrame.strict)
             }
 
-            null -> assignIdentifier(name, value)
+            // 引用在 RHS 求值前已不可解析：即使 RHS 期间创建了同名全局属性，
+            // 严格模式仍须抛 ReferenceError（不能重新解析后写入）
+            null -> {
+                if (currentFrame.strict) throw referenceError("$name is not defined")
+                context.globalObject.defineDataProperty(
+                    key = PropertyKey.Str(name),
+                    value = value,
+                    writable = true,
+                    enumerable = true,
+                    configurable = true,
+                )
+            }
+
             else -> {
                 if (!owner.setBinding(name, value, currentFrame.strict)) {
                     assignIdentifier(name, value)

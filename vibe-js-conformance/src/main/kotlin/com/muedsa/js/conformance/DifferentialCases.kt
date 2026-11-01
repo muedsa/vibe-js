@@ -388,6 +388,11 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             " catch (e) { return e.name; } })()"
     ),
     DifferentialCase(
+        "sloppy-unresolvable-rhs-global",
+        "(function () { sloppyProbe = (globalThis.sloppyProbe = 5);" +
+            " return globalThis.sloppyProbe; })()"
+    ),
+    DifferentialCase(
         "template-invalid-escape-cooked",
         "(function () { var cooked, raw;" +
             " (function (s) { cooked = s[0]; raw = s.raw[0]; })`\\01`;" +

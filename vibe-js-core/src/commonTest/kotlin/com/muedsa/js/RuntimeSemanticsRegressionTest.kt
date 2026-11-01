@@ -3696,4 +3696,20 @@ class RuntimeSemanticsRegressionTest {
             "try { eval('`\\\\01`'); 'none' } catch (e) { e.name }"
         ))
     }
+
+    @Test
+    fun `引用不可解析时的赋值在 RHS 创建同名全局属性后仍按严格模式处理`() = runTest {
+        val runtime = TestRuntime()
+        // 严格模式：LHS 引用在 RHS 前已不可解析，必须抛 ReferenceError
+        assertEquals("ReferenceError", runtime.evalString(
+            "(function () { 'use strict';" +
+                " try { undeclaredProbe = (globalThis.undeclaredProbe = 5); 'none'; }" +
+                " catch (e) { return e.name; } })()"
+        ))
+        // sloppy：按不可解析引用创建/写入全局属性
+        assertEquals(5.0, runtime.evalNumber(
+            "(function () { sloppyProbe = (globalThis.sloppyProbe = 5);" +
+                " return globalThis.sloppyProbe; })()"
+        ))
+    }
 }
