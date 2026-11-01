@@ -2913,4 +2913,65 @@ class RuntimeSemanticsRegressionTest {
         assertEquals("undefined", runtime.evalString("typeof RegExp.prototype.global"))
         assertEquals("undefined", runtime.evalString("typeof RegExp.prototype.sticky"))
     }
+
+    @Test
+    fun `JSON 序列化包装对象与 reviver 内部化语义`() = runTest {
+        val runtime = TestRuntime()
+        // 包装对象按内部槽展开
+        assertEquals(true, runtime.evalBoolean(
+            "JSON.stringify(new Number(8.5)) === '8.5' &&" +
+                " JSON.stringify(new String('str')) === '\"str\"' &&" +
+                " JSON.stringify(new Boolean(true)) === 'true'"
+        ))
+        // space 为包装对象时按 ToNumber/ToString 转换
+        assertEquals(true, runtime.evalBoolean(
+            "JSON.stringify({ a: 1 }, null, new Number(2)) === JSON.stringify({ a: 1 }, null, 2) &&" +
+                " JSON.stringify({ a: 1 }, null, new String('xx')) ===" +
+                " JSON.stringify({ a: 1 }, null, 'xx')"
+        ))
+        // replacer 数组中的包装数字按 ToString 转成属性名
+        assertEquals(true, runtime.evalBoolean(
+            "var num = new Number(10);" +
+                " num.toString = function () { return 'toString'; };" +
+                " num.valueOf = function () { throw new Error('should not be called'); };" +
+                " JSON.stringify({ 10: 1, toString: 2, valueOf: 3 }, [num]) === '{\"toString\":2}'"
+        ))
+        // reviver 遍历使用快照键，且 Get 可读取原型链；非可配置属性不被覆盖
+        val reviverRuntime = TestRuntime()
+        assertEquals(true, reviverRuntime.evalBoolean(
+            "Object.prototype.b = 3;" +
+                " var json = '{\"a\": 1, \"b\": 2}';" +
+                " var obj = JSON.parse(json, function (key, value) {" +
+                "   if (key === 'a') { delete this.b; }" +
+                "   return value;" +
+                " });" +
+                " delete Object.prototype.b;" +
+                " obj.a === 1 && obj.hasOwnProperty('b') && obj.b === 3"
+        ))
+        assertEquals(true, reviverRuntime.evalBoolean(
+            "var arr = JSON.parse('[1, 2]', function (key, value) {" +
+                " if (key === '0') { Object.defineProperty(this, '1', { configurable: false }); }" +
+                " if (key === '1') return 22;" +
+                " return value;" +
+                " });" +
+                " arr[0] === 1 && arr[1] === 2"
+        ))
+        // reviver 的包装对象属性为可枚举数据属性
+        assertEquals(true, reviverRuntime.evalBoolean(
+            "var wrapper;" +
+                " JSON.parse('2', function () { wrapper = this; });" +
+                " Object.keys(wrapper).length === 1 && wrapper[''] === 2"
+        ))
+    }
+
+    @Test
+    fun `Number 字符串化采用最短十进制表示`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("5e-324", runtime.evalString("(5e-324).toString()"))
+        assertEquals("-5e-324", runtime.evalString("(-5e-324).toString()"))
+        // JSON 与数组 join 复用同一数字格式化
+        assertEquals("5e-324", runtime.evalString("JSON.stringify(5e-324)"))
+        assertEquals("5e-324", runtime.evalString("[5e-324].join()"))
+        assertEquals("0.30000000000000004", runtime.evalString("(0.1 + 0.2).toString()"))
+    }
 }

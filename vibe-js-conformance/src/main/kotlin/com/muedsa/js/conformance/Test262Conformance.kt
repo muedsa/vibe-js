@@ -57,6 +57,8 @@ fun main(args: Array<String>) {
     val filter = args.indexOf("--filter").takeIf { it >= 0 }?.let { index ->
         args.getOrNull(index + 1)
     }
+    // 可选：把无 features 的 esid 用例也纳入 ES2015 子集（用于扩展分析，默认关闭）
+    val includeEsid = args.contains("--include-esid")
 
     if (!File(corpusDir, "test").isDirectory || !File(corpusDir, "harness").isDirectory) {
         System.err.println(
@@ -66,7 +68,7 @@ fun main(args: Array<String>) {
         exitProcess(3)
     }
 
-    val report = runBlocking { Test262Runner(corpusDir, limit, jobs, filter, suite).run() }
+    val report = runBlocking { Test262Runner(corpusDir, limit, jobs, filter, suite, includeEsid).run() }
     reportDir.mkdirs()
     report.writeMarkdown(File(reportDir, "test262-summary.md"))
     report.writeJson(File(reportDir, "test262-summary.json"))
@@ -87,6 +89,7 @@ private class Test262Runner(
     private val jobs: Int?,
     private val filter: String? = null,
     private val suite: String = "es5",
+    private val includeEsid: Boolean = false,
 ) {
 
     private val harnessDir = File(corpusDir, "harness")
@@ -254,7 +257,9 @@ private class Test262Runner(
                         metadata != null && metadata.es5Id == null &&
                             (metadata.features.isNotEmpty() &&
                                 metadata.features.all { it in es2015SupportedFeatures } ||
-                                metadata.es6Id != null && metadata.features.isEmpty()) &&
+                                metadata.features.isEmpty() &&
+                                (metadata.es6Id != null ||
+                                    includeEsid && metadata.esId != null)) &&
                             es2015ExcludedPathFragments.none { relativePath.contains(it) }
                     } else {
                         metadata?.es5Id != null
@@ -290,6 +295,7 @@ private class Test262Runner(
     private fun parseMetadata(raw: String): Metadata {
         var es5Id: String? = null
         var es6Id: String? = null
+        var esId: String? = null
         val includes = mutableListOf<String>()
         val flags = mutableSetOf<String>()
         val features = mutableSetOf<String>()
@@ -315,6 +321,7 @@ private class Test262Runner(
                 when (key) {
                     "es5id" -> es5Id = value.trim('\'', '"')
                     "es6id" -> es6Id = value.trim('\'', '"')
+                    "esid" -> esId = value.trim('\'', '"')
                     "includes" -> includes.addAll(parseInlineList(value))
                     "flags" -> flags.addAll(parseInlineList(value))
                     "features" -> features.addAll(parseInlineList(value))
@@ -349,6 +356,7 @@ private class Test262Runner(
         return Metadata(
             es5Id = es5Id,
             es6Id = es6Id,
+            esId = esId,
             includes = includes,
             flags = flags,
             features = features,
@@ -780,6 +788,7 @@ private class Test262Runner(
 private data class Metadata(
     val es5Id: String?,
     val es6Id: String?,
+    val esId: String?,
     val includes: List<String>,
     val flags: Set<String>,
     val features: Set<String>,

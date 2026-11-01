@@ -27,6 +27,7 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("num-tofixed-zero", "(0).toFixed(2)"),
     DifferentialCase("num-toprecision-infinity", "(Infinity).toPrecision(1000) + '|' + (-Infinity).toPrecision(1000) + '|' + NaN.toPrecision(2)"),
     DifferentialCase("num-toprecision-negzero", "(-0).toPrecision(2) + '|' + (-0).toPrecision(1)"),
+    DifferentialCase("num-shortest-subnormal", "(5e-324).toString() + '|' + (-5e-324).toString() + '|' + JSON.stringify(5e-324)"),
 
     // 字符串与 Unicode
     DifferentialCase("str-sharp-s-upper", "'ß'.toUpperCase()"),
@@ -210,6 +211,11 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("delete-with-object", "(function () { var o = { x: 1 }; with (o) { delete x; } return o.hasOwnProperty('x'); })()"),
 
     // RegExp v 标志、Unicode 属性与代理项码元语义
+    DifferentialCase("json-stringify-boxed-values", "JSON.stringify([new Number(8.5), new String('s'), new Boolean(true)])"),
+    DifferentialCase("json-stringify-boxed-space", "JSON.stringify({ a: 1 }, null, new Number(2))"),
+    DifferentialCase("json-stringify-boxed-replacer", "(function () { var num = new Number(10); num.toString = function () { return 'toString'; }; return JSON.stringify({ 10: 1, toString: 2 }, [num]); })()"),
+    DifferentialCase("json-parse-reviver-prototype", "(function () { Object.prototype.b = 3; var obj = JSON.parse('{\"a\":1,\"b\":2}', function (k, v) { if (k === 'a') { delete this.b; } return v; }); delete Object.prototype.b; return obj.a + '|' + obj.hasOwnProperty('b') + '|' + obj.b; })()"),
+    DifferentialCase("json-parse-reviver-nonconfigurable", "(function () { var arr = JSON.parse('[1,2]', function (k, v) { if (k === '0') { Object.defineProperty(this, '1', { configurable: false }); } if (k === '1') return 22; return v; }); return arr.join(','); })()"),
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
     DifferentialCase("regexp-source-prototype", "RegExp.prototype.source"),
     DifferentialCase("regexp-source-escape", "JSON.stringify(new RegExp('a/b' + String.fromCharCode(10)).source)"),

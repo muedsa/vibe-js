@@ -66,10 +66,10 @@
 | Function | ✅ | call/apply/bind/toString（动态函数源码，其余 NativeFunction 形式）、动态 Function 构造器 |
 | Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；方法为泛型实现（ToObject/HasProperty/Get/Delete，遵循原型链与稀疏语义），array-like 支持 2^53-1 长度边界 |
 | String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表） |
-| Number | ✅ | 常量、toString(radix)、toFixed/toExponential/toPrecision（非有限值与负零格式化）、静态判断与解析 |
+| Number | ✅ | 常量、toString(radix)（最短十进制表示，如 5e-324）、toFixed/toExponential/toPrecision（非有限值与负零格式化）、静态判断与解析 |
 | Boolean | ✅ | 构造器、toString、valueOf |
 | Math | ✅ | 常量与 ES5/ES2015 常用函数；sumPrecise 精确求和 |
-| JSON | ✅ | well-formed 字符串转义（孤立代理项）、 parse（reviver 与 context.source）、stringify（replacer/space）、`rawJSON`/`isRawJSON`；字符串字面量允许 U+2028/U+2029（JSON 超集） |
+| JSON | ✅ | well-formed 字符串转义（孤立代理项）、parse（reviver 快照键/原型链 Get/CreateDataProperty 不变量与 context.source）、stringify（replacer/space 的包装对象转换、值位置按内部槽展开）、`rawJSON`/`isRawJSON`；字符串字面量允许 U+2028/U+2029（JSON 超集） |
 | Error | ✅ | Error/TypeError/RangeError/ReferenceError/SyntaxError/EvalError/URIError、SuppressedError（error/suppressed/可选 message）、`Error.isError`、Error.prototype.stack 访问器 |
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
 | Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、常用 getter/setter（无效日期的参数转换顺序）、toISOString/toJSON；本地时间按 UTC 处理 |
@@ -103,9 +103,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 455 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 455 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 455 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 457 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 457 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 457 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

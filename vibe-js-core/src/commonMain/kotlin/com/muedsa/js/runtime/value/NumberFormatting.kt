@@ -49,7 +49,25 @@ object NumberFormatting {
 
         // 计算 digits 对应的十进制指数：value = digits * 10^exp10
         val integerPartLength = if (dotIndex >= 0) dotIndex else mantissa.length
-        val exp10 = rawExponent + (integerPartLength - leadingZeros) - digits.length
+        var exp10 = rawExponent + (integerPartLength - leadingZeros) - digits.length
+
+        // 平台最短表示不一定是“最少位数”的十进制（例如 5e-324 输出 4.9e-324），
+        // 逐位尝试更短的有效数字，若解析回同一 Double 则采用
+        if (digits.length > 1) {
+            for (precision in 1 until digits.length) {
+                val prefix = digits.substring(0, precision).toLongOrNull() ?: break
+                val rounded = if (digits[precision] >= '5') prefix + 1 else prefix
+                val candidateExp = exp10 + (digits.length - precision)
+                val candidateText = rounded.toString()
+                val positiveValue = if (negative) -value else value
+                if ((candidateText + "e" + candidateExp).toDouble() == positiveValue) {
+                    val trimmed = candidateText.trimEnd('0').ifEmpty { "0" }
+                    exp10 = candidateExp + (candidateText.length - trimmed.length)
+                    digits = trimmed
+                    break
+                }
+            }
+        }
 
         // 规范中的 n：小数点位置（digits 前面有 n 位整数）
         val n = exp10 + digits.length

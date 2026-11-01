@@ -143,6 +143,9 @@ val test262Es2015Conformance by tasks.registering(JavaExec::class) {
     if (project.hasProperty("strict")) {
         args("--strict")
     }
+    if (project.hasProperty("test262IncludeEsid")) {
+        args("--include-esid")
+    }
     inputs.dir(test262Dir)
     outputs.dir(es2015ReportDir)
 }

@@ -4,6 +4,7 @@ import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
+import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSFunction
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNull
@@ -41,7 +42,7 @@ object JsonBuiltins {
 
         json.defineDataProperty(
             key = PropertyKey.Str("parse"),
-            value = BuiltinHelpers.method(intrinsics, "JSON.parse", 2) { interpreter, _, args ->
+            value = BuiltinHelpers.method(intrinsics, "parse", 2) { interpreter, _, args ->
                 val text = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
                 val parser = JsonParser(text, intrinsics.objectPrototype, intrinsics.arrayPrototype)
                 val value = try {
@@ -54,7 +55,13 @@ object JsonBuiltins {
                 val reviver = args.getOrNull(1)
                 if (reviver != null && interpreter.isCallable(reviver)) {
                     val holder = JSObject(prototype = intrinsics.objectPrototype)
-                    holder.defineDataProperty(PropertyKey.Str(""), value)
+                    holder.defineDataProperty(
+                        PropertyKey.Str(""),
+                        value,
+                        writable = true,
+                        enumerable = true,
+                        configurable = true,
+                    )
                     internalize(interpreter, holder, "", reviver, parser, holder)
                 } else {
                     value
@@ -104,16 +111,22 @@ object JsonBuiltins {
 
         json.defineDataProperty(
             key = PropertyKey.Str("stringify"),
-            value = BuiltinHelpers.method(intrinsics, "JSON.stringify", 3) { interpreter, _, args ->
+            value = BuiltinHelpers.method(intrinsics, "stringify", 3) { interpreter, _, args ->
                 val value = args.getOrNull(0) ?: JSUndefined
                 val replacer = args.getOrNull(1)
                 val spaceValue = args.getOrNull(2)
 
-                val propertyList = buildPropertyList(replacer)
+                val propertyList = buildPropertyList(interpreter, replacer)
                 val gap = buildGap(interpreter, spaceValue)
 
                 val holder = JSObject(prototype = intrinsics.objectPrototype)
-                holder.defineDataProperty(PropertyKey.Str(""), value)
+                holder.defineDataProperty(
+                    PropertyKey.Str(""),
+                    value,
+                    writable = true,
+                    enumerable = true,
+                    configurable = true,
+                )
                 val seen = mutableSetOf<JSObject>()
                 val text = serializeProperty(
                     interpreter = interpreter,
@@ -152,38 +165,23 @@ object JsonBuiltins {
                     if (newElement is JSUndefined) {
                         value.deleteOwnProperty(elementKeyRef)
                     } else {
-                        val existing = value.getOwnProperty(elementKeyRef)
-                        value.defineOwnProperty(
-                            elementKeyRef,
-                            PropertyDescriptor.data(
-                                value = newElement,
-                                writable = existing?.writable ?: true,
-                                enumerable = true,
-                                configurable = existing?.configurable ?: true,
-                            ),
-                        )
+                        createDataPropertyOrIgnore(value, elementKeyRef, newElement)
                     }
                 }
             } else {
-                for (propertyKey in value.ownPropertyKeys()) {
-                    if (propertyKey !is PropertyKey.Str) continue
-                    if (value.getOwnProperty(propertyKey)?.enumerable != true) continue
+                // 规范：先取 EnumerableOwnPropertyNames 快照，再逐个 Internalize；
+                // reviver 删除属性后仍按快照继续（Get 可能读到原型链值）
+                val keys = value.ownPropertyKeys()
+                    .filterIsInstance<PropertyKey.Str>()
+                    .filter { value.getOwnProperty(it)?.enumerable == true }
+                for (propertyKey in keys) {
                     val newValue = internalize(
                         interpreter, value, propertyKey.value, reviver, parser, rootHolder,
                     )
                     if (newValue is JSUndefined) {
                         value.deleteOwnProperty(propertyKey)
                     } else {
-                        val existing = value.getOwnProperty(propertyKey)
-                        value.defineOwnProperty(
-                            propertyKey,
-                            PropertyDescriptor.data(
-                                value = newValue,
-                                writable = existing?.writable ?: true,
-                                enumerable = true,
-                                configurable = existing?.configurable ?: true,
-                            ),
-                        )
+                        createDataPropertyOrIgnore(value, propertyKey, newValue)
                     }
                 }
             }
@@ -213,8 +211,28 @@ object JsonBuiltins {
         )
     }
 
+    /**
+     * InternalizeJSONProperty 的 CreateDataProperty：
+     * 既有不可配置属性（或对象不可扩展）时返回 false，调用方忽略而不再覆盖。
+     */
+    private fun createDataPropertyOrIgnore(
+        objectValue: JSObject,
+        key: PropertyKey,
+        value: JSValue,
+    ) {
+        val existing = objectValue.getOwnProperty(key)
+        if (existing != null && !existing.configurable) return
+        objectValue.defineOwnProperty(
+            key,
+            PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
+        )
+    }
+
     /** replacer 为数组时构造属性白名单。 */
-    private suspend fun buildPropertyList(replacer: JSValue?): List<String>? {
+    private suspend fun buildPropertyList(
+        interpreter: Interpreter,
+        replacer: JSValue?,
+    ): List<String>? {
         if (replacer !is JSArray) return null
         val keys = mutableListOf<String>()
         for (index in 0 until replacer.length) {
@@ -222,6 +240,12 @@ object JsonBuiltins {
             val text = when (element) {
                 is JSString -> element.value
                 is JSNumber -> NumberFormatting.toString(element.value)
+                // 包装对象按内部槽通过 ToString 转成属性名
+                is JSBoxedPrimitive -> when (element.primitive) {
+                    is JSString, is JSNumber -> interpreter.toStringValue(element)
+                    else -> continue
+                }
+
                 else -> continue
             }
             if (text !in keys) keys.add(text)
@@ -239,6 +263,22 @@ object JsonBuiltins {
             }
 
             is JSString -> spaceValue.value.take(10)
+            // 包装对象按内部槽转换：Number → ToNumber 后截断，String → ToString
+            is JSBoxedPrimitive -> when (spaceValue.primitive) {
+                is JSNumber -> {
+                    val number = interpreter.toNumber(spaceValue)
+                    val count = if (number.isFinite()) {
+                        min(10, kotlin.math.truncate(number).toInt().coerceAtLeast(0))
+                    } else {
+                        0
+                    }
+                    " ".repeat(count)
+                }
+
+                is JSString -> interpreter.toStringValue(spaceValue).take(10)
+                else -> ""
+            }
+
             else -> ""
         }
     }
@@ -292,7 +332,63 @@ object JsonBuiltins {
         )
     }
 
+    /** 序列化入口：包装对象先按内部槽展开（ToNumber/ToString/[[BooleanData]]）。 */
     private suspend fun serializeValue(
+        interpreter: Interpreter,
+        value: JSValue,
+        replacer: JSValue?,
+        propertyList: List<String>?,
+        gap: String,
+        indent: String,
+        seen: MutableSet<JSObject>,
+    ): String? {
+        if (value is JSBoxedPrimitive) {
+            when (val primitive = value.primitive) {
+                is JSNumber -> return serializeValue(
+                    interpreter,
+                    JSNumber(interpreter.toNumber(value)),
+                    replacer,
+                    propertyList,
+                    gap,
+                    indent,
+                    seen,
+                )
+
+                is JSString -> return serializeValue(
+                    interpreter,
+                    JSString(interpreter.toStringValue(value)),
+                    replacer,
+                    propertyList,
+                    gap,
+                    indent,
+                    seen,
+                )
+
+                is JSBoolean -> return serializeValue(
+                    interpreter,
+                    primitive,
+                    replacer,
+                    propertyList,
+                    gap,
+                    indent,
+                    seen,
+                )
+
+                else -> Unit
+            }
+        }
+        return serializeUnboxedValue(
+            interpreter,
+            value,
+            replacer,
+            propertyList,
+            gap,
+            indent,
+            seen,
+        )
+    }
+
+    private suspend fun serializeUnboxedValue(
         interpreter: Interpreter,
         value: JSValue,
         replacer: JSValue?,
