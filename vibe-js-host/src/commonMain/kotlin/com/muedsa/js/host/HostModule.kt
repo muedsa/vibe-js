@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Console
 import com.muedsa.js.runtime.EventLoop
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.Intrinsics
 import com.muedsa.js.runtime.PrintlnConsole
 import com.muedsa.js.runtime.ScheduledTask
 import com.muedsa.js.runtime.exception.JSException
@@ -21,7 +22,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
-import kotlin.io.encoding.Base64
+
+/** Base64 标准字母表（WHATWG forgiving-base64）。 */
+private const val BASE64_ALPHABET =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 /**
  * 浏览器风格的宿主环境模块。
@@ -228,27 +232,102 @@ class HostModule(
             name = "btoa",
             value = BuiltinHelpers.method(intrinsics, "btoa", 1) { interpreter, _, args ->
                 val text = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
-                JSString(Base64.encode(text.encodeToByteArray()))
+                // WHATWG：按 Latin-1 码元编码，超过 U+00FF 的码元抛 InvalidCharacterError
+                val bytes = ByteArray(text.length)
+                for (index in text.indices) {
+                    val code = text[index].code
+                    if (code > 0xFF) {
+                        throw invalidCharacterError(intrinsics)
+                    }
+                    bytes[index] = code.toByte()
+                }
+                JSString(encodeBase64(bytes))
             },
         )
 
         registry.defineGlobal(
             name = "atob",
             value = BuiltinHelpers.method(intrinsics, "atob", 1) { interpreter, _, args ->
-                val text = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
-                try {
-                    JSString(Base64.decode(text).decodeToString())
-                } catch (_: Throwable) {
-                    throw JSException(
-                        JSError(
-                            "InvalidCharacterError",
-                            "The string to be decoded is not correctly encoded",
-                            intrinsics.errorPrototype,
-                        )
-                    )
+                val raw = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
+                // WHATWG forgiving-base64：先剥离 ASCII 空白，再按宽松规则解码
+                val text = buildString(raw.length) {
+                    for (character in raw) {
+                        if (!isAsciiWhitespace(character)) append(character)
+                    }
                 }
+                val bytes = try {
+                    decodeBase64(text)
+                } catch (_: IllegalArgumentException) {
+                    throw invalidCharacterError(intrinsics)
+                }
+                // WHATWG：每个字节对应一个 Latin-1 码元（而非 UTF-8 解码）
+                JSString(buildString(bytes.size) {
+                    for (byte in bytes) append((byte.toInt() and 0xFF).toChar())
+                })
             },
         )
+    }
+
+    private fun invalidCharacterError(intrinsics: Intrinsics): JSException =
+        JSException(
+            JSError(
+                "InvalidCharacterError",
+                "The string to be encoded or decoded is not correctly encoded",
+                intrinsics.errorPrototype,
+            )
+        )
+
+    /** WHATWG ASCII whitespace：TAB/LF/FF/CR/SPACE。 */
+    private fun isAsciiWhitespace(character: Char): Boolean =
+        character == '\t' || character == '\n' || character == '\u000C' ||
+            character == '\r' || character == ' '
+
+    private fun encodeBase64(bytes: ByteArray): String {
+        val builder = StringBuilder((bytes.size + 2) / 3 * 4)
+        var index = 0
+        while (index < bytes.size) {
+            val first = bytes[index].toInt() and 0xFF
+            val second = if (index + 1 < bytes.size) bytes[index + 1].toInt() and 0xFF else 0
+            val third = if (index + 2 < bytes.size) bytes[index + 2].toInt() and 0xFF else 0
+            val chunk = (first shl 16) or (second shl 8) or third
+            builder.append(BASE64_ALPHABET[(chunk shr 18) and 0x3F])
+            builder.append(BASE64_ALPHABET[(chunk shr 12) and 0x3F])
+            builder.append(
+                if (index + 1 < bytes.size) BASE64_ALPHABET[(chunk shr 6) and 0x3F] else '='
+            )
+            builder.append(if (index + 2 < bytes.size) BASE64_ALPHABET[chunk and 0x3F] else '=')
+            index += 3
+        }
+        return builder.toString()
+    }
+
+    /**
+     * 宽松 base64 解码：允许缺省尾部填充与任意位置的 ASCII 空白，
+     * 忽略末端未使用的比特；长度余 1 或填充位置非法时抛 IllegalArgumentException。
+     */
+    private fun decodeBase64(text: String): ByteArray {
+        if (text.isEmpty()) return ByteArray(0)
+        if (text.length % 4 == 1) throw IllegalArgumentException("invalid base64 length")
+        var dataLength = text.length
+        while (dataLength > 0 && text[dataLength - 1] == '=') dataLength--
+        val padding = text.length - dataLength
+        if (padding > 2) throw IllegalArgumentException("invalid padding")
+        if (padding != 0 && text.length % 4 != 0) throw IllegalArgumentException("invalid padding")
+        val output = ByteArray(dataLength * 3 / 4)
+        var outputIndex = 0
+        var buffer = 0
+        var bits = 0
+        for (index in 0 until dataLength) {
+            val value = BASE64_ALPHABET.indexOf(text[index])
+            if (value < 0) throw IllegalArgumentException("invalid base64 character")
+            buffer = (buffer shl 6) or value
+            bits += 6
+            if (bits >= 8) {
+                bits -= 8
+                output[outputIndex++] = ((buffer shr bits) and 0xFF).toByte()
+            }
+        }
+        return if (outputIndex == output.size) output else output.copyOf(outputIndex)
     }
 
     private suspend fun formatArguments(interpreter: Interpreter, args: List<JSValue>): String {

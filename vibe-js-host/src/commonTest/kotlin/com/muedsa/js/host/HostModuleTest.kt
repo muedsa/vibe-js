@@ -119,6 +119,37 @@ class HostModuleTest {
     }
 
     @Test
+    fun `atob 与 btoa 按 WHATWG 使用 Latin-1 与宽松解码`() = runTest {
+        val engine = Engine()
+        engine.install(HostModule(engine.eventLoop))
+        // Latin-1 码元：é(0xE9) 编码为 6Q==，而不是 UTF-8 的 w6k=
+        assertEquals("6Q==", (engine.run("btoa('é')") as JSString).value)
+        assertEquals("/w==", (engine.run("btoa(String.fromCharCode(255))") as JSString).value)
+        // 超过 U+00FF 的码元抛 InvalidCharacterError
+        val encodeError = assertFailsWith<JSException> { engine.run("btoa('漢')") }
+        assertEquals("InvalidCharacterError", (encodeError.value as JSError).errorName)
+        // atob 每个字节映射为一个 Latin-1 码元（w6k= 是两个字节，不是 UTF-8 的 é）
+        assertEquals("\u00C3\u00A9", (engine.run("atob('w6k=')") as JSString).value)
+        // 宽松解码：缺少填充、任意 ASCII 空白、忽略末端未使用比特
+        assertEquals("a", (engine.run("atob('YQ')") as JSString).value)
+        assertEquals("a", (engine.run("atob(' Y Q = = ')") as JSString).value)
+        assertEquals("a", (engine.run("atob('YR==')") as JSString).value)
+        // 非法填充与长度抛 InvalidCharacterError
+        for (expression in listOf("atob('YQ=')", "atob('====')", "atob('A')", "atob('abcde')")) {
+            val failure = assertFailsWith<JSException> { engine.run(expression) }
+            assertEquals("InvalidCharacterError", (failure.value as JSError).errorName, expression)
+        }
+        // 0..255 全字节往返
+        assertEquals(
+            true,
+            (engine.run(
+                "(function () { var s = ''; for (var i = 0; i < 256; i++) { " +
+                    "s += String.fromCharCode(i); } return atob(btoa(s)) === s; })()"
+            ) as JSBoolean).value
+        )
+    }
+
+    @Test
     fun `console 的 info debug warn 与对象格式化`() = runTest {
         val output = RecordingConsole()
         val engine = Engine()
