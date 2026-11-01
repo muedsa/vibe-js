@@ -3236,4 +3236,35 @@ class RuntimeSemanticsRegressionTest {
                 " af() === 'undefined'"
         ))
     }
+
+    @Test
+    fun `Array sort 按 SortIndexedProperties 读写属性并处理空洞与 undefined`() = runTest {
+        val runtime = TestRuntime()
+        // 收集阶段 Get 一次，写回通过 Set；getter 修改 length 不由 sort 截断
+        assertEquals(true, runtime.evalBoolean(
+            "var a = [undefined, 'c', , 'b', undefined, , 'a', 'd'];" +
+                " Object.defineProperty(a, '2', {" +
+                "   get: function () { a.length += 2; return this.foo; }," +
+                "   set: function (v) { this.foo = v; } });" +
+                " a.sort();" +
+                " a.length === 10 && a[0] === 'a' && a[1] === 'b' && a[3] === 'd' &&" +
+                " !(7 in a) && a[2] === 'c' && a.length === 12"
+        ))
+        // 默认比较把 undefined 排在末尾，尾部空洞保持缺失
+        assertEquals(true, runtime.evalBoolean(
+            "var b = [undefined, 'b', , 'a']; b.sort();" +
+                " b[0] === 'a' && b[1] === 'b' && b[2] === undefined &&" +
+                " !(3 in b) && b.length === 4"
+        ))
+        // 比较函数返回 NaN 视为相等，排序保持稳定
+        assertEquals(true, runtime.evalBoolean(
+            "[3, 1, 2].sort(function () { return NaN; }).join(',') === '3,1,2'"
+        ))
+        // sort 是泛型方法：直接读写 array-like 的索引
+        assertEquals(true, runtime.evalBoolean(
+            "var o = { 0: 'b', 1: 'a', length: 2 };" +
+                " Array.prototype.sort.call(o);" +
+                " o[0] === 'a' && o[1] === 'b' && o.length === 2"
+        ))
+    }
 }

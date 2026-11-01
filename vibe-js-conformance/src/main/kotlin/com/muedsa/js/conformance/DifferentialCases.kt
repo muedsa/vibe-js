@@ -99,6 +99,24 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("arr-slice-holes", "JSON.stringify([1, , 3].slice(0, 3))"),
     DifferentialCase("arr-length-max-push", "(function () { var a = []; a.length = 4294967295; try { a.push('x'); } catch (e) { return e.name + ':' + a.hasOwnProperty('4294967295'); } })()"),
     DifferentialCase("arr-sort-undefined", "JSON.stringify([undefined, 1, null].sort())"),
+    DifferentialCase(
+        "arr-sort-precise-accessor",
+        "(function () { var a = [undefined, 'c', , 'b', undefined, , 'a', 'd'];" +
+            " Object.defineProperty(a, '2', {" +
+            "   get: function () { a.length += 2; return this.foo; }," +
+            "   set: function (v) { this.foo = v; } });" +
+            " a.sort();" +
+            " return [a.length, a[0], a[1], a[3], 7 in a, a[2], a.length].join('|'); })()"
+    ),
+    DifferentialCase(
+        "arr-sort-array-like",
+        "(function () { var o = { 0: 'b', 1: 'a', length: 2 };" +
+            " Array.prototype.sort.call(o); return o[0] + o[1] + o.length; })()"
+    ),
+    DifferentialCase(
+        "arr-sort-nan-comparator",
+        "[3, 1, 2].sort(function () { return NaN; }).join(',')"
+    ),
     DifferentialCase("arr-lastindexof-negative", "[1, 2, 1].lastIndexOf(1, -2)"),
 
     // 对象、描述符与枚举

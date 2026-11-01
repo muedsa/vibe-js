@@ -33,14 +33,6 @@ object ArrayBuiltins {
     /** Number.MAX_SAFE_INTEGER：concat 结果长度上限。 */
     private const val MAX_SAFE_INTEGER = 9007199254740991L
 
-    /** array-like 快照；保留原对象用于回调 third argument 与写回。 */
-    private class ArrayLikeSnapshot(
-        elements: MutableList<JSValue?>,
-        prototype: JSObject,
-        val original: JSObject,
-        val originalLength: Int,
-    ) : JSArray(elements, prototype)
-
     fun install(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
         val arrayPrototype = intrinsics.arrayPrototype
@@ -851,10 +843,11 @@ object ArrayBuiltins {
                 if (comparator != null && comparator !is JSUndefined && !interpreter.isCallable(comparator)) {
                     interpreter.typeError("The comparison function must be either a function or undefined")
                 }
-                val array = requireArray(interpreter, thisValue, "Array.prototype.sort")
-                sortElements(interpreter, array, comparator)
-                syncArrayLike(interpreter, array)
-                array
+                // 规范 Array.prototype.sort：ToObject 后按 HasProperty/Get 收集并写回原对象
+                val objectValue = requireObject(interpreter, thisValue, "Array.prototype.sort")
+                val length = lengthOf(interpreter, objectValue)
+                sortElements(interpreter, objectValue, length, comparator)
+                objectValue
             },
         )
 
@@ -991,7 +984,7 @@ object ArrayBuiltins {
                     index++
                 }
                 // 复制完成后再排序（比较器在全部 Get 之后调用）
-                sortElements(interpreter, target, comparator)
+                sortElements(interpreter, target, length, comparator)
                 target
             },
         )
@@ -1606,64 +1599,6 @@ object ArrayBuiltins {
         }
     }
 
-    /** 要求 this 是数组。 */
-    /**
-     * Array.prototype 方法对 array-like 的快速适配。
-     *
-     * 真实数组直接返回；其他对象按 length/索引读取为快照。
-     * 写方法（push/splice/sort 等）仍只对真实数组生效，后续再引入完整视图。
-     */
-    private suspend fun requireArray(interpreter: Interpreter, thisValue: JSValue, name: String): JSArray {
-        (thisValue as? JSArray)?.let { return it }
-        if (thisValue is JSNull || thisValue is JSUndefined) {
-            interpreter.typeError("$name called on null or undefined")
-        }
-        val objectValue = interpreter.toObject(thisValue)
-        val lengthValue = interpreter.getV(objectValue, PropertyKey.LENGTH)
-        val lengthNumber = interpreter.toNumber(lengthValue)
-        val length = when {
-            lengthNumber.isNaN() || lengthNumber <= 0.0 -> 0
-            lengthNumber >= MAX_ARRAY_LIKE_LENGTH -> MAX_ARRAY_LIKE_LENGTH
-            else -> floor(lengthNumber).toInt()
-        }
-        val elements = ArrayList<JSValue?>(length)
-        for (index in 0 until length) {
-            val key = PropertyKey.Str(index.toString())
-            elements.add(if (objectValue.hasProperty(key)) interpreter.getV(objectValue, key) else null)
-        }
-        return ArrayLikeSnapshot(
-            elements = elements,
-            prototype = interpreter.intrinsics.arrayPrototype,
-            original = objectValue,
-            originalLength = length,
-        )
-    }
-
-    /** 将 array-like 快照的修改写回原对象。 */
-    private suspend fun syncArrayLike(interpreter: Interpreter, array: JSArray) {
-        val snapshot = array as? ArrayLikeSnapshot ?: return
-        val source = snapshot.original
-        for (index in array.length until snapshot.originalLength) {
-            val key = PropertyKey.Str(index.toString())
-            if (source.hasProperty(key)) source.deleteOwnProperty(key)
-        }
-        for (index in 0 until array.length) {
-            val key = PropertyKey.Str(index.toString())
-            val element = array.getElement(index)
-            if (element == null) {
-                if (source.hasProperty(key)) source.deleteOwnProperty(key)
-            } else {
-                interpreter.putV(source, key, element, strict = false)
-            }
-        }
-        interpreter.putV(
-            source,
-            PropertyKey.LENGTH,
-            JSNumber(array.length.toDouble()),
-            strict = false,
-        )
-    }
-
     /** 校验回调参数。 */
     private fun requireCallback(interpreter: Interpreter, callback: JSValue, name: String) {
         if (!interpreter.isCallable(callback)) {
@@ -1933,47 +1868,73 @@ object ArrayBuiltins {
     }
 
     /**
-     * 排序（阶段 A 使用插入排序以支持 suspend 比较函数）。
+     * 规范 Array.prototype.sort：SortIndexedProperties + 顺序写回。
      *
-     * 空洞会被移到末尾；默认按字符串比较。
+     * 按 HasProperty/Get 收集现有元素（含原型链，跳过空洞），
+     * 使用稳定插入排序执行 SortCompare（支持 suspend 比较函数），
+     * 然后逐个 Set 写回并删除剩余索引；数组长度由元素写入自然维持。
      */
     private suspend fun sortElements(
         interpreter: Interpreter,
-        array: JSArray,
+        objectValue: JSObject,
+        length: Long,
         comparator: JSValue?,
     ) {
         val values = ArrayList<JSValue>()
-        for (index in 0 until array.length) {
-            array.getElement(index)?.let { values.add(it) }
-        }
-
-        for (index in 1 until values.size) {
-            val current = values[index]
-            var position = index - 1
-            while (position >= 0) {
-                val comparison = if (comparator != null && comparator !is JSUndefined && interpreter.isCallable(comparator)) {
-                    interpreter.toNumber(
-                        interpreter.callFunction(comparator, JSUndefined, listOf(values[position], current))
-                    )
-                } else {
-                    interpreter.toStringValue(values[position])
-                        .compareTo(interpreter.toStringValue(current))
-                        .toDouble()
-                }
-                if (comparison > 0.0) {
-                    values[position + 1] = values[position]
-                    position--
-                } else {
-                    break
-                }
+        var index = 0L
+        while (index < length) {
+            val key = PropertyKey.Str(index.toString())
+            if (objectValue.hasProperty(key)) {
+                values.add(interpreter.getV(objectValue, key))
             }
-            values[position + 1] = current
+            index++
         }
 
-        // 排序后数组长度保持不变，原有索引全部清除后重新写入（空洞移到末尾）
-        array.clearElements()
-        for (index in values.indices) {
-            array.setElement(index, values[index])
+        for (position in 1 until values.size) {
+            val current = values[position]
+            var cursor = position - 1
+            while (cursor >= 0 &&
+                sortCompare(interpreter, values[cursor], current, comparator) > 0.0
+            ) {
+                values[cursor + 1] = values[cursor]
+                cursor--
+            }
+            values[cursor + 1] = current
         }
+
+        for (position in values.indices) {
+            interpreter.putV(
+                objectValue,
+                PropertyKey.Str(position.toString()),
+                values[position],
+                strict = true,
+            )
+        }
+        var position = values.size.toLong()
+        while (position < length) {
+            deletePropertyOrThrow(interpreter, objectValue, PropertyKey.Str(position.toString()))
+            position++
+        }
+    }
+
+    /** 规范 SortCompare：undefined 排在末尾，比较函数返回 NaN 视为相等。 */
+    private suspend fun sortCompare(
+        interpreter: Interpreter,
+        x: JSValue,
+        y: JSValue,
+        comparator: JSValue?,
+    ): Double {
+        val xIsUndefined = x is JSUndefined
+        val yIsUndefined = y is JSUndefined
+        if (xIsUndefined && yIsUndefined) return 0.0
+        if (xIsUndefined) return 1.0
+        if (yIsUndefined) return -1.0
+        if (comparator != null && comparator !is JSUndefined) {
+            val result = interpreter.toNumber(
+                interpreter.callFunction(comparator, JSUndefined, listOf(x, y))
+            )
+            return if (result.isNaN()) 0.0 else result
+        }
+        return interpreter.toStringValue(x).compareTo(interpreter.toStringValue(y)).toDouble()
     }
 }
