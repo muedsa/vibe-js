@@ -1844,4 +1844,89 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // 非 ASCII Unicode 数字不能作为 JS 数字字面量的起始（eval 均应抛 SyntaxError）
+    DifferentialCase(
+        "num-unicode-digit-literal",
+        """(function () { var out = []; function p(src) { try { out.push(String(eval(src))); } catch (e) { out.push(e.name); } } p('\u0661'); p('.\u0665'); p('\u0661.\u0665'); p('\u06F1+1'); p('var \u0661x = 1'); return out.join('|'); })()""",
+    ),
+
+    // JSON 序列化随机值树与随机 UTF-16 码元转义（well-formed JSON.stringify）
+    DifferentialCase(
+        "json-stringify-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 135791357;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var atoms = ['', 'a', '"', '\\', '\n', '\u0000', '\u2028', '\uD800', '\uDC00', '😀', 'é', '1', '01'];
+  function gen(depth) {
+    var pick = rnd();
+    if (depth <= 0 || pick < 0.45) {
+      var kind = Math.floor(rnd() * 8);
+      if (kind < 5) return atoms[Math.floor(rnd() * atoms.length)];
+      if (kind === 5) return (rnd() * 2 - 1) * Math.pow(2, Math.floor(rnd() * 100) - 50);
+      if (kind === 6) return rnd() < 0.5;
+      return null;
+    }
+    if (pick < 0.72) {
+      var arr = [];
+      var count = Math.floor(rnd() * 5);
+      for (var i = 0; i < count; i++) arr.push(gen(depth - 1));
+      if (rnd() < 0.2) arr.length = count + 1;
+      return arr;
+    }
+    var obj = {};
+    var members = Math.floor(rnd() * 5);
+    for (var j = 0; j < members; j++) {
+      var key = atoms[Math.floor(rnd() * atoms.length)] + (rnd() < 0.5 ? String(Math.floor(rnd() * 5)) : '');
+      obj[key] = gen(depth - 1);
+    }
+    return obj;
+  }
+  for (var i = 0; i < 80; i++) {
+    out.push(JSON.stringify(gen(3)));
+  }
+  return out.join('|');
+})()""",
+    ),
+
+    DifferentialCase(
+        "json-escape-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 246802468;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  for (var i = 0; i < 120; i++) {
+    var text = '';
+    var length = Math.floor(rnd() * 8);
+    for (var j = 0; j < length; j++) {
+      text += String.fromCharCode(Math.floor(rnd() * 65536));
+    }
+    out.push(JSON.stringify(text));
+  }
+  return out.join('|');
+})()""",
+    ),
+
+    // Number/parseFloat/parseInt 随机字符串模糊（符号、空白、进制前缀与非法尾部）
+    DifferentialCase(
+        "num-parse-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 975318642;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var alphabet = '0123456789abcdefxXoObB+-.eE \t\n\r_Infinity';
+  var radices = [undefined, 2, 8, 10, 16, 36];
+  for (var i = 0; i < 200; i++) {
+    var length = Math.floor(rnd() * 11);
+    var text = '';
+    for (var j = 0; j < length; j++) {
+      text += alphabet[Math.floor(rnd() * alphabet.length)];
+    }
+    var radix = radices[Math.floor(rnd() * radices.length)];
+    out.push(Number(text) + '|' + String(Number.parseFloat(text)) + '|' + String(parseInt(text, radix)));
+  }
+  return out.join(';');
+})()""",
+    ),
 )

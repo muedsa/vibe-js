@@ -2880,6 +2880,21 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Number 字符串转换严格匹配 StrDecimalLiteral`() = runTest {
+        val runtime = TestRuntime()
+        // 平台 double 解析会接受 JVM 类型后缀（8d）等，必须按 JS 语法整体校验
+        assertEquals(true, runtime.evalBoolean(
+            "Number.isNaN(Number('8d')) && Number.isNaN(Number('8f')) &&" +
+                " Number.isNaN(Number('1e')) && Number.isNaN(Number('.e3')) &&" +
+                " Number.isNaN(Number('1_000')) && Number.isNaN(Number('1.2.3')) &&" +
+                " Number.isNaN(Number('+0x10')) && Number.isNaN(Number('-0b1')) &&" +
+                " Number('1.e3') === 1000 && Number('.5') === 0.5 && Number('+1') === 1 &&" +
+                " Number(' 0x10 ') === 16 && Number('Infinity') === Infinity &&" +
+                " Number('-Infinity') === -Infinity && Object.is(Number('-0'), -0)"
+        ))
+    }
+
+    @Test
     fun `Array 泛型方法遵循原型链 稀疏与数组型对象语义`() = runTest {
         val runtime = TestRuntime()
         // pop 通过 Get 读取原型链元素，并删除自有属性

@@ -14,7 +14,7 @@ class JSString(val value: String) : JSValue() {
      * - 空串（或仅空白）为 0；
      * - "Infinity" / "-Infinity" 为对应无穷；
      * - 0x/0o/0b 前缀按进制解析；
-     * - 其余按十进制数字解析，无法解析则为 NaN。
+     * - 其余严格按 StrDecimalLiteral 解析，无法解析则为 NaN。
      */
     override fun toPrimitiveNumber(): Double {
         val trimmed = value.trimJsWhitespace()
@@ -31,8 +31,45 @@ class JSString(val value: String) : JSValue() {
             trimmed.startsWith("0b") || trimmed.startsWith("0B") ->
                 parseRadix(trimmed.substring(2), 2)
 
-            else -> trimmed.toDoubleOrNull() ?: Double.NaN
+            else -> parseDecimal(trimmed)
         }
+    }
+
+    /**
+     * 严格校验 StrDecimalLiteral 后交给平台解析。
+     *
+     * 平台的 double 解析可能额外接受类型后缀（JVM 的 `Double.parseDouble("8d")`）
+     * 或部分前缀，因此必须先按 JS 语法完整匹配：符号?（数字+（.数字*）? | .数字+）（e符号?数字+）?
+     */
+    private fun parseDecimal(text: String): Double {
+        var index = 0
+        if (index < text.length && (text[index] == '+' || text[index] == '-')) index++
+        var integerDigits = 0
+        while (index < text.length && text[index] in '0'..'9') {
+            index++
+            integerDigits++
+        }
+        var fractionDigits = 0
+        if (index < text.length && text[index] == '.') {
+            index++
+            while (index < text.length && text[index] in '0'..'9') {
+                index++
+                fractionDigits++
+            }
+        }
+        if (integerDigits == 0 && fractionDigits == 0) return Double.NaN
+        if (index < text.length && (text[index] == 'e' || text[index] == 'E')) {
+            index++
+            if (index < text.length && (text[index] == '+' || text[index] == '-')) index++
+            var exponentDigits = 0
+            while (index < text.length && text[index] in '0'..'9') {
+                index++
+                exponentDigits++
+            }
+            if (exponentDigits == 0) return Double.NaN
+        }
+        if (index != text.length) return Double.NaN
+        return text.toDoubleOrNull() ?: Double.NaN
     }
 
     override fun toPrimitiveString(): String = value

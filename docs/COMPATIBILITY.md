@@ -67,7 +67,7 @@
 | Function | ✅ | call/apply/bind/toString（函数声明/表达式/方法/类构造器/动态函数返回源码文本，无源码时 NativeFunction 形式）、bind 的 length 仅取自有 length 并支持 Infinity、caller/arguments 与严格或 unmapped arguments.callee 共用冻结的 %ThrowTypeError% |
 | Array | ✅ | 常用迭代/查找/增删/排序、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；sort 按 SortIndexedProperties（HasProperty/Get/Set/Delete、原型链元素、undefined 末尾、NaN 比较视为相等、稳定）；静态 isArray/of/from（构造器可接收 length、CreateDataPropertyOrThrow 与 Set length 语义）；方法为泛型实现（ToObject/HasProperty/Get/Delete，遵循原型链与稀疏语义），array-like 支持 2^53-1 长度边界 |
 | String | ✅ | 常用方法、toLocaleLowerCase/UpperCase（Unicode 17.0.0 UCD 完整映射与 Final_Sigma，跨平台一致）、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表）；原型方法统一 RequireObjectCoercible，pad 默认空格、localeCompare 规范等价、replace/split 按规范求值顺序 |
-| Number | ✅ | 常量、toString(radix)（10 进制为最短十进制表示如 5e-324；2-36 进制用精确二进制大整数展开并按最短往返规则选择有效数字，支持 0.1 的完整二进制展开、超过 2^63 的整数与次正规数）、toFixed/toExponential/toPrecision（非有限值先于范围检查、负零格式化；三者均按 Double 的精确十进制值舍入，含次正规数、进位、负值舍入为 0 的符号；toExponential 无参数时使用最短往返表示，toPrecision 按舍入后的指数选择指数/定点形式）、静态判断与解析（parseInt/parseFloat 与全局同一函数对象；parseInt 的 radix 按 ToInt32，parseFloat 只接受 ASCII 数字） |
+| Number | ✅ | 常量、toString(radix)（10 进制为最短十进制表示如 5e-324；2-36 进制用精确二进制大整数展开并按最短往返规则选择有效数字，支持 0.1 的完整二进制展开、超过 2^63 的整数与次正规数）、toFixed/toExponential/toPrecision（非有限值先于范围检查、负零格式化；三者均按 Double 的精确十进制值舍入，含次正规数、进位、负值舍入为 0 的符号；toExponential 无参数时使用最短往返表示，toPrecision 按舍入后的指数选择指数/定点形式）、静态判断与解析（parseInt/parseFloat 与全局同一函数对象；parseInt 的 radix 按 ToInt32，parseFloat 只接受 ASCII 数字；Number() 的字符串输入严格按 StrDecimalLiteral 整体校验，拒绝平台解析器额外接受的 8d/1f 等后缀） |
 | Boolean | ✅ | 构造器、toString、valueOf |
 | Math | ✅ | 常量与 ES5/ES2015 常用函数；max/min 对全部参数执行 ToNumber；hypot 按最大绝对值缩放避免中间溢出；sumPrecise 精确求和 |
 | JSON | ✅ | well-formed 字符串转义（孤立代理项）、parse（reviver 快照键/原型链 Get/CreateDataProperty 不变量与 context.source）、stringify（replacer/space 的包装对象转换、值位置按内部槽展开）、`rawJSON`/`isRawJSON`；字符串字面量允许 U+2028/U+2029（JSON 超集） |
@@ -107,9 +107,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 494 + 宿主 18 个测试 |
-| JS（Node） | ✅ | 核心 494 + 宿主 18 个测试 |
-| Wasm（Node） | ✅ | 核心 494 + 宿主 18 个测试 |
+| JVM | ✅ | 核心 495 + 宿主 18 个测试 |
+| JS（Node） | ✅ | 核心 495 + 宿主 18 个测试 |
+| Wasm（Node） | ✅ | 核心 495 + 宿主 18 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
