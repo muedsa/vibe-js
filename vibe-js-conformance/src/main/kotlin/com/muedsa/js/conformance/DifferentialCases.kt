@@ -2166,4 +2166,50 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // URI 编解码随机字符串模糊（保留字符、astral/孤立代理项、百分号与非法 UTF-8）
+    DifferentialCase(
+        "uri-encode-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 918273645;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var alphabet = ['a', 'Z', '0', ' ', '%', '&', '=', '?', '/', '#', '[', ']', ':', '@',
+    '!', '$', "'", '(', ')', '*', '+', ',', ';', 'é', '中', '\uD800', '\uDC00', '😀'];
+  for (var i = 0; i < 120; i++) {
+    var text = '';
+    var length = Math.floor(rnd() * 8);
+    for (var j = 0; j < length; j++) text += alphabet[Math.floor(rnd() * alphabet.length)];
+    var uri;
+    try { uri = encodeURI(text); } catch (e) { uri = 'THROW:' + e.name; }
+    var component;
+    try { component = encodeURIComponent(text); } catch (e) { component = 'THROW:' + e.name; }
+    out.push(uri + '|' + component);
+  }
+  return out.join('||');
+})()""",
+    ),
+
+    DifferentialCase(
+        "uri-decode-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 1928374655;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var alphabet = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    'A', 'B', 'C', 'D', 'E', 'F', '%', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+    'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '+', ' ', '/', 'é'];
+  for (var i = 0; i < 120; i++) {
+    var text = '';
+    var length = Math.floor(rnd() * 10);
+    for (var j = 0; j < length; j++) text += alphabet[Math.floor(rnd() * alphabet.length)];
+    var uri;
+    try { uri = decodeURI(text); } catch (e) { uri = 'THROW:' + e.name; }
+    var component;
+    try { component = decodeURIComponent(text); } catch (e) { component = 'THROW:' + e.name; }
+    out.push(uri + '|' + component);
+  }
+  return out.join('||');
+})()""",
+    ),
 )
