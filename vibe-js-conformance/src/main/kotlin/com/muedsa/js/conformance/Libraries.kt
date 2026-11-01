@@ -2019,6 +2019,53 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "mathjs",
+        url = "https://unpkg.com/mathjs@11.12.0/lib/browser/math.js",
+        globalName = "math",
+        cases = listOf(
+            SmokeCase(
+                "evaluate",
+                assertion(
+                    "math.evaluate('2 + 3 * 4') === 14 && " +
+                        "math.evaluate('sqrt(16) + pow(2, 10) + factorial(5)') === 1148 && " +
+                        "math.evaluate('x^2 + y', { x: 3, y: 4 }) === 13 && " +
+                        "math.evaluate('sum(range(1, 10))') === 55"
+                ),
+            ),
+            SmokeCase(
+                "matrix",
+                assertion(
+                    "math.det([[1, 2], [3, 4]]) === -2 && " +
+                        "JSON.stringify(math.multiply([[1, 2], [3, 4]], [[5], [6]])) === '[[17],[39]]'"
+                ),
+            ),
+            SmokeCase(
+                "units",
+                assertion("math.unit('5 cm').to('inch').toNumber('inch') === 1.9685039370078743"),
+            ),
+            SmokeCase(
+                "parse",
+                assertion("math.parse('a + b * c').toString() === 'a + b * c'"),
+            ),
+            SmokeCase(
+                "format",
+                assertion(
+                    "math.format(math.complex(1, 2)) === '1 + 2i' && " +
+                        "math.format(1234.5678, { precision: 4 }) === '1235' && " +
+                        "math.format(math.fraction(1, 3)) === '1/3'"
+                ),
+            ),
+            SmokeCase(
+                "statistics and bignumber",
+                assertion(
+                    "math.mean([1, 2, 3]) === 2 && " +
+                        "math.std([1, 2, 3, 4]) === 1.2909944487358056 && " +
+                        "math.bignumber('0.1').plus('0.2').toString() === '0.3'"
+                ),
+            ),
+        ),
+    ),
 )
 
 
