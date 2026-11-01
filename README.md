@@ -102,7 +102,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - `ShadowRealm`、`Atomics`
 - 完整 ASI 边界规则、`Date` 真实时区（当前本地时间按 UTC 实现）
 
-Unicode 属性/标识符数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。
+Unicode 属性/标识符/归一化/大小写映射数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。
 
 ## 架构与扩展
 
