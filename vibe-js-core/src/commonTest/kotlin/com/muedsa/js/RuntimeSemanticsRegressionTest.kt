@@ -3313,4 +3313,39 @@ class RuntimeSemanticsRegressionTest {
             "isNaN(parseFloat('\\u0661\\u0662\\u0663')) && parseFloat('1\\u0661') === 1"
         ))
     }
+
+    @Test
+    fun `mapped arguments 在 defineProperty 后保持或解除映射`() = runTest {
+        val runtime = TestRuntime()
+        // 置为不可配置后映射仍生效，参数写入反映到 arguments，描述符为数据属性
+        assertEquals(true, runtime.evalBoolean(
+            "(function (a) {" +
+                " Object.defineProperty(arguments, '0', { configurable: false });" +
+                " a = 2;" +
+                " var d = Object.getOwnPropertyDescriptor(arguments, '0');" +
+                " return arguments[0] === 2 && d.value === 2 && d.writable &&" +
+                " d.enumerable && !d.configurable;" +
+                " })(1)"
+        ))
+        // 不可配置后再次尝试 configurable: true 抛 TypeError
+        assertEquals("TypeError", runtime.evalString(
+            "(function (a) {" +
+                " Object.defineProperty(arguments, '0', { configurable: false });" +
+                " try { Object.defineProperty(arguments, '0', { configurable: true });" +
+                " return 'none'; } catch (e) { return e.name; } })(1)"
+        ))
+        // 修改 value 同步形参；writable:false 解除映射并保留最终描述符
+        assertEquals(true, runtime.evalBoolean(
+            "(function (a) {" +
+                " Object.defineProperty(arguments, '0', { configurable: false, enumerable: false });" +
+                " Object.defineProperty(arguments, '0', { value: 2 });" +
+                " var synced = a === 2;" +
+                " Object.defineProperty(arguments, '0', { writable: false });" +
+                " a = 3;" +
+                " var d = Object.getOwnPropertyDescriptor(arguments, '0');" +
+                " return synced && arguments[0] === 2 && d.value === 2 &&" +
+                " !d.writable && !d.enumerable && !d.configurable;" +
+                " })(1)"
+        ))
+    }
 }

@@ -564,14 +564,30 @@ class Interpreter(
         descriptor: PropertyDescriptor,
     ): Boolean {
         if (objectValue is JSArguments) {
-            // ES5 10.6：映射索引定义数据属性时同步形参；不可写或改为访问器时解除映射
+            // ES5 10.6：映射索引定义数据属性时同步形参；改为访问器或不可写时解除映射。
+            // 映射仍生效时保留底层 getter/setter，只更新描述符标志，避免映射被数据属性截断。
             val mapping = objectValue.parameterMapping(key)
             if (mapping != null) {
                 if (descriptor.isAccessor) {
                     objectValue.unmapParameter(key)
                 } else {
                     descriptor.value?.let { mapping.write(it) }
-                    if (!descriptor.writable) objectValue.unmapParameter(key)
+                    if (descriptor.writable == false) {
+                        objectValue.unmapParameter(key)
+                    } else {
+                        val current = objectValue.getOwnProperty(key)
+                        if (current != null && current.isAccessor) {
+                            return objectValue.defineOwnProperty(
+                                key,
+                                PropertyDescriptor.accessor(
+                                    get = current.get,
+                                    set = current.set,
+                                    enumerable = descriptor.enumerable ?: current.enumerable,
+                                    configurable = descriptor.configurable ?: current.configurable,
+                                ),
+                            )
+                        }
+                    }
                 }
             }
         }

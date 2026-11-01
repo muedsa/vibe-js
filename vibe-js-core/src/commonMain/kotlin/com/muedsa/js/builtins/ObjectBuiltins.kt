@@ -711,7 +711,7 @@ object ObjectBuiltins {
                     value = mapping.read(),
                     writable = true,
                     enumerable = current.enumerable,
-                    configurable = true,
+                    configurable = current.configurable,
                 )
             }
         }
@@ -950,12 +950,12 @@ object ObjectBuiltins {
         if (objectValue is JSArguments && descriptor.isAccessor) {
             val mapping = objectValue.parameterMapping(key)
             if (mapping != null) {
-                // ES5 10.6：映射索引在描述符层面是数据属性
+                // ES5 10.6：映射索引在描述符层面是数据属性，属性标志沿用实际访问器
                 descriptor = PropertyDescriptor.data(
                     value = mapping.read(),
                     writable = true,
                     enumerable = descriptor.enumerable,
-                    configurable = true,
+                    configurable = descriptor.configurable,
                 )
             }
         }

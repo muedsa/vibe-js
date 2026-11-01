@@ -93,7 +93,7 @@
 | 原型链继承（Object.create / setPrototypeOf / `__proto__`） | ✅ |
 | getter/setter、属性描述符 | ⚠️ 基础实现；复杂描述符冲突校验有限 |
 | instanceof、in、delete | ✅ |
-| arguments | ✅ | 类数组对象；sloppy 参数映射与 defineProperty 联动 |
+| arguments | ✅ | 类数组对象；sloppy 参数映射与 defineProperty 联动（不可配置/不可枚举后仍保持映射，writable:false 或改为访问器时解除；描述符层面呈现为可写数据属性） |
 | 参数环境与函数体 var 环境 | ✅ | 非简单参数下分离参数环境与 var 环境；参数初始化阶段 eval var 对参数闭包/函数体可见、同名冲突 SyntaxError、同名 var 取形参当前值 |
 | 箭头函数词法 this/arguments | ✅ |
 | class 构造器调用限制、super、new.target | ✅ |
@@ -105,9 +105,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 467 + 宿主 15 个测试 |
-| JS（Node） | ✅ | 核心 467 + 宿主 15 个测试 |
-| Wasm（Node） | ✅ | 核心 467 + 宿主 15 个测试 |
+| JVM | ✅ | 核心 468 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 468 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 468 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

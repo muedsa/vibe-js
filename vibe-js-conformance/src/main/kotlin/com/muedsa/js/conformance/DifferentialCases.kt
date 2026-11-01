@@ -223,6 +223,18 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("fn-bind-construct", "(function (x) { this.x = x; }).bind(null, 7).prototype === undefined"),
     DifferentialCase("fn-apply-arraylike", "(function (a, b) { return a + b; }).apply(null, { 0: 1, 1: 2, length: 2 })"),
     DifferentialCase("fn-arguments-mapping", "(function (a) { arguments[0] = 9; return a; })(1)"),
+    DifferentialCase(
+        "fn-arguments-define-descriptor",
+        "(function (a) { Object.defineProperty(arguments, '0', { configurable: false });" +
+            " a = 2; var d = Object.getOwnPropertyDescriptor(arguments, '0');" +
+            " return [arguments[0], d.value, d.writable, d.enumerable, d.configurable].join(',');" +
+            " })(1)"
+    ),
+    DifferentialCase(
+        "fn-arguments-unmap-writable",
+        "(function (a) { Object.defineProperty(arguments, '0', { writable: false });" +
+            " a = 2; return arguments[0] + ',' + a; })(1)"
+    ),
     DifferentialCase("fn-strict-callee", "(function () { 'use strict'; try { return arguments.callee; } catch (e) { return e.name; } })()"),
     DifferentialCase("eval-direct-value", "(function () { return eval('1 + 2'); })()"),
     DifferentialCase("eval-strict-scope", "(function () { 'use strict'; eval('var x = 1;'); return typeof x; })()"),
