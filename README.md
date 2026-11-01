@@ -153,6 +153,10 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 ./gradlew :vibe-js-host:jsNodeTest
 ./gradlew :vibe-js-host:wasmJsNodeTest
 
+# Windows Native（CI 另覆盖 Linux/macOS/iOS Native）
+./gradlew :vibe-js-core:mingwX64Test
+./gradlew :vibe-js-host:mingwX64Test
+
 # 基准测试编译/运行
 ./gradlew :vibe-js-core:jvmBenchmarkClasses
 ./gradlew :vibe-js-core:jvmBenchmarkBenchmark

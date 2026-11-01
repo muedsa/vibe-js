@@ -112,6 +112,8 @@
 | JVM | ✅ | 核心 522 + 宿主 23 个测试 |
 | JS（Node） | ✅ | 核心 522 + 宿主 23 个测试 |
 | Wasm（Node） | ✅ | 核心 522 + 宿主 23 个测试 |
+
+> CI 另在 Linux（linuxX64）、Windows（mingwX64）、macOS/iOS 模拟器运行对应 Native 测试；2026-11-01 本地复跑 Windows mingwX64 核心与宿主测试均通过。
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
