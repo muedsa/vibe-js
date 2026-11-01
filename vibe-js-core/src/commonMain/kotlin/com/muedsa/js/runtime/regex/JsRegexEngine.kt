@@ -993,16 +993,24 @@ class JsRegexEngine(
         data class Range(val start: Int, val end: Int) : ClassItem() {
             override fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean {
                 if (codePoint in start..end) return true
-                if (!ignoreCase || codePoint > 0xFFFF || start > 0xFFFF || end > 0xFFFF) {
-                    return false
-                }
+                if (!ignoreCase) return false
                 if (unicode) {
-                    // 规范：比较输入与集合成员的 Canonicalize 结果
+                    // 规范：比较输入与集合成员的 Canonicalize 结果（支持 astral 范围）
                     val folded = UnicodeCaseFoldingData.simpleFold(codePoint)
                     val foldedStart = UnicodeCaseFoldingData.simpleFold(start)
                     val foldedEnd = UnicodeCaseFoldingData.simpleFold(end)
-                    return folded in start..end || codePoint in foldedStart..foldedEnd
+                    if (folded in start..end || codePoint in foldedStart..foldedEnd ||
+                        folded in foldedStart..foldedEnd
+                    ) {
+                        return true
+                    }
+                    // 反向：折叠值的源码点落在范围内（如 K 折叠为 k，K 在 A-Z 内）
+                    for (source in UnicodeCaseMapping.simpleSources(folded)) {
+                        if (source in start..end) return true
+                    }
+                    return false
                 }
+                if (codePoint > 0xFFFF || start > 0xFFFF || end > 0xFFFF) return false
                 // 非 u 模式：比较 Canonicalize 后的字符，避免把 U+212A/U+017F 折叠为 ASCII
                 val canonical = canonicalizeNonUnicode(codePoint.toChar()).code
                 if (canonical in start..end) return true
@@ -1024,13 +1032,22 @@ class JsRegexEngine(
         data class Ranges(val set: CodePointSet) : ClassItem() {
             override fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean {
                 if (set.contains(codePoint)) return true
-                if (!ignoreCase || codePoint > 0xFFFF) return false
-                val character = codePoint.toChar()
+                if (!ignoreCase) return false
                 if (unicode) {
-                    return set.contains(UnicodeCaseFoldingData.simpleFold(codePoint)) ||
-                        set.contains(character.uppercaseChar().code) ||
-                        set.contains(character.lowercaseChar().code)
+                    val folded = UnicodeCaseFoldingData.simpleFold(codePoint)
+                    if (set.contains(folded)) return true
+                    if (set.contains(UnicodeCaseMapping.simpleUpperCase(codePoint)) ||
+                        set.contains(UnicodeCaseMapping.simpleLowerCase(codePoint))
+                    ) {
+                        return true
+                    }
+                    for (source in UnicodeCaseMapping.simpleSources(folded)) {
+                        if (set.contains(source)) return true
+                    }
+                    return false
                 }
+                if (codePoint > 0xFFFF) return false
+                val character = codePoint.toChar()
                 return set.contains(character.uppercaseChar().code) ||
                     set.contains(character.lowercaseChar().code)
             }

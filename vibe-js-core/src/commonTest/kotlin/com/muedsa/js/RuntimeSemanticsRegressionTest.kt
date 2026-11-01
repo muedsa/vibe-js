@@ -212,6 +212,16 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `正则字符类范围在 i+u 下折叠 astral 与 Kelvin`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "/[\\u{10400}-\\u{10427}]/iu.test('𐐨') && " +
+                "/[\\u{10428}]/iu.test('𐐀') && /[A-Z]/iu.test('\\u212A') && " +
+                "/[K-K]/iu.test('K') && new RegExp('[\\\\u{10428}]', 'iv').test('𐐀')"
+        ))
+    }
+
+    @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[object RegExp]", runtime.evalString("Object.prototype.toString.call(/a/) "))

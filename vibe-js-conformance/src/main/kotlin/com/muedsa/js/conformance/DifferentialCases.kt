@@ -2763,4 +2763,28 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // 字符类单点/范围在 i+u/i+v 下的 astral 与 ß/Kelvin 折叠
+    DifferentialCase(
+        "regexp-class-casefold-astral",
+        """(function () {
+  var patterns = [
+    new RegExp('[\\u{10400}-\\u{10427}]', 'iu'),
+    new RegExp('[\\u{10428}]', 'iu'),
+    new RegExp('[A-Z]', 'iu'),
+    new RegExp('[ß-ß]', 'iu'),
+    new RegExp('[K-K]', 'iu'),
+    new RegExp('[\\u{10400}-\\u{10427}]', 'iv'),
+    new RegExp('[\\u{10428}]', 'iv')
+  ];
+  var inputs = ['𐐀', '𐐨', '𐐩', 'A', 'a', 'K', 'K', 'k', 'ẞ', 'ß', '😀'];
+  var out = [];
+  for (var i = 0; i < patterns.length; i++) {
+    var bits = '';
+    for (var j = 0; j < inputs.length; j++) bits += patterns[i].test(inputs[j]) ? '1' : '0';
+    out.push(bits);
+  }
+  return out.join(';');
+})()""",
+    ),
 )
