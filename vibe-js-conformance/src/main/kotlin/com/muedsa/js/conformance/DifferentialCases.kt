@@ -2349,6 +2349,70 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "iterator-close-fuzz",
+        """
+        (function () {
+          var log = [];
+          function makeIter(name, returnThrows) {
+            var index = 0;
+            var iterator = {};
+            iterator[Symbol.iterator] = function () { log.push(name + ':iter'); return iterator; };
+            iterator.next = function () {
+              log.push(name + ':next' + index);
+              if (index >= 3) { return { done: true }; }
+              return { done: false, value: index++ };
+            };
+            iterator.return = function () {
+              log.push(name + ':return');
+              if (returnThrows) { throw new Error(name + 'Ret'); }
+              return { done: true };
+            };
+            return iterator;
+          }
+          function run(label, body) {
+            log = [];
+            var result;
+            try { result = body(); } catch (e) { result = 'THROW:' + e.name; }
+            return label + ':' + result + '|' + log.join(',');
+          }
+          var out = [];
+          out.push(run('break', function () {
+            for (var value of makeIter('b', false)) { if (value === 1) { break; } }
+            return 'ok';
+          }));
+          out.push(run('bodyThrow', function () {
+            for (var value of makeIter('t', false)) { throw new Error('body'); }
+          }));
+          out.push(run('continue', function () {
+            var sum = 0;
+            for (var value of makeIter('c', false)) { if (value === 1) { continue; } sum += value; }
+            return sum;
+          }));
+          out.push(run('spread', function () { return [...makeIter('s', false)].join('-'); }));
+          out.push(run('destructure', function () {
+            var first;
+            var second;
+            [first, second] = makeIter('d', false);
+            return first + ':' + second;
+          }));
+          out.push(run('from', function () { return Array.from(makeIter('f', false)).join('-'); }));
+          out.push(run('returnThrows', function () {
+            for (var value of makeIter('r', true)) { break; }
+            return 'ok';
+          }));
+          out.push(run('labeled', function () {
+            outer: for (var x of makeIter('o1', false)) {
+              for (var y of makeIter('o2', false)) {
+                if (y === 1) { continue outer; }
+              }
+            }
+            return 'ok';
+          }));
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "string-normalize-hangul-audit",
         """
         (function () {
