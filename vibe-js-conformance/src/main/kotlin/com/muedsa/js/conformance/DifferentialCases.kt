@@ -2300,4 +2300,48 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // Set 集合方法（union/intersection/difference/symmetricDifference/isSubsetOf 等）
+    DifferentialCase(
+        "set-methods-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () {
+    var a = new Set([1, 2, 3]);
+    var b = new Set([3, 4]);
+    return [[...a.union(b)].join(','), [...a.intersection(b)].join(','),
+      [...a.difference(b)].join(','), [...a.symmetricDifference(b)].join(',')].join('|');
+  });
+  push(function () {
+    return new Set([1, 2]).isSubsetOf(new Set([1, 2, 3])) + ':' +
+      new Set([1, 2, 3]).isSupersetOf(new Set([1, 2])) + ':' +
+      new Set([1]).isDisjointFrom(new Set([2]));
+  });
+  push(function () { return new Set([1]).union([1, 2]).size; });
+  push(function () {
+    var record = { size: 2, has: function (v) { return v === 1; }, keys: function () { return [1, 2][Symbol.iterator](); } };
+    return [...new Set([1, 3]).intersection(record)].join(',');
+  });
+  push(function () {
+    var s = new Set([1]);
+    return [...s.union(s)].join(',') + ':' + [...s.symmetricDifference(s)].join(',');
+  });
+  push(function () {
+    var log = [];
+    var s = new Set([1, 2]);
+    var record = {
+      get size() { log.push('s'); return 1; },
+      has: function (v) { log.push('h' + v); return false; },
+      keys: function () { log.push('k'); return [3][Symbol.iterator](); }
+    };
+    s.union(record);
+    return log.join(',');
+  });
+  push(function () { return Set.prototype.union.call(new Map(), new Set()); });
+  push(function () { return [...new Set([1, 2]).union(new Set([3]))].join(','); });
+  push(function () { return new Set([1, 2, 3]).isDisjointFrom({ size: 1, has: function (v) { return v === 4; }, keys: function () { return [4][Symbol.iterator](); } }); });
+  return out.join(';');
+})()""",
+    ),
 )
