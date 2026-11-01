@@ -2417,4 +2417,87 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('|');
 })()""",
     ),
+
+    // 数组变更方法随机序列模糊（空洞/负索引/Infinity/NaN 参数）
+    DifferentialCase(
+        "array-mutate-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 618033988;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function pick(list) { return list[Math.floor(rnd() * list.length)]; }
+  var bases = [[], [1, 2, 3], [1, , 3], [3, 1, 2], new Array(3), [0, 0, 0, 0, 0]];
+  var values = ['x', 'y', 0, 7, undefined, NaN, null];
+  var indices = [-3, -1, 0, 1, 2, 5, 2.5, undefined, NaN, Infinity];
+  var counts = [-2, -1, 0, 1, 2, 3, undefined, Infinity];
+  for (var i = 0; i < 100; i++) {
+    var arr = pick(bases).slice();
+    for (var step = 0; step < 5; step++) {
+      var operation = Math.floor(rnd() * 10);
+      try {
+        if (operation === 0) arr.push(pick(values));
+        else if (operation === 1) arr.pop();
+        else if (operation === 2) arr.shift();
+        else if (operation === 3) arr.unshift(pick(values));
+        else if (operation === 4) {
+          var extra = Math.floor(rnd() * 3);
+          if (extra === 0) arr.splice(pick(indices), pick(counts));
+          else if (extra === 1) arr.splice(pick(indices), pick(counts), pick(values));
+          else arr.splice(pick(indices), pick(counts), pick(values), pick(values));
+        } else if (operation === 5) arr.sort();
+        else if (operation === 6) arr.reverse();
+        else if (operation === 7) arr.fill(pick(values), pick(indices), pick(indices));
+        else if (operation === 8) arr.copyWithin(pick(indices), pick(indices), pick(indices));
+        else arr.length = Math.floor(rnd() * 6);
+        out.push(JSON.stringify(arr) + '|' + Object.keys(arr).join(','));
+      } catch (e) {
+        out.push('THROW:' + e.name);
+      }
+    }
+  }
+  return out.join(';');
+})()""",
+    ),
+
+    // String 非正则方法随机参数模糊（负索引/Infinity/NaN/填充与重复）
+    DifferentialCase(
+        "string-methods-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 271828182;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function pick(list) { return list[Math.floor(rnd() * list.length)]; }
+  var bases = ['', 'abc', 'aXbXc', '😀ab', '  trim  ', 'AbC', 'aaa', 'a😀b'];
+  var search = ['a', 'X', '', '😀', 'ab', 'z'];
+  var positions = [-5, -1, 0, 1, 2, 3, 5, 2.5, undefined, NaN, Infinity, -Infinity];
+  var counts = [-1, 0, 1, 3, 5, 2.5, NaN];
+  var fills = ['', 'z', '12', '😀'];
+  for (var i = 0; i < 150; i++) {
+    var text = pick(bases);
+    for (var step = 0; step < 3; step++) {
+      var operation = Math.floor(rnd() * 13);
+      try {
+        var value;
+        if (operation === 0) value = JSON.stringify(text.slice(pick(positions), pick(positions)));
+        else if (operation === 1) value = JSON.stringify(text.substring(pick(positions), pick(positions)));
+        else if (operation === 2) value = JSON.stringify(text.substr(pick(positions), pick(positions)));
+        else if (operation === 3) value = text.indexOf(pick(search), pick(positions));
+        else if (operation === 4) value = text.lastIndexOf(pick(search), pick(positions));
+        else if (operation === 5) value = text.includes(pick(search), pick(positions));
+        else if (operation === 6) value = text.startsWith(pick(search), pick(positions));
+        else if (operation === 7) value = text.endsWith(pick(search), pick(positions));
+        else if (operation === 8) value = JSON.stringify(text.padStart(pick(counts), pick(fills)));
+        else if (operation === 9) value = JSON.stringify(text.padEnd(pick(counts), pick(fills)));
+        else if (operation === 10) value = JSON.stringify(text.repeat(pick(counts)));
+        else if (operation === 11) value = JSON.stringify(text.concat(pick(bases), pick(search)));
+        else value = JSON.stringify(text.at(pick(positions)));
+        out.push(String(value));
+      } catch (e) {
+        out.push('THROW:' + e.name);
+      }
+    }
+  }
+  return out.join(';');
+})()""",
+    ),
 )
