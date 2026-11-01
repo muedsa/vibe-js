@@ -129,7 +129,9 @@ class HostModule(
                     emptyList()
                 }
                 val id = nextTimerId++
-                val task = eventLoop.schedule(delay.toLong().coerceAtLeast(0)) {
+                // 浏览器语义：延迟截断到 [0, 2^31-1]
+                val delayMillis = delay.toLong().coerceIn(0L, Int.MAX_VALUE.toLong())
+                val task = eventLoop.schedule(delayMillis) {
                     timers.remove(id)
                     try {
                         interpreter.callFunction(callback, JSUndefined, extraArguments)
@@ -163,8 +165,9 @@ class HostModule(
                 if (!interpreter.isCallable(callback)) {
                     interpreter.typeError("setInterval requires a function as the first argument")
                 }
+                // 浏览器语义：周期延迟至少 1ms，且不超过 2^31-1
                 val delayMillis = (args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: 0.0)
-                    .toLong().coerceAtLeast(1)
+                    .toLong().coerceIn(1L, Int.MAX_VALUE.toLong())
                 val extraArguments = if (args.size > 2) {
                     args.subList(2, args.size).toList()
                 } else {

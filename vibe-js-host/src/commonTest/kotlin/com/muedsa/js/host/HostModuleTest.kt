@@ -267,9 +267,14 @@ class HostModuleTest {
         scheduler.runAll()
         assertEquals(false, (engine.run("timeoutRan") as JSBoolean).value)
 
-        // setInterval 的首次 tick 至少延迟 1ms，可在同一脚本中立即用 clearTimeout 取消
-        engine.run("var ticks = 0; var intervalId = setInterval(function () { ticks += 1; }, 1);")
-        engine.run("clearTimeout(intervalId);")
+        // 在同一脚本内立即取消：脚本执行期间持有运行时锁，interval 首次 tick 不会先于取消
+        engine.run(
+            """
+            var ticks = 0;
+            var intervalId = setInterval(function () { ticks += 1; }, 1);
+            clearTimeout(intervalId);
+            """.trimIndent()
+        )
         withContext(Dispatchers.Default) { delay(30) }
         assertEquals(0.0, (engine.run("ticks") as JSNumber).value)
     }
