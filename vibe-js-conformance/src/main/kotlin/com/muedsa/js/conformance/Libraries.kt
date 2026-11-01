@@ -1457,6 +1457,97 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "acorn-loose",
+        url = "https://unpkg.com/acorn-loose@8.4.0/dist/acorn-loose.js",
+        globalName = "acorn.loose",
+        dependencies = listOf("acorn"),
+        cases = listOf(
+            SmokeCase(
+                "exports",
+                assertion(
+                    "typeof acorn.loose.parse === 'function' && " +
+                        "typeof acorn.loose.isDummy === 'function'"
+                ),
+            ),
+            SmokeCase(
+                "error recovery",
+                assertion(
+                    "(function () { var ast = acorn.loose.parse('var x = ; var y = 1;', " +
+                        "{ ecmaVersion: 2020 }); " +
+                        "return ast.type === 'Program' && ast.body.length === 2 && " +
+                        "acorn.loose.isDummy(ast.body[0].declarations[0].init); })()"
+                ),
+            ),
+            SmokeCase(
+                "incomplete function",
+                assertion(
+                    "(function () { var ast = acorn.loose.parse('function f( { return 1; }', " +
+                        "{ ecmaVersion: 2020 }); " +
+                        "return ast.body.length === 1 && ast.body[0].type === 'FunctionDeclaration'; })()"
+                ),
+            ),
+            SmokeCase(
+                "dummy helper",
+                assertion(
+                    "acorn.loose.isDummy({ type: 'Identifier', name: '✖' }) && " +
+                        "!acorn.loose.isDummy({ type: 'Identifier', name: 'x' })"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "complex",
+        url = "https://unpkg.com/complex.js@2.1.1/complex.min.js",
+        globalName = "Complex",
+        cases = listOf(
+            SmokeCase(
+                "add",
+                assertion("new Complex(1, 2).add(new Complex(3, 4)).toString() === '4 + 6i'"),
+            ),
+            SmokeCase(
+                "imaginary square",
+                assertion("new Complex(0, 1).mul(new Complex(0, 1)).re === -1"),
+            ),
+            SmokeCase(
+                "abs and arg",
+                assertion(
+                    "new Complex(3, 4).abs() === 5 && new Complex(-1, 0).arg() === Math.PI"
+                ),
+            ),
+            SmokeCase(
+                "pow",
+                assertion("new Complex(1, 1).pow(2).toString() === '2i'"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "decimal-light",
+        url = "https://unpkg.com/decimal.js-light@2.5.1/decimal.js",
+        globalName = "Decimal",
+        cases = listOf(
+            SmokeCase(
+                "plus",
+                assertion("new Decimal(0.1).plus(0.2).toString() === '0.3'"),
+            ),
+            SmokeCase(
+                "divide",
+                assertion("new Decimal(1).div(3).toString() === '0.33333333333333333333'"),
+            ),
+            SmokeCase(
+                "toFixed",
+                assertion("new Decimal('1.005').toFixed(2) === '1.01'"),
+            ),
+            SmokeCase(
+                "sqrt and big integer",
+                assertion(
+                    "new Decimal(2).sqrt().toString() === '1.4142135623730950488' && " +
+                        "new Decimal('12345678901234567890').plus(1).toString() === " +
+                        "'12345678901234567891'"
+                ),
+            ),
+        ),
+    ),
 )
 
 
