@@ -3479,8 +3479,9 @@ class Parser(
 
                 is FunctionDeclaration -> {
                     if (inBlockScope) {
-                        // Annex B：sloppy 下块级函数在包围 var 作用域建立同名的未初始化 var
-                        if (!strictMode) varNames.add(statement.name)
+                        // Annex B：sloppy 下块级普通函数在包围 var 作用域建立同名未初始化 var；
+                        // async 函数声明始终是块级词法绑定，不参与 var 提升
+                        if (!strictMode && !statement.isAsync) varNames.add(statement.name)
                     } else {
                         functions.add(statement)
                     }

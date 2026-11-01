@@ -3575,4 +3575,27 @@ class RuntimeSemanticsRegressionTest {
             "(function () { var y = 1; return delete y; })()"
         ))
     }
+
+    @Test
+    fun `switch 中 async 函数为块级绑定且 catch 解构默认值捕获参数环境`() = runTest {
+        val runtime = TestRuntime()
+        // async 函数声明不参与 Annex B var 提升
+        assertEquals("ReferenceError", runtime.evalString(
+            "try { eval('switch (0) { default: async function x() {} } x;'); 'none' }" +
+                " catch (e) { e.name }"
+        ))
+        // switch 块内仍可访问
+        assertEquals(true, runtime.evalBoolean(
+            "var probe = 'none';" +
+                " switch (0) { default: async function f() {} probe = typeof f; }" +
+                " probe === 'function'"
+        ))
+        // catch 解构默认值中的闭包捕获 catch 参数环境
+        assertEquals("inside", runtime.evalString(
+            "var probeParam; var x = 'outside';" +
+                " try { throw ['inside']; }" +
+                " catch ([x, _ = probeParam = function () { return x; }]) {}" +
+                " probeParam()"
+        ))
+    }
 }

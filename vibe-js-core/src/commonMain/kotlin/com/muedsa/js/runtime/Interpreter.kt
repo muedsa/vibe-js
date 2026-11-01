@@ -1746,7 +1746,8 @@ class Interpreter(
                 privateEnvironment = frame?.function?.privateEnvironment,
             )
             declarative.initializeBinding(statement.name, function)
-            if (!statement.strict) {
+            // Annex B 的 var 提升仅适用于普通函数声明；async 函数声明保持块级词法作用域
+            if (!statement.strict && !statement.isAsync) {
                 environment.findVarScope().createVarBinding(statement.name, function)
             }
         }
@@ -2516,12 +2517,20 @@ class Interpreter(
                 if (handler.param != null) {
                     catchEnvironment.createLetBinding(handler.param, exception.value)
                 } else if (handler.pattern != null) {
-                    bindPattern(
-                        handler.pattern,
-                        exception.value,
-                        DeclarationKind.LET,
-                        catchEnvironment,
-                    )
+                    // 解构参数的默认值在 catch 参数环境中求值，
+                    // 闭包需能捕获已绑定的前置参数（与函数参数初始化一致）
+                    val previousEnvironment = currentFrame.lexicalEnv
+                    currentFrame.lexicalEnv = catchEnvironment
+                    try {
+                        bindPattern(
+                            handler.pattern,
+                            exception.value,
+                            DeclarationKind.LET,
+                            catchEnvironment,
+                        )
+                    } finally {
+                        currentFrame.lexicalEnv = previousEnvironment
+                    }
                 }
                 tailCallBlockers = if (statement.finalizer != null) {
                     outerBlockers + 1
@@ -2529,7 +2538,12 @@ class Interpreter(
                     outerBlockers
                 }
                 try {
-                    pending = executeBlock(handler.body.statements, catchEnvironment)
+                    // catch 块拥有独立于 catch 参数环境的词法环境：
+                    // 参数默认值中的闭包看不到块内的 let/const 声明
+                    pending = executeBlock(
+                        handler.body.statements,
+                        DeclarativeEnvironment(parent = catchEnvironment),
+                    )
                 } catch (catchException: JSException) {
                     thrown = catchException
                 }

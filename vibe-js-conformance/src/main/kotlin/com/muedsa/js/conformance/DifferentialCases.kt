@@ -141,6 +141,18 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     ),
     DifferentialCase("legacy-octal-sloppy", "070"),
     DifferentialCase(
+        "switch-async-function-scope",
+        "(function () { try { eval('switch (0) { default: async function x() {} } x;');" +
+            " return 'none'; } catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
+        "catch-destructuring-default-env",
+        "(function () { var probeParam; var x = 'outside';" +
+            " try { throw ['inside']; }" +
+            " catch ([x, _ = probeParam = function () { return x; }]) {}" +
+            " return probeParam(); })()"
+    ),
+    DifferentialCase(
         "eval-var-deletable",
         "(function () { var initial, post;" +
             " (function () { eval('initial = x; delete x;" +
