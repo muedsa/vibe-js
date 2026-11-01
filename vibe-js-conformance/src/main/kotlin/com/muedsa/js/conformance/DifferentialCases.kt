@@ -1680,4 +1680,75 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('|');
 })()""",
     ),
+
+    // Number 三种格式化的确定性随机模糊（LCG 生成尾数 × 2^exp，覆盖 0..100 位）
+    DifferentialCase(
+        "num-tofixed-fuzz-100",
+        """(function () {
+  var out = [];
+  var seed = 987654321;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function nextValue() {
+    var m = Math.floor(rnd() * 9007199254740992);
+    var e = Math.floor(rnd() * 80) - 40;
+    var v = m * Math.pow(2, e);
+    if (!isFinite(v)) v = Number.MAX_VALUE;
+    if (rnd() < 0.5) v = -v;
+    return v;
+  }
+  for (var i = 0; i < 100; i++) {
+    var v = nextValue();
+    var d = Math.floor(rnd() * 101);
+    if (rnd() < 0.2) d = rnd() < 0.5 ? 0 : 100;
+    out.push(v.toFixed(d));
+  }
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "num-toprecision-fuzz-100",
+        """(function () {
+  var out = [];
+  var seed = 192837465;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function nextValue() {
+    var m = Math.floor(rnd() * 9007199254740992);
+    var e = Math.floor(rnd() * 80) - 40;
+    var v = m * Math.pow(2, e);
+    if (!isFinite(v)) v = Number.MAX_VALUE;
+    if (rnd() < 0.5) v = -v;
+    return v;
+  }
+  for (var i = 0; i < 100; i++) {
+    var v = nextValue();
+    var d = 1 + Math.floor(rnd() * 100);
+    if (rnd() < 0.2) d = rnd() < 0.5 ? 1 : 100;
+    out.push(v.toPrecision(d));
+  }
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "num-toexponential-fuzz-100",
+        """(function () {
+  var out = [];
+  var seed = 564738291;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function nextValue() {
+    var m = Math.floor(rnd() * 9007199254740992);
+    var e = Math.floor(rnd() * 80) - 40;
+    var v = m * Math.pow(2, e);
+    if (!isFinite(v)) v = Number.MAX_VALUE;
+    if (rnd() < 0.5) v = -v;
+    return v;
+  }
+  for (var i = 0; i < 100; i++) {
+    var v = nextValue();
+    var d = Math.floor(rnd() * 101);
+    if (rnd() < 0.2) d = rnd() < 0.5 ? 0 : 100;
+    out.push(v.toExponential(d));
+  }
+  return out.join('|');
+})()""",
+    ),
 )
