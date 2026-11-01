@@ -127,6 +127,19 @@ class HostModuleTest {
     }
 
     @Test
+    fun `queueMicrotask 回调抛错记录到 console 且继续执行`() = runTest {
+        val output = RecordingConsole()
+        val engine = Engine()
+        engine.install(HostModule(engine.eventLoop, output))
+        engine.run(
+            "var done = false; queueMicrotask(function () { throw new Error('boom'); }); " +
+                "queueMicrotask(function () { done = true; });"
+        )
+        assertEquals(true, (engine.run("done") as JSBoolean).value)
+        assertTrue(output.logs.last().startsWith("ERROR:Error: boom"))
+    }
+
+    @Test
     fun `atob 与 btoa`() = runTest {
         val engine = Engine()
         engine.install(HostModule(engine.eventLoop))

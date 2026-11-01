@@ -306,7 +306,12 @@ class HostModule(
                     interpreter.typeError("queueMicrotask requires a function as the first argument")
                 }
                 eventLoop.enqueueMicrotask {
-                    interpreter.callFunction(callback, JSUndefined, emptyList())
+                    try {
+                        interpreter.callFunction(callback, JSUndefined, emptyList())
+                    } catch (error: JSException) {
+                        // 与定时器一致：回调异常记录后继续执行后续微任务
+                        console.error(error.toString())
+                    }
                 }
                 JSUndefined
             },
