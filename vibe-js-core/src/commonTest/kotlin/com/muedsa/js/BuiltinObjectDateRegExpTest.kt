@@ -421,7 +421,10 @@ class BuiltinObjectDateRegExpTest {
         val runtime = TestRuntime()
         assertEquals("Thu, 01 Jan 1970 00:00:00 GMT", runtime.evalString("new Date(0).toUTCString()"))
         assertEquals("Thu Jan 01 1970", runtime.evalString("new Date(0).toDateString()"))
-        assertEquals("00:00:00 GMT", runtime.evalString("new Date(0).toTimeString()"))
+        assertEquals(
+            "00:00:00 GMT+0000 (Coordinated Universal Time)",
+            runtime.evalString("new Date(0).toTimeString()"),
+        )
         assertEquals("string", runtime.evalString("typeof Date()"))
         assertEquals(true, runtime.evalBoolean("Date().indexOf('GMT') > 0"))
         assertEquals("string", runtime.evalString("typeof new Date(0).toString()"))

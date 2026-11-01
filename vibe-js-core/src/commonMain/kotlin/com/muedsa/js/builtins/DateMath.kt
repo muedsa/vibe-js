@@ -172,19 +172,49 @@ internal object DateMath {
         if (human != null) {
             val monthIndex = MONTH_NAMES.indexOf(human.groupValues[2])
             if (monthIndex < 0) return Double.NaN
-            val time = makeTime(
-                human.groupValues[3].toInt(),
-                monthIndex,
-                human.groupValues[1].toInt(),
-                human.groupValues[4].toInt(),
-                human.groupValues[5].toInt(),
-                human.groupValues[6].toInt(),
-                0,
+            val time = makeDate(
+                makeDay(
+                    human.groupValues[3].toInt().toDouble(),
+                    monthIndex.toDouble(),
+                    human.groupValues[1].toInt().toDouble(),
+                ),
+                makeTimeDouble(
+                    human.groupValues[4].toDouble(),
+                    human.groupValues[5].toDouble(),
+                    human.groupValues[6].toDouble(),
+                    0.0,
+                ),
             )
             return timeClip(time)
         }
+        // 自身 toString 输出（本地时间固定 UTC）："Thu Jan 01 1970 00:00:00 GMT+0000 (...)"
+        val local = LOCAL_DATE_PATTERN.matchEntire(trimmed)
+        if (local != null) {
+            val monthIndex = MONTH_NAMES.indexOf(local.groupValues[1])
+            if (monthIndex < 0) return Double.NaN
+            var time = makeDate(
+                makeDay(
+                    local.groupValues[3].toInt().toDouble(),
+                    monthIndex.toDouble(),
+                    local.groupValues[2].toInt().toDouble(),
+                ),
+                makeTimeDouble(
+                    local.groupValues[4].toDouble(),
+                    local.groupValues[5].toDouble(),
+                    local.groupValues[6].toDouble(),
+                    0.0,
+                ),
+            )
+            val zone = local.groupValues[7]
+            if (zone.length == 5) {
+                val sign = if (zone[0] == '-') -1 else 1
+                val zoneMinutes = zone.substring(1, 3).toInt() * 60 + zone.substring(3, 5).toInt()
+                time -= sign * zoneMinutes * MS_PER_MINUTE
+            }
+            return timeClip(time)
+        }
         val regex = Regex(
-            """^([+-]?\d{4,6})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})?)?$"""
+            """^([+-]?\d{4,6})(?:-(\d{2})(?:-(\d{2}))?)?(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})?)?$"""
         )
         val match = regex.matchEntire(trimmed) ?: return Double.NaN
         val yearText = match.groupValues[1]
@@ -193,16 +223,29 @@ internal object DateMath {
             return Double.NaN
         }
         val year = yearText.toIntOrNull() ?: return Double.NaN
-        val month = match.groupValues[2].toIntOrNull() ?: return Double.NaN
-        val day = match.groupValues[3].toIntOrNull() ?: return Double.NaN
+        val month = match.groupValues[2].ifEmpty { "1" }.toIntOrNull() ?: return Double.NaN
+        val day = match.groupValues[3].ifEmpty { "1" }.toIntOrNull() ?: return Double.NaN
         if (month !in 1..12 || day !in 1..31) return Double.NaN
+        // 时间部分仅在完整日期（YYYY-MM-DD）之后允许
+        if (match.groupValues[4].isNotEmpty() && match.groupValues[3].isEmpty()) {
+            return Double.NaN
+        }
         val hours = match.groupValues[4].ifEmpty { "0" }.toInt()
         val minutes = match.groupValues[5].ifEmpty { "0" }.toInt()
         val seconds = match.groupValues[6].ifEmpty { "0" }.toInt()
         val milliseconds = match.groupValues[7].ifEmpty { "0" }.padEnd(3, '0').toInt()
         if (hours !in 0..23 || minutes !in 0..59 || seconds !in 0..59) return Double.NaN
 
-        var time = makeTime(year, month - 1, day, hours, minutes, seconds, milliseconds)
+        // ISO 扩展年份按字面值使用（0..99 不映射到 1900+）
+        var time = makeDate(
+            makeDay(year.toDouble(), (month - 1).toDouble(), day.toDouble()),
+            makeTimeDouble(
+                hours.toDouble(),
+                minutes.toDouble(),
+                seconds.toDouble(),
+                milliseconds.toDouble(),
+            ),
+        )
         val zone = match.groupValues[8]
         if (zone.isNotEmpty() && zone != "Z") {
             val sign = if (zone[0] == '-') -1 else 1
@@ -214,7 +257,10 @@ internal object DateMath {
     }
 
     private val HUMAN_DATE_PATTERN = Regex(
-        """^[A-Za-z]{3}, (\d{2}) ([A-Za-z]{3}) (\d{4}) (\d{2}):(\d{2}):(\d{2}) GMT$"""
+        """^[A-Za-z]{3}, (\d{2}) ([A-Za-z]{3}) (-?\d{4,6}) (\d{2}):(\d{2}):(\d{2}) GMT$"""
+    )
+    private val LOCAL_DATE_PATTERN = Regex(
+        """^[A-Za-z]{3} ([A-Za-z]{3}) (\d{2}) (-?\d{4,6}) (\d{2}):(\d{2}):(\d{2}) GMT([+-]\d{4})(?: \(.+\))?$"""
     )
     private val MONTH_NAMES =
         listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")

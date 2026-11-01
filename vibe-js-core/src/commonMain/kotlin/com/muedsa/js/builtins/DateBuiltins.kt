@@ -154,7 +154,11 @@ object DateBuiltins {
 
         method("valueOf", 0) { _, thisValue, _ -> JSNumber(requireDate(thisValue).timeValue) }
         method("getTime", 0) { _, thisValue, _ -> JSNumber(requireDate(thisValue).timeValue) }
-        method("getTimezoneOffset", 0) { _, thisValue, _ -> requireDate(thisValue); JSNumber.ZERO }
+        method("getTimezoneOffset", 0) { _, thisValue, _ ->
+            val date = requireDate(thisValue)
+            // 无效日期返回 NaN；本地时间固定 UTC，因此有效日期偏移为 0
+            if (DateMath.parts(date.timeValue) == null) JSNumber.NAN else JSNumber.ZERO
+        }
 
         fun getter(name: String, selector: (DateMath.Parts) -> Double) {
             method(name, 0) { _, thisValue, _ ->
@@ -203,10 +207,11 @@ object DateBuiltins {
          */
         fun setter(
             name: String,
+            length: Int = 1,
             useZeroBase: Boolean = false,
             body: suspend (Interpreter, List<JSValue>, DateMath.Parts) -> Double?,
         ) {
-            method(name, 1) { interpreter, thisValue, args ->
+            method(name, length) { interpreter, thisValue, args ->
                 val date = requireDate(thisValue)
                 val parts = DateMath.parts(date.timeValue)
                 val base = parts ?: DateMath.Parts(1970, 0, 1, 0, 0, 0, 0, 4)
@@ -219,13 +224,14 @@ object DateBuiltins {
             }
         }
 
-        setter("setFullYear", useZeroBase = true) { interpreter, args, base ->
+        setter("setFullYear", length = 3, useZeroBase = true) { interpreter, args, base ->
             val year = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (year.isNaN()) return@setter null
             val month = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.month.toDouble()
             val day = args.getOrNull(2)?.let { interpreter.toNumber(it) } ?: base.day.toDouble()
             DateMath.makeDate(
-                DateMath.makeDay(DateMath.normalizeYear(year), month, day),
+                // setFullYear 不应用 0..99 -> 1900+ 的构造器映射
+                DateMath.makeDay(year, month, day),
                 DateMath.makeTimeDouble(
                     base.hours.toDouble(),
                     base.minutes.toDouble(),
@@ -234,13 +240,14 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setUTCFullYear", useZeroBase = true) { interpreter, args, base ->
+        setter("setUTCFullYear", length = 3, useZeroBase = true) { interpreter, args, base ->
             val year = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (year.isNaN()) return@setter null
             val month = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.month.toDouble()
             val day = args.getOrNull(2)?.let { interpreter.toNumber(it) } ?: base.day.toDouble()
             DateMath.makeDate(
-                DateMath.makeDay(DateMath.normalizeYear(year), month, day),
+                // setFullYear 不应用 0..99 -> 1900+ 的构造器映射
+                DateMath.makeDay(year, month, day),
                 DateMath.makeTimeDouble(
                     base.hours.toDouble(),
                     base.minutes.toDouble(),
@@ -249,7 +256,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setMonth") { interpreter, args, base ->
+        setter("setMonth", length = 2) { interpreter, args, base ->
             val month = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (month.isNaN()) return@setter null
             val day = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.day.toDouble()
@@ -263,7 +270,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setUTCMonth") { interpreter, args, base ->
+        setter("setUTCMonth", length = 2) { interpreter, args, base ->
             val month = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (month.isNaN()) return@setter null
             val day = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.day.toDouble()
@@ -277,7 +284,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setDate") { interpreter, args, base ->
+        setter("setDate", length = 1) { interpreter, args, base ->
             val day = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (day.isNaN()) return@setter null
             DateMath.makeDate(
@@ -290,7 +297,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setUTCDate") { interpreter, args, base ->
+        setter("setUTCDate", length = 1) { interpreter, args, base ->
             val day = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (day.isNaN()) return@setter null
             DateMath.makeDate(
@@ -303,7 +310,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setHours") { interpreter, args, base ->
+        setter("setHours", length = 4) { interpreter, args, base ->
             val hours = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (hours.isNaN()) return@setter null
             val minutes = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.minutes.toDouble()
@@ -315,7 +322,7 @@ object DateBuiltins {
                 DateMath.makeTimeDouble(hours, minutes, seconds, milliseconds),
             )
         }
-        setter("setUTCHours") { interpreter, args, base ->
+        setter("setUTCHours", length = 4) { interpreter, args, base ->
             val hours = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (hours.isNaN()) return@setter null
             val minutes = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.minutes.toDouble()
@@ -327,7 +334,7 @@ object DateBuiltins {
                 DateMath.makeTimeDouble(hours, minutes, seconds, milliseconds),
             )
         }
-        setter("setMinutes") { interpreter, args, base ->
+        setter("setMinutes", length = 3) { interpreter, args, base ->
             val minutes = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (minutes.isNaN()) return@setter null
             val seconds = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.seconds.toDouble()
@@ -343,7 +350,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setUTCMinutes") { interpreter, args, base ->
+        setter("setUTCMinutes", length = 3) { interpreter, args, base ->
             val minutes = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (minutes.isNaN()) return@setter null
             val seconds = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.seconds.toDouble()
@@ -359,7 +366,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setSeconds") { interpreter, args, base ->
+        setter("setSeconds", length = 2) { interpreter, args, base ->
             val seconds = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (seconds.isNaN()) return@setter null
             val milliseconds =
@@ -374,7 +381,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setUTCSeconds") { interpreter, args, base ->
+        setter("setUTCSeconds", length = 2) { interpreter, args, base ->
             val seconds = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (seconds.isNaN()) return@setter null
             val milliseconds =
@@ -389,7 +396,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setMilliseconds") { interpreter, args, base ->
+        setter("setMilliseconds", length = 1) { interpreter, args, base ->
             val milliseconds = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (milliseconds.isNaN()) return@setter null
             DateMath.makeDate(
@@ -402,7 +409,7 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setUTCMilliseconds") { interpreter, args, base ->
+        setter("setUTCMilliseconds", length = 1) { interpreter, args, base ->
             val milliseconds = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
             if (milliseconds.isNaN()) return@setter null
             DateMath.makeDate(
@@ -415,11 +422,20 @@ object DateBuiltins {
                 ),
             )
         }
-        setter("setYear") { interpreter, args, base ->
-            val year = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (year.isNaN()) return@setter null
-            val normalizedYear = if (year in 0.0..99.0) 1900 + year.toInt() else year.toInt()
-            DateMath.makeTime(normalizedYear, base.month, base.day, base.hours, base.minutes, base.seconds, base.milliseconds)
+        // Annex B setYear：t 为 NaN 时以 +0 为基准；MakeFullYear 对 0..99 映射到 1900+
+        setter("setYear", length = 1, useZeroBase = true) { interpreter, args, base ->
+            val yearNumber = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
+            val integer = if (yearNumber.isNaN()) 0.0 else kotlin.math.truncate(yearNumber)
+            val fullYear = if (integer >= 0.0 && integer <= 99.0) 1900.0 + integer else integer
+            DateMath.makeDate(
+                DateMath.makeDay(fullYear, base.month.toDouble(), base.day.toDouble()),
+                DateMath.makeTimeDouble(
+                    base.hours.toDouble(),
+                    base.minutes.toDouble(),
+                    base.seconds.toDouble(),
+                    base.milliseconds.toDouble(),
+                ),
+            )
         }
 
         method("toISOString", 0) { interpreter, thisValue, _ ->
@@ -445,16 +461,10 @@ object DateBuiltins {
         }
 
         method("toString", 0) { _, thisValue, _ ->
-            JSString(humanString(requireDate(thisValue).timeValue))
+            JSString(localString(requireDate(thisValue).timeValue))
         }
-        datePrototype.getOwnDataValue(PropertyKey.Str("toString"))?.let { toStringFunction ->
-            datePrototype.defineDataProperty(
-                key = PropertyKey.Str("toLocaleString"),
-                value = toStringFunction,
-                writable = true,
-                enumerable = false,
-                configurable = true,
-            )
+        method("toLocaleString", 0) { _, thisValue, _ ->
+            JSString(localString(requireDate(thisValue).timeValue))
         }
         method("toUTCString", 0) { _, thisValue, _ ->
             JSString(humanString(requireDate(thisValue).timeValue))
@@ -467,31 +477,32 @@ object DateBuiltins {
             val parts = DateMath.parts(date.timeValue) ?: return@method JSString("Invalid Date")
             JSString(
                 "${WEEKDAYS[parts.dayOfWeek]} ${MONTHS[parts.month]} " +
-                    "${pad(parts.day, 2)} ${pad(parts.year, 4)}"
+                    "${pad(parts.day, 2)} ${formatYear(parts.year)}"
             )
         }
         method("toTimeString", 0) { _, thisValue, _ ->
             val date = requireDate(thisValue)
             val parts = DateMath.parts(date.timeValue) ?: return@method JSString("Invalid Date")
-            JSString("${pad(parts.hours, 2)}:${pad(parts.minutes, 2)}:${pad(parts.seconds, 2)} GMT")
-        }
-
-        datePrototype.getOwnDataValue(PropertyKey.Str("toDateString"))?.let { function ->
-            datePrototype.defineDataProperty(
-                key = PropertyKey.Str("toLocaleDateString"),
-                value = function,
-                writable = true,
-                enumerable = false,
-                configurable = true,
+            JSString(
+                "${pad(parts.hours, 2)}:${pad(parts.minutes, 2)}:${pad(parts.seconds, 2)}" +
+                    " GMT+0000 (Coordinated Universal Time)"
             )
         }
-        datePrototype.getOwnDataValue(PropertyKey.Str("toTimeString"))?.let { function ->
-            datePrototype.defineDataProperty(
-                key = PropertyKey.Str("toLocaleTimeString"),
-                value = function,
-                writable = true,
-                enumerable = false,
-                configurable = true,
+
+        method("toLocaleDateString", 0) { _, thisValue, _ ->
+            val parts = DateMath.parts(requireDate(thisValue).timeValue)
+                ?: return@method JSString("Invalid Date")
+            JSString(
+                "${WEEKDAYS[parts.dayOfWeek]} ${MONTHS[parts.month]} " +
+                    "${pad(parts.day, 2)} ${formatYear(parts.year)}"
+            )
+        }
+        method("toLocaleTimeString", 0) { _, thisValue, _ ->
+            val parts = DateMath.parts(requireDate(thisValue).timeValue)
+                ?: return@method JSString("Invalid Date")
+            JSString(
+                "${pad(parts.hours, 2)}:${pad(parts.minutes, 2)}:${pad(parts.seconds, 2)}" +
+                    " GMT+0000 (Coordinated Universal Time)"
             )
         }
     }
@@ -522,11 +533,25 @@ object DateBuiltins {
 
     private fun pad(value: Int, width: Int): String = value.toString().padStart(width, '0')
 
+    /** DateString 的年份：负年份保留符号并至少补足 4 位。 */
+    private fun formatYear(year: Int): String =
+        if (year < 0) "-" + pad(-year, 4) else pad(year, 4)
+
+    /** toUTCString/toGMTString 的格式：Wdy, DD Mon YYYY HH:mm:ss GMT。 */
     private fun humanString(time: Double): String {
         val parts = DateMath.parts(time) ?: return "Invalid Date"
         return "${WEEKDAYS[parts.dayOfWeek]}, ${pad(parts.day, 2)} ${MONTHS[parts.month]} " +
-            "${pad(parts.year, 4)} ${pad(parts.hours, 2)}:${pad(parts.minutes, 2)}:" +
+            "${formatYear(parts.year)} ${pad(parts.hours, 2)}:${pad(parts.minutes, 2)}:" +
             "${pad(parts.seconds, 2)} GMT"
+    }
+
+    /** toString 的本地时间格式（本引擎本地时间固定为 UTC）。 */
+    private fun localString(time: Double): String {
+        val parts = DateMath.parts(time) ?: return "Invalid Date"
+        return "${WEEKDAYS[parts.dayOfWeek]} ${MONTHS[parts.month]} " +
+            "${pad(parts.day, 2)} ${formatYear(parts.year)} " +
+            "${pad(parts.hours, 2)}:${pad(parts.minutes, 2)}:${pad(parts.seconds, 2)}" +
+            " GMT+0000 (Coordinated Universal Time)"
     }
 
     private fun isoString(time: Double): String? {

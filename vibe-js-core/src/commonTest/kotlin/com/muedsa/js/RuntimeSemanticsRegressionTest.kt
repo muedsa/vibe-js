@@ -3092,4 +3092,62 @@ class RuntimeSemanticsRegressionTest {
                 " Object.getOwnPropertyDescriptor(Function.prototype, 'arguments').get === thrower"
         ))
     }
+
+    @Test
+    fun `Date 年份 格式化与 setter 长度语义`() = runTest {
+        val runtime = TestRuntime()
+        // setFullYear 不应用 0..99 -> 1900+ 映射；Annex B setYear 应用 MakeFullYear
+        assertEquals(1.0, runtime.evalNumber("var d = new Date(0); d.setFullYear(1); d.getFullYear()"))
+        assertEquals(true, runtime.evalBoolean(
+            "var e = new Date(0); e.setYear(1); e.getFullYear() === 1901"
+        ))
+        // setter length 描述符
+        assertEquals(true, runtime.evalBoolean(
+            "Date.prototype.setFullYear.length === 3 &&" +
+                " Date.prototype.setUTCFullYear.length === 3 &&" +
+                " Date.prototype.setMonth.length === 2 &&" +
+                " Date.prototype.setHours.length === 4 &&" +
+                " Date.prototype.setMinutes.length === 3 &&" +
+                " Date.prototype.setSeconds.length === 2 &&" +
+                " Date.prototype.setMilliseconds.length === 1"
+        ))
+        // toString 使用本地时间格式；负年份至少 4 位
+        assertEquals(true, runtime.evalBoolean(
+            "/\\w{3} \\w{3} \\d{2} \\d{4} \\d{2}:\\d{2}:\\d{2}" +
+                " GMT\\+0000 \\(Coordinated Universal Time\\)/.test(new Date(0).toString()) &&" +
+                " new Date('-000001-07-01T00:00Z').toString().split(' ')[3] === '-0001'"
+        ))
+        // ISO 允许省略月/日；无效日期 getTimezoneOffset 返回 NaN
+        assertEquals(true, runtime.evalBoolean(
+            "new Date('1970').toISOString() === '1970-01-01T00:00:00.000Z' &&" +
+                " Number.isNaN(new Date(NaN).getTimezoneOffset())"
+        ))
+    }
+
+    @Test
+    fun `Error isPrototypeOf slice 与 toExponential 边界`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            "Error",
+            runtime.evalString("Error.prototype.toString.call({ name: undefined, message: undefined })")
+        )
+        assertEquals(
+            "TypeError",
+            runtime.evalString(
+                "try { Error.prototype.toString.call(1); 'none' } catch (e) { e.name }"
+            )
+        )
+        assertEquals(false, runtime.evalBoolean("Object.prototype.isPrototypeOf.call({}, {})"))
+        assertEquals(
+            "TypeError",
+            runtime.evalString(
+                "try { Object.prototype.isPrototypeOf.call(null, {}); 'none' } catch (e) { e.name }"
+            )
+        )
+        // slice 的 end 显式 undefined 等价于省略
+        assertEquals(2.0, runtime.evalNumber("[0,1,2,3,4].slice(3, undefined).length"))
+        // toExponential 非有限值先于范围检查
+        assertEquals("Infinity", runtime.evalString("(Infinity).toExponential(1000)"))
+        assertEquals("NaN", runtime.evalString("NaN.toExponential(2)"))
+    }
 }

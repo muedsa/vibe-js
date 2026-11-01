@@ -27,13 +27,22 @@ object ErrorBuiltins {
         intrinsics.errorPrototype.defineDataProperty(
             key = PropertyKey.Str("toString"),
             value = BuiltinHelpers.method(intrinsics, "toString", 0) { interpreter, thisValue, _ ->
-                val objectValue = interpreter.toObject(thisValue)
-                val name = interpreter.toStringValue(
-                    interpreter.getV(objectValue, PropertyKey.NAME)
-                )
-                val message = interpreter.toStringValue(
-                    interpreter.getV(objectValue, PropertyKey.MESSAGE)
-                )
+                if (thisValue !is JSObject) {
+                    interpreter.typeError("Error.prototype.toString called on non-object")
+                }
+                // name 未定义时取 "Error"，message 未定义时取空串
+                val nameValue = interpreter.getV(thisValue, PropertyKey.NAME)
+                val name = if (nameValue is JSUndefined) {
+                    "Error"
+                } else {
+                    interpreter.toStringValue(nameValue)
+                }
+                val messageValue = interpreter.getV(thisValue, PropertyKey.MESSAGE)
+                val message = if (messageValue is JSUndefined) {
+                    ""
+                } else {
+                    interpreter.toStringValue(messageValue)
+                }
                 JSString(
                     when {
                         name.isEmpty() -> message

@@ -345,7 +345,12 @@ object ArrayBuiltins {
                 val objectValue = requireObject(interpreter, thisValue, "Array.prototype.slice")
                 val length = lengthOf(interpreter, objectValue)
                 var start = args.getOrNull(0)?.let { interpreter.toNumber(it).toLong() } ?: 0L
-                var end = args.getOrNull(1)?.let { interpreter.toNumber(it).toLong() } ?: length
+                // 显式 undefined 等价于未提供（end 默认 length）
+                var end = if (args.size > 1 && args[1] !is JSUndefined) {
+                    interpreter.toNumber(args[1]).toLong()
+                } else {
+                    length
+                }
                 if (start < 0) start += length
                 if (start < 0) start = 0
                 if (start > length) start = length

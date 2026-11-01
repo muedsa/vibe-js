@@ -66,13 +66,13 @@
 | Function | ✅ | call/apply/bind/toString（函数声明/表达式/方法/类构造器/动态函数返回源码文本，无源码时 NativeFunction 形式）、bind 的 length 仅取自有 length 并支持 Infinity、caller/arguments 与严格 arguments.callee 共用 %ThrowTypeError% |
 | Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；方法为泛型实现（ToObject/HasProperty/Get/Delete，遵循原型链与稀疏语义），array-like 支持 2^53-1 长度边界 |
 | String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表）；原型方法统一 RequireObjectCoercible，pad 默认空格、localeCompare 规范等价、replace/split 按规范求值顺序 |
-| Number | ✅ | 常量、toString(radix)（最短十进制表示，如 5e-324）、toFixed/toExponential/toPrecision（非有限值与负零格式化）、静态判断与解析 |
+| Number | ✅ | 常量、toString(radix)（最短十进制表示，如 5e-324）、toFixed/toExponential/toPrecision（非有限值先于范围检查、负零格式化）、静态判断与解析 |
 | Boolean | ✅ | 构造器、toString、valueOf |
 | Math | ✅ | 常量与 ES5/ES2015 常用函数；sumPrecise 精确求和 |
 | JSON | ✅ | well-formed 字符串转义（孤立代理项）、parse（reviver 快照键/原型链 Get/CreateDataProperty 不变量与 context.source）、stringify（replacer/space 的包装对象转换、值位置按内部槽展开）、`rawJSON`/`isRawJSON`；字符串字面量允许 U+2028/U+2029（JSON 超集） |
-| Error | ✅ | Error/TypeError/RangeError/ReferenceError/SyntaxError/EvalError/URIError、SuppressedError（error/suppressed/可选 message）、`Error.isError`、Error.prototype.stack 访问器 |
+| Error | ✅ | Error/TypeError/RangeError/ReferenceError/SyntaxError/EvalError/URIError、SuppressedError（error/suppressed/可选 message）、`Error.isError`、Error.prototype.toString（name/message 缺省规则与不可强制转换接收者）、Error.prototype.stack 访问器 |
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
-| Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、常用 getter/setter（无效日期的参数转换顺序）、toISOString/toJSON；本地时间按 UTC 处理 |
+| Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、ISO 缺省字段与 0..99 年映射差异（构造器/UTC 映射，setFullYear 不映射）、常用 getter/setter（无效日期参数顺序、规范 length）、toString 本地格式/toUTCString 与负年份补零、toISOString/toJSON；本地时间按 UTC 处理 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；Weak 版本不可迭代，支持非注册 Symbol 键 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
@@ -103,9 +103,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 461 + 宿主 15 个测试 |
-| JS（Node） | ✅ | 核心 461 + 宿主 15 个测试 |
-| Wasm（Node） | ✅ | 核心 461 + 宿主 15 个测试 |
+| JVM | ✅ | 核心 463 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 463 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 463 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

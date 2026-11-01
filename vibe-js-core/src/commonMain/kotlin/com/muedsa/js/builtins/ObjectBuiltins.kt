@@ -68,15 +68,20 @@ object ObjectBuiltins {
 
         objectPrototype.defineDataProperty(
             key = PropertyKey.Str("isPrototypeOf"),
-            value = BuiltinHelpers.method(intrinsics, "isPrototypeOf", 1) { _, thisValue, args ->
+            value = BuiltinHelpers.method(intrinsics, "isPrototypeOf", 1) { interpreter, thisValue, args ->
                 val target = args.getOrNull(0)
-                if (thisValue !is JSObject || target !is JSObject) {
+                // 规范顺序：先检查 V 是否为对象，再 ToObject(this)（null/undefined this 抛 TypeError）
+                if (target !is JSObject) {
                     JSBoolean.FALSE
                 } else {
+                    if (thisValue is JSNull || thisValue is JSUndefined) {
+                        interpreter.typeError("Object.prototype.isPrototypeOf called on null or undefined")
+                    }
+                    val objectValue = interpreter.toObject(thisValue)
                     var prototype = target.prototype
                     var result = false
                     while (prototype != null) {
-                        if (prototype === thisValue) {
+                        if (prototype === objectValue) {
                             result = true
                             break
                         }

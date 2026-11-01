@@ -162,6 +162,14 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("date-parse-neg-zero-year", "Date.parse('-000000-03-31T00:45Z')"),
     DifferentialCase("date-parse-out-of-range", "Date.parse('-271821-04-19T23:59:59.999Z')"),
     DifferentialCase("date-parse-min-range", "Date.parse('-271821-04-20T00:00:00.000Z')"),
+    DifferentialCase("date-toutcstring", "new Date(0).toUTCString()"),
+    DifferentialCase("date-setfullyear-year-one", "(function () { var d = new Date(0); d.setFullYear(1); return d.getFullYear(); })()"),
+    DifferentialCase("date-iso-year-only", "new Date('1970').toISOString()"),
+    DifferentialCase("date-negative-year-utc", "new Date('-000001-07-01T00:00Z').toUTCString()"),
+    DifferentialCase("err-tostring-undefined-props", "Error.prototype.toString.call({ name: undefined, message: undefined })"),
+    DifferentialCase("obj-isprototypeof-null-this", "(function () { try { Object.prototype.isPrototypeOf.call(null, {}); return 'none'; } catch (e) { return e.name; } })()"),
+    DifferentialCase("arr-slice-undefined-end", "JSON.stringify([0,1,2,3,4].slice(3, undefined))"),
+    DifferentialCase("num-toexponential-nonfinite", "[(Infinity).toExponential(1000), NaN.toExponential(2)].join('|')"),
     DifferentialCase("date-settime-value", "(function () { var d = new Date(0); d.setTime(1000); return d.valueOf(); })()"),
 
     // JSON

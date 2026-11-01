@@ -129,6 +129,10 @@ object NumberBuiltins {
                 val digits = args.getOrNull(0)
                     ?.takeUnless { it is JSUndefined }
                     ?.let { interpreter.toNumber(it).toInt() }
+                // 规范顺序：非有限值在范围检查之前返回 ToString(x)
+                if (number.isNaN() || number.isInfinite()) {
+                    return@method JSString(NumberFormatting.toString(number))
+                }
                 if (digits != null && (digits < 0 || digits > 100)) {
                     interpreter.rangeError("toExponential() argument must be between 0 and 100")
                 }
