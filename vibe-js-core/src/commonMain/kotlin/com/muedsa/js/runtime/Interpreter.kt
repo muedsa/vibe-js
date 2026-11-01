@@ -196,7 +196,7 @@ class Interpreter(
             checkGlobalDeclarationInstantiation(environment, program)
             predeclareLexical(program.body, environment)
             hoistDeclarations(environment, program.functionDeclarations, program.varDeclarations)
-            val completion = executeStatements(program.body)
+            val completion = executeStatements(program.body, program.hasUsingDeclaration)
             return when (completion) {
                 is Completion.Normal -> completion.value
                 is Completion.Return -> completion.value
@@ -345,7 +345,7 @@ class Interpreter(
                 deletable = true,
             )
             predeclareLexical(program.body, executionEnvironment)
-            when (val completion = executeStatements(program.body)) {
+            when (val completion = executeStatements(program.body, program.hasUsingDeclaration)) {
                 is Completion.Normal -> completion.value
                 is Completion.Return -> completion.value
                 is Completion.Break, is Completion.Continue ->
@@ -415,7 +415,7 @@ class Interpreter(
                 globalDeletable = true,
             )
             predeclareLexical(program.body, executionEnvironment)
-            when (val completion = executeStatements(program.body)) {
+            when (val completion = executeStatements(program.body, program.hasUsingDeclaration)) {
                 is Completion.Normal -> completion.value
                 is Completion.Return -> completion.value
                 is Completion.Break, is Completion.Continue ->
@@ -1028,7 +1028,7 @@ class Interpreter(
             if (bodyBlock.requiresEnvironment) {
                 predeclareLexical(bodyBlock.statements, bodyEnv)
             }
-            val completion = executeStatements(bodyBlock.statements)
+            val completion = executeStatements(bodyBlock.statements, bodyBlock.hasUsingDeclaration)
             return when (completion) {
                 is Completion.Normal -> JSUndefined
                 is Completion.Return -> completion.value
@@ -1211,7 +1211,7 @@ class Interpreter(
                 }
                 return activeFrame.thisValue
             }
-            val completion = executeStatements(bodyBlock.statements)
+            val completion = executeStatements(bodyBlock.statements, bodyBlock.hasUsingDeclaration)
             if (completion is Completion.Return) {
                 val returned = completion.value
                 if (returned is JSObject) return returned
@@ -1647,8 +1647,20 @@ class Interpreter(
     // 语句执行
     // ================================================================
 
-    private suspend fun executeStatements(statements: List<Statement>): Completion =
+    /**
+     * 执行语句列表。
+     *
+     * 只有直接包含 using 声明的列表才需要资源释放作用域；
+     * [hasUsingDeclaration] 由 Parser 预计算，缺少该信息时保守地创建作用域。
+     */
+    private suspend fun executeStatements(
+        statements: List<Statement>,
+        hasUsingDeclaration: Boolean = true,
+    ): Completion = if (hasUsingDeclaration) {
         withDisposalScope { executeStatementsInternal(statements) }
+    } else {
+        executeStatementsInternal(statements)
+    }
 
     private suspend fun executeStatementsInternal(statements: List<Statement>): Completion {
         var lastValue: JSValue = JSUndefined
@@ -1686,6 +1698,7 @@ class Interpreter(
                 } else {
                     currentFrame.lexicalEnv
                 },
+                statement.hasUsingDeclaration,
             )
 
             is ExpressionStatement -> Completion.Normal(evaluate(statement.expression))
@@ -1760,13 +1773,17 @@ class Interpreter(
     }
 
     /** 在指定环境中执行语句列表，返回后恢复原环境。 */
-    private suspend fun executeBlock(statements: List<Statement>, environment: Environment): Completion {
+    private suspend fun executeBlock(
+        statements: List<Statement>,
+        environment: Environment,
+        hasUsingDeclaration: Boolean = true,
+    ): Completion {
         val previousEnvironment = currentFrame.lexicalEnv
         currentFrame.lexicalEnv = environment
         return try {
             predeclareLexical(statements, environment)
             instantiateBlockFunctions(statements, environment)
-            executeStatements(statements)
+            executeStatements(statements, hasUsingDeclaration)
         } finally {
             currentFrame.lexicalEnv = previousEnvironment
         }
@@ -2051,7 +2068,12 @@ class Interpreter(
     private suspend fun executeFor(
         statement: ForStatement,
         labels: List<String> = emptyList(),
-    ): Completion = withDisposalScope { executeForInternal(statement, labels) }
+    ): Completion = if (statement.init is UsingDeclaration) {
+        // for (using …)：循环头资源在循环结束时释放，需要独立释放作用域
+        withDisposalScope { executeForInternal(statement, labels) }
+    } else {
+        executeForInternal(statement, labels)
+    }
 
     private suspend fun executeForInternal(
         statement: ForStatement,
@@ -2585,6 +2607,7 @@ class Interpreter(
                 } else {
                     currentFrame.lexicalEnv
                 },
+                statement.block.hasUsingDeclaration,
             )
         } catch (exception: JSException) {
             normalizeErrorValue(exception.value)
@@ -2624,6 +2647,7 @@ class Interpreter(
                         } else {
                             catchEnvironment
                         },
+                        handler.body.hasUsingDeclaration,
                     )
                 } catch (catchException: JSException) {
                     thrown = catchException
@@ -2645,6 +2669,7 @@ class Interpreter(
                     } else {
                         currentFrame.lexicalEnv
                     },
+                    finalizer.hasUsingDeclaration,
                 )
                 if (completion !is Completion.Normal) {
                     // finally 的 abrupt 完成（break/continue/return）覆盖之前的 throw
@@ -3750,7 +3775,7 @@ class Interpreter(
                     }
                     val body = superConstructor.body
                     if (body != null) {
-                        val completion = executeStatements(body.statements)
+                        val completion = executeStatements(body.statements, body.hasUsingDeclaration)
                         if (completion is Completion.Return) {
                             val returned = completion.value
                             if (returned is JSObject) return returned

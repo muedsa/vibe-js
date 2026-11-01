@@ -310,6 +310,7 @@ class Parser(
             varDeclarations = hoist.varDeclarations,
             functionDeclarations = hoist.functionDeclarations,
             range = SourceRange(start, end),
+            hasUsingDeclaration = body.any { it is UsingDeclaration },
         )
     }
 
@@ -1871,7 +1872,12 @@ class Parser(
         // 无法提供作用域时保守保留独立环境
         val scope = blockScope ?: environmentScope
         val requiresEnvironment = scope?.lexicalNames?.isNotEmpty() ?: true
-        return BlockStatement(statements, SourceRange(start, end), requiresEnvironment)
+        return BlockStatement(
+            statements = statements,
+            range = SourceRange(start, end),
+            requiresEnvironment = requiresEnvironment,
+            hasUsingDeclaration = statements.any { it is UsingDeclaration },
+        )
     }
 
     /** if 语句。 */

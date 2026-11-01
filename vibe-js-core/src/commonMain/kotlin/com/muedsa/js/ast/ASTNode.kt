@@ -36,4 +36,6 @@ class Program(
     val varDeclarations: List<String>,
     val functionDeclarations: List<FunctionDeclaration>,
     override val range: SourceRange,
+    /** 顶层语句是否直接包含 using 声明（决定执行期是否需要资源释放作用域）。 */
+    val hasUsingDeclaration: Boolean = true,
 ) : ASTNode()

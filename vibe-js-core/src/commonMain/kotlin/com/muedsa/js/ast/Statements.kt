@@ -18,6 +18,8 @@ class BlockStatement(
     val statements: List<Statement>,
     override val range: SourceRange,
     val requiresEnvironment: Boolean = true,
+    /** 块内是否直接包含 using 声明（决定执行期是否需要资源释放作用域）。 */
+    val hasUsingDeclaration: Boolean = true,
 ) : Statement()
 
 /** 表达式语句，例如 `a = 1;` 或函数调用。 */
