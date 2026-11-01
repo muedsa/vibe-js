@@ -1929,4 +1929,65 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // JSON.parse 随机输入模糊（字符集覆盖结构、数字、转义与无效 token）
+    DifferentialCase(
+        "json-parse-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 112233445;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var alphabet = '{}[]",:0123456789.eE+-truefalsnul \t\n\r\\/u';
+  for (var i = 0; i < 250; i++) {
+    var length = Math.floor(rnd() * 16);
+    var text = '';
+    for (var j = 0; j < length; j++) {
+      text += alphabet[Math.floor(rnd() * alphabet.length)];
+    }
+    try {
+      out.push('OK:' + JSON.stringify(JSON.parse(text)));
+    } catch (e) {
+      out.push('ERR');
+    }
+  }
+  return out.join('|');
+})()""",
+    ),
+
+    // JSON.parse 近合法输入的随机变异（插入/删除/替换字符，覆盖数字与转义边界）
+    DifferentialCase(
+        "json-mutate-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 556677889;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var alphabet = '{}[]",:0123456789.eE+-truefalsnul \\/u\u0000';
+  function base() {
+    var kind = Math.floor(rnd() * 5);
+    if (kind === 0) return String((rnd() * 2 - 1) * Math.pow(10, Math.floor(rnd() * 7) - 3));
+    if (kind === 1) return JSON.stringify('ab' + String.fromCharCode(Math.floor(rnd() * 128)));
+    if (kind === 2) return '[1,"a",null,true]';
+    if (kind === 3) return '{"a":1,"b":[2,3]}';
+    return '[]';
+  }
+  for (var i = 0; i < 200; i++) {
+    var text = base();
+    var mutations = 1 + Math.floor(rnd() * 2);
+    for (var m = 0; m < mutations; m++) {
+      var position = Math.floor(rnd() * (text.length + 1));
+      var operation = Math.floor(rnd() * 3);
+      var char = alphabet[Math.floor(rnd() * alphabet.length)];
+      if (operation === 0) text = text.slice(0, position) + char + text.slice(position);
+      else if (operation === 1 && position < text.length) text = text.slice(0, position) + text.slice(position + 1);
+      else if (position < text.length) text = text.slice(0, position) + char + text.slice(position + 1);
+    }
+    try {
+      out.push('OK:' + JSON.stringify(JSON.parse(text)));
+    } catch (e) {
+      out.push('ERR');
+    }
+  }
+  return out.join('|');
+})()""",
+    ),
 )
