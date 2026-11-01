@@ -222,6 +222,16 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `正则 astral 字面量与反向引用在 i+u 下折叠`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "/𐐀/iu.test('𐐨') && /(?<=𐐀)b/iu.test('𐐨b') && " +
+                "/(𐐀)\\1/iu.test('𐐀𐐨') && /(?<=(𐐀)\\1)b/iu.test('𐐀𐐨b') && " +
+                "/(K)\\1/iu.test('KK') && /(ß)\\1/iu.test('ßẞ')"
+        ))
+    }
+
+    @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[object RegExp]", runtime.evalString("Object.prototype.toString.call(/a/) "))

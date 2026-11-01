@@ -2787,4 +2787,24 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // 反向引用在 i+u 下的折叠（astral/Kelvin/ß、命名组与后向断言）
+    DifferentialCase(
+        "regexp-backref-casefold",
+        """(function () {
+  var out = [];
+  out.push(/(a)\1/iu.test('aA') ? '1' : '0');
+  out.push(/(K)\1/iu.test('KK') ? '1' : '0');
+  out.push(/(ß)\1/iu.test('ßẞ') ? '1' : '0');
+  out.push(/(𐐀)\1/iu.test('𐐀𐐨') ? '1' : '0');
+  out.push(/(𐐨)\1/iu.test('𐐨𐐀') ? '1' : '0');
+  out.push(/(𐐀)\1/iu.test('𐐀𐐩') ? '1' : '0');
+  out.push(/(?<x>a)\k<x>/iu.test('aA') ? '1' : '0');
+  out.push(/(?<=(a)\1)b/iu.test('aAb') ? '1' : '0');
+  out.push(/(?<=(𐐀)\1)b/iu.test('𐐀𐐨b') ? '1' : '0');
+  var match = /(a)\1/giu.exec('aA');
+  out.push(match && match[0] === 'aA' ? '1' : '0');
+  return out.join('');
+})()""",
+    ),
 )

@@ -843,6 +843,9 @@ class JsRegexEngine(
     private fun matchesEndingAt(pos: Int, expected: String, ignoreCase: Boolean): Boolean {
         if (pos - expected.length < 0) return false
         val start = pos - expected.length
+        if (ignoreCase && unicode) {
+            return matchesCodePointsAt(start, expected)
+        }
         for (index in expected.indices) {
             if (!charEquals(inputForMatch[start + index], expected[index], ignoreCase)) return false
         }
@@ -851,10 +854,42 @@ class JsRegexEngine(
 
     private fun matchesAt(pos: Int, expected: String, ignoreCase: Boolean): Boolean {
         if (pos + expected.length > inputForMatch.length) return false
+        if (ignoreCase && unicode) {
+            return matchesCodePointsAt(pos, expected)
+        }
         for (index in expected.indices) {
             if (!charEquals(inputForMatch[pos + index], expected[index], ignoreCase)) return false
         }
         return true
+    }
+
+    /** u+i 模式按码点简单折叠比较，避免把 astral 代理对拆开。 */
+    private fun matchesCodePointsAt(pos: Int, expected: String): Boolean {
+        var inputIndex = pos
+        var expectedIndex = 0
+        while (expectedIndex < expected.length) {
+            val inputCodePoint = codePointAt(inputForMatch, inputIndex)
+            val expectedCodePoint = codePointAt(expected, expectedIndex)
+            if (UnicodeCaseFoldingData.simpleFold(inputCodePoint) !=
+                UnicodeCaseFoldingData.simpleFold(expectedCodePoint)
+            ) {
+                return false
+            }
+            inputIndex += if (inputCodePoint > 0xFFFF) 2 else 1
+            expectedIndex += if (expectedCodePoint > 0xFFFF) 2 else 1
+        }
+        return inputIndex == pos + expected.length
+    }
+
+    private fun codePointAt(text: String, index: Int): Int {
+        val high = text[index]
+        if (high.isHighSurrogate() && index + 1 < text.length) {
+            val low = text[index + 1]
+            if (low.isLowSurrogate()) {
+                return 0x10000 + ((high.code - 0xD800) shl 10) + (low.code - 0xDC00)
+            }
+        }
+        return high.code
     }
 
     private fun charEquals(left: Char, right: Char, ignoreCase: Boolean): Boolean {
@@ -1325,8 +1360,19 @@ class JsRegexEngine(
                 '(' -> parseGroup()
                 '\\' -> parseEscape()
                 else -> {
-                    position++
-                    Node.CharNode(character)
+                    if (unicode && character.isHighSurrogate() &&
+                        position + 1 < pattern.length && pattern[position + 1].isLowSurrogate()
+                    ) {
+                        // u 模式下 astral 字面量按单个码点匹配，才能正确做大小写折叠
+                        val codePoint = 0x10000 +
+                            ((character.code - 0xD800) shl 10) +
+                            (pattern[position + 1].code - 0xDC00)
+                        position += 2
+                        Node.ClassNode(false, listOf(ClassItem.Single(codePoint)))
+                    } else {
+                        position++
+                        Node.CharNode(character)
+                    }
                 }
             }
         }
