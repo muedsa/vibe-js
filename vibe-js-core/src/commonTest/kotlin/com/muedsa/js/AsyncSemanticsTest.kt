@@ -492,12 +492,7 @@ class AsyncSemanticsTest {
     @Test
     fun `未处理 Promise 拒绝通过宿主回调上报且不重复`() = runTest {
         val rejected = mutableListOf<JSValue>()
-        val base = DefaultHostEnvironment()
-        val engine = Engine(object : HostEnvironment by base {
-            override fun reportUnhandledRejection(reason: JSValue) {
-                rejected.add(reason)
-            }
-        })
+        val engine = Engine(DefaultHostEnvironment(unhandledRejectionHandler = { rejected.add(it) }))
         engine.run("Promise.reject('boom');")
         assertEquals(1, rejected.size)
         assertEquals("boom", (rejected[0] as JSString).value)

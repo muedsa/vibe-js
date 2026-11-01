@@ -88,10 +88,24 @@ interface HostEnvironment {
     fun utcOffsetMillis(epochMillis: Long): Long = 0L
 }
 
-/** 默认宿主环境。 */
+/** 默认宿主环境；可选注入时区偏移与 Promise 拒绝回调。 */
 @OptIn(ExperimentalTime::class)
 class DefaultHostEnvironment(
     override val console: Console = PrintlnConsole(),
     override val clock: Clock = Clock.System,
     override val scheduler: Scheduler = CoroutineScheduler(),
-) : HostEnvironment
+    private val timeZoneOffset: (Long) -> Long = { 0L },
+    private val unhandledRejectionHandler: ((JSValue) -> Unit)? = null,
+    private val rejectionHandledHandler: ((JSValue) -> Unit)? = null,
+) : HostEnvironment {
+
+    override fun utcOffsetMillis(epochMillis: Long): Long = timeZoneOffset(epochMillis)
+
+    override fun reportUnhandledRejection(reason: JSValue) {
+        unhandledRejectionHandler?.invoke(reason)
+    }
+
+    override fun reportRejectionHandled(reason: JSValue) {
+        rejectionHandledHandler?.invoke(reason)
+    }
+}

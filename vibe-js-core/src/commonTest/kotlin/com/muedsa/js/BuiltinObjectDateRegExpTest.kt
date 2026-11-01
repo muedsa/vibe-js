@@ -587,11 +587,8 @@ class BuiltinObjectDateRegExpTest {
 
     @Test
     fun `Date 本地方法使用宿主注入的时区偏移`() = runTest {
-        val base = DefaultHostEnvironment()
         val offset = 8L * 60 * 60 * 1000
-        val engine = Engine(object : HostEnvironment by base {
-            override fun utcOffsetMillis(epochMillis: Long): Long = offset
-        })
+        val engine = Engine(DefaultHostEnvironment(timeZoneOffset = { offset }))
         suspend fun number(code: String): Double = (engine.run(code) as JSNumber).value
         assertEquals(8.0, number("new Date(0).getHours()"))
         assertEquals(0.0, number("new Date(0).getUTCHours()"))
@@ -605,12 +602,12 @@ class BuiltinObjectDateRegExpTest {
 
     @Test
     fun `Date 时区偏移可随时刻变化并保持本地字符串往返`() = runTest {
-        val base = DefaultHostEnvironment()
         val dstStart = 1_590_940_800_000L
-        val engine = Engine(object : HostEnvironment by base {
-            override fun utcOffsetMillis(epochMillis: Long): Long =
-                if (epochMillis >= dstStart) 9L * 60 * 60 * 1000 else 8L * 60 * 60 * 1000
-        })
+        val engine = Engine(
+            DefaultHostEnvironment(
+                timeZoneOffset = { if (it >= dstStart) 9L * 60 * 60 * 1000 else 8L * 60 * 60 * 1000 }
+            )
+        )
         suspend fun number(code: String): Double = (engine.run(code) as JSNumber).value
         // 2020-06-01 本地 09:00（+09）对应 UTC 00:00
         assertEquals(

@@ -164,6 +164,8 @@ engine.install(MyModule())
 - `utcOffsetMillis(epochMillis)`：Date 本地时间使用的时区偏移（毫秒，东为正；默认 UTC）；
 - `reportUnhandledRejection(reason)` / `reportRejectionHandled(reason)`：Promise 未处理拒绝与补挂处理的宿主通知（默认忽略）。
 
+`DefaultHostEnvironment` 提供 `timeZoneOffset` / `unhandledRejectionHandler` / `rejectionHandledHandler` 构造参数，普通宿主无需实现整个接口。
+
 ## 9. 性能优化的预留点
 
 | 现状 | 后续替换方式 | 影响范围 |
