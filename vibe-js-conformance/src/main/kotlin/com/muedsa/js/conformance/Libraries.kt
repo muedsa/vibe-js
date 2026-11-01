@@ -757,6 +757,104 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "rxjs",
+        url = "https://cdn.jsdelivr.net/npm/rxjs@7.8.1/dist/bundles/rxjs.umd.min.js",
+        globalName = "rxjs",
+        cases = listOf(
+            SmokeCase(
+                "map",
+                assertion(
+                    "(function () { var out = ''; rxjs.of(1, 2, 3).pipe(rxjs.map(function (x) { " +
+                        "return x * 2; })).subscribe(function (v) { out += v; }); return out === '246'; })()"
+                ),
+            ),
+            SmokeCase(
+                "filter",
+                assertion(
+                    "(function () { var out = ''; rxjs.of(1, 2, 3, 4).pipe(rxjs.filter(function (x) { " +
+                        "return x % 2 === 0; })).subscribe(function (v) { out += v; }); " +
+                        "return out === '24'; })()"
+                ),
+            ),
+            SmokeCase(
+                "scan and take",
+                assertion(
+                    "(function () { var out = ''; rxjs.of(1, 2, 3).pipe(" +
+                        "rxjs.scan(function (a, b) { return a + b; }, 0), rxjs.take(2))" +
+                        ".subscribe(function (v) { out += v + ','; }); return out === '1,3,'; })()"
+                ),
+            ),
+            SmokeCase(
+                "Observable instance",
+                assertion(
+                    "rxjs.of(1) instanceof rxjs.Observable && " +
+                        "rxjs.of(1).pipe(rxjs.map(function (x) { return x; })) instanceof rxjs.Observable"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "eventemitter3",
+        url = "https://cdn.jsdelivr.net/npm/eventemitter3@5.0.1/dist/eventemitter3.umd.js",
+        globalName = "EventEmitter3",
+        cases = listOf(
+            SmokeCase(
+                "on and emit",
+                assertion(
+                    "(function () { var e = new EventEmitter3(); var out = ''; " +
+                        "e.on('x', function (v) { out += v; }); e.emit('x', 1); e.emit('x', 2); " +
+                        "return out === '12'; })()"
+                ),
+            ),
+            SmokeCase(
+                "once",
+                assertion(
+                    "(function () { var e = new EventEmitter3(); var n = 0; " +
+                        "e.once('a', function () { n++; }); e.emit('a'); e.emit('a'); return n === 1; })()"
+                ),
+            ),
+            SmokeCase(
+                "off and listenerCount",
+                assertion(
+                    "(function () { var e = new EventEmitter3(); function fn() {} " +
+                        "e.on('a', fn); var before = e.listenerCount('a'); e.off('a', fn); " +
+                        "e.emit('a'); return before === 1 && e.listenerCount('a') === 0; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "mitt",
+        url = "https://cdn.jsdelivr.net/npm/mitt@3.0.1/dist/mitt.umd.js",
+        globalName = "mitt",
+        cases = listOf(
+            SmokeCase(
+                "on and emit",
+                assertion(
+                    "(function () { var m = mitt(); var out = ''; " +
+                        "m.on('t', function (v) { out += v; }); m.emit('t', 1); m.emit('t', 2); " +
+                        "return out === '12'; })()"
+                ),
+            ),
+            SmokeCase(
+                "off",
+                assertion(
+                    "(function () { var m = mitt(); var out = ''; " +
+                        "function fn(v) { out += v; } m.on('t', fn); m.off('t', fn); m.emit('t', 1); " +
+                        "return out === ''; })()"
+                ),
+            ),
+            SmokeCase(
+                "wildcard",
+                assertion(
+                    "(function () { var m = mitt(); var out = ''; " +
+                        "m.on('*', function (type, v) { out += type + v; }); m.emit('a', 1); " +
+                        "return out === 'a1'; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 

@@ -157,7 +157,7 @@ Unicode 数据表（`\p{...}` 属性、属性字符串、标识符 ID_Start/ID_C
 ./gradlew :vibe-js-conformance:differentialConformance
 ```
 
-真实库基线（lodash 4.17.21 / mustache 4.2.0 / dayjs 1.11.10 / qs 6.12.3 / validator 13.12.0 / underscore 1.13.6 / moment 2.30.1 / semver 4.3.6 / punycode 1.4.1 / json5 2.2.3 / big.js 6.2.1 / diff 5.1.0 / lz-string 1.5.0 / marked 4.3.0 / bignumber.js 9.1.2 / decimal.js 10.4.3 / crypto-js 4.2.0 / papaparse 5.4.1 / js-yaml 4.1.0 / ramda 0.29.0 / he 1.2.0 / numeral 2.0.6 / showdown 2.1.0 / seedrandom 3.0.5 / pluralize 8.0.0 / highlight.js 11.9.0 / tinycolor2 1.6.0 / deepmerge 4.3.1 / big-integer 1.6.51）：
+真实库基线（lodash 4.17.21 / mustache 4.2.0 / dayjs 1.11.10 / qs 6.12.3 / validator 13.12.0 / underscore 1.13.6 / moment 2.30.1 / semver 4.3.6 / punycode 1.4.1 / json5 2.2.3 / big.js 6.2.1 / diff 5.1.0 / lz-string 1.5.0 / marked 4.3.0 / bignumber.js 9.1.2 / decimal.js 10.4.3 / crypto-js 4.2.0 / papaparse 5.4.1 / js-yaml 4.1.0 / ramda 0.29.0 / he 1.2.0 / numeral 2.0.6 / showdown 2.1.0 / seedrandom 3.0.5 / pluralize 8.0.0 / highlight.js 11.9.0 / tinycolor2 1.6.0 / deepmerge 4.3.1 / big-integer 1.6.51 / rxjs 7.8.1 / eventemitter3 5.0.1 / mitt 3.0.1）：
 
 | 库 | 状态 | 用例 |
 |---|---|---|
@@ -190,8 +190,11 @@ Unicode 数据表（`\p{...}` 属性、属性字符串、标识符 ID_Start/ID_C
 | tinycolor2 | 可加载 | 4/4 |
 | deepmerge | 可加载 | 3/3 |
 | big-integer | 可加载 | 5/5 |
+| rxjs | 可加载 | 4/4 |
+| eventemitter3 | 可加载 | 3/3 |
+| mitt | 可加载 | 3/3 |
 
-合计：**114/114 用例通过，0 失败**。
+合计：**124/124 用例通过，0 失败**。
 
 > 依赖浏览器全局（如 `window`/`self`/`document`）的构建（例如 sprintf-js、chance）不纳入冒烟；seedrandom 在全局模式覆盖 `Math.random`，用例验证同种子确定性与不同种子差异。
 
@@ -208,7 +211,7 @@ Node 差分基线：**351 个用例**（Array 方法在稀疏数组/原型链/ar
 ## 推进顺序
 
 1. Test262 ES5 子集与解析一致性基线已收敛；特性子集（含 esid 核心语义用例）已全部通过（37329/37329，覆盖 ES2015 核心语义与已实现的 ES2016+ 语法/内建），后续可继续扩展特性选择范围（如更多 ES2022+ 方法）；
-2. 继续扩大真实库覆盖（已加入 semver/punycode/json5/papaparse/js-yaml/ramda/he/numeral/showdown/seedrandom/pluralize/highlight.js/tinycolor2/deepmerge/big-integer，后续补充更多 UMD 构建与用例）；
+2. 继续扩大真实库覆盖（已加入 semver/punycode/json5/papaparse/js-yaml/ramda/he/numeral/showdown/seedrandom/pluralize/highlight.js/tinycolor2/deepmerge/big-integer/rxjs/eventemitter3/mitt，后续补充更多 UMD 构建与用例）；
 3. 严格门禁已就绪：`-Pstrict` 在 parser / Test262 / 真实库 / 差分四个基线均通过（parser 的 Generator 项走显式允许列表）；接入 PR 触发需确认 CI 反馈成本后再启用。
 
 ## CI
