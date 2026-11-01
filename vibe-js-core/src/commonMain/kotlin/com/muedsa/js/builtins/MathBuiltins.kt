@@ -284,6 +284,7 @@ object MathBuiltins {
      * 以 2^-1074 为最小单位，用符号 + 64 位字长整数保存所有有限 double 的精确和，
      * 最后按 roundTiesToEven 舍入成 double；可正确处理中间溢出后相互抵消的场景。
      */
+    @OptIn(ExperimentalUnsignedTypes::class)
     private class ExactSum {
         /** 小端序幅值字（word 0 为最低 64 位）。 */
         private val words = ArrayList<ULong>()
