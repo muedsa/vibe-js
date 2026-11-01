@@ -1751,4 +1751,46 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('|');
 })()""",
     ),
+
+    // Date 的随机时间 ISO 往返、UTC 构造/解析与 setter 模糊
+    DifferentialCase(
+        "date-iso-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 246813579;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  for (var i = 0; i < 120; i++) {
+    var t = (rnd() * 2 - 1) * 8.64e15;
+    out.push(new Date(t).toISOString());
+  }
+  for (var j = 0; j < 60; j++) {
+    var y = Math.floor(rnd() * 20000) - 10000;
+    var mo = Math.floor(rnd() * 30) - 3;
+    var day = Math.floor(rnd() * 60) - 10;
+    var h = Math.floor(rnd() * 48) - 12;
+    var mi = Math.floor(rnd() * 120) - 30;
+    var s = Math.floor(rnd() * 120) - 30;
+    var ms = Math.floor(rnd() * 2000) - 500;
+    var utc = Date.UTC(y, mo, day, h, mi, s, ms);
+    out.push(String(utc) + '|' + new Date(utc).toISOString());
+  }
+  var samples = ['1970-01-01T00:00:00.000Z', '0000-01-01T00:00:00.000Z', '-000001-12-31T23:59:59.999Z', '+010000-01-01T00:00:00.000Z', '2020-02-29T12:34:56.789+08:30', '2020-02-30T00:00:00Z', '2020-13-01T00:00:00Z', '2020-00-01T00:00:00Z', '2020-01-32T00:00:00Z', '2020-01-01T24:00:00Z', '2020-01-01T23:60:00Z', '2020-01-01T23:59:60Z', '2020-01-01T00:00:00.1234Z'];
+  for (var k = 0; k < samples.length; k++) {
+    var p = Date.parse(samples[k]);
+    out.push(samples[k] + '=' + (isNaN(p) ? 'NaN' : new Date(p).toISOString()));
+  }
+  for (var n = 0; n < 80; n++) {
+    var d = new Date(Math.floor((rnd() * 2 - 1) * 8.64e15));
+    var pick = Math.floor(rnd() * 5);
+    if (pick === 0) d.setUTCMonth(Math.floor(rnd() * 30) - 5, Math.floor(rnd() * 60) - 10);
+    else if (pick === 1) d.setUTCDate(Math.floor(rnd() * 60) - 10);
+    else if (pick === 2) d.setUTCHours(Math.floor(rnd() * 48) - 12, Math.floor(rnd() * 120) - 30, Math.floor(rnd() * 120) - 30, Math.floor(rnd() * 2000) - 500);
+    else if (pick === 3) d.setUTCFullYear(Math.floor(rnd() * 20000) - 10000, Math.floor(rnd() * 30) - 5, Math.floor(rnd() * 60) - 10);
+    else d.setUTCMinutes(Math.floor(rnd() * 120) - 30, Math.floor(rnd() * 120) - 30, Math.floor(rnd() * 2000) - 500);
+    out.push(String(d.getTime()));
+  }
+  return out.join(';');
+})()""",
+    ),
+
 )

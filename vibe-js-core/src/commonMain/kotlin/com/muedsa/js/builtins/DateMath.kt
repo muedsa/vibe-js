@@ -163,6 +163,7 @@ internal object DateMath {
      * 解析 ISO 8601 日期字符串。
      *
      * 支持 YYYY-MM-DD、YYYY-MM-DDTHH:mm[:ss[.sss]][Z|±HH:MM]；
+     * 小时允许 24 且仅在分秒毫秒为 0 时顺延到次日；小数秒超过 3 位按截断处理。
      * 其他格式返回 NaN（与浏览器对非 ISO 格式的宽容解析不同）。
      */
     fun parseDateString(text: String): Double {
@@ -214,7 +215,7 @@ internal object DateMath {
             return timeClip(time)
         }
         val regex = Regex(
-            """^([+-]?\d{4,6})(?:-(\d{2})(?:-(\d{2}))?)?(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})?)?$"""
+            """^([+-]?\d{4,6})(?:-(\d{2})(?:-(\d{2}))?)?(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}:?\d{2})?)?$"""
         )
         val match = regex.matchEntire(trimmed) ?: return Double.NaN
         val yearText = match.groupValues[1]
@@ -233,8 +234,16 @@ internal object DateMath {
         val hours = match.groupValues[4].ifEmpty { "0" }.toInt()
         val minutes = match.groupValues[5].ifEmpty { "0" }.toInt()
         val seconds = match.groupValues[6].ifEmpty { "0" }.toInt()
-        val milliseconds = match.groupValues[7].ifEmpty { "0" }.padEnd(3, '0').toInt()
-        if (hours !in 0..23 || minutes !in 0..59 || seconds !in 0..59) return Double.NaN
+        // 小数秒按前 3 位截断（V8 语义）；空小数部分不匹配正则
+        val fraction = match.groupValues[7]
+        val milliseconds = if (fraction.isEmpty()) 0 else fraction.take(3).padEnd(3, '0').toInt()
+        if (minutes !in 0..59 || seconds !in 0..59) return Double.NaN
+        // 24 点仅在分秒毫秒全为 0 时合法，makeDate 会自然顺延到次日；
+        // 毫秒需看原始小数（V8 对 24:00:00.0009 仍判非法）
+        val fractionIsZero = fraction.all { it == '0' }
+        if (hours !in 0..23 && !(hours == 24 && minutes == 0 && seconds == 0 && fractionIsZero)) {
+            return Double.NaN
+        }
 
         // ISO 扩展年份按字面值使用（0..99 不映射到 1900+）
         var time = makeDate(
@@ -251,6 +260,8 @@ internal object DateMath {
             val sign = if (zone[0] == '-') -1 else 1
             val zoneHours = zone.substring(1, 3).toInt()
             val zoneMinutes = zone.substring(if (zone.contains(':')) 4 else 3).toInt()
+            // ISO 时区偏移上限：小时 00..23、分钟 00..59
+            if (zoneHours !in 0..23 || zoneMinutes !in 0..59) return Double.NaN
             time -= sign * (zoneHours * 60 + zoneMinutes) * MS_PER_MINUTE
         }
         return timeClip(time)

@@ -2827,6 +2827,19 @@ class RuntimeSemanticsRegressionTest {
                 " Number.isNaN(Date.parse('-271821-04-19T23:59:59.999Z')) &&" +
                 " Date.parse('-271821-04-20T00:00:00.000Z') === -8640000000000000"
         ))
+        // 24:00 仅在分秒毫秒为 0 时顺延次日；小数秒超过 3 位按截断解析；
+        // 时区偏移超出 23:59 视为非法
+        assertEquals(true, runtime.evalBoolean(
+            "Date.parse('2020-01-01T24:00:00Z') === Date.UTC(2020, 0, 2) &&" +
+                " Date.parse('2020-01-01T24:00Z') === Date.UTC(2020, 0, 2) &&" +
+                " Number.isNaN(Date.parse('2020-01-01T24:00:00.001Z')) &&" +
+                " Number.isNaN(Date.parse('2020-01-01T24:00:00.0009Z')) &&" +
+                " Number.isNaN(Date.parse('2020-01-01T24:01:00Z')) &&" +
+                " Date.parse('2020-01-01T00:00:00.123456789Z') === Date.UTC(2020, 0, 1) + 123 &&" +
+                " Number.isNaN(Date.parse('2020-01-01T00:00:00.Z')) &&" +
+                " Number.isNaN(Date.parse('2020-01-01T00:00:00+24:00')) &&" +
+                " Number.isNaN(Date.parse('2020-01-01T00:00:00+00:60'))"
+        ))
     }
 
     @Test
