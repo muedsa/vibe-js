@@ -130,16 +130,22 @@ private class DifferentialRunner {
     suspend fun run(): DifferentialReport {
         val startedAt = System.nanoTime()
         val cases = differentialCases + extraDifferentialCases
-        val vibeResults = mutableListOf<Pair<DifferentialCase, String>>()
+        val vibeResults = mutableListOf<Triple<String, String, String>>()
         val engine = Engine()
         for (case in cases) {
-            vibeResults.add(case to evaluateInVibe(engine, case.expression))
+            vibeResults.add(
+                Triple(case.name, case.expression, evaluateInVibe(engine, case.expression))
+            )
+        }
+        for (case in asyncDifferentialCases) {
+            val display = case.source.replace('\n', ' ').replace('\t', ' ')
+            vibeResults.add(Triple(case.name, display, evaluateAsyncInVibe(case.source)))
         }
 
         val node = try {
             val version = runNode(listOf("--version")).trim()
             val script = File.createTempFile("vibe-diff-", ".js")
-            script.writeText(buildNodeScript(cases))
+            script.writeText(buildNodeScript(cases, asyncDifferentialCases))
             val output = runNode(listOf(script.absolutePath))
             script.delete()
             version to output.lineSequence()
@@ -163,12 +169,12 @@ private class DifferentialRunner {
         }
 
         val (version, nodeValues) = node
-        val results = vibeResults.map { (case, vibe) ->
+        val results = vibeResults.map { (name, expression, vibe) ->
             DifferentialResult(
-                name = case.name,
-                expression = case.expression,
+                name = name,
+                expression = expression,
                 vibeValue = vibe,
-                nodeValue = nodeValues[case.name] ?: "<missing>",
+                nodeValue = nodeValues[name] ?: "<missing>",
             )
         }
         return DifferentialReport(
@@ -194,6 +200,26 @@ private class DifferentialRunner {
         }
     }
 
+    /**
+     * 异步用例：脚本执行（含微任务冲刷）后读取 `globalThis.__diffResult`。
+     * 每个用例使用独立 Engine，避免全局状态相互影响。
+     */
+    private suspend fun evaluateAsyncInVibe(source: String): String {
+        val engine = Engine()
+        return try {
+            engine.run(source)
+            when (val value = engine.run("JSON.stringify(globalThis.__diffResult)")) {
+                is JSUndefined -> "undefined"
+                is JSString -> value.value
+                else -> value.toString()
+            }
+        } catch (error: JSException) {
+            "THROW:${thrownName(error.value)}"
+        } catch (error: Throwable) {
+            "CRASH:${error::class.simpleName}"
+        }
+    }
+
     private fun thrownName(value: com.muedsa.js.runtime.value.JSValue): String {
         if (value is JSError) return value.errorName
         if (value is JSObject) {
@@ -203,7 +229,10 @@ private class DifferentialRunner {
         return "Error"
     }
 
-    private fun buildNodeScript(cases: List<DifferentialCase>): String {
+    private fun buildNodeScript(
+        cases: List<DifferentialCase>,
+        asyncCases: List<AsyncDifferentialCase>,
+    ): String {
         val builder = StringBuilder()
         builder.appendLine("const cases = [")
         for (case in cases) {
@@ -228,6 +257,36 @@ private class DifferentialRunner {
             }
             """.trimIndent()
         )
+        if (asyncCases.isNotEmpty()) {
+            builder.appendLine("const asyncCases = [")
+            for (case in asyncCases) {
+                builder.append("  [")
+                builder.append(kotlinStringLiteral(case.name))
+                builder.append(", ")
+                builder.append(kotlinStringLiteral(case.source))
+                builder.appendLine("],")
+            }
+            builder.appendLine("];")
+            builder.appendLine(
+                """
+                (async () => {
+                  for (const [name, source] of asyncCases) {
+                    try {
+                      await (async () => { eval(source); })();
+                      // 冲刷所有已入队的微任务（宏任务边界）
+                      await new Promise((resolve) => setImmediate(resolve));
+                      const json = JSON.stringify(globalThis.__diffResult);
+                      process.stdout.write(name + '\t' + (json === undefined ? 'undefined' : json) + '\n');
+                    } catch (error) {
+                      const errorName = error && error.name ? error.name : 'Error';
+                      process.stdout.write(name + '\tTHROW:' + errorName + '\n');
+                    }
+                    delete globalThis.__diffResult;
+                  }
+                })();
+                """.trimIndent()
+            )
+        }
         return builder.toString()
     }
 
