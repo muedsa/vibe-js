@@ -2349,6 +2349,64 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "class-private-fuzz",
+        """
+        (function () {
+          var out = [];
+          function check(label, body) {
+            try { out.push(label + '=' + String(body())); }
+            catch (e) { out.push(label + '=THROW:' + e.name); }
+          }
+          class A {
+            #x = 1;
+            static #s = 2;
+            static #sm() { return 3; }
+            #m() { return this.#x + 1; }
+            get value() { return this.#x; }
+            set value(next) { this.#x = next; }
+            callM() { return this.#m(); }
+            static hasX(object) { return #x in object; }
+            static total() { return A.#s + A.#sm(); }
+            static { this.block = 'sb'; }
+          }
+          class B extends A {
+            #y = 10;
+            constructor() { super(); this.#y += this.value; }
+            sum() { return this.value + this.#y; }
+            static hasY(object) { return #y in object; }
+          }
+          class C {
+            #v = 5;
+            get #p() { return this.#v * 2; }
+            set #p(next) { this.#v = next; }
+            read() { return this.#p; }
+            write(next) { this.#p = next; }
+            static hasP(object) { return #p in object; }
+          }
+          class D {
+            ['a' + 1] = 4;
+          }
+          var a = new A();
+          check('aValue', function () { return a.value; });
+          check('aSet', function () { a.value = 6; return a.value; });
+          check('aMethod', function () { return a.callM(); });
+          check('aBrand', function () { return A.hasX(a) + ':' + A.hasX({}); });
+          check('aStatic', function () { return A.total() + ':' + A.block; });
+          var b = new B();
+          check('bSum', function () { return b.sum(); });
+          check('bBrand', function () { return A.hasX(b) + ':' + B.hasY(b) + ':' + B.hasY(a); });
+          check('bWrongReceiver', function () { return B.prototype.sum.call(a); });
+          var c = new C();
+          check('cRead', function () { return c.read(); });
+          check('cWrite', function () { c.write(7); return c.read(); });
+          check('cBrand', function () { return C.hasP(c) + ':' + C.hasP({}); });
+          check('computedField', function () { return new D().a1; });
+          check('duplicatePrivate', function () { return eval('class E { #x; #x; }'); });
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "function-binding-fuzz",
         """
         (function () {
