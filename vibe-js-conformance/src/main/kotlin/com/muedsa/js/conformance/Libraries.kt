@@ -2258,6 +2258,45 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "moment-timezone",
+        url = "https://unpkg.com/moment-timezone@0.5.43/builds/moment-timezone-with-data.js",
+        globalName = "moment",
+        dependencies = listOf("moment"),
+        cases = listOf(
+            SmokeCase(
+                "zone offset",
+                assertion(
+                    "moment.tz.zone('Asia/Shanghai').utcOffset(0) === -480 && " +
+                        "moment.tz('2020-01-01T00:00:00', 'Asia/Shanghai')" +
+                        ".format('YYYY-MM-DD HH:mm Z') === '2020-01-01 00:00 +08:00'"
+                ),
+            ),
+            SmokeCase(
+                "utc conversion",
+                assertion(
+                    "moment.tz('2020-01-01T00:00:00', 'Asia/Shanghai').utc().format() === " +
+                        "'2019-12-31T16:00:00Z' && " +
+                        "moment.tz('2020-06-01T12:00:00', 'America/New_York').utc().format() === " +
+                        "'2020-06-01T16:00:00Z'"
+                ),
+            ),
+            SmokeCase(
+                "dst add",
+                assertion(
+                    "moment.tz('2020-03-07T12:00:00', 'America/New_York').add(2, 'days')" +
+                        ".format('YYYY-MM-DD HH:mm Z') === '2020-03-09 12:00 -04:00' && " +
+                        "moment.tz('2020-11-01T12:00:00', 'America/New_York').utcOffset() === -300"
+                ),
+            ),
+            SmokeCase(
+                "timestamp",
+                assertion(
+                    "moment.tz('2020-01-01T00:00:00', 'Asia/Shanghai').valueOf() === 1577808000000"
+                ),
+            ),
+        ),
+    ),
 )
 
 
