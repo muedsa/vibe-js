@@ -3935,13 +3935,18 @@ class Interpreter(
 
     /** super 属性访问的基对象：方法用 HomeObject 的动态原型，构造器用 superBase。 */
     private fun superPropertyBase(): JSObject {
+        val base = superPropertyBaseOrNull()
+        return base ?: throw typeError("Cannot read properties of null (reading 'super')")
+    }
+
+    /** super 的 [[HomeObject]]/[[SuperBase]] 原型；可能为 null（PutValue 时才抛 TypeError）。 */
+    private fun superPropertyBaseOrNull(): JSObject? {
         val function = currentFrame.function
-        val base = if (function?.homeObject != null) {
+        return if (function?.homeObject != null) {
             function.homeObject?.prototype
         } else {
             function?.superBase
         }
-        return base ?: throw typeError("Cannot read properties of null (reading 'super')")
     }
 
     /** super 属性赋值：setter 以实际 this 为接收者，否则在接收者上创建自有属性。 */
@@ -4030,31 +4035,52 @@ class Interpreter(
                     if (!currentFrame.thisInitialized) {
                         throw referenceError("Must call super constructor before accessing 'super'")
                     }
-                    val base = superPropertyBase()
-                    val key = memberKey(target)
+                    // GetSuperBase 在属性表达式之后、RHS 之前；base 为 null 时 TypeError
+                    // 延迟到 PutValue/GetValue（简单赋值会在 RHS 求值后抛出）
+                    val base = superPropertyBaseOrNull()
+                    val keyValue = if (target.computed) evaluate(target.property) else null
+                    var resolvedKey: PropertyKey? = null
+                    suspend fun key(): PropertyKey {
+                        resolvedKey?.let { return it }
+                        val result = keyValue?.let { toPropertyKey(it) }
+                            ?: PropertyKey.Str((target.property as Identifier).name)
+                        resolvedKey = result
+                        return result
+                    }
                     return when {
                         operator == "=" -> {
                             val value = evaluate(expression.value)
-                            putSuperProperty(base, currentFrame.thisValue, key, value, currentFrame.strict)
+                            if (base == null) {
+                                throw typeError("Cannot convert undefined or null to object")
+                            }
+                            putSuperProperty(
+                                base, currentFrame.thisValue, key(), value, currentFrame.strict,
+                            )
                             value
                         }
 
                         isLogicalAssignment(operator) -> {
-                            val current = getV(base, key)
+                            if (base == null) throw typeError("Cannot read properties of null")
+                            val current = getV(base, key())
                             if (!shouldAssignLogical(operator, current)) {
                                 current
                             } else {
                                 val value = evaluate(expression.value)
-                                putSuperProperty(base, currentFrame.thisValue, key, value, currentFrame.strict)
+                                putSuperProperty(
+                                    base, currentFrame.thisValue, key(), value, currentFrame.strict,
+                                )
                                 value
                             }
                         }
 
                         else -> {
-                            val current = getV(base, key)
+                            if (base == null) throw typeError("Cannot read properties of null")
+                            val current = getV(base, key())
                             val right = evaluate(expression.value)
                             val result = applyBinary(operator.dropLast(1), current, right)
-                            putSuperProperty(base, currentFrame.thisValue, key, result, currentFrame.strict)
+                            putSuperProperty(
+                                base, currentFrame.thisValue, key(), result, currentFrame.strict,
+                            )
                             result
                         }
                     }
@@ -4505,6 +4531,27 @@ class Interpreter(
             }
 
             is MemberExpr -> {
+                if (target.obj is SuperExpr) {
+                    // GetThisBinding 先于属性表达式；未初始化 this 直接 ReferenceError
+                    if (!currentFrame.thisInitialized) {
+                        throw referenceError("Must call super constructor before accessing 'super'")
+                    }
+                    // GetSuperBase 先于 ToPropertyKey（测试会在 toString 中切换原型）
+                    val base = superPropertyBaseOrNull()
+                    if (base == null) throw typeError("Cannot read properties of null")
+                    val key = if (target.computed) {
+                        toPropertyKey(evaluate(target.property))
+                    } else {
+                        PropertyKey.Str((target.property as Identifier).name)
+                    }
+                    val oldValue = getV(base, key)
+                    val oldNumber = toNumber(oldValue)
+                    val newValue = JSNumber(oldNumber + delta)
+                    putSuperProperty(
+                        base, currentFrame.thisValue, key, newValue, currentFrame.strict,
+                    )
+                    return if (expression.prefix) newValue else JSNumber(oldNumber)
+                }
                 val base = evaluate(target.obj)
                 val privateMember = (target.property as? PrivateIdentifier)?.name
                 if (privateMember != null) {

@@ -195,6 +195,26 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     ),
     DifferentialCase("delete-primitive-base", "delete true.x"),
     DifferentialCase(
+        "super-assign-null-rhs-order",
+        "(function () { var count = 0; class C { static m() { super.x = (count += 1); } }" +
+            " Object.setPrototypeOf(C, null);" +
+            " try { C.m(); return 'none'; } catch (e) { return e.name + ':' + count; } })()"
+    ),
+    DifferentialCase(
+        "super-computed-key-after-rhs",
+        "(function () { function DummyError() {}" +
+            " var prop = { toString: function () { throw new Error('key'); } };" +
+            " class C extends (class {}) { m() { super[prop] = (function () {" +
+            "   throw new DummyError(); })(); } }" +
+            " try { (new C()).m(); return 'none'; } catch (e) { return e instanceof DummyError; } })()"
+    ),
+    DifferentialCase(
+        "super-increment-uninitialized-this",
+        "(function () { class Base { constructor() { throw new Error('base'); } }" +
+            " class Derived extends Base { constructor() { super[super()]++; } }" +
+            " try { new Derived(); return 'none'; } catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
         "async-function-subclass",
         "(function () { async function foo() {} var AF = foo.constructor;" +
             " return Object.getPrototypeOf(AF) === Function && foo instanceof Function; })()"

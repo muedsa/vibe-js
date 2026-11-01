@@ -105,9 +105,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 477 + 宿主 15 个测试 |
-| JS（Node） | ✅ | 核心 477 + 宿主 15 个测试 |
-| Wasm（Node） | ✅ | 核心 477 + 宿主 15 个测试 |
+| JVM | ✅ | 核心 478 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 478 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 478 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -119,7 +119,8 @@
 - `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；
 - Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷），未实现未处理拒绝上报；
 - 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消；`async` 函数体在独立解释器实例上以 `Dispatchers.Unconfined` 恢复执行，不持有 `runtimeMutex`，当前模型面向单线程事件循环，宿主不应在多线程并发调用执行入口；
-- 参数初始化阶段的直接 eval 若声明与参数环境同名绑定（包括隐式 `arguments`），按规范与 Test262 期望抛 `SyntaxError`；Node/V8 对隐式 `arguments` 允许该声明，该分支不纳入差分用例。
+- 参数初始化阶段的直接 eval 若声明与参数环境同名绑定（包括隐式 `arguments`），按规范与 Test262 期望抛 `SyntaxError`；Node/V8 对隐式 `arguments` 允许该声明，该分支不纳入差分用例；
+- `++super[key]` 按规范在 ToPropertyKey 之前读取 GetSuperBase（Test262 期望）；Node/V8 在键转换后读取原型，二者结果不同，该分支不纳入差分用例。
 
 ## 7. 测试对应
 

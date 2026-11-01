@@ -3598,4 +3598,39 @@ class RuntimeSemanticsRegressionTest {
                 " probeParam()"
         ))
     }
+
+    @Test
+    fun `super 赋值与自增的求值顺序及未初始化 this`() = runTest {
+        val runtime = TestRuntime()
+        // 简单赋值：RHS 先于 ToObject(null) 的 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "var count = 0;" +
+                " class C1 { static m() { super.x = (count += 1); } }" +
+                " Object.setPrototypeOf(C1, null);" +
+                " try { C1.m(); false; } catch (e) { e.name === 'TypeError' && count === 1 }"
+        ))
+        // 计算键的 ToPropertyKey 延迟到 RHS 之后
+        assertEquals(true, runtime.evalBoolean(
+            "function DummyError() {}" +
+                " var prop = { toString: function () { throw new Error('key'); } };" +
+                " class C2 extends (class {}) { m() { super[prop] = (function () {" +
+                "   throw new DummyError(); })(); } }" +
+                " try { (new C2()).m(); false; }" +
+                " catch (e) { e instanceof DummyError }"
+        ))
+        // 自增：GetSuperBase 先于 ToPropertyKey（toString 中切换原型不影响已捕获 base）
+        assertEquals(true, runtime.evalBoolean(
+            "var proto = { p: 1 }, proto2 = { p: -1 };" +
+                " var obj = { __proto__: proto, m() { return ++super[key]; } };" +
+                " var key = { toString: function () {" +
+                "   Object.setPrototypeOf(obj, proto2); return 'p'; } };" +
+                " obj.m() === 2"
+        ))
+        // 派生构造器 super() 之前：属性表达式不求值，直接 ReferenceError
+        assertEquals("ReferenceError", runtime.evalString(
+            "class Base { constructor() { throw new Error('base'); } }" +
+                " class Derived extends Base { constructor() { super[super()]++; } }" +
+                " try { new Derived(); 'none' } catch (e) { e.name }"
+        ))
+    }
 }
