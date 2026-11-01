@@ -1259,4 +1259,361 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             "Array.prototype.sort.call(obj); return obj[0] + ',' + obj[1] + ',' + obj[2]; }); " +
             "return out.join('|'); })()"
     ),
+
+    // 数组 species、迭代器关闭、对象展开、属性描述符、类字段与 Map/Set 构造语义
+    DifferentialCase(
+        "array-species-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  class A extends Array {}
+  class B extends Array { static get [Symbol.species]() { return Array; } }
+  push(function () { return new A(1, 2, 3).map(function (x) { return x * 2; }).constructor === A; });
+  push(function () { return new B(1, 2, 3).map(function (x) { return x * 2; }).constructor === Array; });
+  push(function () { return new A(1, 2).concat([3]).constructor === A; });
+  push(function () { return new B(1, 2).concat([3]).constructor === Array; });
+  push(function () { return new A(1, 2, 3).slice(1).constructor === A; });
+  push(function () { return new B(1, 2, 3).slice(1).constructor === Array; });
+  push(function () { return new A(1, 2, 3).splice(1, 1).constructor === A; });
+  push(function () { return new B(1, 2, 3).splice(1, 1).constructor === Array; });
+  push(function () { return new A(1, 2, 3).filter(function () { return true; }).constructor === A; });
+  push(function () { return Array.prototype.map.call({ length: 1, 0: 5 }, function (x) { return x; }).constructor === Array; });
+  push(function () {
+    var log = [];
+    class C extends Array { static get [Symbol.species]() { log.push('s'); return Array; } }
+    var arr = new C(1, 2);
+    var r = arr.map(function (x) { log.push('m'); return x; });
+    return (r.constructor === Array) + '|' + log.join(',');
+  });
+  push(function () {
+    class D extends Array { static get [Symbol.species]() { return null; } }
+    return new D(1).map(function (x) { return x; }).constructor === Array;
+  });
+  push(function () {
+    class E extends Array { static get [Symbol.species]() { return 5; } }
+    return new E(1).map(function (x) { return x; });
+  });
+  push(function () {
+    class F extends Array { static get [Symbol.species]() { return function () { return { length: 0 }; }; } }
+    var r = new F(1, 2).map(function (x) { return x; });
+    return Object.prototype.toString.call(r) + ':' + r.length;
+  });
+  return out.join(';');
+})()""",
+    ),
+    DifferentialCase(
+        "iterator-close-matrix",
+        """(function () {
+  var out = [];
+  function makeIterable(log, values, throwAt) {
+    return {
+      [Symbol.iterator]: function () {
+        var i = 0;
+        return {
+          next: function () {
+            log.push('n' + i);
+            if (throwAt === i) throw new Error('next');
+            if (i >= values.length) return { done: true };
+            return { value: values[i++], done: false };
+          },
+          return: function () { log.push('r'); return { done: true }; }
+        };
+      }
+    };
+  }
+  var log1 = [];
+  try { var [a = (function () { throw new Error('def'); })(), b] = makeIterable(log1, [1, 2]); } catch (e) {}
+  out.push('def:' + log1.join(','));
+  var log2 = [];
+  for (var x of makeIterable(log2, [1, 2, 3])) { if (x === 1) break; }
+  out.push('break:' + log2.join(','));
+  var log3 = [];
+  try { for (var y of makeIterable(log3, [1, 2, 3])) { if (y === 1) throw new Error('body'); } } catch (e) {}
+  out.push('throw:' + log3.join(','));
+  var log4 = [];
+  var [p, ...q] = makeIterable(log4, [1, 2, 3]);
+  out.push('rest:' + p + ':' + q.join('') + ':' + log4.join(','));
+  var log5 = [];
+  var [h1, , h3] = makeIterable(log5, [9, 8, 7]);
+  out.push('hole:' + h1 + ',' + h3 + ':' + log5.join(','));
+  var log6 = [];
+  try { var [z] = makeIterable(log6, [], 0); } catch (e) {}
+  out.push('nextthrow:' + log6.join(','));
+  var log7 = [];
+  try { var [w] = makeIterable(log7, [1, 2]); } catch (e) {}
+  out.push('ok:' + log7.join(','));
+  var log8 = [];
+  outer: for (var u of makeIterable(log8, [0, 1, 2])) {
+    for (var v of makeIterable(log8, [0, 1, 2])) {
+      if (v === 1) continue outer;
+    }
+  }
+  out.push('labeled:' + log8.join(','));
+  var [s1, s2, ...s3] = 'ab\uD83D\uDE00';
+  out.push('string:' + s1 + s2 + s3.length + ':' + s3[0].length);
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "object-spread-matrix",
+        """(function () {
+  var out = [];
+  var log = [];
+  var src = {};
+  Object.defineProperty(src, 'a', { enumerable: true, get: function () { log.push('a'); return 1; } });
+  Object.defineProperty(src, 'b', { enumerable: false, value: 2 });
+  var sym = Symbol('s');
+  src[sym] = 3;
+  var copy = { z: 0, ...src };
+  out.push(JSON.stringify(copy) + ':' + copy.b + ':' + copy[sym] + ':' + log.join(','));
+  var orderLog = [];
+  var o1 = { get x() { orderLog.push('x'); return 1; } };
+  var o2 = { get y() { orderLog.push('y'); return 2; } };
+  var merged = { ...o1, ...o2 };
+  out.push(merged.x + merged.y + ':' + orderLog.join(','));
+  var arrLog = [];
+  var ib = {
+    [Symbol.iterator]: function () {
+      var i = 0;
+      return {
+        next: function () {
+          arrLog.push('n' + i);
+          if (i >= 2) return { done: true };
+          i++;
+          return { value: i, done: false };
+        },
+        return: function () { arrLog.push('r'); return { done: true }; }
+      };
+    }
+  };
+  var spread = [...ib];
+  out.push(spread.join(',') + ':' + arrLog.join(','));
+  function rest(...args) { return args.length + ':' + args.join(''); }
+  out.push(rest(1, 2, 3));
+  function mixed(a, ...b) { return a + ':' + b.join(''); }
+  out.push(mixed(...[9, 8, 7]));
+  var inner = { p: 1, q: 2 };
+  var nested = { ...inner, p: 3, ...{ r: 4 } };
+  out.push(JSON.stringify(nested));
+  var proto = { inherited: 1 };
+  var base = Object.create(proto);
+  base.own = 2;
+  var fromProto = { ...base };
+  out.push(JSON.stringify(fromProto) + ':' + fromProto.inherited);
+  var nullProto = { ...Object.create(null) };
+  out.push(Object.getPrototypeOf(nullProto) === Object.prototype);
+  var strSpread = { ...'ab' };
+  out.push(JSON.stringify(strSpread));
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "define-property-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { var o = {}; Object.defineProperty(o, 'a', { value: 1 }); return Object.keys(o).length + ':' + JSON.stringify(Object.getOwnPropertyDescriptor(o, 'a')); });
+  push(function () { var o = {}; Object.defineProperty(o, 'x', { get: function () { return 5; }, enumerable: true }); var d = Object.getOwnPropertyDescriptor(o, 'x'); return d.get() + ':' + d.writable + ':' + d.enumerable + ':' + d.configurable; });
+  push(function () { var o = {}; Object.defineProperty(o, 'a', { value: 1 }); Object.defineProperty(o, 'a', { value: 1 }); return 'ok'; });
+  push(function () { var o = {}; Object.defineProperty(o, 'a', { value: 1 }); Object.defineProperty(o, 'a', { value: 2 }); return 'ok'; });
+  push(function () { var o = {}; Object.defineProperty(o, 'a', { get: function () { return 1; } }); Object.defineProperty(o, 'a', { value: 2 }); return 'ok'; });
+  push(function () { var o = {}; Object.defineProperty(o, 'a', { value: 1, configurable: true }); Object.defineProperty(o, 'a', { value: 2 }); return o.a; });
+  push(function () { var proto = { set x(v) { this.seen = v; } }; var o = Object.create(proto); o.x = 9; return o.seen + ':' + Object.prototype.hasOwnProperty.call(o, 'x'); });
+  push(function () { var o = {}; Object.preventExtensions(o); try { Object.defineProperty(o, 'a', { value: 1 }); return 'ok'; } catch (e) { return e.name; } });
+  push(function () { var a = [1]; Object.defineProperty(a, 'length', { value: 0 }); return a.length + ':' + a[0]; });
+  push(function () { var o = {}; Object.defineProperties(o, { a: { value: 1, enumerable: true }, b: { get: function () { return 2; }, enumerable: true, configurable: true } }); return Object.keys(o).join(',') + ':' + o.b; });
+  push(function () { var o = { a: 1 }; var descs = Object.getOwnPropertyDescriptors(o); return Object.keys(descs).join(',') + ':' + descs.a.value + ':' + descs.a.writable; });
+  push(function () { var o = {}; Object.defineProperty(o, 'a', { set: function (v) {}, get: undefined }); var d = Object.getOwnPropertyDescriptor(o, 'a'); return typeof d.get + ':' + typeof d.set; });
+  push(function () { var o = Object.freeze({ a: 1 }); try { o.a = 2; return o.a; } catch (e) { return e.name; } });
+  push(function () { var o = {}; Object.defineProperty(o, 'a', { value: 1, writable: true }); o.a = 2; return o.a; });
+  push(function () { var o = {}; var log = []; Object.defineProperty(o, 'a', { get: function () { log.push('g'); return 1; }, set: function (v) { log.push('s' + v); } }); o.a = 2; return o.a + ':' + log.join(','); });
+  push(function () { var o = { a: 1 }; Object.defineProperty(o, 'a', { get: function () { return 2; } }); return o.a; });
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "class-elements-matrix",
+        """(function () {
+  var out = [];
+  var log = [];
+  class A { constructor() { log.push('A'); this.x = 1; } m() { return 'm'; } static s() { return 's'; } }
+  class B extends A { constructor() { super(); log.push('B'); } m() { return 'B' + super.m(); } }
+  var b = new B(); out.push(log.join(',') + ':' + b.x + ':' + b.m() + ':' + B.s());
+  class P { static #p = 1; static getP() { return P.#p; } }
+  out.push(P.getP());
+  class Q { #v = 3; get v() { return this.#v; } has(o) { return #v in o; } }
+  var q = new Q(); out.push(q.v + ':' + q.has(q) + ':' + q.has({}));
+  class R extends null { constructor() { return Object.create(null); } }
+  var r = new R(); out.push(Object.getPrototypeOf(r) === null);
+  try { new (class S extends null { constructor() { super(); } })(); out.push('ok'); } catch (e) { out.push(e.name); }
+  var order = [];
+  class T { a = order.push('a'); static b = order.push('b'); static { order.push('block'); } c = order.push('c'); constructor() { order.push('ctor'); } }
+  new T(); out.push(order.join(','));
+  class U { constructor() { out.push(new.target === U); } }
+  new U();
+  class V extends U {} new V();
+  class W { static x = 1; static y = this.x + 1; } out.push(W.y);
+  class X { ['m' + 1]() { return 2; } get [Symbol.toStringTag]() { return 'X'; } } out.push(new X().m1() + ':' + Object.prototype.toString.call(new X()));
+  class Y { m() { return typeof this; } }
+  var ym = new Y().m; out.push(ym());
+  class Z { static { this.z = 5; } } out.push(Z.z);
+  class AA { constructor() { this.a = 1; } b = this.a + 1; }
+  out.push(new AA().b);
+  class BB extends A { c = order.length; }
+  order.length = 0; new BB(); out.push('derived:' + order.join(','));
+  class CC { #x; get() { return this.#x; } set(v) { this.#x = v; } }
+  var cc = new CC(); cc.set(4); out.push(cc.get());
+  try { (new CC()).get(); out.push('ok'); } catch (e) { out.push(e.name); }
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "map-set-iterable-matrix",
+        """(function () {
+  var out = [];
+  var log = [];
+  function iterable(entries, badAt) {
+    return {
+      [Symbol.iterator]: function () {
+        var i = 0;
+        return {
+          next: function () {
+            log.push('n' + i);
+            if (i === badAt) return { value: 1, done: false };
+            if (i >= entries.length) return { done: true };
+            return { value: entries[i++], done: false };
+          },
+          return: function () { log.push('r'); return { done: true }; }
+        };
+      }
+    };
+  }
+  var m = new Map([[1, 'a'], [NaN, 'n'], [-0, 'z']]);
+  out.push(m.size + ':' + m.get(NaN) + ':' + m.get(0) + ':' + [...m.keys()].map(String).join(','));
+  log.length = 0;
+  try { new Map(iterable([[1, 2]], 0)); } catch (e) { out.push('bad:' + e.name + ':' + log.join(',')); }
+  log.length = 0;
+  var s = new Set(iterable([1, 2], 5));
+  out.push([...s].join(',') + ':' + log.join(','));
+  var order = [];
+  var set = new Set([3]); set.add(1); set.add(3); set.add(2);
+  set.forEach(function (v, k, t) { order.push(v + ':' + (v === k) + ':' + (t === set)); });
+  out.push(order.join('|'));
+  var mm = new Map([['a', 1]]); mm.set('b', 2); mm.delete('a'); mm.set('a', 3);
+  out.push([...mm].map(function (e) { return e.join('='); }).join(','));
+  out.push(new Set([1, 2]).has(2) + ':' + new Set([1, 2]).size);
+  out.push(JSON.stringify([...new Map([[undefined, 1], ['u', undefined]])]));
+  var entries = new Map([[1, 2]]).entries();
+  out.push(JSON.stringify(entries.next()) + ':' + JSON.stringify(entries.next()));
+  var fit = new Set([1, 2, 3]).values();
+  out.push(JSON.stringify(fit.next()) + ':' + JSON.stringify(fit.next()) + ':' + JSON.stringify(fit.next()) + ':' + JSON.stringify(fit.next()));
+  out.push(new Map().get('x') + ':' + new Set().has('x'));
+  return out.join(';');
+})()""",
+    ),
+
+    // 新式数组方法、Iterator helpers、Object/Map.groupBy 与 String 现代方法
+    DifferentialCase(
+        "array-change-by-copy-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { return [3, 1, 2].toSorted().join(',') + ':' + [3, 1, 2].join(','); });
+  push(function () { return JSON.stringify([, 2, , 1].toSorted()); });
+  push(function () { return JSON.stringify([, 2, , 1].toReversed()); });
+  push(function () { return JSON.stringify([1, 2, 3].toSpliced(1, 1, 9)); });
+  push(function () { return JSON.stringify([1, 2, 3].toSpliced(-1, 0, 9)); });
+  push(function () { return [1, 2, 3].with(1, 9).join(',') + ':' + [1, 2, 3].join(','); });
+  push(function () { return [1, 2, 3].with(-1, 9).join(','); });
+  push(function () { return [1, 2, 3].with(3, 9); });
+  push(function () { return [1, 2, 3].with(-4, 9); });
+  push(function () { return [1, 2, 3].with(1.9, 9).join(','); });
+  push(function () { return JSON.stringify([1, , 3].toSorted(function (a, b) { return 0; })); });
+  push(function () { var log = []; var a = { length: 3, 0: 3, 1: 1, 2: 2 }; var r = Array.prototype.toSorted.call(a, function (x, y) { log.push(x + ':' + y); return x - y; }); return r.join(',') + ':' + Array.isArray(r) + ':' + Object.keys(a).join(','); });
+  push(function () { return [1, 2, 3].toSpliced(1, Infinity).length; });
+  push(function () { return [1, 2, 3].toSpliced(1, -1).join(','); });
+  push(function () { return [1, 2, 3].findLast(function (x) { return x < 3; }); });
+  push(function () { return [1, 2, 3].findLastIndex(function (x) { return x < 3; }); });
+  push(function () { var log = []; var r = [1, 2, 3].findLast(function (x, i, arr) { log.push(x + '@' + i + ':' + arr.length); return false; }); return r + ':' + log.join(','); });
+  push(function () { return [1, , 3].findLast(function (x) { return x === undefined; }); });
+  push(function () { return [1, 2, 3].at(-1) + ':' + [1, 2, 3].at(5) + ':' + [1, 2, 3].at(-4) + ':' + [1, 2, 3].at(1.7); });
+  push(function () { return Array.prototype.at.call({ length: 2, 0: 'a', 1: 'b' }, -2); });
+  push(function () { return Array.prototype.findLast.call({ length: 2, 0: 1 }, function (x) { return x === 1; }); });
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "iterator-helpers-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { return [1, 2, 3].values().map(function (x) { return x * 2; }).toArray().join(','); });
+  push(function () { return [1, 2, 3, 4].values().filter(function (x) { return x % 2 === 0; }).toArray().join(','); });
+  push(function () { return [1, 2, 3].values().take(2).toArray().join(','); });
+  push(function () { return [1, 2, 3].values().drop(2).toArray().join(','); });
+  push(function () { return [1, 2, 3].values().flatMap(function (x) { return [x, x]; }).toArray().join(','); });
+  push(function () { return [1, 2, 3].values().reduce(function (a, b) { return a + b; }, 10); });
+  push(function () { return [1, 2, 3].values().reduce(function (a, b) { return a + b; }); });
+  push(function () { return [1, 2, 3].values().some(function (x) { return x > 2; }) + ':' + [1, 2, 3].values().every(function (x) { return x > 0; }); });
+  push(function () { return [1, 2, 3].values().find(function (x) { return x > 1; }) + ':' + [1, 2, 3].values().find(function () { return false; }); });
+  push(function () { var log = []; [1, 2, 3].values().forEach(function (x, i) { log.push(x + '@' + i); }); return log.join(','); });
+  push(function () { var it = [1, 2, 3].values().map(function (x) { return x + 1; }); return it.next().value + ':' + it.next().value + ':' + it.next().done; });
+  push(function () { var it = [1, 2, 3].values().map(function (x) { return x; }); return it[Symbol.iterator]() === it; });
+  push(function () { return Array.from([1, 2].values().map(function (x) { return x * 3; })).join(','); });
+  push(function () { return Iterator.from([1, 2]).map(function (x) { return x + 1; }).toArray().join(','); });
+  push(function () { return Iterator.from(new Set([1, 2])).toArray().join(','); });
+  push(function () { var log = []; var src = { [Symbol.iterator]: function () { var i = 0; return { next: function () { log.push('n' + i); return i < 5 ? { value: ++i, done: false } : { done: true }; } }; } }; var r = Iterator.from(src).take(2).toArray(); return r.join(',') + ':' + log.join(','); });
+  push(function () { var log = []; var src = { [Symbol.iterator]: function () { var i = 0; return { next: function () { log.push('n' + i); return i < 5 ? { value: ++i, done: false } : { done: true }; }, return: function () { log.push('r'); return { done: true }; } }; } }; var r = Iterator.from(src).take(2).toArray(); return r.join(',') + ':' + log.join(','); });
+  push(function () { try { Iterator.prototype.map.call({}, function (x) { return x; }); return 'ok'; } catch (e) { return e.name; } });
+  push(function () { return [1, 2].values().take(0).toArray().join(',') + ':' + [1, 2].values().take(-1).toArray().join(','); });
+  push(function () { return [1, 2].values().drop(-1).toArray().join(',') + ':' + [1, 2].values().drop(Infinity).toArray().length; });
+  push(function () { return [1, 2].values().take(NaN).toArray().length + ':' + [1, 2].values().drop(NaN).toArray().join(','); });
+  push(function () { var it = [1, 2, 3].values().filter(function (x) { return x > 1; }); return it.next().value + ':' + it.next().value + ':' + JSON.stringify(it.next()); });
+  push(function () { return [1, 2, 3].values().map().toArray().join(','); });
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "groupby-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { var g = Object.groupBy([1, 2, 3, 4], function (x) { return x % 2 === 0 ? 'even' : 'odd'; }); return JSON.stringify(g) + ':' + (Object.getPrototypeOf(g) === null); });
+  push(function () { var g = Map.groupBy([1, 2, 3], function (x) { return x % 2; }); return [...g.keys()].join(',') + ':' + g.get(1).join(','); });
+  push(function () { var log = []; var g = Object.groupBy([1, 2], function (x, i) { log.push(x + '@' + i); return 'k'; }); return JSON.stringify(g) + ':' + log.join(','); });
+  push(function () { var key = { toString: function () { return 'T'; } }; var g = Object.groupBy(['a'], function () { return key; }); return JSON.stringify(g); });
+  push(function () { var sym = Symbol('s'); var g = Object.groupBy([1], function () { return sym; }); return g[sym].length; });
+  push(function () { var g = Map.groupBy(new Set([1, 2, 3]), function (x) { return x > 1 ? 'big' : 'small'; }); return g.get('big').join(',') + ':' + g.get('small').join(','); });
+  push(function () { var g = Map.groupBy([3], function (x) { return x; }); return g.get(3).join(',') + ':' + g.has(1); });
+  push(function () { var g = Object.groupBy([], function (x) { return x; }); return Object.keys(g).length; });
+  push(function () { var g = Object.groupBy([1, 2], function () { return '__proto__'; }); return Object.keys(g).join(',') + ':' + Array.isArray(g['__proto__']); });
+  push(function () { return Object.hasOwn({ a: 1 }, 'a') + ':' + Object.hasOwn({ a: 1 }, 'b') + ':' + Object.hasOwn(Object.create({ a: 1 }), 'a'); });
+  push(function () { return Object.hasOwn(null, 'a'); });
+  push(function () { var log = []; var src = { [Symbol.iterator]: function () { var i = 0; return { next: function () { log.push('n' + i); return i < 2 ? { value: ++i, done: false } : { done: true }; }, return: function () { log.push('r'); return { done: true }; } }; } }; Map.groupBy(src, function (x) { return x; }); return log.join(','); });
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "string-modern-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { return 'abc'.at(1) + ':' + 'abc'.at(-1) + ':' + 'abc'.at(3) + ':' + 'abc'.at(-4); });
+  push(function () { return 'a-b-c'.replaceAll('-', '+'); });
+  push(function () { return 'a-b'.replaceAll('-', '[$&]'); });
+  push(function () { return 'abc'.replaceAll('b', function (m, i, s) { return m + i + s.length; }); });
+  push(function () { return 'aaa'.replaceAll(/a/g, 'b'); });
+  push(function () { return 'aaa'.replaceAll(/a/, 'b'); });
+  push(function () { return 'ab'.replaceAll('', '-'); });
+  push(function () { return [...'a1b2'.matchAll(/([a-z])(\d)/g)].map(function (m) { return m[0] + ':' + m[1] + ':' + m.index; }).join(','); });
+  push(function () { var it = 'a1'.matchAll(/([a-z])(\d)/g); return [...it].length + ':' + 'a1'.matchAll(/x/g).next().done; });
+  push(function () { return 'a1'.matchAll(/a/); });
+  push(function () { return String.raw({ raw: ['a', 'b', 'c'] }, 1, 2); });
+  push(function () { return String.raw({ raw: { length: 2, 0: 'x', 1: 'y' } }, 'A'); });
+  push(function () { return String.raw({ raw: [] }); });
+  push(function () { return String.raw({ raw: ['a'] }, 1, 2); });
+  push(function () { return 'abc'.at(0.9) + ':' + 'abc'.at(-0.9) + ':' + 'abc'.at(Infinity); });
+  return out.join('|');
+})()""",
+    ),
 )
