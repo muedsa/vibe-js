@@ -2181,6 +2181,42 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "preact",
+        url = "https://unpkg.com/preact@10.19.3/dist/preact.umd.js",
+        globalName = "preact",
+        cases = listOf(
+            SmokeCase(
+                "vnode",
+                assertion(
+                    "(function () { var vnode = preact.h('div', { id: 'x' }, 'hi', " +
+                        "preact.h('span', null, 'a')); return vnode.type === 'div' && " +
+                        "vnode.props.id === 'x' && vnode.props.children.length === 2 && " +
+                        "vnode.props.children[0] === 'hi' && vnode.props.children[1].type === 'span'; })()"
+                ),
+            ),
+            SmokeCase(
+                "clone and children",
+                assertion(
+                    "(function () { var base = preact.h('div', { id: 'a' }, 'x'); " +
+                        "var clone = preact.cloneElement(base, { id: 'b' }, 'y'); " +
+                        "return clone !== base && clone.props.id === 'b' && clone.props.children === 'y' && " +
+                        "preact.isValidElement(base) && !preact.isValidElement({}) && " +
+                        "preact.toChildArray([1, null, 2, undefined]).join(',') === '1,2'; })()"
+                ),
+            ),
+            SmokeCase(
+                "component render",
+                assertion(
+                    "(function () { class App extends preact.Component { " +
+                        "constructor(props) { super(props); this.state = { n: 1 }; } " +
+                        "render() { return preact.h('span', null, this.props.x + this.state.n); } } " +
+                        "var app = new App({ x: 2 }); " +
+                        "return app.render().props.children === 3; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
