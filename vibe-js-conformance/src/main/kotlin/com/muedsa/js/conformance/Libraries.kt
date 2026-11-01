@@ -2297,6 +2297,34 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "d3-format",
+        url = "https://unpkg.com/d3-format@3.1.0/dist/d3-format.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "precision and grouping",
+                assertion(
+                    "d3.format('.2f')(Math.PI) === '3.14' && " +
+                        "d3.format(',.2f')(12345.678) === '12,345.68'"
+                ),
+            ),
+            SmokeCase(
+                "si and percent",
+                assertion(
+                    "d3.format('.3s')(12345) === '12.3k' && " +
+                        "d3.format('+.1%')(0.123) === '+12.3%'"
+                ),
+            ),
+            SmokeCase(
+                "specifier",
+                assertion(
+                    "d3.formatSpecifier('.2f').precision === 2 && " +
+                        "d3.formatSpecifier('.2f').type === 'f'"
+                ),
+            ),
+        ),
+    ),
 )
 
 
