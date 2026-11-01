@@ -1635,6 +1635,72 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "qrcode",
+        url = "https://unpkg.com/qrcode-generator@1.4.4/qrcode.js",
+        globalName = "qrcode",
+        cases = listOf(
+            SmokeCase(
+                "module matrix",
+                assertion(
+                    "(function () { var qr = qrcode(0, 'M'); qr.addData('hello'); qr.make(); " +
+                        "return qr.getModuleCount() === 21 && qr.isDark(0, 0); })()"
+                ),
+            ),
+            SmokeCase(
+                "long data",
+                assertion(
+                    "(function () { var qr = qrcode(0, 'L'); qr.addData('x'.repeat(200)); qr.make(); " +
+                        "return qr.getModuleCount() === 53; })()"
+                ),
+            ),
+            SmokeCase(
+                "string bytes",
+                assertion("qrcode.stringToBytes('hi').join(',') === '104,105'"),
+            ),
+            SmokeCase(
+                "explicit type",
+                assertion(
+                    "(function () { var qr = qrcode(1, 'H'); qr.addData('hi'); qr.make(); " +
+                        "return qr.getModuleCount() === 21; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "linkify",
+        url = "https://unpkg.com/linkifyjs@4.1.1/dist/linkify.min.js",
+        globalName = "linkify",
+        cases = listOf(
+            SmokeCase(
+                "url",
+                assertion(
+                    "(function () { var found = linkify.find('Visit github.com now'); " +
+                        "return found.length === 1 && found[0].type === 'url' && " +
+                        "found[0].value === 'github.com' && found[0].href === 'http://github.com' && " +
+                        "found[0].start === 6 && found[0].end === 16; })()"
+                ),
+            ),
+            SmokeCase(
+                "email",
+                assertion(
+                    "(function () { var found = linkify.find('mail me a@b.com'); " +
+                        "return found.length === 1 && found[0].type === 'email' && " +
+                        "found[0].href === 'mailto:a@b.com'; })()"
+                ),
+            ),
+            SmokeCase(
+                "test",
+                assertion("!linkify.test('no link') && linkify.test('http://a.com')"),
+            ),
+            SmokeCase(
+                "multiple links",
+                assertion(
+                    "linkify.find('a http://x.com b a@b.com').length === 2"
+                ),
+            ),
+        ),
+    ),
 )
 
 
