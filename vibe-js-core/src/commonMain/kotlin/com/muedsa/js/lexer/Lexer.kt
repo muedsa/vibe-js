@@ -624,7 +624,16 @@ class Lexer(private val input: String) {
                     throw lexerError("Unexpected number", startLine, startColumn, startOffset)
                 }
                 rejectIdentifierAfterNumber(startLine, startColumn, startOffset)
-                return makeToken(TokenType.NUMBER, sb.toString(), startLine, startColumn, startOffset, newlineBefore)
+                // 旧式八进制：值按 8 进制解释，严格模式由 Parser 拒绝
+                return makeToken(
+                    TokenType.NUMBER,
+                    sb.toString(),
+                    startLine,
+                    startColumn,
+                    startOffset,
+                    newlineBefore,
+                    legacyOctal = true,
+                )
             }
             // 09.x 非法，09..x 合法
             if (peek() == '.' && !peek(1).isDigit() &&
@@ -815,8 +824,8 @@ class Lexer(private val input: String) {
             'v' -> { sb.append('\u000B'); advance() }
             '0' -> {
                 advance()
-                if (peek().isDigit()) {
-                    // 旧式八进制转义（严格模式下由 Parser 报错）
+                if (peek() in '0'..'7') {
+                    // 旧式八进制转义（严格模式下由 Parser 报错）：\0 后最多再读 2 位
                     legacyOctalEscape = true
                     var value = 0
                     var count = 0
@@ -827,15 +836,20 @@ class Lexer(private val input: String) {
                     }
                     sb.append(value.toChar())
                 } else {
+                    // \08 / \09 在 sloppy 下为 NUL 后跟字符 8/9；严格模式禁止该形式
+                    if (peek().isDigit()) legacyOctalEscape = true
                     sb.append('\u0000')
                 }
             }
 
-            in '1'..'7' -> {
+            in '0'..'7' -> {
+                // LegacyOctalEscapeSequence：0-3 开头最多 3 位，4-7 开头最多 2 位
                 legacyOctalEscape = true
-                var value = 0
+                var value = c - '0'
+                advance()
+                val maxAdditional = if (c in '0'..'3') 2 else 1
                 var count = 0
-                while (count < 3 && peek() in '0'..'7') {
+                while (count < maxAdditional && peek() in '0'..'7') {
                     value = value * 8 + (peek() - '0')
                     advance()
                     count++
@@ -866,8 +880,10 @@ class Lexer(private val input: String) {
             }
 
             '8', '9' -> {
-                // NonEscapeSequence 中的十进制数字 8/9 在字符串中非法
-                throw lexerError("Invalid escape sequence", line, column, pos)
+                // NonOctalDecimalEscapeSequence：sloppy 下为字符 8/9，严格模式由 Parser 拒绝
+                legacyOctalEscape = true
+                sb.append(c)
+                advance()
             }
 
             else -> {
@@ -1028,6 +1044,10 @@ class Lexer(private val input: String) {
         val commonError = JsRegexSyntax.patternError(pattern.toString())
         if (commonError != null) {
             throw lexerError(commonError, startLine, startColumn, startOffset)
+        }
+        val lookbehindError = JsRegexSyntax.lookbehindQuantifierError(pattern.toString())
+        if (lookbehindError != null) {
+            throw lexerError(lookbehindError, startLine, startColumn, startOffset)
         }
         if ('u' in flagText) {
             val error = JsRegexSyntax.unicodeError(pattern.toString())

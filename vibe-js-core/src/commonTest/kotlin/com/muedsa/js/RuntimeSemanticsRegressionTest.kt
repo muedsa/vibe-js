@@ -3508,4 +3508,42 @@ class RuntimeSemanticsRegressionTest {
         // 原始值基对象按 ToObject 处理，删除不存在属性返回 true
         assertEquals(true, runtime.evalBoolean("delete true.x"))
     }
+
+    @Test
+    fun `旧式八进制与字符串转义及 lookbehind 量化早期错误`() = runTest {
+        val runtime = TestRuntime()
+        // sloppy 旧式八进制字面量按 8 进制求值；严格模式拒绝
+        assertEquals(56.0, runtime.evalNumber("070"))
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('\"use strict\"; 070;'); 'none' } catch (e) { e.name }"
+        ))
+        // \8/\9 与 \0 后接数字：sloppy 保留字符，严格模式拒绝
+        assertEquals(true, runtime.evalBoolean(
+            "'\\8' === '8' && '\\9' === '9' &&" +
+                " '\\08'.length === 2 && '\\08'[0] === '\\0'"
+        ))
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('\"use strict\"; \"\\\\8\";'); 'none' } catch (e) { e.name }"
+        ))
+        // 旧式八进制转义位数上限：\400 = \40 + '0'
+        assertEquals(true, runtime.evalBoolean(
+            "'\\400' === ' 0' && '\\377'.charCodeAt(0) === 255"
+        ))
+        // lookbehind 不可被量化
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('/.(?<=.)?/'); 'none' } catch (e) { e.name }"
+        ))
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('/.(?<!.){2,3}/u'); 'none' } catch (e) { e.name }"
+        ))
+        // for (async of => {}) 是 async 箭头函数；裸 async 左值的 for-of 非法
+        assertEquals(true, runtime.evalBoolean(
+            "var counter = 0; for (async of => {}; counter < 3; ++counter) {}" +
+                " counter === 3"
+        ))
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('var async; for (async of [1]) ;'); 'none' }" +
+                " catch (e) { e.name }"
+        ))
+    }
 }

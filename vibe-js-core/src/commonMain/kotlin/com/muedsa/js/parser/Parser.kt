@@ -1915,6 +1915,14 @@ class Parser(
                         index++
                         continue
                     }
+                    // `for (async of => {})`：这是 async 箭头函数，不是 for-of
+                    if (previous != null && previous.type == TokenType.IDENTIFIER &&
+                        !previous.containsEscape && previous.value == "async" &&
+                        tokens.getOrNull(index + 1)?.type == TokenType.ARROW
+                    ) {
+                        index++
+                        continue
+                    }
                     return ForHeaderKind.OF
                 }
 
@@ -2013,6 +2021,10 @@ class Parser(
                 validateAssignmentPattern(expression)
             } else if (expression !is Identifier && expression !is MemberExpr) {
                 throw error("Invalid left-hand side in for-in/of")
+            }
+            // for-of 左值不允许裸 async（Lookahead 限制）
+            if (isOf && expression is Identifier && expression.name == "async") {
+                throw error("The left-hand side of a for-of loop may not be 'async'")
             }
             // 严格模式下 for-in/of 左值同样适用简单赋值目标限制
             validateStrictAssignmentTarget(expression)
@@ -3582,6 +3594,11 @@ class Parser(
                 TokenType.NUMBER_HEX -> text.substring(2).toLong(16).toDouble()
                 TokenType.NUMBER_OCT -> text.substring(2).toLong(8).toDouble()
                 TokenType.NUMBER_BIN -> text.substring(2).toLong(2).toDouble()
+                TokenType.NUMBER -> if (token.legacyOctal) {
+                    text.toLong(8).toDouble()
+                } else {
+                    text.toDouble()
+                }
                 else -> text.toDouble()
             }
         } catch (_: NumberFormatException) {

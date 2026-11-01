@@ -155,6 +155,83 @@ internal object JsRegexSyntax {
         return min <= max
     }
 
+    /**
+     * 检测被量化的后行断言（`(?<=...)` / `(?<!...)`）。
+     *
+     * Lookbehind 不是 QuantifiableAssertion，任何 `?`/`*`/`+`/`{m,n}` 量词
+     * 都必须在解析期报 SyntaxError（u 与非 u 模式一致）。
+     */
+    fun lookbehindQuantifierError(pattern: String): String? {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> index += 2
+                inClass -> {
+                    if (c == ']') inClass = false
+                    index++
+                }
+
+                c == '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                c == '(' && index + 3 < pattern.length &&
+                    pattern[index + 1] == '?' && pattern[index + 2] == '<' &&
+                    (pattern[index + 3] == '=' || pattern[index + 3] == '!') -> {
+                    var cursor = index
+                    var depth = 0
+                    var classDepth = false
+                    while (cursor < pattern.length) {
+                        val ch = pattern[cursor]
+                        when {
+                            ch == '\\' -> cursor++
+                            classDepth -> if (ch == ']') classDepth = false
+                            ch == '[' -> classDepth = true
+                            ch == '(' -> depth++
+                            ch == ')' -> {
+                                depth--
+                                if (depth == 0) break
+                            }
+                        }
+                        cursor++
+                    }
+                    if (cursor >= pattern.length) return invalid(pattern)
+                    val next = cursor + 1
+                    if (next < pattern.length &&
+                        (pattern[next] == '?' || pattern[next] == '*' ||
+                            pattern[next] == '+' ||
+                            (pattern[next] == '{' && isQuantifierBrace(pattern, next)))
+                    ) {
+                        return invalid(pattern)
+                    }
+                    index = cursor + 1
+                }
+
+                else -> index++
+            }
+        }
+        return null
+    }
+
+    /** `{m}` / `{m,}` / `{m,n}` 形式的量词起点。 */
+    private fun isQuantifierBrace(pattern: String, start: Int): Boolean {
+        var index = start + 1
+        var digits = 0
+        while (index < pattern.length && pattern[index] in '0'..'9') {
+            index++
+            digits++
+        }
+        if (digits == 0) return false
+        if (index < pattern.length && pattern[index] == ',') {
+            index++
+            while (index < pattern.length && pattern[index] in '0'..'9') index++
+        }
+        return index < pattern.length && pattern[index] == '}'
+    }
+
     /** 校验 `u` 标志下的额外早期错误。 */
     fun unicodeError(pattern: String): String? {
         // 统计捕获组数量（跳过字符类与转义）

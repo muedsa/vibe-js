@@ -139,6 +139,26 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "set-keys-values-identity",
         "Set.prototype.keys === Set.prototype.values"
     ),
+    DifferentialCase("legacy-octal-sloppy", "070"),
+    DifferentialCase(
+        "legacy-non-octal-escapes",
+        "JSON.stringify(['\\8', '\\9', '\\08', '\\400'])"
+    ),
+    DifferentialCase(
+        "regex-lookbehind-quantifier",
+        "(function () { try { eval('/.(?<=.)?/'); return 'none'; }" +
+            " catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
+        "for-async-of-arrow",
+        "(function () { var counter = 0;" +
+            " for (async of => {}; counter < 3; ++counter) {} return counter; })()"
+    ),
+    DifferentialCase(
+        "for-of-async-lhs",
+        "(function () { try { eval('var async; for (async of [1]) ;');" +
+            " return 'none'; } catch (e) { return e.name; } })()"
+    ),
     DifferentialCase(
         "delete-unresolvable-base",
         "(function () { try { delete Object[0][0]; return 'none'; }" +

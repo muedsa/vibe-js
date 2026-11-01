@@ -4,3 +4,9 @@
 # ef81b93cf9bdb4ec.js: (class {a=0}) —— ES2022 公有字段初始化，现行规范合法
 98204d734f8c72b3.js
 ef81b93cf9bdb4ec.js
+# 以下 4 条为 \8/\9（NonOctalDecimalEscapeSequence）：
+# 现行规范在非严格模式允许（Test262 legacy-non-octal-escape-sequence-*-non-strict 亦要求接受），语料负例过期
+748656edbfb2d0bb.js
+79f882da06f88c9f.js
+0d5e450f1da8a92a.js
+92b6af54adef3624.js
