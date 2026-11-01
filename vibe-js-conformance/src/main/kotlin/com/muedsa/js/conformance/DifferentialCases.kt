@@ -286,6 +286,24 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 
     // 对象、描述符与枚举
     DifferentialCase("obj-keys-order", "Object.keys({ b: 1, 2: 2, 1: 3, a: 4 }).join(',')"),
+    // 属性键序边界：数组索引上限、前导零与非规范数字字符串
+    DifferentialCase(
+        "obj-key-order-boundary",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { var o = { '4294967295': 1, '4294967294': 2, '1': 3, '01': 4, " +
+            "'-1': 5, '0': 6, '1.5': 7, 'NaN': 8, 'Infinity': 9, '2147483647': 10 }; " +
+            "return Object.keys(o).join(','); }); " +
+            "push(function () { var o = {}; o['9007199254740993'] = 1; o['4294967294'] = 2; " +
+            "o['4294967295'] = 3; o['-0'] = 4; o['00'] = 5; return Object.keys(o).join(','); }); " +
+            "push(function () { var o = { '2': 'a', '01': 'b', '1': 'c', '4294967294': 'd' }; " +
+            "return JSON.stringify(o); }); " +
+            "push(function () { var o = { '10': 1, '9': 2, '1e2': 3, '0x10': 4 }; " +
+            "return Object.getOwnPropertyNames(o).join(','); }); " +
+            "push(function () { var o = {}; o[4294967294] = 1; o[4294967295] = 2; " +
+            "return Object.keys(o).join(','); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase("obj-array-own-names", "Object.getOwnPropertyNames([1, 2]).join(',')"),
     DifferentialCase("obj-descriptor-flags", "(function () { var d = Object.getOwnPropertyDescriptor([], 'length'); return [d.writable, d.enumerable, d.configurable].join(','); })()"),
     DifferentialCase("obj-define-length-string", "Object.defineProperty([], 'length', { value: '2' }).length"),
