@@ -2609,4 +2609,20 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // 非 v 模式字符类中的 && 是字面 &，不是 Java 的集合交集
+    DifferentialCase(
+        "regexp-class-ampersand",
+        """(function () {
+  var patterns = [/[a&&b]/, /[\w&&\d]/, /[a&b]/, /[a&&&b]/, /[a-z&&b]/, /[^a&&b]/];
+  var inputs = ['a', 'b', '&', 'c', '1', '_', 'z', '2', '&&'];
+  var out = [];
+  for (var i = 0; i < patterns.length; i++) {
+    var bits = '';
+    for (var j = 0; j < inputs.length; j++) bits += patterns[i].test(inputs[j]) ? '1' : '0';
+    out.push(bits);
+  }
+  return out.join(';');
+})()""",
+    ),
 )

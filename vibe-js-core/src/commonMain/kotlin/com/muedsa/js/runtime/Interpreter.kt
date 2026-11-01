@@ -5319,6 +5319,34 @@ class Interpreter(
         return false
     }
 
+    /** 非 v 模式字符类中的 `&&` 是字面量，Java 会解释为集合交集。 */
+    private fun hasClassIntersection(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            when (pattern[index]) {
+                '\\' -> index += 2
+                '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                ']' -> {
+                    inClass = false
+                    index++
+                }
+
+                '&' -> {
+                    if (inClass && pattern.getOrNull(index + 1) == '&') return true
+                    index++
+                }
+
+                else -> index++
+            }
+        }
+        return false
+    }
+
     /** 字符类外未转义的 `^`：Java MULTILINE 的行终止符集合与 JS 不同（含 NEL、CRLF 整体处理）。 */
     private fun hasCaretAnchor(pattern: String): Boolean {
         var index = 0
@@ -5695,6 +5723,7 @@ class Interpreter(
         if (hasJsClassSyntax) return true
         if (hasLegacyOctalEscape(pattern)) return true
         if (hasHugeBraceQuantifier(pattern)) return true
+        if (hasClassIntersection(pattern)) return true
         if (hasDollarAnchor(pattern)) return true
         if (hasLookaheadBackReference(pattern)) return true
         if (hasForwardBackReference(pattern)) return true

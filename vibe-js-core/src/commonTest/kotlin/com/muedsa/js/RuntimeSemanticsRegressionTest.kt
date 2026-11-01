@@ -173,6 +173,11 @@ class RuntimeSemanticsRegressionTest {
             "/[\\c0]/.test('\\x10') && /[\\c_]/.test('\\x1f') && /[\\c!]/.test('c') && " +
                 "/[\\c!]/.test('!') && /[\\c]/.test('c') && !/[\\c0]/.test('0')"
         ))
+        // 非 v 模式字符类中的 && 是字面 &，不是 Java 的集合交集
+        assertEquals(true, runtime.evalBoolean(
+            "/[a&&b]/.test('&') && /[a&&b]/.test('a') && !/[a&&b]/.test('c') && " +
+                "/[\\w&&\\d]/.test('&') && /[\\w&&\\d]/.test('a')"
+        ))
     }
 
     @Test
