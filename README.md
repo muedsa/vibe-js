@@ -100,7 +100,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - **Boolean**、**Math**、**JSON**（`parse`/`stringify` 支持 reviver/replacer/space）
 - **RegExp**：字面量/构造器、`exec/test/toString`、`d/g/i/m/s/u/v/y` 标志、命名捕获组、后向断言、
   Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`）、`v` 扩展字符类（集合运算、属性字符串、`\q`）
-- **Date**：构造、`Date.now/parse/UTC`、常用 getter/setter、`toISOString/toJSON`
+- **Date**：构造、`Date.now/parse/UTC`、常用 getter/setter、`toISOString/toJSON`；本地时间通过宿主 `utcOffsetMillis`（默认 UTC）换算
 - **Error**：`Error`、`TypeError`、`RangeError`、`ReferenceError`、`SyntaxError`、`EvalError`、`URIError`、`SuppressedError`、`AggregateError`、`Error.isError`
 - **Symbol**：`Symbol()`、`Symbol.for/keyFor`、知名 Symbol（iterator/toStringTag 等）
 - **集合**：`Map`、`Set`、`WeakMap`、`WeakSet`，配套迭代器协议
@@ -116,7 +116,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - BigInt、Intl、TypedArray/ArrayBuffer/DataView
 - DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）
 - `ShadowRealm`、`Atomics`
-- 完整 ASI 边界规则、`Date` 真实时区（当前本地时间按 UTC 实现）
+- 完整 ASI 边界规则
 
 Unicode 属性/标识符/归一化/大小写映射数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。
 
