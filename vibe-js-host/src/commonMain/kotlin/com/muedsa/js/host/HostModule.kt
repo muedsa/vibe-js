@@ -32,7 +32,7 @@ private const val BASE64_ALPHABET =
  *
  * 提供：
  * - `window` / `self` 别名（指向 globalThis）
- * - `console`（log/error/warn/info/debug）
+ * - `console`（log/error/warn/info/debug/time/timeEnd）
  * - `setTimeout` / `clearTimeout` / `queueMicrotask`
  * - `atob` / `btoa`
  * - `performance.now()` / `performance.timeOrigin`
@@ -57,6 +57,9 @@ class HostModule(
 
     /** performance 时间原点（宿主时钟毫秒）；首次访问时确定。 */
     private var performanceOriginMillis: Double? = null
+
+    /** console.time 的标签起始时刻（宿主时钟毫秒）。 */
+    private val consoleTimers: MutableMap<String, Long> = mutableMapOf()
 
     override fun install(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
@@ -103,6 +106,40 @@ class HostModule(
         method("debug", 1) { console.log(it) }
         method("warn", 1) { console.log(it) }
         method("error", 1) { console.error(it) }
+
+        // console.time/timeEnd：使用宿主时钟，输出格式由宿主定义
+        consoleObject.defineDataProperty(
+            key = PropertyKey.Str("time"),
+            value = BuiltinHelpers.method(intrinsics, "console.time", 0) { interpreter, _, args ->
+                val label = args.getOrNull(0)?.let { interpreter.toStringValue(it) } ?: "default"
+                if (consoleTimers.containsKey(label)) {
+                    console.log("Warning: Timer '$label' already exists")
+                } else {
+                    consoleTimers[label] = interpreter.currentTimeMillis().toLong()
+                }
+                JSUndefined
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        consoleObject.defineDataProperty(
+            key = PropertyKey.Str("timeEnd"),
+            value = BuiltinHelpers.method(intrinsics, "console.timeEnd", 0) { interpreter, _, args ->
+                val label = args.getOrNull(0)?.let { interpreter.toStringValue(it) } ?: "default"
+                val started = consoleTimers.remove(label)
+                if (started == null) {
+                    console.log("Warning: Timer '$label' does not exist")
+                } else {
+                    val elapsed = interpreter.currentTimeMillis().toLong() - started
+                    console.log("$label: ${elapsed}ms")
+                }
+                JSUndefined
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
 
         consoleObject.defineDataProperty(
             key = PropertyKey.Sym(intrinsics.symbolToStringTag),

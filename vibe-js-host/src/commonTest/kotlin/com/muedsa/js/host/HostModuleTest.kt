@@ -339,6 +339,30 @@ class HostModuleTest {
 
     @OptIn(ExperimentalTime::class)
     @Test
+    fun `console time 使用注入时钟并处理重复与缺失标签`() = runTest {
+        var nowMillis = 1_000L
+        val clock = object : Clock {
+            override fun now(): Instant = Instant.fromEpochMilliseconds(nowMillis)
+        }
+        val output = RecordingConsole()
+        val engine = Engine(DefaultHostEnvironment(clock = clock))
+        engine.install(HostModule(engine.eventLoop, output))
+        engine.run("console.time('t')")
+        nowMillis += 250
+        engine.run("console.timeEnd('t')")
+        assertEquals("t: 250ms", output.logs.last())
+        engine.run("console.timeEnd('missing')")
+        assertTrue(output.logs.last().contains("does not exist"))
+        engine.run("console.time('dup')")
+        engine.run("console.time('dup')")
+        assertTrue(output.logs.last().contains("already exists"))
+        nowMillis += 10
+        engine.run("console.timeEnd('dup')")
+        assertEquals("dup: 10ms", output.logs.last())
+    }
+
+    @OptIn(ExperimentalTime::class)
+    @Test
     fun `performance 使用注入时钟并固定时间原点`() = runTest {
         var nowMillis = 1_000_000L
         val clock = object : Clock {

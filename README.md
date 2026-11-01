@@ -61,7 +61,7 @@ engine.install(HostModule(engine.eventLoop, engine.host.console))
 engine.run("console.log('hello'); setTimeout(function () { console.log('later'); }, 10);")
 ```
 
-`HostModule` 提供 `window`/`self`、`console`、`setTimeout`/`clearTimeout`、
+`HostModule` 提供 `window`/`self`、`console`（含 time/timeEnd）、`setTimeout`/`clearTimeout`、
 `setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`、
 `performance.now()`/`performance.timeOrigin`，
 全部由纯 Kotlin 实现，不绑定平台原生 API。
