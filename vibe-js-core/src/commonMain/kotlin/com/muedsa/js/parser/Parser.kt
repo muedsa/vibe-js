@@ -3208,9 +3208,7 @@ class Parser(
 
             // async 方法检测：`async m() {}`
             var isAsync = false
-            if (peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
-                peek().value == "async" && canStartAccessorProperty(1)
-            ) {
+            if (isAsyncMethodStart()) {
                 isAsync = true
                 advance()
             }
@@ -3329,6 +3327,37 @@ class Parser(
     }
 
     /** 判断 `get`/`set` 之后是否跟着一个可访问器属性名。 */
+    /**
+     * 对象字面量中的 `async` 是否开始异步方法。
+     *
+     * AsyncMethod 要求 `async` 与属性名之间无换行，且属性名后紧跟 `(`；
+     * 计算属性名需要先匹配到对应的 `]`。
+     */
+    private fun isAsyncMethodStart(): Boolean {
+        if (peek().type != TokenType.IDENTIFIER || peek().containsEscape ||
+            peek().value != "async"
+        ) {
+            return false
+        }
+        val nameToken = peek(1)
+        if (nameToken.precededByNewline) return false
+        if (nameToken.type == TokenType.LBRACKET) {
+            var offset = 2
+            var depth = 1
+            while (depth > 0) {
+                when (peek(offset).type) {
+                    TokenType.LBRACKET -> depth++
+                    TokenType.RBRACKET -> depth--
+                    TokenType.EOF -> return false
+                    else -> Unit
+                }
+                offset++
+            }
+            return peek(offset).type == TokenType.LPAREN
+        }
+        return canStartAccessorProperty(1) && peek(2).type == TokenType.LPAREN
+    }
+
     private fun canStartAccessorProperty(offset: Int): Boolean {
         val token = peek(offset)
         return when {

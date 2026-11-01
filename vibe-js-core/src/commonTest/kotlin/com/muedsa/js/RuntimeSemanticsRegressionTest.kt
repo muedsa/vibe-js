@@ -3419,4 +3419,25 @@ class RuntimeSemanticsRegressionTest {
                 " catch (e) { e.name }"
         ))
     }
+
+    @Test
+    fun `对象字面量 async 方法的换行与简写早期错误`() = runTest {
+        val runtime = TestRuntime()
+        // async 与属性名之间不允许换行（此时 async 退化为简写属性，后续缺少逗号）
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('({ async\\nfoo() { } })'); 'none' } catch (e) { e.name }"
+        ))
+        // async 不能作为另一个标识符简写的前缀
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('({ async async })'); 'none' } catch (e) { e.name }"
+        ))
+        // 合法形式：普通/计算键 async 方法、async 数据属性、名为 async 的普通方法
+        assertEquals(true, runtime.evalBoolean(
+            "var a = { async foo() { return 1; } };" +
+                " var b = { async ['x' + 'y']() { return 2; } };" +
+                " ({ async: 3 }).async === 3 &&" +
+                " typeof ({ async() { return 4; } }).async === 'function' &&" +
+                " typeof a.foo === 'function' && typeof b.xy === 'function'"
+        ))
+    }
 }

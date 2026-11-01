@@ -273,6 +273,16 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             " return (seen[0] === seen[1]) + ':' + (seen[1] === seen[2]); })()"
     ),
     DifferentialCase(
+        "async-method-newline",
+        "(function () { try { eval('({ async\\nfoo() { } })'); return 'none'; }" +
+            " catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
+        "async-shorthand-invalid",
+        "(function () { try { eval('({ async async })'); return 'none'; }" +
+            " catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
         "let-asi-single-statement",
         "(function () { var y = 0; for (var x in null) let\n y = 1; return y; })()"
     ),
