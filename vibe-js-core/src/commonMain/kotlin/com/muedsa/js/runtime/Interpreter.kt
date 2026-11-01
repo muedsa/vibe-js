@@ -342,6 +342,7 @@ class Interpreter(
                 program.functionDeclarations,
                 program.varDeclarations,
                 globalDeletable = true,
+                deletable = true,
             )
             predeclareLexical(program.body, executionEnvironment)
             when (val completion = executeStatements(program.body)) {
@@ -1583,6 +1584,8 @@ class Interpreter(
         functionDeclarations: List<FunctionDeclaration>,
         varDeclarations: List<String>,
         globalDeletable: Boolean = false,
+        /** sloppy eval：在函数 var 环境新建的绑定可删除（规范 CreateMutableBinding(..., true)） */
+        deletable: Boolean = false,
     ) {
         val varScope = environment.findVarScope()
         for (declaration in functionDeclarations) {
@@ -1605,6 +1608,8 @@ class Interpreter(
                     function,
                     deletable = globalDeletable,
                 )
+            } else if (deletable && varScope is DeclarativeEnvironment) {
+                varScope.createDeletableVarBinding(declaration.name, function)
             } else {
                 varScope.createVarBinding(declaration.name, function)
             }
@@ -1612,6 +1617,8 @@ class Interpreter(
         for (name in varDeclarations) {
             if (varScope is ObjectEnvironment) {
                 varScope.createGlobalVarBinding(name, deletable = globalDeletable)
+            } else if (deletable && varScope is DeclarativeEnvironment) {
+                varScope.ensureDeletableVarBinding(name)
             } else {
                 varScope.ensureVarBinding(name)
             }
@@ -1894,8 +1901,9 @@ class Interpreter(
                     DeclarationKind.VAR -> {
                         val initializer = declaration.initializer
                         if (initializer == null) {
-                            // 重复的 var 声明不得把已有值重置为 undefined
-                            currentFrame.lexicalEnv.findVarScope().ensureVarBinding(name)
+                            // 无初始化器：绑定已在声明实例化阶段创建，运行时不做任何事
+                            // （包括不得重建已通过 delete 移除的 sloppy eval 绑定）
+                            Unit
                         } else {
                             // 规范 13.3.2.4：先 ResolveBinding 捕获引用基环境，再求值初始化器；
                             // with 作用域内删除同名属性后仍写入原对象
@@ -4560,6 +4568,9 @@ class Interpreter(
                     owner is ObjectEnvironment -> JSBoolean.getJsBoolean(
                         owner.bindingObject.deleteOwnProperty(PropertyKey.Str(operand.name))
                     )
+                    owner is DeclarativeEnvironment ->
+                        JSBoolean.getJsBoolean(owner.deleteBinding(operand.name))
+
                     else -> JSBoolean.FALSE
                 }
             }

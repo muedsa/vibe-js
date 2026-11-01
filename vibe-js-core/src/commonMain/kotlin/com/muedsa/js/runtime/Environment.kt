@@ -28,6 +28,8 @@ class Binding(
      * 具名函数表达式的名字绑定则是非严格不可变绑定（sloppy 静默忽略）。
      */
     val strict: Boolean = false,
+    /** 是否为可删除绑定（sloppy eval 在函数 var 环境新建的 var/function） */
+    val deletable: Boolean = false,
 )
 
 /**
@@ -150,6 +152,32 @@ class DeclarativeEnvironment(
         if (!bindings.containsKey(name)) {
             bindings[name] = Binding(JSUndefined, mutable = true)
         }
+    }
+
+    /** 新建可删除的 var 绑定（仅供 sloppy eval 的 VariableEnvironment 使用）。 */
+    fun createDeletableVarBinding(name: String, value: JSValue) {
+        val existing = bindings[name]
+        if (existing == null) {
+            bindings[name] = Binding(value, mutable = true, deletable = true)
+        } else if (existing.mutable) {
+            existing.value = value
+        }
+    }
+
+    /** 确保可删除 var 绑定存在（初始化为 undefined），不覆盖已有绑定。 */
+    fun ensureDeletableVarBinding(name: String) {
+        if (!bindings.containsKey(name)) {
+            bindings[name] = Binding(JSUndefined, mutable = true, deletable = true)
+        }
+    }
+
+    /** 删除绑定：仅可删除绑定会被移除；返回是否成功删除。 */
+    override fun deleteBinding(name: String): Boolean {
+        val binding = bindings[name]
+        if (binding == null) return parent?.deleteBinding(name) ?: false
+        if (!binding.deletable) return false
+        bindings.remove(name)
+        return true
     }
 
     override fun createLetBinding(name: String, value: JSValue) {

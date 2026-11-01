@@ -141,6 +141,17 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     ),
     DifferentialCase("legacy-octal-sloppy", "070"),
     DifferentialCase(
+        "eval-var-deletable",
+        "(function () { var initial, post;" +
+            " (function () { eval('initial = x; delete x;" +
+            " post = function () { x; }; var x;'); })();" +
+            " try { post(); return 'none'; } catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
+        "fn-var-not-deletable",
+        "(function () { var y = 1; return delete y; })()"
+    ),
+    DifferentialCase(
         "legacy-non-octal-escapes",
         "JSON.stringify(['\\8', '\\9', '\\08', '\\400'])"
     ),

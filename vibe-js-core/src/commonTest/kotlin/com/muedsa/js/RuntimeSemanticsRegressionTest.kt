@@ -3546,4 +3546,33 @@ class RuntimeSemanticsRegressionTest {
                 " catch (e) { e.name }"
         ))
     }
+
+    @Test
+    fun `sloppy eval 新建 var 绑定可删除`() = runTest {
+        val runtime = TestRuntime()
+        // eval 新建 var：delete 后闭包引用抛 ReferenceError
+        assertEquals(true, runtime.evalBoolean(
+            "var initial = null, postDeletion;" +
+                " (function () {" +
+                "   eval('initial = x; delete x; postDeletion = function () { x; }; var x;');" +
+                " })();" +
+                " initial === undefined && (function () {" +
+                "   try { postDeletion(); return false; }" +
+                "   catch (e) { return e.name === 'ReferenceError'; } })()"
+        ))
+        // eval 新建函数声明绑定同样可删除
+        assertEquals(true, runtime.evalBoolean(
+            "var captured = null, probe = null;" +
+                " (function () {" +
+                "   eval('captured = h; delete h; probe = function () { h; }; function h() {}');" +
+                " })();" +
+                " typeof captured === 'function' && (function () {" +
+                "   try { probe(); return false; }" +
+                "   catch (e) { return e.name === 'ReferenceError'; } })()"
+        ))
+        // 普通函数内的 var 绑定不可删除
+        assertEquals(false, runtime.evalBoolean(
+            "(function () { var y = 1; return delete y; })()"
+        ))
+    }
 }
