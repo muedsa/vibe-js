@@ -467,6 +467,142 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "papaparse",
+        url = "https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js",
+        globalName = "Papa",
+        cases = listOf(
+            SmokeCase(
+                "parse",
+                assertion("Papa.parse('a,b\\n1,2').data[1][1] === '2'"),
+            ),
+            SmokeCase(
+                "parse header",
+                assertion("Papa.parse('a,b\\n1,2', { header: true }).data[0].a === '1'"),
+            ),
+            SmokeCase(
+                "unparse",
+                assertion("Papa.unparse([[1, 2], [3, 4]]) === '1,2\\r\\n3,4'"),
+            ),
+            SmokeCase(
+                "dynamicTyping",
+                assertion("Papa.parse('a\\n1', { dynamicTyping: true }).data[1][0] === 1"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "js-yaml",
+        url = "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js",
+        globalName = "jsyaml",
+        cases = listOf(
+            SmokeCase(
+                "load",
+                assertion("jsyaml.load('a: 1\\nb: [2, 3]').b[1] === 3"),
+            ),
+            SmokeCase(
+                "dump",
+                assertion("jsyaml.dump({ a: 1 }) === 'a: 1\\n'"),
+            ),
+            SmokeCase(
+                "anchor alias",
+                assertion("jsyaml.load('a: &x 1\\nb: *x').b === 1"),
+            ),
+            SmokeCase(
+                "loadAll",
+                assertion("jsyaml.loadAll('---\\na: 1\\n---\\nb: 2').length === 2"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "ramda",
+        url = "https://cdn.jsdelivr.net/npm/ramda@0.29.0/dist/ramda.min.js",
+        globalName = "R",
+        cases = listOf(
+            SmokeCase(
+                "map add",
+                assertion("R.map(R.add(1), [1, 2, 3]).join(',') === '2,3,4'"),
+            ),
+            SmokeCase(
+                "pipe",
+                assertion("R.pipe(R.add(1), R.multiply(2))(3) === 8"),
+            ),
+            SmokeCase(
+                "groupBy prop",
+                assertion(
+                    "R.groupBy(R.prop('a'), [{ a: 'x' }, { a: 'y' }, { a: 'x' }]).x.length === 2"
+                ),
+            ),
+            SmokeCase(
+                "zip assoc",
+                assertion("R.zip([1, 2], ['a', 'b'])[1][0] === 2 && R.assoc('b', 2, { a: 1 }).b === 2"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "he",
+        url = "https://cdn.jsdelivr.net/npm/he@1.2.0/he.js",
+        globalName = "he",
+        cases = listOf(
+            SmokeCase(
+                "encode decode",
+                assertion("he.decode('&lt;&gt;&amp;') === '<>&'"),
+            ),
+            SmokeCase(
+                "roundtrip",
+                assertion("he.decode(he.encode('<script>')) === '<script>'"),
+            ),
+            SmokeCase(
+                "escape unescape",
+                assertion("he.escape('<') === '&lt;' && he.unescape('&amp;') === '&'"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "numeral",
+        url = "https://cdn.jsdelivr.net/npm/numeral@2.0.6/min/numeral.min.js",
+        globalName = "numeral",
+        cases = listOf(
+            SmokeCase(
+                "thousands",
+                assertion("numeral(1234.56).format('0,0.00') === '1,234.56'"),
+            ),
+            SmokeCase(
+                "percent",
+                assertion("numeral('0.5').format('0.0%') === '50.0%'"),
+            ),
+            SmokeCase(
+                "abbreviation",
+                assertion("numeral(1000).format('0a') === '1k'"),
+            ),
+            SmokeCase(
+                "round",
+                assertion("numeral(12.345).format('0.0') === '12.3'"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "showdown",
+        url = "https://cdn.jsdelivr.net/npm/showdown@2.1.0/dist/showdown.min.js",
+        globalName = "showdown",
+        cases = listOf(
+            SmokeCase(
+                "heading",
+                assertion("new showdown.Converter().makeHtml('# Hi').indexOf('<h1') >= 0"),
+            ),
+            SmokeCase(
+                "bold",
+                assertion(
+                    "new showdown.Converter().makeHtml('**b**').indexOf('<strong>b</strong>') >= 0"
+                ),
+            ),
+            SmokeCase(
+                "link",
+                assertion(
+                    "new showdown.Converter().makeHtml('[x](https://a)').indexOf('href=\"https://a\"') >= 0"
+                ),
+            ),
+        ),
+    ),
 )
 
 
