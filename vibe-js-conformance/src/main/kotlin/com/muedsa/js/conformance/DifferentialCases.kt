@@ -168,6 +168,13 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "JSON.stringify(['\\8', '\\9', '\\08', '\\400'])"
     ),
     DifferentialCase(
+        "regex-zero-width-quantifier",
+        "(function () { var a = 'abc'.match(/(?:(?=(abc)))?a/);" +
+            " var b = 'abc'.match(/(?:(?=(abc))){1,1}a/);" +
+            " var c = /(a?b??)*/.exec('ab');" +
+            " return [a[1] === undefined, b[1], c[0]].join('|'); })()"
+    ),
+    DifferentialCase(
         "regex-huge-quantifier",
         "(function () { var re = new RegExp('b' + Number.MAX_SAFE_INTEGER, 'u');" +
             " return [re.test(''), re.test('a'), re.test('b')].join(','); })()"

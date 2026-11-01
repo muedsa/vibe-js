@@ -541,7 +541,9 @@ class JsRegexEngine(
 
         fun repeat(nextPos: Int, nextCaptures: Array<IntRange?>): Boolean {
             if (nextPos == pos) {
-                // 零宽迭代：如 /(a*)b+/ 中的空反向引用，接受一次后停止以避免死循环
+                // 规范 RepeatMatcher：min 已满足时零宽迭代被丢弃（含捕获回滚），
+                // 仅必要迭代（count < min）允许零宽推进，避免死循环
+                if (count >= node.min) return false
                 return continuation(nextPos, nextCaptures)
             }
             return matchQuantifier(node, count + 1, nextPos, nextCaptures, flags, reverse, continuation)

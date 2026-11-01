@@ -3722,4 +3722,21 @@ class RuntimeSemanticsRegressionTest {
                 " return [re.test(''), re.test('a'), re.test('b')].join(','); })()"
         ))
     }
+
+    @Test
+    fun `零宽迭代在可选量词中被丢弃并回滚捕获`() = runTest {
+        val runtime = TestRuntime()
+        // ? / {0,1} 允许零次：零宽 lookahead 迭代被丢弃，捕获保持 undefined
+        assertEquals(true, runtime.evalBoolean(
+            "var a = 'abc'.match(/(?:(?=(abc)))?a/);" +
+                " var b = 'abc'.match(/(?:(?=(abc))){0,1}a/);" +
+                " a[1] === undefined && b[1] === undefined"
+        ))
+        // {1,1} 为必要迭代：捕获保留
+        assertEquals(true, runtime.evalBoolean(
+            "var c = 'abc'.match(/(?:(?=(abc))){1,1}a/); c[1] === 'abc'"
+        ))
+        // nullable quantifier：可选迭代不得匹配空串，驱动内部懒量词消费字符
+        assertEquals("ab", runtime.evalString("/(a?b??)*/.exec('ab')[0]"))
+    }
 }
