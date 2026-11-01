@@ -1,5 +1,6 @@
 package com.muedsa.js.runtime
 
+import com.muedsa.js.ast.Program
 import com.muedsa.js.builtins.CoreBuiltins
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.parser.Parser
@@ -69,11 +70,25 @@ class Engine(
     }
 
     /**
+     * 预解析一段脚本，得到可重复执行的 AST。
+     *
+     * 解析阶段不接触全局环境，可在进入事件循环前完成；同一 AST 可多次执行，
+     * 每次执行都会重新做全局声明实例化（与重复执行同一 Script 的语义一致）。
+     */
+    fun parse(source: String): Program {
+        val tokens = Lexer(source).tokenize()
+        return Parser(tokens, source = source).parseProgram()
+    }
+
+    /**
      * 执行一段脚本，返回最后一个表达式的值（通常是 undefined）。
      */
-    suspend fun run(source: String): JSValue {
-        val tokens = Lexer(source).tokenize()
-        val program = Parser(tokens, source = source).parseProgram()
+    suspend fun run(source: String): JSValue = run(parse(source))
+
+    /**
+     * 执行预解析得到的脚本 AST。
+     */
+    suspend fun run(program: Program): JSValue {
         // 解释器与全局环境不是线程安全的：与定时器回调等宿主任务串行执行
         return eventLoop.runtimeMutex.withLock {
             try {

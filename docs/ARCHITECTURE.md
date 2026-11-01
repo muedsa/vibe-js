@@ -156,6 +156,10 @@ engine.install(MyModule())
 2. 由 `Engine` 注入新实现；
 3. 语义测试保持不变。
 
+`Engine.parse(source)` 可在不接触全局环境时完成词法/语法分析并返回不可变 AST，
+`Engine.run(program)` 复用该 AST 重复执行；每次执行仍会重新做全局声明实例化，
+语义与重复执行同一 Script 一致。`Engine.run(source)` 等价于 `run(parse(source))`。
+
 ### 8.4 自定义宿主能力
 
 实现 `HostEnvironment`（Console / Clock / Scheduler）并传给 `Engine` 构造函数，

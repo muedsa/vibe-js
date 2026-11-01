@@ -1,5 +1,6 @@
 package com.muedsa.js
 
+import com.muedsa.js.runtime.value.JSNumber
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -156,5 +157,18 @@ class BasicExecutionTest {
             "ReferenceError",
             runtime.evalString("var n = ''; try { x; } catch (e) { n = e.name; } n")
         )
+    }
+
+    @Test
+    fun `预解析脚本可重复执行并共享全局环境`() = runTest {
+        val runtime = TestRuntime()
+        val counter = runtime.engine.parse(
+            "var count = (typeof count === 'undefined' ? 0 : count) + 1; count"
+        )
+        assertEquals(1.0, (runtime.engine.run(counter) as JSNumber).value)
+        assertEquals(2.0, (runtime.engine.run(counter) as JSNumber).value)
+        val call = runtime.engine.parse("function twice(x) { return x * 2; } twice(21)")
+        assertEquals(42.0, (runtime.engine.run(call) as JSNumber).value)
+        assertEquals(42.0, (runtime.engine.run(call) as JSNumber).value)
     }
 }

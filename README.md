@@ -35,6 +35,14 @@ engine.run("let count = 1;")
 engine.run("count += 1; count;") // 2
 ```
 
+若同一段脚本需要反复执行，可先预解析再复用 AST，避免重复词法/语法分析：
+
+```kotlin
+val program = engine.parse("1 + 2 * 3")
+engine.run(program) // 7
+engine.run(program) // 每次执行都会重新实例化脚本声明
+```
+
 ### 安装宿主能力
 
 ```kotlin
