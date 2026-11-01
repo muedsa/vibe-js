@@ -231,12 +231,10 @@ object DateBuiltins {
                 } else {
                     DateMath.parts(date.timeValue)
                 }
+                // 无效日期以规范中的 t = +0 为基准：该时刻的字段是 UTC 的
+                // 1970-01-01 00:00，本地 setter 随后再按宿主偏移换算
                 val epochParts = DateMath.Parts(1970, 0, 1, 0, 0, 0, 0, 4)
-                val base = parts ?: if (local) {
-                    localParts(interpreter, 0.0) ?: epochParts
-                } else {
-                    epochParts
-                }
+                val base = parts ?: epochParts
                 // 先完成参数的 ToNumber（可能抛错或有副作用），再按日期有效性决定结果。
                 // 参数无效时：原时间有效（或 setFullYear 系以 +0 为基准）需把内部时间写为 NaN；
                 // 原时间已为 NaN 的普通 setter 按规范直接返回 NaN，不覆盖 valueOf 副作用。

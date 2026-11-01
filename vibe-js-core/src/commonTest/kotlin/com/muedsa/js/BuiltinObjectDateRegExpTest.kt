@@ -3,6 +3,7 @@ package com.muedsa.js
 import com.muedsa.js.runtime.DefaultHostEnvironment
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.HostEnvironment
+import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.exception.JSException
@@ -613,7 +614,17 @@ class BuiltinObjectDateRegExpTest {
             number("Date.UTC(2020, 1, 1)"),
             number("var d = new Date(Date.UTC(2020, 0, 1)); d.setMonth(1); d.getTime()")
         )
-        assertEquals(0.0, number("var d = new Date(NaN); d.setFullYear(1970); d.getTime()"))
+        // 无效日期以 t = +0 的 UTC 字段为基准，再换算成 +08 本地时间
+        assertEquals(-8.0 * 3_600_000.0, number("var d = new Date(NaN); d.setFullYear(1970); d.getTime()"))
+        assertEquals(-8.0 * 3_600_000.0, number("var d = new Date(NaN); d.setYear(70); d.getTime()"))
+        assertEquals(
+            true,
+            (engine.run(
+                "var d = new Date(NaN); d.setFullYear(2020); " +
+                    "d.getFullYear() === 2020 && d.getMonth() === 0 && " +
+                    "d.getDate() === 1 && d.getHours() === 0"
+            ) as JSBoolean).value,
+        )
     }
 
     @Test
