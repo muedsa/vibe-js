@@ -93,6 +93,7 @@
 | getter/setter、属性描述符 | ⚠️ 基础实现；复杂描述符冲突校验有限 |
 | instanceof、in、delete | ✅ |
 | arguments | ✅ | 类数组对象；sloppy 参数映射与 defineProperty 联动 |
+| 参数环境与函数体 var 环境 | ✅ | 非简单参数下分离参数环境与 var 环境；参数初始化阶段 eval var 对参数闭包/函数体可见、同名冲突 SyntaxError、同名 var 取形参当前值 |
 | 箭头函数词法 this/arguments | ✅ |
 | class 构造器调用限制、super、new.target | ✅ |
 | Symbol.toPrimitive | ✅ |
@@ -103,9 +104,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 464 + 宿主 15 个测试 |
-| JS（Node） | ✅ | 核心 464 + 宿主 15 个测试 |
-| Wasm（Node） | ✅ | 核心 464 + 宿主 15 个测试 |
+| JVM | ✅ | 核心 465 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 465 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 465 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -116,7 +117,8 @@
 - RegExp 使用 Kotlin Regex 主路径 + 纯 Kotlin 回退引擎；回退路径按 JS-only 构造精确启用（空字符类、`\0`/`\c`、前向反向引用、lookbehind、量词组捕获重置、码元级 `.` 等），Kotlin 路径对少数高级构造的 Unicode 折叠细节仍有差异；
 - `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；
 - Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷），未实现未处理拒绝上报；
-- 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消。
+- 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消；`async` 函数体在独立解释器实例上以 `Dispatchers.Unconfined` 恢复执行，不持有 `runtimeMutex`，当前模型面向单线程事件循环，宿主不应在多线程并发调用执行入口；
+- 参数初始化阶段的直接 eval 若声明与参数环境同名绑定（包括隐式 `arguments`），按规范与 Test262 期望抛 `SyntaxError`；Node/V8 对隐式 `arguments` 允许该声明，该分支不纳入差分用例。
 
 ## 7. 测试对应
 

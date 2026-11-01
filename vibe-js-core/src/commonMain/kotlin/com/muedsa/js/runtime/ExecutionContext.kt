@@ -22,6 +22,15 @@ class ExecutionContext(
     /** 派生类构造器在 super() 之前 this 未初始化 */
     var thisInitialized: Boolean = true,
     val isConstructor: Boolean = false,
+    /**
+     * VariableEnvironment：var/function 声明的落点（直接 eval 使用）。
+     *
+     * 参数含默认值/解构时，参数初始化阶段指向函数的最外层环境，
+     * 参数绑定完成后切换为独立的 var 环境（null 表示回退到词法环境链的 var 作用域）。
+     */
+    var variableEnv: Environment? = null,
+    /** 是否正处于参数初始化阶段（参数默认值/解构求值期间） */
+    var inParameterInitialization: Boolean = false,
 ) : ThisBindingSource {
 
     override var boundThis: JSValue

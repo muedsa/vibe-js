@@ -3185,4 +3185,55 @@ class RuntimeSemanticsRegressionTest {
                 " 'none' } catch (e) { e.name }"
         ))
     }
+
+    @Test
+    fun `参数环境与函数体 var 环境分离`() = runTest {
+        val runtime = TestRuntime()
+        // 参数默认值中的闭包看不到函数体 var；函数体闭包可见
+        assertEquals(true, runtime.evalBoolean(
+            "var x = 'outside';" +
+                " var probeParams, probeBody;" +
+                " (function (_ = probeParams = function () { return x; }) {" +
+                "   var x = 'inside';" +
+                "   probeBody = function () { return x; };" +
+                " }());" +
+                " probeParams() === 'outside' && probeBody() === 'inside'"
+        ))
+        // 参数默认值中的 eval var 写入函数 VariableEnvironment，函数体可见
+        assertEquals(true, runtime.evalBoolean(
+            "function f(p = eval('var created = 1')) { return created; } f() === 1"
+        ))
+        // 参数默认值中的 eval var 对参数闭包同样可见（落在参数环境的父级）
+        assertEquals(true, runtime.evalBoolean(
+            "function f(p = eval('var created = 1'), q = function () { return created; })" +
+                " { return q(); } f() === 1"
+        ))
+        // eval 的 var 声明与已初始化形参同名时抛 SyntaxError
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { (function (a = 1, b = eval('var a = 2')) {})(); 'none' } catch (e) { e.name }"
+        ))
+        // 隐式 arguments 绑定同样阻止参数初始化阶段的 eval 声明（Test262 规范期望）
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { (function (p = eval('var arguments = 1')) {})(); 'none' } catch (e) { e.name }"
+        ))
+        // arguments 对象在参数默认值中可见（显式传入 undefined 才触发默认值）
+        assertEquals(true, runtime.evalBoolean(
+            "function g(a = arguments) { return a; } g(undefined, 2).length === 2"
+        ))
+        // 函数体 var 与形参同名时以形参当前值初始化，后续赋值正常覆盖
+        assertEquals(true, runtime.evalBoolean(
+            "function f(a = 5) { var a; return a; } f() === 5 && f(6) === 6"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "function f({x} = {x: 3}) { var x = 4; return x; } f() === 4"
+        ))
+        // var arguments 以 arguments 对象初始化；箭头函数没有自己的 arguments
+        assertEquals(true, runtime.evalBoolean(
+            "function f(a = 1) { var arguments; return arguments.length; } f(5) === 1"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var af = (x = 1) => { var arguments; return typeof arguments; };" +
+                " af() === 'undefined'"
+        ))
+    }
 }

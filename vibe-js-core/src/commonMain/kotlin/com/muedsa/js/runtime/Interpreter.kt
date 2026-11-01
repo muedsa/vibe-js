@@ -287,10 +287,34 @@ class Interpreter(
                         )
                     }
                 }
+                // 参数初始化期间（含其内部嵌套的 eval）：从当前词法环境向上到
+                // VariableEnvironment 之间，参数环境的同名绑定（含隐式 arguments）
+                // 与 var/function 声明冲突（规范 EvalDeclarationInstantiation；
+                // Node 对隐式 arguments 有偏离，此处以 Test262 期望为准）。
+                if (caller.inParameterInitialization) {
+                    for (name in varNames) {
+                        var environment: Environment? = caller.lexicalEnv
+                        while (environment != null && environment !== caller.variableEnv) {
+                            if (environment is DeclarativeEnvironment &&
+                                environment.hasOwnBinding(name)
+                            ) {
+                                throw JSException(
+                                    JSError(
+                                        "SyntaxError",
+                                        "Identifier '$name' has already been declared",
+                                    )
+                                )
+                            }
+                            if (environment.isVarScope) break
+                            environment = environment.parent
+                        }
+                    }
+                }
                 checkEvalVarNameConflicts(caller.lexicalEnv, varNames)
             }
             // 全局作用域下的直接 eval：函数/var 声明先做可定义性检查
-            if (caller.lexicalEnv.findVarScope() === context.globalEnvironment.findVarScope()) {
+            val callerVarEnv = caller.variableEnv ?: caller.lexicalEnv.findVarScope()
+            if (callerVarEnv === context.globalEnvironment.findVarScope()) {
                 checkEvalGlobalDeclarations(program)
             }
         }
@@ -299,7 +323,7 @@ class Interpreter(
         val varEnvironment = if (evalStrict) {
             DeclarativeEnvironment(parent = lexicalEnvironment, isVarScope = true)
         } else {
-            caller.lexicalEnv.findVarScope()
+            caller.variableEnv ?: caller.lexicalEnv.findVarScope()
         }
         val executionEnvironment = if (evalStrict) varEnvironment else lexicalEnvironment
         frame = ExecutionContext(
@@ -308,6 +332,9 @@ class Interpreter(
             strict = evalStrict,
             function = callerFunction,
             newTarget = caller.newTarget,
+            variableEnv = varEnvironment,
+            // 嵌套 eval 仍处于外层函数的参数初始化阶段
+            inParameterInitialization = caller.inParameterInitialization,
         )
         return try {
             hoistDeclarations(
@@ -376,6 +403,7 @@ class Interpreter(
             lexicalEnv = executionEnvironment,
             thisValue = context.globalObject,
             strict = evalStrict,
+            variableEnv = varEnvironment,
         )
         pushStackFrame("<eval>")
         return try {
@@ -904,16 +932,33 @@ class Interpreter(
         args: List<JSValue>,
         callRange: SourceRange? = null,
     ): JSValue {
-        val callEnv = DeclarativeEnvironment(parent = function.closure, isVarScope = true)
+        val hasParameterExpressions = function.params.any {
+            it.rest || it.defaultValue != null || it.pattern != null
+        }
+        // 参数环境与函数体 var 环境：含参数表达式时分离（参数闭包看不到函数体 var）。
+        // 规范 10.2.11：参数初始化期间 VariableEnvironment 仍是函数的最外层环境，
+        // 其中 eval 声明的 var/function 对参数闭包与函数体均可见；参数绑定完成后才切到 var 环境。
+        val calleeEnv = DeclarativeEnvironment(parent = function.closure, isVarScope = true)
+        val parameterEnv: DeclarativeEnvironment
+        val varEnv: DeclarativeEnvironment
+        if (hasParameterExpressions) {
+            parameterEnv = DeclarativeEnvironment(parent = calleeEnv)
+            varEnv = DeclarativeEnvironment(parent = parameterEnv, isVarScope = true)
+        } else {
+            parameterEnv = calleeEnv
+            varEnv = calleeEnv
+        }
         val previousFrame = frame
         frame = ExecutionContext(
-            callEnv,
+            parameterEnv,
             thisValue,
             function.strict,
             function,
             newTarget = if (function.isArrow) function.lexicalNewTarget else null,
             // 箭头函数继承 this 绑定的初始化状态
             thisInitialized = function.lexicalThisSource?.thisBound ?: true,
+            variableEnv = calleeEnv,
+            inParameterInitialization = hasParameterExpressions,
         )
         pushStackFrame(function.name.ifEmpty { "anonymous" }, callRange)
         try {
@@ -923,21 +968,27 @@ class Interpreter(
                 val mapped = !function.strict && function.params.all {
                     it.name != null && !it.rest && it.defaultValue == null && it.pattern == null
                 } && parameterNames.distinct().size == function.params.size
-                callEnv.createVarBinding(
+                parameterEnv.createVarBinding(
                     "arguments",
                     createArgumentsObject(
                         args = args,
                         function = function,
-                        mappedEnvironment = if (mapped) callEnv else null,
+                        mappedEnvironment = if (mapped) parameterEnv else null,
                         mappedParams = if (mapped) function.params else emptyList(),
                     ),
                 )
             }
-            bindParameters(function, args, callEnv)
-            // 规范：函数体词法环境位于 var/参数环境之上，词法声明不与之冲突
-            val bodyEnv = DeclarativeEnvironment(parent = callEnv)
+            bindParameters(function, args, parameterEnv)
+            // 函数体词法环境位于 var 环境之上；var 环境可能位于参数环境之上。
+            // 参数绑定完成：VariableEnvironment 从最外层环境切换到独立的 var 环境。
+            val bodyEnv = DeclarativeEnvironment(parent = varEnv)
             currentFrame.lexicalEnv = bodyEnv
+            currentFrame.variableEnv = varEnv
+            currentFrame.inParameterInitialization = false
             hoistDeclarations(bodyEnv, function.functionDeclarations, function.varDeclarations)
+            if (hasParameterExpressions) {
+                initializeParameterVarBindings(function, parameterEnv, varEnv)
+            }
 
             val expressionBody = function.expressionBody
             if (expressionBody != null) {
@@ -1017,6 +1068,37 @@ class Interpreter(
         }
     }
 
+    /**
+     * 规范 10.2.11：函数体 var 与形参同名时，var 绑定以形参当前值初始化。
+     *
+     * 仅在参数环境与 var 环境分离时调用；同名函数声明优先于形参值。
+     */
+    private suspend fun initializeParameterVarBindings(
+        function: JSFunction,
+        parameterEnvironment: DeclarativeEnvironment,
+        varEnvironment: DeclarativeEnvironment,
+    ) {
+        val functionNames = function.functionDeclarations.mapTo(mutableSetOf()) { it.name }
+        val parameterNames = mutableListOf<String>()
+        for (param in function.params) {
+            val name = param.name
+            if (name != null) {
+                parameterNames.add(name)
+            } else {
+                param.pattern?.let { collectPatternNames(it, parameterNames) }
+            }
+        }
+        // 普通函数的 arguments 也属于参数绑定；箭头函数没有自己的 arguments
+        if (!function.isArrow) {
+            parameterNames.add("arguments")
+        }
+        for (name in function.varDeclarations) {
+            if (name in functionNames || name !in parameterNames) continue
+            val value = parameterEnvironment.getBinding(name) ?: continue
+            varEnvironment.createVarBinding(name, value)
+        }
+    }
+
     /** 构造用户函数实例。 */
     private suspend fun constructUserFunction(function: JSFunction, args: List<JSValue>): JSValue {
         if (function.isArrow || function.isMethod || function.isAsync) {
@@ -1028,26 +1110,46 @@ class Interpreter(
         val instance = JSObject(prototype = instancePrototype)
 
         val derived = function.isClassConstructor && function.superConstructor != null
-        val callEnv = DeclarativeEnvironment(parent = function.closure, isVarScope = true)
+        val hasParameterExpressions = function.params.any {
+            it.rest || it.defaultValue != null || it.pattern != null
+        }
+        // 与普通调用一致：参数初始化期间 VariableEnvironment 指向最外层环境
+        val calleeEnv = DeclarativeEnvironment(parent = function.closure, isVarScope = true)
+        val parameterEnv: DeclarativeEnvironment
+        val varEnv: DeclarativeEnvironment
+        if (hasParameterExpressions) {
+            parameterEnv = DeclarativeEnvironment(parent = calleeEnv)
+            varEnv = DeclarativeEnvironment(parent = parameterEnv, isVarScope = true)
+        } else {
+            parameterEnv = calleeEnv
+            varEnv = calleeEnv
+        }
         val previousFrame = frame
         frame = ExecutionContext(
-            callEnv,
+            parameterEnv,
             instance,
             function.strict,
             function,
             newTarget = function,
             thisInitialized = !derived,
             isConstructor = true,
+            variableEnv = calleeEnv,
+            inParameterInitialization = hasParameterExpressions,
         )
         pushStackFrame(function.name.ifEmpty { "anonymous" })
         val activeFrame = frame!!
         try {
-            callEnv.createVarBinding("arguments", createArgumentsObject(args, function))
-            bindParameters(function, args, callEnv)
-            // 函数体词法环境位于 var/参数环境之上
-            val bodyEnv = DeclarativeEnvironment(parent = callEnv)
+            parameterEnv.createVarBinding("arguments", createArgumentsObject(args, function))
+            bindParameters(function, args, parameterEnv)
+            // 参数绑定完成，VariableEnvironment 切换到独立 var 环境；函数体词法环境位于其上方
+            val bodyEnv = DeclarativeEnvironment(parent = varEnv)
             activeFrame.lexicalEnv = bodyEnv
+            activeFrame.variableEnv = varEnv
+            activeFrame.inParameterInitialization = false
             hoistDeclarations(bodyEnv, function.functionDeclarations, function.varDeclarations)
+            if (hasParameterExpressions) {
+                initializeParameterVarBindings(function, parameterEnv, varEnv)
+            }
 
             // 基类构造器：this 已初始化，先按源码顺序初始化实例字段
             if (!derived) {
@@ -3438,29 +3540,52 @@ class Interpreter(
                 }
                 val derived = superConstructor.isClassConstructor && superConstructor.superConstructor != null
                 val newTarget = currentFrame.newTarget
-                val callEnv = DeclarativeEnvironment(parent = superConstructor.closure, isVarScope = true)
+                val hasParameterExpressions = superConstructor.params.any {
+                    it.rest || it.defaultValue != null || it.pattern != null
+                }
+                // 与普通调用一致：参数初始化期间 VariableEnvironment 指向最外层环境
+                val calleeEnv = DeclarativeEnvironment(
+                    parent = superConstructor.closure,
+                    isVarScope = true,
+                )
+                val parameterEnv: DeclarativeEnvironment
+                val varEnv: DeclarativeEnvironment
+                if (hasParameterExpressions) {
+                    parameterEnv = DeclarativeEnvironment(parent = calleeEnv)
+                    varEnv = DeclarativeEnvironment(parent = parameterEnv, isVarScope = true)
+                } else {
+                    parameterEnv = calleeEnv
+                    varEnv = calleeEnv
+                }
                 val previousFrame = frame
                 val activeFrame = ExecutionContext(
-                    lexicalEnv = callEnv,
+                    lexicalEnv = parameterEnv,
                     thisValue = thisValue,
                     strict = true,
                     function = superConstructor,
                     newTarget = newTarget,
                     thisInitialized = !derived,
+                    variableEnv = calleeEnv,
+                    inParameterInitialization = hasParameterExpressions,
                 )
                 frame = activeFrame
                 pushStackFrame(superConstructor.name.ifEmpty { "anonymous" })
                 try {
-                    callEnv.createVarBinding("arguments", createArgumentsObject(args, superConstructor))
-                    bindParameters(superConstructor, args, callEnv)
-                    // 函数体词法环境位于 var/参数环境之上
-                    val bodyEnv = DeclarativeEnvironment(parent = callEnv)
+                    parameterEnv.createVarBinding("arguments", createArgumentsObject(args, superConstructor))
+                    bindParameters(superConstructor, args, parameterEnv)
+                    // 参数绑定完成，VariableEnvironment 切换到独立 var 环境；函数体词法环境位于其上方
+                    val bodyEnv = DeclarativeEnvironment(parent = varEnv)
                     activeFrame.lexicalEnv = bodyEnv
+                    activeFrame.variableEnv = varEnv
+                    activeFrame.inParameterInitialization = false
                     hoistDeclarations(
                         bodyEnv,
                         superConstructor.functionDeclarations,
                         superConstructor.varDeclarations,
                     )
+                    if (hasParameterExpressions) {
+                        initializeParameterVarBindings(superConstructor, parameterEnv, varEnv)
+                    }
                     // 基类父构造器：先初始化其字段，再执行构造器体
                     if (!derived) {
                         initializeInstanceFields(superConstructor, activeFrame.thisValue)

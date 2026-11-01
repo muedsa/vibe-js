@@ -208,6 +208,27 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("fn-strict-callee", "(function () { 'use strict'; try { return arguments.callee; } catch (e) { return e.name; } })()"),
     DifferentialCase("eval-direct-value", "(function () { return eval('1 + 2'); })()"),
     DifferentialCase("eval-strict-scope", "(function () { 'use strict'; eval('var x = 1;'); return typeof x; })()"),
+    // 参数初始化阶段的 VariableEnvironment：eval 的 var 声明对函数体与参数闭包可见
+    DifferentialCase(
+        "params-eval-var-body",
+        "(function (p = eval('var created = 1')) { return created; })()"
+    ),
+    DifferentialCase(
+        "params-eval-var-closure",
+        "(function (p = eval('var created = 1'), q = function () { return created; })" +
+            " { return q(); })()"
+    ),
+    DifferentialCase(
+        "params-eval-var-conflict",
+        "(function () { try { (function (a = 1, b = eval('var a = 2')) {})();" +
+            " return 'none'; } catch (e) { return e.name; } })()"
+    ),
+    // 函数体 var 与形参同名时以形参当前值初始化
+    DifferentialCase("params-var-same-name", "(function (a = 5) { var a; return a; })()"),
+    DifferentialCase(
+        "params-var-arguments",
+        "(function (a = 1) { var arguments; return arguments.length; })(5)"
+    ),
     DifferentialCase("with-assignment", "(function () { var o = { x: 1 }; var x = 2; with (o) { x = 3; } return o.x + ':' + x; })()"),
     DifferentialCase("fn-default-length", "(function () { var f = function (a, b = 1, c) {}; return f.length; })()"),
     DifferentialCase("fn-new-prototype", "(function () { function F() {} F.prototype = { tag: 1 }; return new F().tag; })()"),
