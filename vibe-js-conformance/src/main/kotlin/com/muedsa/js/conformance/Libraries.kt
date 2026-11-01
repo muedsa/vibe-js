@@ -2139,6 +2139,48 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "vue",
+        url = "https://unpkg.com/vue@2.7.16/dist/vue.js",
+        globalName = "Vue",
+        cases = listOf(
+            SmokeCase(
+                "reactivity",
+                assertion(
+                    "(function () { var app = new Vue({ data: { count: 1, items: [1, 2] }, " +
+                        "computed: { double: function () { return this.count * 2; } }, " +
+                        "methods: { inc: function () { this.count++; } } }); var out = [app.double]; " +
+                        "app.count = 5; out.push(app.double); app.inc(); " +
+                        "out.push(app.count, app.double); return out.join(',') === '2,10,6,12'; })()"
+                ),
+            ),
+            SmokeCase(
+                "array mutations",
+                assertion(
+                    "(function () { var app = new Vue({ data: { items: [1, 2] } }); app.items.push(3); " +
+                        "app.items.splice(0, 1); app.items.sort(function (a, b) { return b - a; }); " +
+                        "return app.items.join(',') === '3,2'; })()"
+                ),
+            ),
+            SmokeCase(
+                "observable and set",
+                assertion(
+                    "(function () { var state = Vue.observable({ a: 1 }); Vue.set(state, 'b', 2); " +
+                        "var ok = state.b === 2; Vue.delete(state, 'a'); " +
+                        "return ok && !('a' in state); })()"
+                ),
+            ),
+            SmokeCase(
+                "watcher next tick",
+                "globalThis.setTimeout = function (fn) { Promise.resolve().then(fn); }; " +
+                    "(function () { var app = new Vue({ data: { count: 0 } }); " +
+                    "app['${'$'}watch']('count', function (value, oldValue) { " +
+                    "globalThis.__libResult = value === 2 && oldValue === 0; }); " +
+                    "app.count = 2; })();",
+                async = true,
+            ),
+        ),
+    ),
 )
 
 
