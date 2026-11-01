@@ -966,6 +966,52 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             "push(function () { return JSON.stringify({ u: '\\u2028\\u2029' }); }); " +
             "return out.join('|'); })()"
     ),
+    // JSON 严格语法：数字/字符串/尾随逗号负例、空白、重复键、__proto__ 与 reviver
+    DifferentialCase(
+        "json-strict-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return [JSON.parse('0'), JSON.parse('-0'), 1 / JSON.parse('-0'), " +
+            "JSON.parse('1e2'), JSON.parse('1E+2'), JSON.parse('1e-2')].join(','); }); " +
+            "push(function () { var bad = ['01', '.5', '+1', '1.', '1e', '1e+', '-', '0x10', " +
+            "'Infinity', 'NaN']; var r = []; for (var i = 0; i < bad.length; i++) { " +
+            "try { JSON.parse(bad[i]); r.push('ok'); } catch (e) { r.push(e.name); } } " +
+            "return r.join(','); }); " +
+            "push(function () { var rawNewline = '[\"a' + String.fromCharCode(10) + 'b\"]'; " +
+            "var bad = [\"'a'\", '{a:1}', '[1,]', '{\"a\":1,}', '[1 2]', '{\"a\" 1}', rawNewline, " +
+            "'\"\\\\x41\"', '\"\\\\u12\"']; var r = []; for (var i = 0; i < bad.length; i++) { " +
+            "try { JSON.parse(bad[i]); r.push('ok'); } catch (e) { r.push(e.name); } } " +
+            "return r.join(','); }); " +
+            "push(function () { return JSON.stringify(JSON.parse('\"\\\\u0041\\\\n\\\\t\\\\/\\\\b\\\\f\"'))" +
+            " + '|' + JSON.parse('\"\\\\uD83D\\\\uDE00\"').length; }); " +
+            "push(function () { var s = JSON.parse('\"\\\\uD800\"'); " +
+            "return s.length + '|' + s.charCodeAt(0).toString(16); }); " +
+            "push(function () { return JSON.parse(' \\t\\r\\n1 \\t\\r\\n') + '|'; }); " +
+            "push(function () { try { JSON.parse('\\u00A01'); return 'ok'; } catch (e) { " +
+            "return e.name; } }); " +
+            "push(function () { return JSON.parse('{\"a\":1,\"a\":2}').a; }); " +
+            "push(function () { var o = JSON.parse('{\"__proto__\":{\"x\":1},\"a\":2}'); " +
+            "return Object.prototype.hasOwnProperty.call(o, '__proto__') + '|' + o.a + '|' + o.x + '|' + " +
+            "(Object.getPrototypeOf(o) === Object.prototype); }); " +
+            "push(function () { var log = []; " +
+            "JSON.parse('{\"a\":1,\"b\":{\"c\":2}}', function (k, v) { log.push(k); return v; }); " +
+            "return log.join(','); }); " +
+            "push(function () { return JSON.stringify({ a: 1 }, null, 'abcdefghijklm'); }); " +
+            "push(function () { return JSON.stringify({ a: 1, b: 2 }, ['b', 'b', 1]); }); " +
+            "push(function () { return JSON.stringify({ x: Symbol('s'), y: 1 }); }); " +
+            "push(function () { var log = []; var o = { " +
+            "get a() { log.push('a'); return 1; }, get b() { log.push('b'); return 2; } }; " +
+            "JSON.stringify(o); return log.join(','); }); " +
+            "push(function () { return JSON.stringify(-0) + '|' + JSON.stringify({ v: -0 }) + '|' + " +
+            "JSON.stringify([-0]); }); " +
+            "push(function () { return JSON.stringify('\\u2028\\u2029').length + '|' + " +
+            "JSON.stringify('\\uD800').length; }); " +
+            "push(function () { var a = [1]; a.toJSON = function () { return 'A'; }; " +
+            "return JSON.stringify(a); }); " +
+            "push(function () { var o = { toJSON: function (key) { return key; } }; " +
+            "return JSON.stringify({ x: o }); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase("regexp-nonunicode-x-identity", "[/\\x/.test('x'), /[\\x]/.test('x'), /\\u/.test('u'), /\\xA0/.test('\\u00A0')].join(',')"),
     DifferentialCase("regexp-nonunicode-split-identity", "JSON.stringify('x'.split(/\\x/))"),
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
