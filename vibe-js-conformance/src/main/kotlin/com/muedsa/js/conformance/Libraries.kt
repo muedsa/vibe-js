@@ -720,6 +720,43 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "big-integer",
+        url = "https://cdn.jsdelivr.net/npm/big-integer@1.6.51/BigInteger.js",
+        globalName = "bigInt",
+        cases = listOf(
+            SmokeCase(
+                "multiply",
+                assertion(
+                    "bigInt('12345678901234567890').multiply('98765432109876543210').toString()" +
+                        " === '1219326311370217952237463801111263526900'"
+                ),
+            ),
+            SmokeCase(
+                "pow",
+                assertion("bigInt(2).pow(100).toString() === '1267650600228229401496703205376'"),
+            ),
+            SmokeCase(
+                "beyond double precision",
+                assertion("bigInt('9007199254740993').add(1).toString() === '9007199254740994'"),
+            ),
+            SmokeCase(
+                "gcd and mod",
+                assertion(
+                    "bigInt.gcd(48, 18).toString() === '6' && bigInt(-7).mod(3).toString() === '-1'"
+                ),
+            ),
+            SmokeCase(
+                "radix and divide",
+                assertion(
+                    "bigInt('deadbeef', 16).toString(10) === '3735928559' && " +
+                        "bigInt('12345678901234567890').divide('3').toString()" +
+                        " === '4115226300411522630' && " +
+                        "bigInt('12345678901234567890').remainder('7').toString() === '1'"
+                ),
+            ),
+        ),
+    ),
 )
 
 
