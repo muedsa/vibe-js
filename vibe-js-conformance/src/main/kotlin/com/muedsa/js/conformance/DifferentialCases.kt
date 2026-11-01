@@ -2366,6 +2366,45 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "object-enumeration-fuzz",
+        """
+        (function () {
+          var out = [];
+          function snapshot(label, object) {
+            var forIn = [];
+            for (var key in object) { forIn.push(key); }
+            var json;
+            try { json = JSON.stringify(object); } catch (e) { json = 'THROW:' + e.name; }
+            out.push(label + ':' + Object.keys(object).join(',') + '|' +
+              Object.getOwnPropertyNames(object).join(',') + '|' + json + '|' + forIn.join(','));
+          }
+          var proto = { p1: 1, p2: 2 };
+          var object = Object.create(proto);
+          object.b = 2;
+          object['2'] = 'two';
+          object.a = 1;
+          object['1'] = 'one';
+          object['01'] = 'lead';
+          object['4294967295'] = 'max';
+          object['4294967294'] = 'max-1';
+          snapshot('base', object);
+          delete object.a;
+          object.a = 3;
+          snapshot('readd', object);
+          Object.defineProperty(object, 'hidden', { value: 1, enumerable: false });
+          snapshot('hidden', object);
+          object[Symbol('s')] = 4;
+          snapshot('symbol', object);
+          var array = [undefined, 1];
+          delete array[0];
+          array.x = 2;
+          snapshot('array', array);
+          snapshot('order', { 10: 'a', 2: 'b', '01': 'c', x: 1 });
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "destructuring-assignment-fuzz",
         """
         (function () {
