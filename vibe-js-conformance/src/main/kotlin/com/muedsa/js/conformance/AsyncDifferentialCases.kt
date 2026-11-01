@@ -413,4 +413,75 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         globalThis.__diffResult = log;
         """.trimIndent(),
     ),
+
+    AsyncDifferentialCase(
+        "async-microtask-matrix",
+        """
+        var log = [];
+        function mark(value) { log.push(value); }
+
+        Promise.resolve().then(function () { mark('t1'); });
+        Promise.resolve().then(function () {
+          mark('t2');
+          Promise.resolve().then(function () { mark('t2a'); });
+        }).then(function () { mark('t2b'); });
+
+        async function f() {
+          mark('f1');
+          await null;
+          mark('f2');
+          await Promise.resolve();
+          mark('f3');
+        }
+        f();
+
+        (async function () {
+          mark('g1');
+          await 'x';
+          mark('g2');
+        })();
+
+        new Promise(function (resolve) { mark('exec'); resolve('v'); })
+          .then(function (value) { mark('then:' + value); });
+
+        Promise.reject(new Error('e')).catch(function () { mark('catch'); });
+
+        var thenable = { then: function (resolve) { mark('thenable'); resolve('tv'); } };
+        Promise.resolve(thenable).then(function (value) { mark('adopt:' + value); });
+
+        Promise.all([Promise.resolve(1), 2]).then(function (values) {
+          mark('all:' + values.join('-'));
+        });
+        Promise.race([new Promise(function () { mark('pending'); }), Promise.resolve('r')])
+          .then(function (value) { mark('race:' + value); });
+        Promise.allSettled([Promise.resolve(1), Promise.reject('x')]).then(function (results) {
+          mark('settled:' + results.map(function (result) { return result.status; }).join('-'));
+        });
+        Promise.resolve().finally(function () { mark('finally'); })
+          .then(function () { mark('finallyThen'); });
+
+        for (var i = 0; i < 3; i++) {
+          (function (index) {
+            Promise.resolve(index).then(function (value) { mark('loop' + value); });
+          })(i);
+        }
+
+        Promise.resolve().then(function () {
+          mark('throw');
+          throw new Error('boom');
+        }).catch(function () { mark('recover'); })
+          .then(function () { mark('afterRecover'); });
+
+        new Promise(function (resolve) { mark('double'); resolve(1); resolve(2); })
+          .then(function (value) { mark('doubleThen:' + value); });
+
+        async function h() {
+          mark('h1');
+          throw new Error('h');
+        }
+        h().catch(function () { mark('hCatch'); });
+
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
 )
