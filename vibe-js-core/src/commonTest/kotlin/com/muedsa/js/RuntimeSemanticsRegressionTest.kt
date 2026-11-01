@@ -3227,6 +3227,33 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Date setter 参数为 NaN 或显式 undefined 时使日期失效`() = runTest {
+        val runtime = TestRuntime()
+        // 返回值为 NaN 且内部时间同样失效（否则后续 getTime/toISOString 仍是旧值）
+        assertEquals(true, runtime.evalBoolean(
+            "(function () { var d = new Date(Date.UTC(2020, 0, 1)); " +
+                "var r = d.setUTCDate(NaN); " +
+                "return Number.isNaN(r) && Number.isNaN(d.getTime()); })()"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "(function () { var d = new Date(Date.UTC(2020, 0, 1, 12)); " +
+                "var r = d.setUTCHours(undefined); " +
+                "return Number.isNaN(r) && Number.isNaN(d.getTime()); })()"
+        ))
+        // 可选参数缺省（未传）仍保留原值
+        assertEquals(true, runtime.evalBoolean(
+            "(function () { var d = new Date(Date.UTC(2020, 0, 1, 12, 30)); d.setUTCHours(1); " +
+                "return d.toISOString() === '2020-01-01T01:30:00.000Z'; })()"
+        ))
+        // 原时间无效时按规范直接返回 NaN，不覆盖 valueOf 副作用写入的时间
+        assertEquals(true, runtime.evalBoolean(
+            "(function () { var d = new Date(NaN); var value = { valueOf: function () { " +
+                "d.setTime(0); return 1; } }; var r = d.setUTCDate(value); " +
+                "return Number.isNaN(r) && d.getTime() === 0; })()"
+        ))
+    }
+
+    @Test
     fun `Error isPrototypeOf slice 与 toExponential 边界`() = runTest {
         val runtime = TestRuntime()
         assertEquals(

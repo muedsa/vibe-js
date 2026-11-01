@@ -781,6 +781,43 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             "catch (e) { return e.name; } }); " +
             "return out.join('|'); })()"
     ),
+    // Date UTC setter：NaN 恢复、溢出归一、可选参数与返回值
+    DifferentialCase(
+        "date-setter-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { var d = new Date(NaN); d.setUTCFullYear(2020); " +
+            "return d.toISOString(); }); " +
+            "push(function () { var d = new Date(NaN); d.setUTCMonth(1); " +
+            "return String(d.getTime()); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 31)); d.setUTCMonth(1); " +
+            "return d.toISOString(); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); d.setUTCDate(0); " +
+            "return d.toISOString(); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1, 12, 30, 45, 500)); " +
+            "d.setUTCHours(1); return d.toISOString(); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1, 12, 30, 45, 500)); " +
+            "d.setUTCHours(undefined); return String(d.getTime()); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); " +
+            "d.setUTCSeconds(59, 999); return d.toISOString(); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); " +
+            "d.setUTCMilliseconds(1001); return d.toISOString(); }); " +
+            "push(function () { var d = new Date(0); var r = d.setTime(8640000000000001); " +
+            "return String(r) + '|' + String(d.getTime()); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); " +
+            "d.setUTCFullYear(2021, 5, 15); return d.toISOString(); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); " +
+            "d.setUTCFullYear(2021, undefined); return String(d.getTime()); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); var r = d.setUTCMonth(1); " +
+            "return r + '|' + (r === d.getTime()); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); d.setUTCDate(NaN); " +
+            "return String(d.getTime()); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 11, 31, 23, 59, 59, 999)); " +
+            "d.setUTCFullYear(2021); return d.toISOString(); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); " +
+            "return typeof d.setUTCYear; }); " +
+            "return out.join('|'); })()"
+    ),
     // URI 编解码矩阵：保留字符、转义集合、非法 UTF-8 与孤立代理项
     DifferentialCase(
         "uri-matrix",

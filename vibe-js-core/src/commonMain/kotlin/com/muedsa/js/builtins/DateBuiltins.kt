@@ -215,8 +215,16 @@ object DateBuiltins {
                 val date = requireDate(thisValue)
                 val parts = DateMath.parts(date.timeValue)
                 val base = parts ?: DateMath.Parts(1970, 0, 1, 0, 0, 0, 0, 4)
-                // 先完成参数的 ToNumber（可能抛错或有副作用），再按日期有效性决定结果
-                val time = body(interpreter, args, base) ?: return@method JSNumber.NAN
+                // 先完成参数的 ToNumber（可能抛错或有副作用），再按日期有效性决定结果。
+                // 参数无效时：原时间有效（或 setFullYear 系以 +0 为基准）需把内部时间写为 NaN；
+                // 原时间已为 NaN 的普通 setter 按规范直接返回 NaN，不覆盖 valueOf 副作用。
+                val time = body(interpreter, args, base)
+                if (time == null) {
+                    if (parts != null || useZeroBase) {
+                        date.timeValue = Double.NaN
+                    }
+                    return@method JSNumber.NAN
+                }
                 if (parts == null && !useZeroBase) return@method JSNumber.NAN
                 val clipped = DateMath.timeClip(time)
                 date.timeValue = clipped
