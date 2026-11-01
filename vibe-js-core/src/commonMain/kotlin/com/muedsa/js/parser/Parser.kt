@@ -1564,19 +1564,13 @@ class Parser(
         labelScopes.clear()
         inLabelChain = false
 
-        // 非简单参数列表会创建独立的参数环境：函数体词法声明可与形参同名；
-        // 简单参数列表下 LexicallyDeclaredNames 与形参冲突属于早期错误
-        val hasParameterExpressions =
-            params.any { it.rest || it.defaultValue != null || it.pattern != null }
-        val parameterNames = if (hasParameterExpressions) {
-            emptySet()
-        } else {
-            collectParameterNames(params).toSet()
-        }
+        // 形参与函数体顶层词法声明（let/const/class）不得重名；即使是非简单参数
+        // 列表（运行时使用独立参数环境），该早期错误仍然适用。var/函数声明不受限制。
+        val parameterNames = collectParameterNames(params).toSet()
         pushDeclScope(
             DeclScopeKind.FUNCTION_BODY,
             parameterNames,
-            annexParameterNames = collectParameterNames(params).toSet(),
+            annexParameterNames = parameterNames,
             hasArgumentsBinding = !isArrow && !staticBlock,
         )
         val bodyScope = declScopes.last()

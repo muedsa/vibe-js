@@ -121,6 +121,29 @@ class ParserEdgeTest {
     // ================================================================
 
     @Test
+    fun `非简单参数与函数体词法声明重名是早期错误`() {
+        val parser = { code: String ->
+            com.muedsa.js.parser.Parser(com.muedsa.js.lexer.Lexer(code).tokenize()).parseProgram()
+        }
+        for (code in listOf(
+            "(function(a = 1) { let a; });",
+            "(function([a]) { let a; });",
+            "(function({a}) { const a = 1; });",
+            "(function(...a) { let a; });",
+            "(a = 1) => { let a; };",
+            "({ a(b = 1) { let b; } });",
+            "({ set a([b]) { let b; } });",
+            "class C { m({x}) { const x = 1; } }",
+        )) {
+            assertFailsWith<ParseException>(code) { parser(code) }
+        }
+        // var/函数声明与非简单参数同名是允许的（参数环境与 var 环境分离）
+        parser("(function(a = 1) { var a; });")
+        parser("(function([a]) { function a() {} });")
+        parser("(function(...a) { function a() {} });")
+    }
+
+    @Test
     fun `非法赋值与自增目标`() {
         val parser = { code: String -> com.muedsa.js.parser.Parser(com.muedsa.js.lexer.Lexer(code).tokenize()).parseProgram() }
         assertFailsWith<ParseException> { parser("1 = 2;") }

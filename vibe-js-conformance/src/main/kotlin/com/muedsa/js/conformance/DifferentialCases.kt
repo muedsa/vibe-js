@@ -1990,4 +1990,54 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('|');
 })()""",
     ),
+
+    // String.split/replace/match/matchAll 与正则组合的随机差分
+    DifferentialCase(
+        "string-regex-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 314159265;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var patterns = [
+    ['a+', ''], ['b*', 'g'], ['(a|b)', 'g'], ['\\d+', ''], ['\\s', 'g'],
+    ['[ab]+', 'gi'], ['(?:ab)', ''], ['(?<x>a+)', 'g'], ['.', 's'],
+    ['[a-z]+', ''], ['^a', ''], ['b$', 'm'], ['a{1,2}', 'g'], ['c', ''],
+    ['(a)(b)?', 'g'], ['a+', 'u'], ['\\b', 'g']
+  ];
+  var inputs = ['', 'a', 'aa', 'ab', 'abc', 'a b c', '123', 'a1b2', 'aaa', 'bbb', 'a\nb', '😀a', 'cab', 'ABC', 'ab ab'];
+  var replacements = ['X', '[$&]', '$1', '$$', '', '$<x>'];
+  for (var i = 0; i < 200; i++) {
+    var pattern = patterns[Math.floor(rnd() * patterns.length)];
+    var text = inputs[Math.floor(rnd() * inputs.length)];
+    var operation = Math.floor(rnd() * 4);
+    try {
+      if (operation === 0) {
+        out.push(JSON.stringify(text.split(new RegExp(pattern[0], pattern[1]), Math.floor(rnd() * 5))));
+      } else if (operation === 1) {
+        out.push(text.replace(new RegExp(pattern[0], pattern[1]), replacements[Math.floor(rnd() * replacements.length)]));
+      } else if (operation === 2) {
+        var match = text.match(new RegExp(pattern[0], pattern[1]));
+        out.push(JSON.stringify(match));
+      } else {
+        var flags = pattern[1].indexOf('g') >= 0 ? pattern[1] : pattern[1] + 'g';
+        var results = [];
+        var iterator = text.matchAll(new RegExp(pattern[0], flags));
+        for (var item of iterator) {
+          results.push([item[0], item.index, item[1] === undefined ? null : item[1]]);
+        }
+        out.push(JSON.stringify(results));
+      }
+    } catch (e) {
+      out.push('THROW:' + e.name);
+    }
+  }
+  return out.join(';');
+})()""",
+    ),
+
+    // 参数与函数体词法声明的早期错误探针
+    DifferentialCase(
+        "early-error-params-matrix",
+        """(function () { var cases = ['([a]) => { let a; }', '({a}) => { let a; }', '!{ a({b}){ let b; } }', '!{ set a([b]){ let b; } }', '!{ a([b]){ let b; } }', 'try {} catch(a) { for(var a of 1); }']; var out = []; for (var i = 0; i < cases.length; i++) { try { eval(cases[i]); out.push('OK'); } catch (e) { out.push(e.name); } } return out.join('|'); })()""",
+    ),
 )
