@@ -2366,6 +2366,83 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "destructuring-assignment-fuzz",
+        """
+        (function () {
+          var out = [];
+          function check(label, body) {
+            try { out.push(label + '=' + String(body())); }
+            catch (e) { out.push(label + '=THROW:' + e.name); }
+          }
+          check('objectAssignment', function () {
+            var target = { a: 0, b: 0 };
+            var source = { a: 1, b: 2 };
+            ({ a: target.a, b: target.b } = source);
+            return target.a + ',' + target.b;
+          });
+          check('defaults', function () {
+            var x;
+            var y;
+            [x, y = 5] = [1, undefined];
+            return x + ',' + y;
+          });
+          check('arrayRest', function () {
+            var head;
+            var rest;
+            [head, ...rest] = [1, 2, 3];
+            return head + ':' + rest.join('-');
+          });
+          check('nested', function () {
+            var b;
+            var c;
+            ({ a: { b }, c } = { a: { b: 2 }, c: 3 });
+            return b + ':' + c;
+          });
+          check('computedKey', function () {
+            var key = 'a';
+            var holder = {};
+            ({ [key]: holder.value } = { a: 4 });
+            return holder.value;
+          });
+          check('iteratorClose', function () {
+            var closeLog = [];
+            var iterator = {};
+            iterator[Symbol.iterator] = function () { return iterator; };
+            var index = 0;
+            iterator.next = function () {
+              return index < 3 ? { value: index++, done: false } : { done: true };
+            };
+            iterator.return = function () {
+              closeLog.push('r');
+              return { done: true };
+            };
+            var a;
+            var b;
+            [a, b] = iterator;
+            return a + ':' + b + ':' + closeLog.join('');
+          });
+          check('getterOrder', function () {
+            var order = [];
+            var source = {
+              get a() { order.push('ga'); return 1; },
+              get b() { order.push('gb'); return 2; }
+            };
+            var a;
+            var b;
+            ({ a, b } = source);
+            return order.join(',') + ':' + a + ':' + b;
+          });
+          check('objectRest', function () {
+            var a;
+            var rest;
+            ({ a, ...rest } = { a: 1, b: 2, c: 3 });
+            return a + ':' + Object.keys(rest).join('-');
+          });
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "param-destructuring-fuzz",
         """
         (function () {
