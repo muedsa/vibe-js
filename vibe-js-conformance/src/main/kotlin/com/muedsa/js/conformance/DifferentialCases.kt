@@ -301,6 +301,97 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("obj-valueof-null", "(function () { try { Object.prototype.valueOf.call(null); } catch (e) { return e.name; } })()"),
     DifferentialCase("obj-tolocalestring-null", "(function () { try { Object.prototype.toLocaleString.call(undefined); } catch (e) { return e.name; } })()"),
     DifferentialCase("obj-keys-string", "Object.keys('ab').join(',')"),
+    // 求值顺序矩阵：通过 getter/setter/日志观察规范规定的访问顺序
+    DifferentialCase(
+        "eval-order-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { var log = []; var o = {}; " +
+            "Object.defineProperty(o, 'k', { set: function (v) { log.push('set' + v); } }); " +
+            "function key() { log.push('key'); return 'k'; } " +
+            "function val() { log.push('val'); return 1; } " +
+            "o[key()] = val(); return log.join(','); }); " +
+            "push(function () { var log = []; " +
+            "function f(x) { log.push('f'); return function () { log.push('call'); return x; }; } " +
+            "function g() { log.push('g'); return 1; } function h() { log.push('h'); return 2; } " +
+            "f(g())(h()); return log.join(','); }); " +
+            "push(function () { var log = []; var state = 1; var o = {}; " +
+            "Object.defineProperty(o, 'a', { get: function () { log.push('get a'); return state; }, " +
+            "set: function (v) { log.push('set a'); state = v; } }); " +
+            "o.a += (log.push('rhs'), 2); return log.join(','); }); " +
+            "push(function () { var log = []; " +
+            "function make() { log.push('make'); return function () { log.push('call'); }; } " +
+            "new (make())((log.push('arg'), 1)); return log.join(','); }); " +
+            "push(function () { var log = []; " +
+            "function tag(strings) { log.push('tag'); return strings.raw[0]; } " +
+            "function part() { log.push('part'); return 'x'; } " +
+            "tag`a\${part()}b`; return log.join(','); }); " +
+            "push(function () { var log = []; var src = { " +
+            "get a() { log.push('get a'); return 1; }, get b() { log.push('get b'); return 2; } }; " +
+            "Object.assign({}, src); return log.join(','); }); " +
+            "push(function () { var log = []; " +
+            "JSON.stringify([{ toJSON: function (k) { log.push('toJSON ' + k); return 1; } }]); " +
+            "return log.join(','); }); " +
+            "push(function () { var log = []; var state = { x: 1, y: 2 }; var o = {}; " +
+            "Object.defineProperty(o, 'x', { get: function () { log.push('get x'); return state.x; }, " +
+            "set: function (v) { log.push('set x'); state.x = v; } }); " +
+            "Object.defineProperty(o, 'y', { get: function () { log.push('get y'); return state.y; }, " +
+            "set: function (v) { log.push('set y'); state.y = v; } }); " +
+            "[o.x, o.y] = [o.y, o.x]; return log.join(',') + '|' + state.x + ',' + state.y; }); " +
+            "push(function () { var log = []; var o = { " +
+            "get a() { log.push('get a'); return 1; }, get b() { log.push('get b'); return 2; } }; " +
+            "var { a, b } = o; return log.join(','); }); " +
+            "push(function () { var log = []; var a = { " +
+            "get length() { log.push('length'); return 2; }, " +
+            "get 0() { log.push('0'); return 'x'; }, get 1() { log.push('1'); return 'y'; } }; " +
+            "Array.prototype.join.call(a, '-'); return log.join(','); }); " +
+            "push(function () { var log = []; " +
+            "var o = { toString: function () { log.push('toString'); return 'k'; } }; " +
+            "var target = {}; target[o] = 1; return log.join(','); }); " +
+            "push(function () { var log = []; " +
+            "var o = { valueOf: function () { log.push('valueOf'); return 1; } }; " +
+            "var r = o + (log.push('rhs'), 2); return log.join(',') + '|' + r; }); " +
+            "push(function () { var log = []; " +
+            "var cond = { valueOf: function () { log.push('valueOf'); return 0; } }; " +
+            "cond ? log.push('then') : log.push('else'); return log.join(','); }); " +
+            "return out.join('|'); })()"
+    ),
+    // Array 方法在稀疏数组、原型链与 array-like 上的语义矩阵
+    DifferentialCase(
+        "array-methods-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return [1, , 3].map(function (x) { return x * 2; }).join('|'); }); " +
+            "push(function () { return [1, , 3].filter(function () { return true; }).length; }); " +
+            "push(function () { var n = 0; [1, , 3].forEach(function () { n++; }); return n; }); " +
+            "push(function () { return [1, , 3].reduce(function (a, b) { return a + b; }, 0); }); " +
+            "push(function () { return [1, , 3].indexOf(undefined) + '|' + [1, , 3].includes(undefined); }); " +
+            "push(function () { return Array.prototype.slice.call({ 0: 'a', 1: 'b', length: 2 }).join('|'); }); " +
+            "push(function () { return Array.from({ 0: 'x', length: 1 }).join('|'); }); " +
+            "push(function () { return Array.from({ length: 3 }, function (_, i) { return i * 2; }).join('|'); }); " +
+            "push(function () { return [].concat([1, , 3]).length; }); " +
+            "push(function () { return Object.keys([1, , 3]).join(','); }); " +
+            "push(function () { return [1, 2, 3].copyWithin(0, 1).join('|'); }); " +
+            "push(function () { return [1, 2, 3].fill(0, 1).join('|'); }); " +
+            "push(function () { var a = [1, 2, 3, 4]; var removed = a.splice(1, 2, 'x'); " +
+            "return removed.join('|') + ';' + a.join('|'); }); " +
+            "push(function () { return [10, 2, 1].sort().join('|') + ';' + [3, 1, 2].sort().join('|'); }); " +
+            "push(function () { return [1, [2, [3]]].flat(2).join('|'); }); " +
+            "push(function () { return [1, 2].flatMap(function (x) { return [x, x * 10]; }).join('|'); }); " +
+            "push(function () { return [1, 2, 3].at(-2); }); " +
+            "push(function () { return [1, 2, 3].findLast(function (x) { return x < 3; }); }); " +
+            "push(function () { var a = [1, 2, 3]; return a.toReversed().join('|') + ';' + a.join('|'); }); " +
+            "push(function () { var a = [1, 2, 3]; return a.with(1, 9).join('|') + ';' + a.join('|'); }); " +
+            "push(function () { Array.prototype[1] = 9; var a = [1, , 3]; " +
+            "var joined = a.join('|'); delete Array.prototype[1]; return joined; }); " +
+            "push(function () { return [NaN].includes(NaN) + '|' + [NaN].indexOf(NaN); }); " +
+            "push(function () { var o = { 0: 'a', length: 1 }; var v = Array.prototype.pop.call(o); " +
+            "return v + '|' + o.length; }); " +
+            "push(function () { return new Array(3).fill(1).join('|'); }); " +
+            "push(function () { return Array.of(1, 2).join('|'); }); " +
+            "push(function () { return [1, 2, 3].reduceRight(function (a, b) { return a - b; }); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase("obj-arguments-descriptor", "(function (a) { var d = Object.getOwnPropertyDescriptor(arguments, '0'); return [d.value, d.writable, d.enumerable, d.configurable].join(','); })(7)"),
     DifferentialCase("obj-proto-set-nonextensible", "(function () { var x = Object.preventExtensions({}); x.__proto__ = { a: 1 }; return Object.getPrototypeOf(x) === Object.prototype; })()"),
 
