@@ -1793,4 +1793,55 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
 
+
+    // BMP 全码点大小写映射审计（按 0x4000 分块，避免单用例输出过大）
+    DifferentialCase(
+        "string-upper-bmp-0",
+        """(function () { var out = []; for (var cp = 0; cp < 16384; cp++) { if (cp === 0xA7CE || cp === 0xA7CF || cp === 0xA7D2 || cp === 0xA7D3 || cp === 0xA7D4 || cp === 0xA7D5) { out.push("<unicode17-only>"); continue; } out.push(String.fromCharCode(cp).toUpperCase()); } return out.join("|"); })()""",
+    ),
+    DifferentialCase(
+        "string-upper-bmp-1",
+        """(function () { var out = []; for (var cp = 16384; cp < 32768; cp++) { if (cp === 0xA7CE || cp === 0xA7CF || cp === 0xA7D2 || cp === 0xA7D3 || cp === 0xA7D4 || cp === 0xA7D5) { out.push("<unicode17-only>"); continue; } out.push(String.fromCharCode(cp).toUpperCase()); } return out.join("|"); })()""",
+    ),
+    DifferentialCase(
+        "string-upper-bmp-2",
+        """(function () { var out = []; for (var cp = 32768; cp < 49152; cp++) { if (cp === 0xA7CE || cp === 0xA7CF || cp === 0xA7D2 || cp === 0xA7D3 || cp === 0xA7D4 || cp === 0xA7D5) { out.push("<unicode17-only>"); continue; } out.push(String.fromCharCode(cp).toUpperCase()); } return out.join("|"); })()""",
+    ),
+    DifferentialCase(
+        "string-upper-bmp-3",
+        """(function () { var out = []; for (var cp = 49152; cp < 65536; cp++) { if (cp === 0xA7CE || cp === 0xA7CF || cp === 0xA7D2 || cp === 0xA7D3 || cp === 0xA7D4 || cp === 0xA7D5) { out.push("<unicode17-only>"); continue; } out.push(String.fromCharCode(cp).toUpperCase()); } return out.join("|"); })()""",
+    ),
+    DifferentialCase(
+        "string-lower-bmp-0",
+        """(function () { var out = []; for (var cp = 0; cp < 16384; cp++) { if (cp === 0xA7CE || cp === 0xA7CF || cp === 0xA7D2 || cp === 0xA7D3 || cp === 0xA7D4 || cp === 0xA7D5) { out.push("<unicode17-only>"); continue; } out.push(String.fromCharCode(cp).toLowerCase()); } return out.join("|"); })()""",
+    ),
+    DifferentialCase(
+        "string-lower-bmp-1",
+        """(function () { var out = []; for (var cp = 16384; cp < 32768; cp++) { if (cp === 0xA7CE || cp === 0xA7CF || cp === 0xA7D2 || cp === 0xA7D3 || cp === 0xA7D4 || cp === 0xA7D5) { out.push("<unicode17-only>"); continue; } out.push(String.fromCharCode(cp).toLowerCase()); } return out.join("|"); })()""",
+    ),
+    DifferentialCase(
+        "string-lower-bmp-2",
+        """(function () { var out = []; for (var cp = 32768; cp < 49152; cp++) { if (cp === 0xA7CE || cp === 0xA7CF || cp === 0xA7D2 || cp === 0xA7D3 || cp === 0xA7D4 || cp === 0xA7D5) { out.push("<unicode17-only>"); continue; } out.push(String.fromCharCode(cp).toLowerCase()); } return out.join("|"); })()""",
+    ),
+    DifferentialCase(
+        "string-lower-bmp-3",
+        """(function () { var out = []; for (var cp = 49152; cp < 65536; cp++) { if (cp === 0xA7CE || cp === 0xA7CF || cp === 0xA7D2 || cp === 0xA7D3 || cp === 0xA7D4 || cp === 0xA7D5) { out.push("<unicode17-only>"); continue; } out.push(String.fromCharCode(cp).toLowerCase()); } return out.join("|"); })()""",
+    ),
+
+    // 大小写特殊映射与 Final_Sigma 上下文（排除 V8 尚缺的 Unicode 17 新增配对）
+    DifferentialCase(
+        "string-case-special-matrix",
+        """(function () {
+  var out = [];
+  var xs = ['A.Σ', 'A\u0301Σ', '\u0301Σ', 'A\u00ADΣ', '1Σ', 'AΣ\u0301', 'AΣ\u0301A', 'AΣ.', 'AΣ\u0301.', '\uD800Σ', 'A\uD800Σ', 'A😀Σ', 'Σ', 'ΑΣ', 'ΑΣΑ', '\u0345Σ', 'Α\u0345Σ', 'AΣ\u0345', 'AΣ\u0345Α'];
+  for (var i = 0; i < xs.length; i++) {
+    out.push(xs[i].toLowerCase());
+  }
+  var cs = ['ß', 'İ', 'ﬁ', 'ꟁ', 'Ꟁ', '𐐨', '𐐀'];
+  for (var j = 0; j < cs.length; j++) {
+    out.push(cs[j] + '>' + cs[j].toUpperCase() + '>' + cs[j].toLowerCase());
+  }
+  return out.join(';');
+})()""",
+    ),
 )

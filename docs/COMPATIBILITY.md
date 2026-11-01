@@ -66,7 +66,7 @@
 | Object.prototype | ✅ | hasOwnProperty、isPrototypeOf、propertyIsEnumerable、valueOf、toString、toLocaleString、`__proto__`、Annex B `__defineGetter__`/`__defineSetter__`/`__lookupGetter__`/`__lookupSetter__` |
 | Function | ✅ | call/apply/bind/toString（函数声明/表达式/方法/类构造器/动态函数返回源码文本，无源码时 NativeFunction 形式）、bind 的 length 仅取自有 length 并支持 Infinity、caller/arguments 与严格或 unmapped arguments.callee 共用冻结的 %ThrowTypeError% |
 | Array | ✅ | 常用迭代/查找/增删/排序、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；sort 按 SortIndexedProperties（HasProperty/Get/Set/Delete、原型链元素、undefined 末尾、NaN 比较视为相等、稳定）；静态 isArray/of/from（构造器可接收 length、CreateDataPropertyOrThrow 与 Set length 语义）；方法为泛型实现（ToObject/HasProperty/Get/Delete，遵循原型链与稀疏语义），array-like 支持 2^53-1 长度边界 |
-| String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表）；原型方法统一 RequireObjectCoercible，pad 默认空格、localeCompare 规范等价、replace/split 按规范求值顺序 |
+| String | ✅ | 常用方法、toLocaleLowerCase/UpperCase（Unicode 17.0.0 UCD 完整映射与 Final_Sigma，跨平台一致）、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表）；原型方法统一 RequireObjectCoercible，pad 默认空格、localeCompare 规范等价、replace/split 按规范求值顺序 |
 | Number | ✅ | 常量、toString(radix)（10 进制为最短十进制表示如 5e-324；2-36 进制用精确二进制大整数展开并按最短往返规则选择有效数字，支持 0.1 的完整二进制展开、超过 2^63 的整数与次正规数）、toFixed/toExponential/toPrecision（非有限值先于范围检查、负零格式化；三者均按 Double 的精确十进制值舍入，含次正规数、进位、负值舍入为 0 的符号；toExponential 无参数时使用最短往返表示，toPrecision 按舍入后的指数选择指数/定点形式）、静态判断与解析（parseInt/parseFloat 与全局同一函数对象；parseInt 的 radix 按 ToInt32，parseFloat 只接受 ASCII 数字） |
 | Boolean | ✅ | 构造器、toString、valueOf |
 | Math | ✅ | 常量与 ES5/ES2015 常用函数；max/min 对全部参数执行 ToNumber；hypot 按最大绝对值缩放避免中间溢出；sumPrecise 精确求和 |
@@ -107,9 +107,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 493 + 宿主 18 个测试 |
-| JS（Node） | ✅ | 核心 493 + 宿主 18 个测试 |
-| Wasm（Node） | ✅ | 核心 493 + 宿主 18 个测试 |
+| JVM | ✅ | 核心 494 + 宿主 18 个测试 |
+| JS（Node） | ✅ | 核心 494 + 宿主 18 个测试 |
+| Wasm（Node） | ✅ | 核心 494 + 宿主 18 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -119,6 +119,7 @@
 - `JSON.parse` 使用独立严格 JSON 语法，不再复用宽松的 JS Parser；
 - RegExp 使用 Kotlin Regex 主路径 + 纯 Kotlin 回退引擎；回退路径按 JS-only 构造精确启用（空字符类、`\0`/`\c`、前向反向引用、lookbehind、量词组捕获重置、码元级 `.` 等）；忽略大小写且模式含字母时统一走回退引擎（规范的 Canonicalize），Kotlin 路径只处理不涉及大小写折叠的模式；
 - `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；
+- `String` 大小写转换使用仓库内置 Unicode 17.0.0 UCD 表（UnicodeData 简单映射 + SpecialCasing 无条件完整映射 + Final_Sigma），JVM/JS/Wasm 行为一致；V8（Unicode 16）尚缺 A7CE/A7CF、A7D2/A7D3、A7D4/A7D5 三组 Unicode 17 新增配对，BMP 差分审计跳过这些码点，单元测试固定 17.0.0 行为；
 - Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷），未实现未处理拒绝上报；
 - 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消；`async` 函数体在独立解释器实例上以 `Dispatchers.Unconfined` 恢复执行，不持有 `runtimeMutex`，当前模型面向单线程事件循环，宿主不应在多线程并发调用执行入口；
 - 参数初始化阶段的直接 eval 若声明与参数环境同名绑定（包括隐式 `arguments`），按规范与 Test262 期望抛 `SyntaxError`；Node/V8 对隐式 `arguments` 允许该声明，该分支不纳入差分用例；

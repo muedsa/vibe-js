@@ -2843,6 +2843,43 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `String 大小写使用 Unicode 17 完整映射与词尾 Sigma 规则`() = runTest {
+        val runtime = TestRuntime()
+        // SpecialCasing 完整映射：ß → SS、连字 ﬁ → FI、İ 小写为 i + 组合点
+        assertEquals("SS", runtime.evalString("'ß'.toUpperCase()"))
+        assertEquals("SS", runtime.evalString("'ß'.toLocaleUpperCase()"))
+        assertEquals("FI", runtime.evalString("'ﬁ'.toUpperCase()"))
+        assertEquals("i̇", runtime.evalString("'İ'.toLowerCase()"))
+        // Unicode 17 新增/修正的大小写配对（V8 的 Unicode 16 表尚缺 A7CE/A7D2/A7D4 三组）
+        assertEquals("Ꟁ", runtime.evalString("'ꟁ'.toUpperCase()"))
+        assertEquals("ꟁ", runtime.evalString("'Ꟁ'.toLowerCase()"))
+        assertEquals("꟎", runtime.evalString("'꟏'.toUpperCase()"))
+        assertEquals("꟏", runtime.evalString("'꟎'.toLowerCase()"))
+        assertEquals("꟒", runtime.evalString("'ꟓ'.toUpperCase()"))
+        assertEquals("ꟓ", runtime.evalString("'꟒'.toLowerCase()"))
+        assertEquals("꟔", runtime.evalString("'ꟕ'.toUpperCase()"))
+        assertEquals("ꟕ", runtime.evalString("'꟔'.toLowerCase()"))
+        // 辅助平面（Deseret）按码点转换，不拆散代理对
+        assertEquals("𐐀", runtime.evalString("'𐐨'.toUpperCase()"))
+        assertEquals("𐐨", runtime.evalString("'𐐀'.toLowerCase()"))
+        // Final_Sigma：前方需有 Cased（可隔 Case_Ignorable），后方不得再有 Cased
+        assertEquals("ας", runtime.evalString("'ΑΣ'.toLowerCase()"))
+        assertEquals("ασα", runtime.evalString("'ΑΣΑ'.toLowerCase()"))
+        assertEquals("σ", runtime.evalString("'Σ'.toLowerCase()"))
+        assertEquals("ας.", runtime.evalString("'ΑΣ.'.toLowerCase()"))
+        assertEquals("άς", runtime.evalString("'ΆΣ'.toLowerCase()"))
+        assertEquals("άσα", runtime.evalString("'ΆΣΑ'.toLowerCase()"))
+        assertEquals("́σ", runtime.evalString("'́Σ'.toLowerCase()"))
+        // 非 Case_Ignorable 的符号会阻止词尾判定
+        assertEquals("a😀σ", runtime.evalString("'A😀Σ'.toLowerCase()"))
+        // U+0345 同时是 Cased 与 Case_Ignorable，在前后扫描中按可忽略处理
+        assertEquals("ͅσ", runtime.evalString("'ͅΣ'.toLowerCase()"))
+        assertEquals("ᾳς", runtime.evalString("'ᾼΣ'.toLowerCase()"))
+        assertEquals("aςͅ", runtime.evalString("'AΣͅ'.toLowerCase()"))
+        assertEquals("aσͅα", runtime.evalString("'AΣͅΑ'.toLowerCase()"))
+    }
+
+    @Test
     fun `Array 泛型方法遵循原型链 稀疏与数组型对象语义`() = runTest {
         val runtime = TestRuntime()
         // pop 通过 Get 读取原型链元素，并删除自有属性

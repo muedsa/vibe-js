@@ -39,6 +39,8 @@ FILES = {
     "CompositionExclusions.txt": UCD_BASE + "CompositionExclusions.txt",
     # 忽略大小写正则的简单大小写折叠
     "CaseFolding.txt": UCD_BASE + "CaseFolding.txt",
+    # String 大小写转换的特殊映射（完整映射与词尾 Sigma 条件）
+    "SpecialCasing.txt": UCD_BASE + "SpecialCasing.txt",
 }
 
 
@@ -66,6 +68,7 @@ def main() -> None:
         "gen_identifier_data.py",
         "gen_normalization_data.py",
         "gen_case_folding.py",
+        "gen_case_mapping.py",
     ):
         print(f"run {script}")
         runpy.run_path(str(tools / script), run_name="__main__")

@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.value.JSBoxedPrimitive
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.UnicodeCaseMapping
 import com.muedsa.js.runtime.UnicodeNormalizer
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
@@ -460,7 +461,7 @@ object StringBuiltins {
             key = PropertyKey.Str("toLowerCase"),
             value = BuiltinHelpers.method(intrinsics, "toLowerCase", 0) { interpreter, thisValue, _ ->
                 requireCoercible(interpreter, thisValue, "String.prototype.toLowerCase")
-                JSString(jsLowercase(interpreter.toStringValue(thisValue)))
+                JSString(UnicodeCaseMapping.toLowerCase(interpreter.toStringValue(thisValue)))
             },
         )
 
@@ -468,7 +469,7 @@ object StringBuiltins {
             key = PropertyKey.Str("toUpperCase"),
             value = BuiltinHelpers.method(intrinsics, "toUpperCase", 0) { interpreter, thisValue, _ ->
                 requireCoercible(interpreter, thisValue, "String.prototype.toUpperCase")
-                JSString(interpreter.toStringValue(thisValue).uppercase())
+                JSString(UnicodeCaseMapping.toUpperCase(interpreter.toStringValue(thisValue)))
             },
         )
 
@@ -478,7 +479,7 @@ object StringBuiltins {
                 if (thisValue is JSNull || thisValue is JSUndefined) {
                     interpreter.typeError("String.prototype.toLocaleLowerCase called on null or undefined")
                 }
-                JSString(jsLowercase(interpreter.toStringValue(thisValue)))
+                JSString(UnicodeCaseMapping.toLowerCase(interpreter.toStringValue(thisValue)))
             },
         )
 
@@ -488,7 +489,7 @@ object StringBuiltins {
                 if (thisValue is JSNull || thisValue is JSUndefined) {
                     interpreter.typeError("String.prototype.toLocaleUpperCase called on null or undefined")
                 }
-                JSString(interpreter.toStringValue(thisValue).uppercase())
+                JSString(UnicodeCaseMapping.toUpperCase(interpreter.toStringValue(thisValue)))
             },
         )
 
@@ -1264,58 +1265,6 @@ object StringBuiltins {
         }
         return builder.toString()
     }
-    /**
-     * 小写转换并应用希腊字母 Sigma 的上下文规则：
-     * 词尾（前后均为 Case_Ignorable 包围时）使用 ς，否则使用 σ。
-     */
-    private fun jsLowercase(text: String): String {
-        if ('\u03A3' !in text) return text.lowercase()
-        val builder = StringBuilder(text.length)
-        for (index in text.indices) {
-            val c = text[index]
-            if (c != '\u03A3') {
-                builder.append(c.lowercaseChar())
-                continue
-            }
-            // Unicode Final_Sigma 的常见实现行为：只要前面出现过有大小写的字母
-            // 且后面没有字母，就使用词尾形式（标点不阻止词尾判断）
-            var precededByCased = false
-            for (cursor in 0 until index) {
-                if (isCasedCharacter(text, cursor)) {
-                    precededByCased = true
-                    break
-                }
-            }
-            var followedByCased = false
-            for (cursor in index + 1 until text.length) {
-                if (isCasedCharacter(text, cursor)) {
-                    followedByCased = true
-                    break
-                }
-            }
-            builder.append(if (precededByCased && !followedByCased) '\u03C2' else '\u03C3')
-        }
-        return builder.toString()
-    }
-
-    /** 判断位置上的字符是否为有大小写的字母；代理对按一个字符处理。 */
-    private fun isCasedCharacter(text: String, index: Int): Boolean {
-        val c = text[index]
-        if (c.isHighSurrogate() || c.isLowSurrogate()) return true // 近似：星体平面字母
-        return c.isLetter()
-    }
-
-    /** Unicode Case_Ignorable 的近似判定（组合符号、格式字符与修饰符）。 */
-    private fun isCaseIgnorable(c: Char): Boolean = when (c.category) {
-        kotlin.text.CharCategory.NON_SPACING_MARK,
-        kotlin.text.CharCategory.ENCLOSING_MARK,
-        kotlin.text.CharCategory.COMBINING_SPACING_MARK,
-        kotlin.text.CharCategory.FORMAT,
-        -> true
-
-        else -> c == '\'' || c == '\u2019'
-    }
-
     /**
      * replaceAll 字符串路径的 GetSubstitution：无捕获组与命名组，
      * 因此 $1/$<name> 等保持字面量，仅展开 $$、$&、$`、$'。
