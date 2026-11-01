@@ -3218,6 +3218,12 @@ class RuntimeSemanticsRegressionTest {
             "new Date('1970').toISOString() === '1970-01-01T00:00:00.000Z' &&" +
                 " Number.isNaN(new Date(NaN).getTimezoneOffset())"
         ))
+        // ISO 扩展年份：正负号 + 至少 6 位数字
+        assertEquals(true, runtime.evalBoolean(
+            "new Date(253402300800000).toISOString() === '+010000-01-01T00:00:00.000Z' &&" +
+                " new Date(-62167219200000).toISOString() === '0000-01-01T00:00:00.000Z' &&" +
+                " new Date(-8.64e15).toISOString() === '-271821-04-20T00:00:00.000Z'"
+        ))
     }
 
     @Test

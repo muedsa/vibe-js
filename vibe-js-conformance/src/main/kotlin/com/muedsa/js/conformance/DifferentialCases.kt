@@ -738,6 +738,90 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "(function () { try { decodeURIComponent('%C0%AF'); return 'none'; }" +
             " catch (e) { return e.name; } })()"
     ),
+    // String.fromCharCode / fromCodePoint 的 ToUint16/ToIntegerOrInfinity 与 early error
+    DifferentialCase(
+        "string-fromcodepoint-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return String.fromCharCode() === '' && String.fromCharCode(65, 66); }); " +
+            "push(function () { return [String.fromCharCode(0x1F600).charCodeAt(0), " +
+            "String.fromCharCode(-1).charCodeAt(0), String.fromCharCode(NaN, 65.9, Infinity).length]" +
+            ".join(','); }); " +
+            "push(function () { return String.fromCharCode({ valueOf: function () { return 66; } }); }); " +
+            "push(function () { try { String.fromCharCode(Symbol('s')); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { return String.fromCodePoint() === ''; }); " +
+            "push(function () { var s = String.fromCodePoint(0x1F600); " +
+            "return [s.length, s.codePointAt(0)].join(','); }); " +
+            "push(function () { return String.fromCodePoint(65, 0x10FFFF).length; }); " +
+            "push(function () { return [String.fromCodePoint(NaN).charCodeAt(0), " +
+            "String.fromCodePoint(65.9), String.fromCodePoint(-0).charCodeAt(0)].join(','); }); " +
+            "push(function () { try { String.fromCodePoint(0x110000); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { String.fromCodePoint(-1); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { String.fromCodePoint(Infinity); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { String.fromCodePoint(Symbol('s')); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "return out.join('|'); })()"
+    ),
+    // Date ISO 序列化的扩展年份与接收者校验
+    DifferentialCase(
+        "date-iso-extended-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return new Date(-1).toISOString(); }); " +
+            "push(function () { return new Date(-62167219200000).toISOString(); }); " +
+            "push(function () { return new Date(-62135596800000).toISOString(); }); " +
+            "push(function () { return new Date(253402300799999).toISOString(); }); " +
+            "push(function () { return new Date(253402300800000).toISOString(); }); " +
+            "push(function () { return new Date(-1).toJSON() + '|' + String(new Date(NaN).toJSON()); }); " +
+            "push(function () { try { Date.prototype.toISOString.call({}); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "return out.join('|'); })()"
+    ),
+    // URI 编解码矩阵：保留字符、转义集合、非法 UTF-8 与孤立代理项
+    DifferentialCase(
+        "uri-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return encodeURIComponent(\"a b!~*'()\"); }); " +
+            "push(function () { return encodeURI('a b;/?:@&=+$,#') + '|' + " +
+            "encodeURIComponent('a b;/?:@&=+$,#'); }); " +
+            "push(function () { return encodeURIComponent('\\u00E9\\u4F60\\uD83D\\uDE00') + '|' + " +
+            "decodeURIComponent(encodeURIComponent('\\u00E9\\u4F60\\uD83D\\uDE00')); }); " +
+            "push(function () { return decodeURIComponent('%c3%a9') + '|' + " +
+            "decodeURIComponent('%41%00') + '|' + decodeURIComponent('%2525'); }); " +
+            "push(function () { return decodeURI('%2F%2f') + '|' + decodeURIComponent('%2F%2f'); }); " +
+            "push(function () { try { encodeURIComponent('\\uD800'); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { encodeURIComponent('\\uDC00'); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { decodeURIComponent('%FF'); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { decodeURIComponent('%C3'); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { decodeURIComponent('%C3%28'); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { decodeURI('%E4%BD%A0'); return 'ok'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { decodeURIComponent('%'); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { decodeURIComponent('%2'); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { try { decodeURIComponent('%GG'); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { return encodeURIComponent(undefined) + '|' + " +
+            "encodeURIComponent(null) + '|' + encodeURIComponent(123) + '|' + " +
+            "encodeURIComponent(true); }); " +
+            "push(function () { return encodeURI('\\uD83D\\uDE00') + '|' + " +
+            "decodeURI('%F0%9F%98%80'); }); " +
+            "push(function () { return encodeURIComponent(\"AZaz09-_.!~*'()\"); }); " +
+            "push(function () { return encodeURI(\"!~*'()\") + '|' + " +
+            "encodeURIComponent('#$&+,/:;=?@'); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase(
         "parse-int-int32-radix",
         "[parseInt('11', Infinity), parseInt('11', NaN), parseInt('11', 4294967306)]" +

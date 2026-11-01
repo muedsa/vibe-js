@@ -73,7 +73,7 @@
 | JSON | ✅ | well-formed 字符串转义（孤立代理项）、parse（reviver 快照键/原型链 Get/CreateDataProperty 不变量与 context.source）、stringify（replacer/space 的包装对象转换、值位置按内部槽展开）、`rawJSON`/`isRawJSON`；字符串字面量允许 U+2028/U+2029（JSON 超集） |
 | Error | ✅ | Error/TypeError/RangeError/ReferenceError/SyntaxError/EvalError/URIError、SuppressedError（error/suppressed/可选 message）、`Error.isError`、Error.prototype.toString（name/message 缺省规则与不可强制转换接收者）、Error.prototype.stack 访问器 |
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile 与旧式八进制数字转义、超大 `{m,n}` 量词与零宽迭代/捕获回滚、u+i 基于 CaseFolding.txt 的简单折叠、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
-| Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、ISO 缺省字段与 0..99 年映射差异（构造器/UTC 映射，setFullYear 不映射）、常用 getter/setter（无效日期参数顺序、规范 length）、toString 本地格式/toUTCString 与负年份补零、toISOString/toJSON；本地时间按 UTC 处理 |
+| Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、ISO 缺省字段与 0..99 年映射差异（构造器/UTC 映射，setFullYear 不映射）、常用 getter/setter（无效日期参数顺序、规范 length）、toString 本地格式/toUTCString 与负年份补零、toISOString（扩展年份符号 + 6 位数字）/toJSON；本地时间按 UTC 处理 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；forEach 与迭代器为实时语义（墓碑存储：遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代，支持非注册 Symbol 键 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |

@@ -558,7 +558,8 @@ object DateBuiltins {
         val parts = DateMath.parts(time) ?: return null
         val year = when {
             parts.year in 0..9999 -> pad(parts.year, 4)
-            parts.year > 9999 -> "+${parts.year}"
+            // 扩展年份（ISO 8601）：正负号 + 至少 6 位数字
+            parts.year > 9999 -> "+${pad(parts.year, 6)}"
             else -> "-${pad(-parts.year, 6)}"
         }
         return "$year-${pad(parts.month + 1, 2)}-${pad(parts.day, 2)}T" +
