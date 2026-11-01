@@ -145,7 +145,7 @@ object SetBuiltins {
         fun iteratorMethod(
             name: String,
             valueFor: (JSValue) -> JSValue,
-        ) {
+        ): JSValue {
             val method = BuiltinHelpers.method(intrinsics, name, 0) { interpreter, thisValue, _ ->
                 val set = requireSet(interpreter, thisValue, "Set.prototype.$name")
                 var index = 0
@@ -168,13 +168,13 @@ object SetBuiltins {
                 }
             }
             setPrototype.defineDataProperty(PropertyKey.Str(name), method)
-            if (name == "values") {
-                setPrototype.defineDataProperty(PropertyKey.Sym(intrinsics.symbolIterator), method)
-            }
+            return method
         }
 
-        iteratorMethod("values") { it }
-        iteratorMethod("keys") { it }
+        val valuesMethod = iteratorMethod("values") { it }
+        // 规范：Set.prototype.keys 与 values 是同一函数对象
+        setPrototype.defineDataProperty(PropertyKey.Str("keys"), valuesMethod)
+        setPrototype.defineDataProperty(PropertyKey.Sym(intrinsics.symbolIterator), valuesMethod)
         iteratorMethod("entries") { value ->
             JSArray(
                 mutableListOf<JSValue?>(value, value),

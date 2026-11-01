@@ -899,8 +899,9 @@ class RuntimeSemanticsRegressionTest {
         assertEquals("AsyncFunction", runtime.evalString(
             "var F = async function () {}.constructor; F.prototype[Symbol.toStringTag]"
         ))
+        // %AsyncFunction% 的 [[Prototype]] 是 %Function%（而非 Function.prototype）
         assertEquals(true, runtime.evalBoolean(
-            "var F = async function () {}.constructor; Object.getPrototypeOf(F) === Function.prototype"
+            "var F = async function () {}.constructor; Object.getPrototypeOf(F) === Function"
         ))
         // async 函数没有 own prototype；动态构造保留源码用于 toString
         assertEquals(true, runtime.evalBoolean(
@@ -3438,6 +3439,53 @@ class RuntimeSemanticsRegressionTest {
                 " ({ async: 3 }).async === 3 &&" +
                 " typeof ({ async() { return 4; } }).async === 'function' &&" +
                 " typeof a.foo === 'function' && typeof b.xy === 'function'"
+        ))
+    }
+
+    @Test
+    fun `Array reduce 与 toString 及小型内建边界`() = runTest {
+        val runtime = TestRuntime()
+        // reduce 的初始元素只 Get 一次（getter 不被重复调用）
+        assertEquals(true, runtime.evalBoolean(
+            "var first = 0, second = 0; var arr = [, , ];" +
+                " Object.defineProperty(arr, '0', { get: function () { first++; return 11; }," +
+                " configurable: true });" +
+                " Object.defineProperty(arr, '1', { get: function () { second++; return 9; }," +
+                " configurable: true });" +
+                " var seen = [];" +
+                " arr.reduce(function (p, v, i) { seen.push(i); return p + v; });" +
+                " first === 1 && second === 1 && seen.join(',') === '1' && arr.length === 2"
+        ))
+        // reduceRight 按捕获 len 迭代，getter 缩短 length 后 HasProperty 跳过已删除索引
+        assertEquals(true, runtime.evalBoolean(
+            "var called = 0; var a = [0, 1, 2, 3];" +
+                " Object.defineProperty(a, '4', { get: function () { a.length = 2; return 10; }," +
+                " configurable: true });" +
+                " var r = a.reduceRight(function (p, v) { called++; return p + v; });" +
+                " r === 11 && called === 2"
+        ))
+        // Array.prototype.toString 对非数组 this 退回 Object.prototype.toString
+        assertEquals(true, runtime.evalBoolean(
+            "Array.prototype.toString.call(true) === '[object Boolean]' &&" +
+                " Array.prototype.toString.call({}) === '[object Object]'"
+        ))
+        // lastIndexOf 显式 undefined fromIndex 视为 0
+        assertEquals(-1.0, runtime.evalNumber("[1, 2, 2].lastIndexOf(2, undefined)"))
+        // __proto__ 冒号形式不参与函数名推断
+        assertEquals(true, runtime.evalBoolean(
+            "var o = { __proto__: function () {} };" +
+                " Object.getPrototypeOf(o).name !== '__proto__'"
+        ))
+        // Set.keys 与 values 是同一函数对象；AsyncFunction 是 Function 的子类
+        assertEquals(true, runtime.evalBoolean(
+            "Set.prototype.keys === Set.prototype.values"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "async function foo() {};" +
+                " var AF = foo.constructor;" +
+                " Object.getPrototypeOf(AF) === Function &&" +
+                " Object.getPrototypeOf(AF.prototype) === Function.prototype &&" +
+                " foo instanceof Function"
         ))
     }
 }

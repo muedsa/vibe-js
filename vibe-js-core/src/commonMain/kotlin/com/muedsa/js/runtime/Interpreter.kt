@@ -2769,12 +2769,26 @@ class Interpreter(
                         PropertyKey.Str(propertyName(element.key))
                     }
                     val value = evaluate(element.value)
+                    val literalKeyName = if (!element.computed) {
+                        when (val keyExpression = element.key) {
+                            is Identifier -> keyExpression.name
+                            is StringLiteral -> keyExpression.value
+                            else -> null
+                        }
+                    } else {
+                        null
+                    }
+                    // 冒号形式的 "__proto__: value" 是原型设置器，不参与 NamedEvaluation
+                    val isShorthand = element.value is Identifier &&
+                        element.value.range == element.key.range
+                    val isProtoSetter = literalKeyName == "__proto__" &&
+                        !element.method && !isShorthand && element.kind == PropertyKind.INIT
                     if (value is JSFunction && element.value is FunctionExpression) {
                         // 对象字面量方法/访问器的 HomeObject 是正在构建的对象
                         value.setMethodHome(result, result.prototype)
                         if (element.method) value.markAsMethod()
                     }
-                    if (value is JSFunction) {
+                    if (value is JSFunction && !isProtoSetter) {
                         val source = element.value
                         // 匿名函数/类按属性名推断名称；访问器使用 get/set 前缀，
                         // 非标识符键的方法（字符串/数字/计算键）也在此补名
@@ -2787,19 +2801,7 @@ class Interpreter(
                     }
                     when (element.kind) {
                         PropertyKind.INIT -> {
-                            val literalKeyName = if (!element.computed) {
-                                when (val keyExpression = element.key) {
-                                    is Identifier -> keyExpression.name
-                                    is StringLiteral -> keyExpression.value
-                                    else -> null
-                                }
-                            } else {
-                                null
-                            }
-                            // 冒号形式的 "__proto__: value" 设置原型；非对象/ null 忽略
-                            val isShorthand = element.value is Identifier &&
-                                element.value.range == element.key.range
-                            if (literalKeyName == "__proto__" && !element.method && !isShorthand) {
+                            if (isProtoSetter) {
                                 when (val prototypeValue = value) {
                                     is JSObject -> result.prototype = prototypeValue
                                     is JSNull -> result.prototype = null

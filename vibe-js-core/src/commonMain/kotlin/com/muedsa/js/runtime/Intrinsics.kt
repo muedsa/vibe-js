@@ -35,6 +35,9 @@ class Intrinsics(val globalObject: GlobalObject) {
     /** %ThrowTypeError% 内建函数：caller/arguments 访问器与严格 arguments.callee 共用同一对象。 */
     var throwTypeErrorFunction: JSNativeFunction? = null
 
+    /** %Function% 构造器：AsyncFunction 等派生构造器以它为 [[Prototype]]。 */
+    var functionConstructor: JSValue? = null
+
     /** 全局 parseInt/parseFloat：Number.parseInt 与全局属性必须是同一函数对象。 */
     var parseIntFunction: JSValue? = null
     var parseFloatFunction: JSValue? = null

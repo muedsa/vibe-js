@@ -31,6 +31,10 @@ object AsyncFunctionBuiltins {
             val body = if (args.isEmpty()) "" else interpreter.toStringValue(args.last())
             interpreter.createDynamicAsyncFunction(params, body)
         }
+        // 规范：%AsyncFunction% 的 [[Prototype]] 是 %Function%
+        (intrinsics.functionConstructor as? com.muedsa.js.runtime.value.JSObject)?.let {
+            asyncFunctionConstructor.prototype = it
+        }
 
         // 规范：AsyncFunction.prototype.constructor 不可写、不可枚举、可配置
         prototype.defineDataProperty(

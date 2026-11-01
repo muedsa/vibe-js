@@ -118,6 +118,32 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "[3, 1, 2].sort(function () { return NaN; }).join(',')"
     ),
     DifferentialCase("arr-lastindexof-negative", "[1, 2, 1].lastIndexOf(1, -2)"),
+    DifferentialCase("arr-lastindexof-undefined", "[1, 2, 2].lastIndexOf(2, undefined)"),
+    DifferentialCase(
+        "arr-toString-nonarray",
+        "[Array.prototype.toString.call(true), Array.prototype.toString.call({})].join('|')"
+    ),
+    DifferentialCase(
+        "arr-reduce-getter-once",
+        "(function () { var first = 0; var a = [, , ];" +
+            " Object.defineProperty(a, '0', { get: function () { first++; return 1; }," +
+            " configurable: true }); a.reduce(function (p, v) { return p + v; });" +
+            " return first; })()"
+    ),
+    DifferentialCase(
+        "obj-proto-name",
+        "(function () { var o = { __proto__: function () {} };" +
+            " return Object.getPrototypeOf(o).name !== '__proto__'; })()"
+    ),
+    DifferentialCase(
+        "set-keys-values-identity",
+        "Set.prototype.keys === Set.prototype.values"
+    ),
+    DifferentialCase(
+        "async-function-subclass",
+        "(function () { async function foo() {} var AF = foo.constructor;" +
+            " return Object.getPrototypeOf(AF) === Function && foo instanceof Function; })()"
+    ),
 
     // 对象、描述符与枚举
     DifferentialCase("obj-keys-order", "Object.keys({ b: 1, 2: 2, 1: 3, a: 4 }).join(',')"),

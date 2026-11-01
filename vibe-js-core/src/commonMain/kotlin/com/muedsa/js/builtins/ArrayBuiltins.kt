@@ -298,8 +298,26 @@ object ArrayBuiltins {
         arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("toString"),
             value = BuiltinHelpers.method(intrinsics, "toString", 0) { interpreter, thisValue, _ ->
+                // 规范：ToObject 后 Get("join")；不可调用时退回 Object.prototype.toString
                 val objectValue = requireObject(interpreter, thisValue, "Array.prototype.toString")
-                JSString(joinElements(interpreter, objectValue, lengthOf(interpreter, objectValue), ","))
+                val join = interpreter.getV(objectValue, PropertyKey.Str("join"))
+                if (interpreter.isCallable(join)) {
+                    JSString(
+                        interpreter.toStringValue(
+                            interpreter.callFunction(join, objectValue, emptyList())
+                        )
+                    )
+                } else {
+                    val fallback = interpreter.getV(
+                        intrinsics.objectPrototype,
+                        PropertyKey.Str("toString"),
+                    )
+                    JSString(
+                        interpreter.toStringValue(
+                            interpreter.callFunction(fallback, objectValue, emptyList())
+                        )
+                    )
+                }
             },
         )
 
@@ -404,7 +422,8 @@ object ArrayBuiltins {
                 val length = lengthOf(interpreter, objectValue)
                 // 规范：len 为 0 时直接返回 -1，不读取 fromIndex
                 if (length == 0L) return@method JSNumber(-1.0)
-                var fromIndex = if (args.size > 1 && args[1] !is JSUndefined) {
+                // 显式 undefined 按 ToIntegerOrInfinity 归一为 0（只有省略时才默认 length-1）
+                var fromIndex = if (args.size > 1) {
                     toIntegerOrInfinityNumber(interpreter, args[1]).toLong()
                 } else {
                     length - 1
@@ -690,11 +709,15 @@ object ArrayBuiltins {
                     accumulator = args[1]
                     startIndex = 0
                 } else {
+                    // HasProperty 后只 Get 一次，避免 getter 被重复调用
                     var initialIndex = -1L
+                    var initialValue: JSValue? = null
                     var index = 0L
                     while (index < length) {
-                        if (elementAt(interpreter, objectValue, index) != null) {
+                        val key = PropertyKey.Str(index.toString())
+                        if (objectValue.hasProperty(key)) {
                             initialIndex = index
+                            initialValue = interpreter.getV(objectValue, key)
                             break
                         }
                         index++
@@ -702,7 +725,7 @@ object ArrayBuiltins {
                     if (initialIndex < 0) {
                         interpreter.typeError("Reduce of empty array with no initial value")
                     }
-                    accumulator = elementAt(interpreter, objectValue, initialIndex) ?: JSUndefined
+                    accumulator = initialValue ?: JSUndefined
                     startIndex = initialIndex + 1
                 }
 
@@ -736,11 +759,15 @@ object ArrayBuiltins {
                     accumulator = args[1]
                     startIndex = length - 1
                 } else {
+                    // HasProperty 后只 Get 一次，避免 getter 被重复调用（长度变化也只按捕获的 len 迭代）
                     var initialIndex = -1L
+                    var initialValue: JSValue? = null
                     var index = length - 1
                     while (index >= 0) {
-                        if (elementAt(interpreter, objectValue, index) != null) {
+                        val key = PropertyKey.Str(index.toString())
+                        if (objectValue.hasProperty(key)) {
                             initialIndex = index
+                            initialValue = interpreter.getV(objectValue, key)
                             break
                         }
                         index--
@@ -748,7 +775,7 @@ object ArrayBuiltins {
                     if (initialIndex < 0) {
                         interpreter.typeError("Reduce of empty array with no initial value")
                     }
-                    accumulator = elementAt(interpreter, objectValue, initialIndex) ?: JSUndefined
+                    accumulator = initialValue ?: JSUndefined
                     startIndex = initialIndex - 1
                 }
 

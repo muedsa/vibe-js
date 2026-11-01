@@ -38,6 +38,7 @@ object FunctionBuiltins {
             val body = if (args.isEmpty()) "" else interpreter.toStringValue(args.last())
             interpreter.createDynamicFunction(params, body)
         }
+        intrinsics.functionConstructor = functionConstructor
 
         functionPrototype.defineDataProperty(
             key = PropertyKey.CONSTRUCTOR,
