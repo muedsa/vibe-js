@@ -1349,6 +1349,114 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "jsep",
+        url = "https://unpkg.com/jsep@0.3.4/build/jsep.js",
+        globalName = "jsep",
+        cases = listOf(
+            SmokeCase(
+                "version",
+                assertion("jsep.version === '0.3.4'"),
+            ),
+            SmokeCase(
+                "operator precedence",
+                assertion(
+                    "(function () { var ast = jsep('1 + 2 * 3'); " +
+                        "return ast.operator === '+' && ast.right.operator === '*' && " +
+                        "ast.right.left.value === 2; })()"
+                ),
+            ),
+            SmokeCase(
+                "member call",
+                assertion(
+                    "(function () { var ast = jsep('a.b[0](1)'); " +
+                        "return ast.type === 'CallExpression' && " +
+                        "ast.callee.type === 'MemberExpression' && ast.arguments[0].value === 1; })()"
+                ),
+            ),
+            SmokeCase(
+                "conditional",
+                assertion(
+                    "(function () { var ast = jsep('a ? b : c'); " +
+                        "return ast.type === 'ConditionalExpression' && " +
+                        "ast.consequent.name === 'b' && jsep('!a && b').type === 'LogicalExpression'; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "lunr",
+        url = "https://unpkg.com/lunr@2.3.9/lunr.min.js",
+        globalName = "lunr",
+        cases = listOf(
+            SmokeCase(
+                "version",
+                assertion("lunr.version === '2.3.9'"),
+            ),
+            SmokeCase(
+                "search",
+                assertion(
+                    "(function () { var idx = lunr(function () { this.ref('id'); this.field('title'); " +
+                        "this.add({ id: '1', title: 'hello world' }); " +
+                        "this.add({ id: '2', title: 'hello there' }); " +
+                        "this.add({ id: '3', title: 'goodbye' }); }); " +
+                        "return idx.search('hello').map(function (r) { return r.ref; }).join(',') === '2,1'; })()"
+                ),
+            ),
+            SmokeCase(
+                "single hit",
+                assertion(
+                    "(function () { var idx = lunr(function () { this.ref('id'); this.field('title'); " +
+                        "this.add({ id: '1', title: 'hello world' }); " +
+                        "this.add({ id: '3', title: 'goodbye' }); }); " +
+                        "return idx.search('goodbye').length === 1; })()"
+                ),
+            ),
+            SmokeCase(
+                "no match",
+                assertion(
+                    "(function () { var idx = lunr(function () { this.ref('id'); this.field('title'); " +
+                        "this.add({ id: '1', title: 'hello' }); }); " +
+                        "return idx.search('xyz').length === 0; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "fuse",
+        url = "https://unpkg.com/fuse.js@6.6.2/dist/fuse.min.js",
+        globalName = "Fuse",
+        cases = listOf(
+            SmokeCase(
+                "version",
+                assertion("Fuse.version === '6.6.2'"),
+            ),
+            SmokeCase(
+                "fuzzy search",
+                assertion(
+                    "(function () { var fuse = new Fuse([{ title: 'hello' }, { title: 'world' }], " +
+                        "{ keys: ['title'] }); " +
+                        "return fuse.search('hel').length === 1 && " +
+                        "fuse.search('hel')[0].item.title === 'hello'; })()"
+                ),
+            ),
+            SmokeCase(
+                "no match",
+                assertion(
+                    "(function () { var fuse = new Fuse([{ title: 'hello' }], { keys: ['title'] }); " +
+                        "return fuse.search('zzzz').length === 0; })()"
+                ),
+            ),
+            SmokeCase(
+                "threshold option",
+                assertion(
+                    "(function () { var fuse = new Fuse([{ title: 'hello' }, { title: 'world' }], " +
+                        "{ keys: ['title'], threshold: 0.1 }); " +
+                        "return fuse.search('wor').length === 1; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
