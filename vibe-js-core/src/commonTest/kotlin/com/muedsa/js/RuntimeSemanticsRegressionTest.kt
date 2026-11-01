@@ -3402,4 +3402,21 @@ class RuntimeSemanticsRegressionTest {
                 " objs[0] === objs[1] && objs[2] === objs[3] && objs[1] !== objs[2]"
         ))
     }
+
+    @Test
+    fun `单语句上下文中的 let 可作为标识符表达式并触发 ASI`() = runTest {
+        val runtime = TestRuntime()
+        // let 后换行：表达式语句 let + ASI，后续块/赋值作为独立语句执行
+        assertEquals(true, runtime.evalBoolean(
+            "var body = 0; for (var x in null) let\n{ body = 1; } body === 1"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "var value = 0; for (var x in null) let\nvalue = 1; value === 1"
+        ))
+        // `let [` 受 ExpressionStatement 前瞻限制，仍需报早期错误
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('for (var x in null) let\\n[1] = [];'); 'none' }" +
+                " catch (e) { e.name }"
+        ))
+    }
 }

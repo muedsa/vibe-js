@@ -331,12 +331,19 @@ class Parser(
         }
         var annexBFunction = false
         var singleStatementAtStart = false
+        var letAsExpression = false
         if (singleStatementContext) {
             singleStatementAtStart = true
             val tokenType = peek().type
-            if ((tokenType == TokenType.LET && isLetDeclarationStart()) ||
-                tokenType == TokenType.CONST || tokenType == TokenType.CLASS
-            ) {
+            // 单语句上下文禁止 let 词法声明；但 sloppy 下 let 可作为标识符表达式，
+            // 仅 `let [` 受 ExpressionStatement 前瞻限制（即使有换行也不能退化为表达式）。
+            if (tokenType == TokenType.LET && isLetDeclarationStart()) {
+                if (!allowLetAsIdentifier() || peek(1).type == TokenType.LBRACKET) {
+                    throw error("Lexical declaration cannot appear in a single-statement context")
+                }
+                letAsExpression = true
+            }
+            if (tokenType == TokenType.CONST || tokenType == TokenType.CLASS) {
                 throw error("Lexical declaration cannot appear in a single-statement context")
             }
             if (isAwaitUsingDeclarationStart() || isUsingDeclarationStart()) {
@@ -365,7 +372,9 @@ class Parser(
             }
 
             TokenType.VAR, TokenType.LET, TokenType.CONST ->
-                if (peek().type == TokenType.LET && allowLetAsIdentifier() && !isLetDeclarationStart()) {
+                if (peek().type == TokenType.LET && allowLetAsIdentifier() &&
+                    (!isLetDeclarationStart() || letAsExpression)
+                ) {
                     val expression = parseExpression()
                     val start = expression.range.start
                     consumeSemicolon()

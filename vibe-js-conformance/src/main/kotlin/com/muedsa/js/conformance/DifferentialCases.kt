@@ -273,6 +273,10 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             " return (seen[0] === seen[1]) + ':' + (seen[1] === seen[2]); })()"
     ),
     DifferentialCase(
+        "let-asi-single-statement",
+        "(function () { var y = 0; for (var x in null) let\n y = 1; return y; })()"
+    ),
+    DifferentialCase(
         "template-raw-frozen",
         "(function () { var obj; function tag(t) { obj = t; }" +
             " function f() { tag`a\${1}b`; } f();" +
