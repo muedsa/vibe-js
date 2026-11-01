@@ -1,10 +1,10 @@
 package com.muedsa.js.builtins
 
 /**
- * Date 相关的日期计算（UTC）。
+ * Date 相关的日期计算（以 UTC 字段为基础）。
  *
- * 说明：common 代码无法直接获取时区信息，阶段 B 的本地时间方法与 UTC 方法保持一致，
- * 时区偏移固定为 0；后续如需真实时区，可通过宿主抽象扩展。
+ * 说明：本地时间换算由 DateBuiltins 通过宿主 HostEnvironment.utcOffsetMillis
+ * 完成；本对象只负责日历与 UTC 字段运算。
  */
 internal object DateMath {
 
@@ -188,7 +188,7 @@ internal object DateMath {
             )
             return timeClip(time)
         }
-        // 自身 toString 输出（本地时间固定 UTC）："Thu Jan 01 1970 00:00:00 GMT+0000 (...)"
+        // 自身 toString 输出（本地时区，含 GMT±HHMM 后缀）："Thu Jan 01 1970 08:00:00 GMT+0800 (...)"
         val local = LOCAL_DATE_PATTERN.matchEntire(trimmed)
         if (local != null) {
             val monthIndex = MONTH_NAMES.indexOf(local.groupValues[1])
