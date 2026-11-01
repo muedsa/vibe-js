@@ -1115,6 +1115,34 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             "push(function () { return 'abc'.replace(/(b)/, '$0'); }); " +
             "return out.join('|'); })()"
     ),
+    // RegExp d 标志：indices 捕获区间、命名组、可选组与全局重算
+    DifferentialCase(
+        "regexp-indices-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { var m = /(a)(?<n>b)/d.exec('xab'); return JSON.stringify([m.index, " +
+            "m.indices[0], m.indices[1], m.indices[2], m.indices.groups.n]); }); " +
+            "push(function () { var m = /(a)?(b)/d.exec('b'); " +
+            "return JSON.stringify([m.indices[1] === undefined, m.indices[2]]); }); " +
+            "push(function () { var r = /(?<x>a)|(?<x>b)/d; var m = r.exec('b'); " +
+            "return JSON.stringify(m.indices.groups.x); }); " +
+            "push(function () { var m = /(?=(a))/d.exec('a'); return JSON.stringify(m.indices); }); " +
+            "push(function () { var r = /a/dg; r.exec('aa'); var first = r.indices[0]; r.exec('aa'); " +
+            "return JSON.stringify([first, r.indices[0]]); }); " +
+            "push(function () { return /a/d.hasIndices + '|' + /a/.hasIndices + '|' + /a/d.flags; }); " +
+            "push(function () { var m = /(a)|(b)/d.exec('b'); " +
+            "return JSON.stringify([m.indices[1], m.indices[2]]); }); " +
+            "push(function () { var m = /(?<y>z)?(a)/d.exec('a'); " +
+            "return (m.indices.groups.y === undefined) + '|' + " +
+            "(Object.getPrototypeOf(m.indices.groups) === null); }); " +
+            "push(function () { return JSON.stringify('ab'.match(/a(b)/d).indices); }); " +
+            "push(function () { var r = /(a)/d; var m = r.exec('a'); return m.indices.length; }); " +
+            "push(function () { return JSON.stringify(/(?<=a)(b)/d.exec('ab').indices); }); " +
+            "push(function () { return String(/a/d.exec('b')); }); " +
+            "push(function () { var m = /((a)(b))?/d.exec(''); return JSON.stringify(m.indices); }); " +
+            "push(function () { var m = /a/d; var r = m.exec('a'); return m === m && r.index === 0; }); " +
+            "return out.join('|'); })()"
+    ),
     // 正则匹配矩阵：u/s/m 标志、astral、命名组、断言、转义与回溯
     DifferentialCase(
         "regexp-match-matrix",
