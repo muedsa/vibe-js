@@ -208,24 +208,67 @@ object GlobalBuiltins {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()"
     private const val URI_RESERVED = ";/?:@&=+\$,#"
 
-    /** ECMAScript encodeURI/encodeURIComponent 的百分号编码。 */
+    /**
+     * ECMAScript encodeURI/encodeURIComponent 的百分号编码。
+     *
+     * 按 UTF-16 码元转换为 UTF-8；孤立代理项抛 URIError（Kotlin 默认编码会静默替换）。
+     */
     private fun encodeUri(text: String, extraUnescaped: String): String {
         val builder = StringBuilder(text.length)
-        for (byte in text.encodeToByteArray()) {
-            val code = byte.toInt() and 0xFF
-            val character = code.toChar()
-            if (code < 0x80 && (character in URI_UNRESERVED || character in extraUnescaped)) {
-                builder.append(character)
-            } else {
-                builder.append('%')
-                builder.append(HEX_UPPER[code shr 4])
-                builder.append(HEX_UPPER[code and 0x0F])
+        var index = 0
+        while (index < text.length) {
+            val character = text[index]
+            if (character.code < 0x80) {
+                if (character in URI_UNRESERVED || character in extraUnescaped) {
+                    builder.append(character)
+                } else {
+                    appendPercentByte(builder, character.code)
+                }
+                index++
+                continue
+            }
+            val codePoint: Int
+            when {
+                character.isHighSurrogate() -> {
+                    if (index + 1 >= text.length || !text[index + 1].isLowSurrogate()) {
+                        throw uriError("URI malformed")
+                    }
+                    codePoint = 0x10000 +
+                        ((character.code - 0xD800) shl 10) +
+                        (text[index + 1].code - 0xDC00)
+                    index += 2
+                }
+
+                character.isLowSurrogate() -> throw uriError("URI malformed")
+                else -> {
+                    codePoint = character.code
+                    index++
+                }
+            }
+            when {
+                codePoint < 0x800 -> {
+                    appendPercentByte(builder, 0xC0 or (codePoint shr 6))
+                    appendPercentByte(builder, 0x80 or (codePoint and 0x3F))
+                }
+
+                codePoint < 0x10000 -> {
+                    appendPercentByte(builder, 0xE0 or (codePoint shr 12))
+                    appendPercentByte(builder, 0x80 or ((codePoint shr 6) and 0x3F))
+                    appendPercentByte(builder, 0x80 or (codePoint and 0x3F))
+                }
+
+                else -> {
+                    appendPercentByte(builder, 0xF0 or (codePoint shr 18))
+                    appendPercentByte(builder, 0x80 or ((codePoint shr 12) and 0x3F))
+                    appendPercentByte(builder, 0x80 or ((codePoint shr 6) and 0x3F))
+                    appendPercentByte(builder, 0x80 or (codePoint and 0x3F))
+                }
             }
         }
         return builder.toString()
     }
 
-    /** 解码百分号编码；非法序列抛 URIError。 */
+    /** 解码百分号编码；按 UTF-8 字符逐个验证，非法序列抛 URIError。 */
     private fun decodeUri(text: String, preserveReserved: Boolean): String {
         val builder = StringBuilder(text.length)
         var index = 0
@@ -235,35 +278,54 @@ object GlobalBuiltins {
                 index++
                 continue
             }
-            val bytes = mutableListOf<Byte>()
-            while (index < text.length && text[index] == '%') {
-                if (index + 2 >= text.length) throw uriError("URI malformed")
-                val high = hexValue(text[index + 1])
-                val low = hexValue(text[index + 2])
-                if (high < 0 || low < 0) throw uriError("URI malformed")
-                bytes.add(((high shl 4) or low).toByte())
+            val sequenceStart = index
+            val first = readPercentByte(text, index) ?: throw uriError("URI malformed")
+            index += 3
+            // 依据 UTF-8 首字节确定后续字节数；后续必须紧邻百分号转义
+            val continuationCount = when (first) {
+                in 0x00..0x7F -> 0
+                in 0xC2..0xDF -> 1
+                in 0xE0..0xEF -> 2
+                in 0xF0..0xF4 -> 3
+                else -> throw uriError("URI malformed")
+            }
+            val bytes = ByteArray(continuationCount + 1)
+            bytes[0] = first.toByte()
+            for (offset in 1..continuationCount) {
+                val byte = readPercentByte(text, index) ?: throw uriError("URI malformed")
+                if (byte and 0xC0 != 0x80) throw uriError("URI malformed")
+                bytes[offset] = byte.toByte()
                 index += 3
             }
             val decoded = try {
-                bytes.toByteArray().decodeToString(throwOnInvalidSequence = true)
+                bytes.decodeToString(throwOnInvalidSequence = true)
             } catch (_: Throwable) {
                 throw uriError("URI malformed")
             }
-            for (character in decoded) {
-                if (preserveReserved && character in URI_RESERVED) {
-                    // decodeURI 不解码保留字符，保持原始百分号编码
-                    for (byte in character.toString().encodeToByteArray()) {
-                        val code = byte.toInt() and 0xFF
-                        builder.append('%')
-                        builder.append(HEX_UPPER[code shr 4])
-                        builder.append(HEX_UPPER[code and 0x0F])
-                    }
-                } else {
-                    builder.append(character)
-                }
+            // decodeURI 保留保留字符：输出原始转义文本（保留大小写），而不是重新编码
+            if (preserveReserved && decoded.length == 1 && decoded[0] in URI_RESERVED) {
+                builder.append(text, sequenceStart, index)
+            } else {
+                builder.append(decoded)
             }
         }
         return builder.toString()
+    }
+
+    /** 读取 "%XX" 的字节值；位置越界或非十六进制返回 null。 */
+    private fun readPercentByte(text: String, index: Int): Int? {
+        if (index + 2 >= text.length || text[index] != '%') return null
+        val high = hexValue(text[index + 1])
+        val low = hexValue(text[index + 2])
+        if (high < 0 || low < 0) return null
+        return (high shl 4) or low
+    }
+
+    /** 追加一个百分号编码的字节。 */
+    private fun appendPercentByte(builder: StringBuilder, code: Int) {
+        builder.append('%')
+        builder.append(HEX_UPPER[code shr 4])
+        builder.append(HEX_UPPER[code and 0x0F])
     }
 
     private fun hexValue(character: Char): Int = when (character) {

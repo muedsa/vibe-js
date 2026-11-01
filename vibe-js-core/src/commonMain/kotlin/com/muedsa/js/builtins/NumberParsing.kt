@@ -37,10 +37,11 @@ internal object NumberParsing {
         }
 
         val radixArg = args.getOrElse(1) { com.muedsa.js.runtime.value.JSUndefined }
+        // 规范：ToInt32(radix)（NaN/Infinity 归 0，超出范围按 2^32 取模）
         var radix = if (radixArg is com.muedsa.js.runtime.value.JSUndefined) {
             0
         } else {
-            interpreter.toNumber(radixArg).toInt()
+            toInt32(interpreter.toNumber(radixArg))
         }
 
         var stripHexPrefix = false
@@ -94,15 +95,16 @@ internal object NumberParsing {
         val length = input.length
         if (index < length && (input[index] == '+' || input[index] == '-')) index++
 
+        // 规范只接受 ASCII 0-9（不认 Unicode 数字）
         var digitsStart = index
-        while (index < length && input[index].isDigit()) index++
+        while (index < length && input[index] in '0'..'9') index++
 
         var hasDigits = index > digitsStart
 
         if (index < length && input[index] == '.') {
             index++
             val fractionStart = index
-            while (index < length && input[index].isDigit()) index++
+            while (index < length && input[index] in '0'..'9') index++
             if (index > fractionStart) hasDigits = true
         }
 
@@ -113,7 +115,7 @@ internal object NumberParsing {
             index++
             if (index < length && (input[index] == '+' || input[index] == '-')) index++
             val exponentDigitsStart = index
-            while (index < length && input[index].isDigit()) index++
+            while (index < length && input[index] in '0'..'9') index++
             if (index == exponentDigitsStart) {
                 // 指数部分不完整：回退到指数之前
                 index = exponentStart
@@ -129,5 +131,13 @@ internal object NumberParsing {
         in 'a'..'z' -> c - 'a' + 10
         in 'A'..'Z' -> c - 'A' + 10
         else -> -1
+    }
+
+    /** 规范 ToInt32：NaN/±Infinity 为 0，其余按 2^32 取模并解释为有符号 32 位。 */
+    private fun toInt32(value: Double): Int {
+        if (value.isNaN() || value.isInfinite()) return 0
+        var modulo = value % 4294967296.0
+        if (modulo < 0.0) modulo += 4294967296.0
+        return modulo.toLong().toInt()
     }
 }

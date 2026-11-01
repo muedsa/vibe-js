@@ -265,6 +265,35 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("coerce-number-array", "Number([1])"),
     DifferentialCase("coerce-boolean-object", "Boolean(new Boolean(false))"),
 
+    // URI 编解码与数字解析边界
+    DifferentialCase(
+        "uri-encode-reserved",
+        "[encodeURI(';/?:@&=+\$,#'), encodeURIComponent(';')].join('|')"
+    ),
+    DifferentialCase(
+        "uri-encode-lone-surrogate",
+        "(function () { try { encodeURI('\\uD800'); return 'none'; }" +
+            " catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
+        "uri-decode-reserved-case",
+        "decodeURI('%3b%2f') + '|' + decodeURIComponent('%3b%2f')"
+    ),
+    DifferentialCase(
+        "uri-decode-invalid",
+        "(function () { try { decodeURIComponent('%C0%AF'); return 'none'; }" +
+            " catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
+        "parse-int-int32-radix",
+        "[parseInt('11', Infinity), parseInt('11', NaN), parseInt('11', 4294967306)]" +
+            ".join(',')"
+    ),
+    DifferentialCase(
+        "parse-float-ascii-digits",
+        "[String(parseFloat('\\u0661\\u0662\\u0663')), parseFloat('1\\u0661')].join(',')"
+    ),
+
     // eval 完成值与异常控制流
     DifferentialCase("eval-do-completion", "eval('do 1; while (false)')"),
     DifferentialCase("eval-for-break-completion", "eval('for (var i = 0;;) { if (i === 1) break; i++; }')"),

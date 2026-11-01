@@ -3267,4 +3267,50 @@ class RuntimeSemanticsRegressionTest {
                 " o[0] === 'a' && o[1] === 'b' && o.length === 2"
         ))
     }
+
+    @Test
+    fun `URI 编解码与数字解析的规范边界`() = runTest {
+        val runtime = TestRuntime()
+        // encodeURI 不编码保留字符，encodeURIComponent 编码
+        assertEquals(true, runtime.evalBoolean(
+            "encodeURI(';/?:@&=+\$,#') === ';/?:@&=+\$,#' &&" +
+                " encodeURIComponent(';') === '%3B'"
+        ))
+        // 孤立代理项抛 URIError
+        assertEquals("URIError", runtime.evalString(
+            "try { encodeURI('\\uD800'); 'none' } catch (e) { e.name }"
+        ))
+        assertEquals("URIError", runtime.evalString(
+            "try { encodeURIComponent('a\\uDC00'); 'none' } catch (e) { e.name }"
+        ))
+        // UTF-8 编码与解码
+        assertEquals(true, runtime.evalBoolean(
+            "encodeURIComponent('中') === '%E4%B8%AD' &&" +
+                " decodeURIComponent('%E4%B8%AD') === '中'"
+        ))
+        // decodeURI 保留保留字符的原始转义大小写
+        assertEquals(true, runtime.evalBoolean(
+            "decodeURI('%3b%2f') === '%3b%2f' &&" +
+                " decodeURIComponent('%3b%2f') === ';/' &&" +
+                " decodeURI('%E4%B8%AD%3b') === '中%3b'"
+        ))
+        // 非法 UTF-8 序列抛 URIError
+        assertEquals("URIError", runtime.evalString(
+            "try { decodeURIComponent('%80'); 'none' } catch (e) { e.name }"
+        ))
+        assertEquals("URIError", runtime.evalString(
+            "try { decodeURIComponent('%C0%AF'); 'none' } catch (e) { e.name }"
+        ))
+        assertEquals("URIError", runtime.evalString(
+            "try { decodeURI('%E4%B8'); 'none' } catch (e) { e.name }"
+        ))
+        // parseInt 的 radix 按 ToInt32；parseFloat 只接受 ASCII 数字
+        assertEquals(true, runtime.evalBoolean(
+            "parseInt('11', Infinity) === 11 && parseInt('11', NaN) === 11 &&" +
+                " parseInt('11', 4294967306) === 11"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "isNaN(parseFloat('\\u0661\\u0662\\u0663')) && parseFloat('1\\u0661') === 1"
+        ))
+    }
 }
