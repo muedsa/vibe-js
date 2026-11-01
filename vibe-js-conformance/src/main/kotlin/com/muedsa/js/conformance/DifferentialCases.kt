@@ -950,6 +950,34 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-fold-class-iu", "[/[k]/iu.test('\\u212A'), /[a-z]/iu.test('\\u212A'), /[a-z]/iu.test('\\u017F'), /[k]/iu.test('K'), /[\\u00DF]/iu.test('\\u1E9E')].join(',')"),
     DifferentialCase("regexp-fold-word-nonu", "[/\\w/i.test('\\u212A'), /\\w/i.test('\\u017F'), /\\w/i.test('\\u03C2'), /\\B/i.test('\\u212A'), /\\b/i.test('a\\u212A')].join(',')"),
     DifferentialCase("regexp-fold-word-iu", "[/\\w/iu.test('\\u212A'), /\\w/iu.test('\\u017F'), /\\w/iu.test('\\u03C2'), /\\B/iu.test('\\u212A'), /\\b/iu.test('a\\u212A')].join(',')"),
+    // String.prototype.replace/GetSubstitution 的替换模板边界
+    DifferentialCase(
+        "replace-substitution-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return 'abc'.replace(/b/, '$&$&'); }); " +
+            "push(function () { return 'abc'.replace(/b/, '$`'); }); " +
+            "push(function () { return 'abc'.replace(/b/, \"$'\"); }); " +
+            "push(function () { return 'abc'.replace(/b/, '$$'); }); " +
+            "push(function () { return 'abc'.replace(/(b)/, '$1$1'); }); " +
+            "push(function () { return 'abc'.replace(/(b)/, '$2'); }); " +
+            "push(function () { return 'abc'.replace(/(b)/, '$10'); }); " +
+            "push(function () { return 'abc'.replace(/(b)/, '$0'); }); " +
+            "push(function () { return 'abc'.replace(/(?<x>b)/, '$<x>$<y>'); }); " +
+            "push(function () { return 'abc'.replace(/(?<x>b)/, '$<x>'); }); " +
+            "push(function () { return 'abc'.replace(/b/, '$<x>'); }); " +
+            "push(function () { return 'abc'.replace(/x*/, '-'); }); " +
+            "push(function () { return 'abc'.replace(/x*/g, '-'); }); " +
+            "push(function () { return 'a-b'.replaceAll('-', '$&$&'); }); " +
+            "push(function () { return 'a1b2'.replace(/(\\d)/g, function (m, p1, off) { " +
+            "return p1 + '@' + off; }); }); " +
+            "push(function () { return 'a1'.replace(/(?<d>\\d)/, function () { " +
+            "var g = arguments[arguments.length - 1]; return g && g.d; }); }); " +
+            "push(function () { try { 'a'.matchAll(/a/); return 'none'; } " +
+            "catch (e) { return e.name; } }); " +
+            "push(function () { return 'abc'.replace(/b/, '\\$1'); }); " +
+            "return out.join('|'); })()"
+    ),
     // String 与 RegExp 的替换/分割/matchAll/lastIndex 交互矩阵
     DifferentialCase(
         "regexp-replace-matrix",
