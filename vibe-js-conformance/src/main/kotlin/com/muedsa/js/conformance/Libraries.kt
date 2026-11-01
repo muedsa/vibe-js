@@ -995,6 +995,44 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
         ),
     ),
     LibrarySpec(
+        name = "esprima",
+        url = "https://cdn.jsdelivr.net/npm/esprima@4.0.1/dist/esprima.js",
+        globalName = "esprima",
+        cases = listOf(
+            SmokeCase(
+                "parse script",
+                assertion(
+                    "esprima.parseScript('var x = 1;').type === 'Program' && " +
+                        "esprima.parseScript('var x = 1;').body[0].declarations[0].id.name === 'x'"
+                ),
+            ),
+            SmokeCase(
+                "tokenize",
+                assertion(
+                    "esprima.tokenize('var x = 1;').length === 5 && " +
+                        "esprima.tokenize('/a/g')[0].type === 'RegularExpression'"
+                ),
+            ),
+            SmokeCase(
+                "parse module",
+                assertion("esprima.parseModule('export default 1;').type === 'Program'"),
+            ),
+            SmokeCase(
+                "escaped identifier",
+                assertion(
+                    "esprima.parseScript('var \\u0061 = 1;').body[0].declarations[0].id.name === 'a'"
+                ),
+            ),
+            SmokeCase(
+                "syntax error location",
+                assertion(
+                    "(function () { try { esprima.parseScript('var ='); return false; } " +
+                        "catch (e) { return e.name === 'Error' && e.index === 4 && e.lineNumber === 1; } })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
         name = "ajv",
         url = "https://cdn.jsdelivr.net/npm/ajv@6.12.6/dist/ajv.min.js",
         globalName = "Ajv",
