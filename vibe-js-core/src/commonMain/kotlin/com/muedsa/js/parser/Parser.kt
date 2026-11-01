@@ -1578,8 +1578,9 @@ class Parser(
             annexParameterNames = collectParameterNames(params).toSet(),
             hasArgumentsBinding = !isArrow && !staticBlock,
         )
+        val bodyScope = declScopes.last()
         val body = try {
-            parseBlockStatement(trackScope = false)
+            parseBlockStatement(trackScope = false, environmentScope = bodyScope)
         } finally {
             popDeclScope()
             if (staticBlock) staticBlockDepths.removeAt(staticBlockDepths.lastIndex)
@@ -1845,7 +1846,10 @@ class Parser(
         )
     }
 
-    private fun parseBlockStatement(trackScope: Boolean = true): BlockStatement {
+    private fun parseBlockStatement(
+        trackScope: Boolean = true,
+        environmentScope: DeclScope? = null,
+    ): BlockStatement {
         val start = consume(TokenType.LBRACE, "Expected '{'").range.start
         if (trackScope) pushDeclScope(DeclScopeKind.BLOCK)
         // 块内登记的词法名决定解释期是否需要独立环境（无则复用外层）
@@ -1863,8 +1867,10 @@ class Parser(
             if (trackScope) popDeclScope()
         }
         val end = consume(TokenType.RBRACE, "Expected '}'").range.end
-        // trackScope=false 的块由调用方（函数体/catch）自行管理环境，保守保留独立环境
-        val requiresEnvironment = blockScope == null || blockScope.lexicalNames.isNotEmpty()
+        // trackScope=false 时由调用方提供声明作用域（函数体的 FUNCTION_BODY）；
+        // 无法提供作用域时保守保留独立环境
+        val scope = blockScope ?: environmentScope
+        val requiresEnvironment = scope?.lexicalNames?.isNotEmpty() ?: true
         return BlockStatement(statements, SourceRange(start, end), requiresEnvironment)
     }
 

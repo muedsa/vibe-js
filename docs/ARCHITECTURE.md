@@ -166,7 +166,7 @@ engine.install(MyModule())
 | 现状 | 后续替换方式 | 影响范围 |
 |---|---|---|
 | `Environment` 使用 Map 链式查找 | 预解析变量为槽位索引 / 扁平化闭包 | 仅 Environment 与 Interpreter 内部 |
-| 无词法声明的块、无词法循环头的 `for`/try/catch/finally 复用外层环境 | 已实现（Parser 预计算 `BlockStatement.requiresEnvironment`） | 仅 Parser 与 Interpreter |
+| 无词法声明的块/函数体、无词法循环头的 `for`/try/catch/finally 复用外层环境 | 已实现（Parser 预计算 `BlockStatement.requiresEnvironment`；箭头表达式体复用 var 环境） | 仅 Parser 与 Interpreter |
 | 每次函数调用执行预计算的 hoist 列表 | 已避免 AST 全量扫描；可进一步缓存函数对象 | 仅 Interpreter |
 | 语句控制流使用 `Completion` | 保持不变 | 无 |
 | AST 遍历执行 | 新增 `Executor` 实现（指令/闭包） | Parser/AST/内建/API 不变 |
@@ -179,14 +179,14 @@ engine.install(MyModule())
 
 `./gradlew :vibe-js-core:jvmBenchmarkBenchmark` 运行 kotlinx-benchmark（JMH）基准，衡量“解析 + 执行”的整体吞吐：
 
-| 场景 | 吞吐（ops/s） |
+| 场景 | 吞吐（ops/s，多次运行范围） |
 |---|---:|
-| 算术 `1 + 2 * 3` | ~216,000 |
-| 字符串/对象拼接 | ~160,000 |
-| 函数调用 | ~144,000 |
-| 100 次数组 push 循环 | ~8,400 |
+| 算术 `1 + 2 * 3` | ~200,000 – 230,000 |
+| 字符串/对象拼接 | ~140,000 – 160,000 |
+| 函数调用 | ~128,000 – 144,000 |
+| 100 次数组 push 循环 | ~7,600 – 8,500 |
 
-数值为本机（JDK 17、单线程、10 × 300ms，2026-11-01 空块/循环头环境省略优化后）的粗略量级，仅用于纵向对比；多次运行波动约 ±5%。`arrayLoop` 受逐条语句执行与 `push` 调用开销影响明显，是后续优化（槽位化环境、内联缓存）的首要观察点。
+数值为本机（JDK 17、单线程、10 × 300ms，2026-11-01 空环境省略优化后）的粗略量级，仅用于纵向对比；多次运行波动约 ±10%。`arrayLoop` 受逐条语句执行与 `push` 调用开销影响明显，是后续优化（槽位化环境、内联缓存）的首要观察点。
 
 ## 10. 阶段状态
 

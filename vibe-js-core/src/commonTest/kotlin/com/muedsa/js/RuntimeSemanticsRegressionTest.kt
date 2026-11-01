@@ -3921,4 +3921,28 @@ class RuntimeSemanticsRegressionTest {
             runtime.evalNumber("(function () { for (var i = 0; i < 3; i++) {} return i; })()")
         )
     }
+
+    @Test
+    fun `函数体无词法声明时复用 var 环境保持语义`() = runTest {
+        val runtime = TestRuntime()
+        // 函数体内 let 仍有 TDZ 且与嵌套块隔离
+        assertEquals(
+            "ReferenceError",
+            runtime.evalString(
+                "(function () { try { x; } catch (e) { return e.name; } let x = 1; })()"
+            )
+        )
+        assertEquals(
+            "undefined",
+            runtime.evalString("(function () { { let x = 1; } return typeof x; })()")
+        )
+        // 直接 eval 的 var 仍落到函数 var 作用域
+        assertEquals(7.0, runtime.evalNumber("(function () { eval('var x = 7'); return x; })()"))
+        // 函数声明提升仍可见，箭头表达式体正常求值
+        assertEquals(
+            "function",
+            runtime.evalString("(function () { return typeof f; function f() {} })()")
+        )
+        assertEquals(6.0, runtime.evalNumber("((x) => x * 2)(3)"))
+    }
 }

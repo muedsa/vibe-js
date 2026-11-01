@@ -996,9 +996,19 @@ class Interpreter(
                 )
             }
             bindParameters(function, args, parameterEnv)
-            // 函数体词法环境位于 var 环境之上；var 环境可能位于参数环境之上。
-            // 参数绑定完成：VariableEnvironment 从最外层环境切换到独立的 var 环境。
-            val bodyEnv = DeclarativeEnvironment(parent = varEnv)
+            // 函数体词法环境位于 var 环境之上；无词法声明（含箭头表达式体）时
+            // 复用 var 环境，避免每次调用分配一个空环境
+            val body = function.body
+            val bodyNeedsEnvironment = when {
+                body != null -> body.requiresEnvironment
+                function.expressionBody != null -> false
+                else -> true
+            }
+            val bodyEnv = if (bodyNeedsEnvironment) {
+                DeclarativeEnvironment(parent = varEnv)
+            } else {
+                varEnv
+            }
             currentFrame.lexicalEnv = bodyEnv
             currentFrame.variableEnv = varEnv
             currentFrame.inParameterInitialization = false
@@ -1014,9 +1024,11 @@ class Interpreter(
                 return if (hint != null) evaluateNamed(expressionBody, hint) else evaluate(expressionBody)
             }
 
-            val body = function.body ?: return JSUndefined
-            predeclareLexical(body.statements, bodyEnv)
-            val completion = executeStatements(body.statements)
+            val bodyBlock = body ?: return JSUndefined
+            if (bodyBlock.requiresEnvironment) {
+                predeclareLexical(bodyBlock.statements, bodyEnv)
+            }
+            val completion = executeStatements(bodyBlock.statements)
             return when (completion) {
                 is Completion.Normal -> JSUndefined
                 is Completion.Return -> completion.value
@@ -1158,8 +1170,14 @@ class Interpreter(
         try {
             parameterEnv.createVarBinding("arguments", createArgumentsObject(args, function))
             bindParameters(function, args, parameterEnv)
-            // 参数绑定完成，VariableEnvironment 切换到独立 var 环境；函数体词法环境位于其上方
-            val bodyEnv = DeclarativeEnvironment(parent = varEnv)
+            // 参数绑定完成，VariableEnvironment 切换到独立 var 环境；函数体词法环境位于其上方。
+            // 构造器体无词法声明时复用 var 环境（默认派生构造器等合成体保守保留独立环境）。
+            val body = function.body
+            val bodyEnv = if (body == null || body.requiresEnvironment) {
+                DeclarativeEnvironment(parent = varEnv)
+            } else {
+                varEnv
+            }
             activeFrame.lexicalEnv = bodyEnv
             activeFrame.variableEnv = varEnv
             activeFrame.inParameterInitialization = false
@@ -1186,14 +1204,14 @@ class Interpreter(
                 initializeInstanceFields(function, activeFrame.thisValue)
             }
 
-            val body = function.body
-            if (body == null) {
+            val bodyBlock = body
+            if (bodyBlock == null) {
                 if (!activeFrame.thisInitialized) {
                     throw referenceError("Must call super constructor before returning from derived constructor")
                 }
                 return activeFrame.thisValue
             }
-            val completion = executeStatements(body.statements)
+            val completion = executeStatements(bodyBlock.statements)
             if (completion is Completion.Return) {
                 val returned = completion.value
                 if (returned is JSObject) return returned
