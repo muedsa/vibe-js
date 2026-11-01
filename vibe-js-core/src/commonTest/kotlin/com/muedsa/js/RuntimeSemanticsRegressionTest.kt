@@ -3834,4 +3834,24 @@ class RuntimeSemanticsRegressionTest {
         assertEquals(false, runtime.evalBoolean("/\\w/iu.test('\\u03C2')"))
         assertEquals(true, runtime.evalBoolean("/\\W/iu.test('\\u03C2')"))
     }
+
+    @Test
+    fun `String 大小写转换覆盖特殊映射与词尾 Sigma 上下文`() = runTest {
+        val runtime = TestRuntime()
+        // 多码点特殊映射
+        assertEquals("SS", runtime.evalString("'ß'.toUpperCase()"))
+        assertEquals("FF", runtime.evalString("'ﬀ'.toUpperCase()"))
+        assertEquals("\u02BCN", runtime.evalString("'ŉ'.toUpperCase()"))
+        // İ 的小写为 i + 组合点
+        assertEquals("i\u0307", runtime.evalString("'İ'.toLowerCase()"))
+        // 词尾 Sigma：仅词尾（忽略 Case_Ignorable）使用 ς
+        assertEquals("\u03B1\u03C2", runtime.evalString("'ΑΣ'.toLowerCase()"))
+        assertEquals("\u03B1\u03C3\u03B1", runtime.evalString("'ΑΣΑ'.toLowerCase()"))
+        assertEquals("\u03B1\u03C2.", runtime.evalString("'ΑΣ.'.toLowerCase()"))
+        // 标题格字母与 astral/Cherokee 的完整映射
+        assertEquals("\u01C4", runtime.evalString("'ǅ'.toUpperCase()"))
+        assertEquals("\u01C6", runtime.evalString("'ǅ'.toLowerCase()"))
+        assertEquals("\uD801\uDC28", runtime.evalString("'𐐀'.toLowerCase()"))
+        assertEquals("\uABB3", runtime.evalString("'Ꮳ'.toLowerCase()"))
+    }
 }

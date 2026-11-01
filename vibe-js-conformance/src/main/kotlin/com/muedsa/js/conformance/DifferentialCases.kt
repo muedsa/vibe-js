@@ -32,6 +32,16 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     // 字符串与 Unicode
     DifferentialCase("str-sharp-s-upper", "'ß'.toUpperCase()"),
     DifferentialCase("str-dotted-i-lower-length", "'İ'.toLowerCase().length"),
+    // Unicode 完整大小写转换与词尾 Sigma 的上下文规则
+    DifferentialCase(
+        "str-case-matrix",
+        "(function () { var values = ['ß', 'ẞ', 'İ', 'ı', 'ſ', 'K', 'Σ', 'σ', 'ς', 'AΣB', 'AΣ', 'ΣA', " +
+            "'ΑΣ', 'ΑΣΑ', 'AΣ\\u0301', 'AΣ.', 'AΣ1', 'ǅ', 'Ǆ', 'ǆ', 'ﬀ', 'ﬄ', 'ᾀ', 'ᾈ', " +
+            "'𐐀', '𐐨', 'Ꮳ', 'Ꮃ', 'ŉ', 'ǰ', 'ΐ', 'ΰ', 'Ω', 'Å']; " +
+            "var out = []; for (var i = 0; i < values.length; i++) { " +
+            "out.push(values[i] + '>' + values[i].toUpperCase() + '>' + values[i].toLowerCase()); } " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase("str-at-negative", "'abc'.at(-1)"),
     DifferentialCase("str-at-out", "'abc'.at(5)"),
     DifferentialCase("str-slice-negative", "'abc'.slice(1, -1)"),
