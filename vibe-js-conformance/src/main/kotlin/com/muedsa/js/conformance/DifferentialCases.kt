@@ -1133,6 +1133,59 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
     DifferentialCase("regexp-source-prototype", "RegExp.prototype.source"),
     DifferentialCase(
+        "json-stringify-tree-fuzz",
+        """
+        (function () {
+          var seed = 424242;
+          function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+          function makeStr() {
+            var s = '';
+            var len = rnd(6);
+            for (var i = 0; i < len; i++) { s += String.fromCharCode(rnd(256)); }
+            return s;
+          }
+          function makeValue(depth) {
+            var kind = rnd(depth > 2 ? 7 : 9);
+            if (kind === 0) { return null; }
+            if (kind === 1) { return rnd(2) === 0; }
+            if (kind === 2) { return (rnd(2) === 0 ? -1 : 1) * (rnd(1000000) / 1000); }
+            if (kind === 3) { return [NaN, Infinity, -Infinity, -0, 1e21, 5e-324][rnd(6)]; }
+            if (kind === 4) { return makeStr(); }
+            if (kind === 5) { return undefined; }
+            if (kind === 6) {
+              var array = new Array(rnd(4));
+              for (var i = 0; i < array.length; i++) {
+                if (rnd(2) === 0) { array[i] = makeValue(depth + 1); }
+              }
+              return array;
+            }
+            if (kind === 7) {
+              var object = {};
+              var keys = ['a', 'b', 'c', 'drop'];
+              var count = rnd(4);
+              for (var j = 0; j < count; j++) { object[keys[rnd(4)]] = makeValue(depth + 1); }
+              return object;
+            }
+            return { toJSON: function () { return { x: 1 }; } };
+          }
+          var spaces = [undefined, 0, 2, '\t', '--'];
+          var out = [];
+          for (var i = 0; i < 40; i++) {
+            var value = makeValue(0);
+            var log = [];
+            var replacer = function (key, val) {
+              log.push(key);
+              if (key === 'drop') { return undefined; }
+              return val;
+            };
+            var json = JSON.stringify(value, replacer, spaces[rnd(spaces.length)]);
+            out.push(i + ':' + String(json) + ':' + log.join(','));
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "str-case-astral-audit",
         """
         (function () {
