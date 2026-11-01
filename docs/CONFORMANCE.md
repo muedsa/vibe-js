@@ -157,7 +157,7 @@ Unicode 数据表（`\p{...}` 属性、属性字符串、标识符 ID_Start/ID_C
 ./gradlew :vibe-js-conformance:differentialConformance
 ```
 
-真实库基线（lodash 4.17.21 / mustache 4.2.0 / dayjs 1.11.10 / qs 6.12.3 / validator 13.12.0 / underscore 1.13.6 / moment 2.30.1 / semver 4.3.6 / punycode 1.4.1 / json5 2.2.3 / big.js 6.2.1 / diff 5.1.0 / lz-string 1.5.0 / marked 4.3.0 / bignumber.js 9.1.2 / decimal.js 10.4.3 / crypto-js 4.2.0 / papaparse 5.4.1 / js-yaml 4.1.0 / ramda 0.29.0 / he 1.2.0 / numeral 2.0.6 / showdown 2.1.0）：
+真实库基线（lodash 4.17.21 / mustache 4.2.0 / dayjs 1.11.10 / qs 6.12.3 / validator 13.12.0 / underscore 1.13.6 / moment 2.30.1 / semver 4.3.6 / punycode 1.4.1 / json5 2.2.3 / big.js 6.2.1 / diff 5.1.0 / lz-string 1.5.0 / marked 4.3.0 / bignumber.js 9.1.2 / decimal.js 10.4.3 / crypto-js 4.2.0 / papaparse 5.4.1 / js-yaml 4.1.0 / ramda 0.29.0 / he 1.2.0 / numeral 2.0.6 / showdown 2.1.0 / seedrandom 3.0.5 / pluralize 8.0.0）：
 
 | 库 | 状态 | 用例 |
 |---|---|---|
@@ -184,8 +184,12 @@ Unicode 数据表（`\p{...}` 属性、属性字符串、标识符 ID_Start/ID_C
 | he | 可加载 | 3/3 |
 | numeral | 可加载 | 4/4 |
 | showdown | 可加载 | 3/3 |
+| seedrandom | 可加载 | 3/3 |
+| pluralize | 可加载 | 4/4 |
 
-合计：**92/92 用例通过，0 失败**。
+合计：**99/99 用例通过，0 失败**。
+
+> 依赖浏览器全局（如 `window`）的构建（例如 sprintf-js）不纳入冒烟；seedrandom 在全局模式覆盖 `Math.random`，用例验证同种子确定性与不同种子差异。
 
 Node 差分基线：**346 个用例**（Date 的 UTC/TimeClip/ISO 解析与溢出矩阵、非十进制 `toString` 的最短往返矩阵（0.1 的 52 位二进制展开、非 2 的幂进制、1e21/2^53 等大整数与次正规数）与 2 的幂进制边界矩阵（V8 仅在 2 的幂进制下输出可精确往返；其余进制按规范自校验，差异见 `docs/COMPATIBILITY.md`）、正则匹配矩阵（u/s/m 标志、astral 码点、命名组、前后向断言、转义与回溯）、String 大小写转换的特殊映射与词尾 Sigma 上下文、Number 三种格式化方法的取值/位数矩阵（20 个代表值 × 0..100 位小数/1..100 位有效数字）、正则忽略大小写的 Canonicalize 边界（Kelvin/长 s/İ/ß 在非 u 与 u 模式、字符类、范围、`\w`/`\b`）、Number 三种格式化方法的宽范围取值（常规值、次正规数、极值、100 位小数与 0..21 位有效数字）、数字格式化/转换、字符串 Unicode、数组空洞与写方法、对象描述符/枚举、RegExp 捕获/lastIndex/source 转义、v 标志集合运算与属性字符串、Unicode 代理项码元语义、Array 泛型方法的原型链/稀疏/数组型对象语义、Array.from/of 的构造器 length 传递与 CreateDataPropertyOrThrow、Object.entries/values 的快照键与可枚举复查、Math.max/min 的全量 ToNumber、Number.parseInt/parseFloat 与全局同一函数对象、%ThrowTypeError% 冻结与 unmapped arguments.callee、Date 的 ISO 缺省字段/零年映射/setter length 与 toString 本地格式、Error.prototype.toString 的 name/message 缺省规则、isPrototypeOf 接收者检查、slice 显式 undefined end、toExponential 非有限值顺序、Function.prototype.toString 保留函数/方法/类构造器/动态函数源码文本（无源码时 NativeFunction 形式）、bind length 仅取自有 length 并保留 Infinity、%ThrowTypeError% 与严格 arguments.callee 共享、String 原型方法的 RequireObjectCoercible/pad 默认填充/localeCompare 规范等价/replace 与 split 求值顺序、非 u 正则 Annex B IdentityEscape（\x/\u 缺位）、Date UTC 双精度/TimeClip/无效日期设置器、JSON reviver/replacer、Map/Set、函数 bind/arguments、参数初始化阶段 eval var 的函数体/参数闭包可见性、函数体 var 与形参同名初始化、sort 的 precise 属性访问/array-like/NaN 比较、URI 代理项/保留字符转义大小写/非法 UTF-8、parseInt 的 ToInt32 radix 与 parseFloat 的 ASCII 数字、mapped arguments 的 defineProperty 映射保持/解除、Map/Set 的 forEach 与迭代器实时新增/删除/重加、标签模板站点缓存与冻结、单语句上下文的 let ASI、对象字面量 async 方法的换行/简写早期错误、reduce 初始元素的单次 Get、Array.toString 回退、lastIndexOf 显式 undefined、`__proto__` 名称推断、Set.keys 身份与 AsyncFunction 继承、delete/空基对象成员访问的 ToObject 顺序、旧式八进制字面量与 `\8`/`\9`/`\400` 转义、lookbehind 量化早期错误、for async-of 箭头消歧、sloppy eval var 绑定可删除性、switch async 函数作用域与 catch 解构默认值环境、keyed destructuring 求值顺序与括号目标名称推断、super 赋值/自增的 RHS 与 null base 顺序、Annex B if 分支函数 var 绑定、块级函数 skip-param、CallExpression 赋值目标运行时错误、for-in 旧式初始化器、Unicode 标识符、尾调用结果、eval 完成值与相等转换等）**全部一致**。
 
@@ -200,7 +204,7 @@ Node 差分基线：**346 个用例**（Date 的 UTC/TimeClip/ISO 解析与溢�
 ## 推进顺序
 
 1. Test262 ES5 子集与解析一致性基线已收敛；特性子集（含 esid 核心语义用例）已全部通过（37329/37329，覆盖 ES2015 核心语义与已实现的 ES2016+ 语法/内建），后续可继续扩展特性选择范围（如更多 ES2022+ 方法）；
-2. 继续扩大真实库覆盖（已加入 semver/punycode/json5/papaparse/js-yaml/ramda/he/numeral/showdown，后续补充更多 UMD 构建与用例）；
+2. 继续扩大真实库覆盖（已加入 semver/punycode/json5/papaparse/js-yaml/ramda/he/numeral/showdown/seedrandom/pluralize，后续补充更多 UMD 构建与用例）；
 3. 严格门禁已就绪：`-Pstrict` 在 parser / Test262 / 真实库 / 差分四个基线均通过（parser 的 Generator 项走显式允许列表）；接入 PR 触发需确认 CI 反馈成本后再启用。
 
 ## CI

@@ -603,6 +603,56 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "seedrandom",
+        url = "https://cdn.jsdelivr.net/npm/seedrandom@3.0.5/seedrandom.min.js",
+        globalName = "Math.seedrandom",
+        cases = listOf(
+            // 浏览器/全局模式下 seedrandom 覆盖 Math.random 并返回内部种子串
+            SmokeCase(
+                "deterministic",
+                assertion(
+                    "(function () { Math.seedrandom('hello'); var x = Math.random(); " +
+                        "Math.seedrandom('hello'); var y = Math.random(); " +
+                        "return x === y && x >= 0 && x < 1; })()"
+                ),
+            ),
+            SmokeCase(
+                "different seeds",
+                assertion(
+                    "(function () { Math.seedrandom('seed-a'); var x = Math.random(); " +
+                        "Math.seedrandom('seed-b'); var y = Math.random(); return x !== y; })()"
+                ),
+            ),
+            SmokeCase(
+                "api",
+                assertion("typeof Math.seedrandom === 'function'"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "pluralize",
+        url = "https://cdn.jsdelivr.net/npm/pluralize@8.0.0/pluralize.js",
+        globalName = "pluralize",
+        cases = listOf(
+            SmokeCase(
+                "plural",
+                assertion("pluralize('cat') === 'cats'"),
+            ),
+            SmokeCase(
+                "count",
+                assertion("pluralize('cat', 1) === 'cat' && pluralize('cat', 2) === 'cats'"),
+            ),
+            SmokeCase(
+                "irregular",
+                assertion("pluralize('person') === 'people'"),
+            ),
+            SmokeCase(
+                "singular",
+                assertion("pluralize.singular('dogs') === 'dog'"),
+            ),
+        ),
+    ),
 )
 
 
