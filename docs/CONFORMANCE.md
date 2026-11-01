@@ -221,6 +221,12 @@ Unicode 数据表（`\p{...}` 属性、属性字符串、标识符 ID_Start/ID_C
 | linkify | 可加载 | 4/4 |
 | simple-statistics | 可加载 | 4/4 |
 | compare-versions | 可加载 | 4/4 |
+| moo | 可加载 | 4/4 |
+| fecha | 可加载 | 3/3 |
+| deep-diff | 可加载 | 4/4 |
+| object-path | 可加载 | 4/4 |
+| validate | 可加载 | 4/4 |
+| date-and-time | 可加载 | 4/4 |
 
 合计：**255/255 用例通过，0 失败**（63 个库）。
 
