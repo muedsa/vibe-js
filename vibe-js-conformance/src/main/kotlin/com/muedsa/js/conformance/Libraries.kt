@@ -2456,6 +2456,67 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
         ),
     ),
     LibrarySpec(
+        name = "d3-shape",
+        url = "https://unpkg.com/d3-shape@3.2.0/dist/d3-shape.min.js",
+        globalName = "d3",
+        dependencies = listOf("d3-path"),
+        cases = listOf(
+            SmokeCase(
+                "line and area",
+                assertion(
+                    "d3.line()([[0, 0], [10, 10]]) === 'M0,0L10,10' && " +
+                        "d3.area().x(function (point) { return point[0]; }).y0(0)" +
+                        ".y1(function (point) { return point[1]; })([[0, 0], [10, 10]]) === " +
+                        "'M0,0L10,10L10,0L0,0Z'"
+                ),
+            ),
+            SmokeCase(
+                "pie",
+                assertion(
+                    "JSON.stringify(d3.pie()([1, 2]).map(function (arc) { " +
+                        "return [arc.startAngle, arc.endAngle, arc.value]; })) === " +
+                        "'[[4.1887902047863905,6.283185307179586,1],[0,4.1887902047863905,2]]'"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "d3-random",
+        url = "https://unpkg.com/d3-random@3.0.1/dist/d3-random.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "seeded lcg",
+                assertion("d3.randomLcg(42)() === 0.2523451747838408"),
+            ),
+            SmokeCase(
+                "deterministic",
+                assertion(
+                    "(function () { var first = d3.randomLcg(42); var second = d3.randomLcg(42); " +
+                        "return first() === second() && first() === second(); })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "d3-polygon",
+        url = "https://unpkg.com/d3-polygon@3.0.1/dist/d3-polygon.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "area centroid",
+                assertion(
+                    "d3.polygonArea([[0, 0], [10, 0], [10, 10], [0, 10]]) === -100 && " +
+                        "JSON.stringify(d3.polygonCentroid([[0, 0], [10, 0], [10, 10], [0, 10]])) === '[5,5]'"
+                ),
+            ),
+            SmokeCase(
+                "length",
+                assertion("d3.polygonLength([[0, 0], [10, 0], [10, 10], [0, 10]]) === 40"),
+            ),
+        ),
+    ),
+    LibrarySpec(
         name = "d3-time",
         url = "https://unpkg.com/d3-time@3.1.0/dist/d3-time.min.js",
         globalName = "d3",
