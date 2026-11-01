@@ -328,11 +328,71 @@ internal object RegexNamedGroups {
                         }
 
                         'u' -> {
-                            builder.append('\\').append('u')
-                            // 原样复制转义序列，交由引擎编译
-                            val end = unicodeEscapeEnd(pattern, index)
-                            builder.append(pattern, index + 2, end)
-                            index = end
+                            if (unicode) {
+                                builder.append('\\').append('u')
+                                // 原样复制转义序列，交由引擎编译
+                                val end = unicodeEscapeEnd(pattern, index)
+                                builder.append(pattern, index + 2, end)
+                                index = end
+                            } else if (index + 5 < pattern.length &&
+                                isHexDigit(pattern[index + 2]) && isHexDigit(pattern[index + 3]) &&
+                                isHexDigit(pattern[index + 4]) && isHexDigit(pattern[index + 5])
+                            ) {
+                                builder.append("\\u")
+                                builder.append(pattern, index + 2, index + 6)
+                                index += 6
+                            } else {
+                                // Annex B：非 u 模式下非法 \u 是 IdentityEscape 'u'
+                                builder.append('u')
+                                index += 2
+                            }
+                        }
+
+                        'x' -> {
+                            if (index + 3 < pattern.length &&
+                                isHexDigit(pattern[index + 2]) && isHexDigit(pattern[index + 3])
+                            ) {
+                                builder.append("\\x")
+                                builder.append(pattern, index + 2, index + 4)
+                                index += 4
+                            } else if (unicode) {
+                                builder.append("\\x")
+                                index += 2
+                            } else {
+                                // Annex B：非 u 模式下非法 \x 是 IdentityEscape 'x'
+                                builder.append('x')
+                                index += 2
+                            }
+                        }
+
+                        'v' -> {
+                            // JS 的 \v 是垂直制表符，Java 把 \v 当作垂直空白类
+                            builder.append("\\x0B")
+                            index += 2
+                        }
+
+                        'c' -> {
+                            val control = pattern.getOrNull(index + 2)
+                            val isLetter = control != null && (control in 'a'..'z' || control in 'A'..'Z')
+                            // Annex B ClassControlLetter：字符类内的数字与 _ 也构成控制转义
+                            val isClassControl = !unicode && inClass && control != null &&
+                                (control in '0'..'9' || control == '_')
+                            if (isLetter || isClassControl) {
+                                builder.append("\\c").append(control)
+                                index += 3
+                            } else if (unicode) {
+                                // 保留原样，由 u 模式校验报错
+                                builder.append("\\c")
+                                index += 2
+                            } else if (inClass) {
+                                // 字符类内非法控制转义是 IdentityEscape 'c'
+                                builder.append('c')
+                                index += 2
+                            } else {
+                                // 字符类外 Annex B：非字母控制转义匹配字面反斜杠 + c
+                                builder.append("\\\\c")
+                                index += 2
+                            }
                         }
 
                         in '1'..'9' -> {
@@ -475,6 +535,10 @@ internal object RegexNamedGroups {
             else -> (index + 2).coerceAtMost(pattern.length)
         }
     }
+
+    /** 十六进制数字（Annex B 转义规范化使用）。 */
+    private fun isHexDigit(c: Char): Boolean =
+        c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
 
     private fun unicodeEscapeEnd(pattern: String, index: Int): Int {
         if (pattern.getOrNull(index + 2) == '{') {

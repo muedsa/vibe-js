@@ -152,6 +152,30 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `正则 Annex B 转义保持 JS 字面量语义`() = runTest {
+        val runtime = TestRuntime()
+        // \v 是垂直制表符，不是 Java 的垂直空白类
+        assertEquals(true, runtime.evalBoolean(
+            "/\\v/.test(String.fromCharCode(11)) && !/\\v/.test('\\t')"
+        ))
+        // 非字母控制转义匹配字面反斜杠 + c
+        assertEquals(true, runtime.evalBoolean(
+            "/\\c/.test('\\\\c') && !/\\c/.test('c') && /\\c1/.test('\\\\c1')"
+        ))
+        // 非法 \x 是 IdentityEscape 'x'，后续 {2} 作为量词
+        assertEquals(true, runtime.evalBoolean(
+            "/\\x{2}/.test('xx') && /\\x/.test('x') && !/\\x{2}/.test('A')"
+        ))
+        // 非法 \u 是 IdentityEscape 'u'
+        assertEquals(true, runtime.evalBoolean("/\\u/.test('u') && !/\\u/.test('A')"))
+        // Annex B ClassControlLetter：字符类内数字/_ 构成控制转义；其他非法 \c 为字面 c
+        assertEquals(true, runtime.evalBoolean(
+            "/[\\c0]/.test('\\x10') && /[\\c_]/.test('\\x1f') && /[\\c!]/.test('c') && " +
+                "/[\\c!]/.test('!') && /[\\c]/.test('c') && !/[\\c0]/.test('0')"
+        ))
+    }
+
+    @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[object RegExp]", runtime.evalString("Object.prototype.toString.call(/a/) "))

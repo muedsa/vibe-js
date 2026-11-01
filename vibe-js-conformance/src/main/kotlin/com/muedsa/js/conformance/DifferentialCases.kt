@@ -2565,4 +2565,48 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // Annex B IdentityEscape 与 Java 专属转义（\A/\Z/\G/\R/\h//\e//\Q）
+    DifferentialCase(
+        "regexp-identity-escapes",
+        """(function () {
+  var patterns = [
+    ['\\Z', ''], ['\\A', ''], ['\\G', ''], ['\\R', ''], ['\\h', ''], ['\\v', ''],
+    ['\\e', ''], ['\\a', ''], ['\\Qa.b\\E', ''], ['\\x{41}', ''],
+    ['\\u{41}', 'u'], ['\\u{41}', ''], ['\\c', ''], ['\\k', ''], ['\\p{L}', ''],
+    ['\\N{LATIN CAPITAL LETTER A}', ''], ['\\n', ''], ['\\t', '']
+  ];
+  var inputs = ['Z', 'A', 'G', 'R', 'h', 'H', 'v', 'V', 'e', 'a', '\x1b', '\x07',
+    'a.b', 'Qa.bE', 'x{41}', 'u{41}', 'A', 'u{41}', '\n', ' ', '\t', 'p{L}', 'N{LATIN CAPITAL LETTER A}', 'c', 'k'];
+  var out = [];
+  for (var i = 0; i < patterns.length; i++) {
+    try {
+      var re = new RegExp(patterns[i][0], patterns[i][1]);
+      var bits = '';
+      for (var j = 0; j < inputs.length; j++) bits += re.test(inputs[j]) ? '1' : '0';
+      out.push(bits);
+    } catch (e) {
+      out.push('THROW:' + e.name);
+    }
+  }
+  return out.join(';');
+})()""",
+    ),
+
+    // Annex B 控制转义：字符类内数字/_ 控制字符，类外非法 \c 为字面反斜杠 + c
+    DifferentialCase(
+        "regexp-annexb-control-escapes",
+        """(function () {
+  var patterns = [/[\c!]/, /[\c ]/, /[\c]/, /\c!/, /\c /, /\c0/, /[\c0]/, /[\c_]/, /[\cA]/, /[\c00]+/, /[\c10]+/];
+  var inputs = ['!', ' ', 'c', '\\c', '\\c!', '\\c ', '\x10', '\x1f', '\x01', '0', '_',
+    '\x0f0\x10\x11', '\x100\x11\x12'];
+  var out = [];
+  for (var i = 0; i < patterns.length; i++) {
+    var bits = '';
+    for (var j = 0; j < inputs.length; j++) bits += patterns[i].test(inputs[j]) ? '1' : '0';
+    out.push(bits);
+  }
+  return out.join(';');
+})()""",
+    ),
 )
