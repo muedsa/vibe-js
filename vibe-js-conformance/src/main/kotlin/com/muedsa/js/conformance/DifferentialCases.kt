@@ -2537,4 +2537,32 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // 多行 ^/$ 在 CRLF、NEL、U+2028 等行终止符上的位置
+    DifferentialCase(
+        "regexp-multiline-anchor-positions",
+        """(function () {
+  var inputs = ['a\u0085b', 'a\r\nb', 'a\u2028b', 'a\nb', '\u0085'];
+  var out = [];
+  for (var i = 0; i < inputs.length; i++) {
+    var caret = /^/gm;
+    var dollar = /$/gm;
+    var match;
+    var guard = 0;
+    var carets = [];
+    while ((match = caret.exec(inputs[i])) !== null && guard++ < 10) {
+      carets.push(match.index);
+      caret.lastIndex = match.index + 1;
+    }
+    guard = 0;
+    var dollars = [];
+    while ((match = dollar.exec(inputs[i])) !== null && guard++ < 10) {
+      dollars.push(match.index);
+      dollar.lastIndex = match.index + 1;
+    }
+    out.push(carets.join(',') + '/' + dollars.join(','));
+  }
+  return out.join(';');
+})()""",
+    ),
 )

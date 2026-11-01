@@ -130,6 +130,12 @@ private class DifferentialRunner {
     suspend fun run(): DifferentialReport {
         val startedAt = System.nanoTime()
         val cases = differentialCases + extraDifferentialCases
+        // 名称重复会导致 Node 结果按名称合并后错配，直接在运行前拒绝
+        val duplicateNames = (cases.map { it.name } + asyncDifferentialCases.map { it.name })
+            .groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+        require(duplicateNames.isEmpty()) {
+            "duplicate differential case names: ${duplicateNames.joinToString()}"
+        }
         val vibeResults = mutableListOf<Triple<String, String, String>>()
         val engine = Engine()
         for (case in cases) {

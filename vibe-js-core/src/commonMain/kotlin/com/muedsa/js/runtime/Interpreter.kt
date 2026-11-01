@@ -5232,6 +5232,7 @@ class Interpreter(
             hasWhitespaceEscape(pattern) || hasSurrogatePattern(pattern) ||
             hasClassEscapeRange(pattern) ||
             ('i' in flags && needsCaseFoldingFallback(pattern)) ||
+            ('m' in flags && hasCaretAnchor(pattern)) ||
             hasLiteralBrace(enginePattern) ||
             hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
         ) {
@@ -5312,6 +5313,30 @@ class Interpreter(
                 }
 
                 '$' -> if (!inClass) return true else index++
+                else -> index++
+            }
+        }
+        return false
+    }
+
+    /** 字符类外未转义的 `^`：Java MULTILINE 的行终止符集合与 JS 不同（含 NEL、CRLF 整体处理）。 */
+    private fun hasCaretAnchor(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            when (pattern[index]) {
+                '\\' -> index += 2
+                '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                ']' -> {
+                    inClass = false
+                    index++
+                }
+
+                '^' -> if (!inClass) return true else index++
                 else -> index++
             }
         }

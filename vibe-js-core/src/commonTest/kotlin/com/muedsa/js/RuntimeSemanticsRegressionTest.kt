@@ -133,6 +133,25 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `正则多行锚点按 JS 行终止符集合匹配`() = runTest {
+        val runtime = TestRuntime()
+        // NEL(U+0085) 不是 JS 行终止符，Java MULTILINE 却会在此断行
+        assertEquals("0", runtime.evalString(
+            "var r = /^/gm; var a = []; var m; while ((m = r.exec('a\\u0085b')) !== null) " +
+                "{ a.push(m.index); r.lastIndex = m.index + 1; } a.join(',')"
+        ))
+        // CRLF 在 JS 中是两个独立行终止符，^ 可在 \\r 与 \\n 之间匹配
+        assertEquals("0,2,3", runtime.evalString(
+            "var r = /^/gm; var a = []; var m; while ((m = r.exec('a\\r\\nb')) !== null) " +
+                "{ a.push(m.index); r.lastIndex = m.index + 1; } a.join(',')"
+        ))
+        assertEquals("1,2,4", runtime.evalString(
+            "var r = /$/gm; var a = []; var m; while ((m = r.exec('a\\r\\nb')) !== null) " +
+                "{ a.push(m.index); r.lastIndex = m.index + 1; } a.join(',')"
+        ))
+    }
+
+    @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[object RegExp]", runtime.evalString("Object.prototype.toString.call(/a/) "))
