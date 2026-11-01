@@ -2807,4 +2807,51 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('');
 })()""",
     ),
+
+    // String.match/replace/search/split/matchAll 对自定义 Symbol 协议的委托
+    DifferentialCase(
+        "string-symbol-protocol",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () {
+    var o = {};
+    o[Symbol.match] = function (s) { return 'M:' + s + ':' + (this === o); };
+    return 'abc'.match(o);
+  });
+  push(function () {
+    var o = {};
+    o[Symbol.replace] = function (s, r) { return 'R:' + s + ':' + r; };
+    return 'abc'.replace(o, 'x');
+  });
+  push(function () {
+    var o = {};
+    o[Symbol.search] = function (s) { return 'Q:' + s; };
+    return 'abc'.search(o);
+  });
+  push(function () {
+    var o = {};
+    o[Symbol.split] = function (s, limit) { return ['S', s, limit]; };
+    return 'abc'.split(o, 3).join('|');
+  });
+  push(function () {
+    var o = {};
+    o[Symbol.matchAll] = function (s) { return [s]; };
+    return Array.from('abc'.matchAll(o)).join(',');
+  });
+  push(function () { var o = {}; o[Symbol.match] = 1; return 'a'.match(o); });
+  push(function () { var o = {}; o[Symbol.replace] = 1; return 'a'.replace(o, 'x'); });
+  push(function () {
+    var o = {};
+    o[Symbol.match] = function () { return null; };
+    return String('a'.match(o));
+  });
+  push(function () {
+    var o = {};
+    o[Symbol.split] = function () { return []; };
+    return 'a'.split(o).length;
+  });
+  return out.join(';');
+})()""",
+    ),
 )
