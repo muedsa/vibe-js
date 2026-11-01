@@ -2349,6 +2349,14 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "harness-global-resolution",
+        """
+        (function () {
+          return [typeof value, typeof name, typeof expression, typeof result].join('|');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "param-destructuring-fuzz",
         """
         (function () {
