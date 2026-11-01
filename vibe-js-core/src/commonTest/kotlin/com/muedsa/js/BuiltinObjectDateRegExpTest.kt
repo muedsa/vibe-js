@@ -1,5 +1,10 @@
 package com.muedsa.js
 
+import com.muedsa.js.runtime.DefaultHostEnvironment
+import com.muedsa.js.runtime.Engine
+import com.muedsa.js.runtime.HostEnvironment
+import com.muedsa.js.runtime.value.JSNumber
+import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSError
 import kotlinx.coroutines.test.runTest
@@ -578,5 +583,23 @@ class BuiltinObjectDateRegExpTest {
         assertEquals("SyntaxError", (flagError.value as JSError).errorName)
         val unknownFlagError = assertFailsWith<JSException> { runtime.eval("new RegExp('a', 'z')") }
         assertEquals("SyntaxError", (unknownFlagError.value as JSError).errorName)
+    }
+
+    @Test
+    fun `Date 本地方法使用宿主注入的时区偏移`() = runTest {
+        val base = DefaultHostEnvironment()
+        val offset = 8L * 60 * 60 * 1000
+        val engine = Engine(object : HostEnvironment by base {
+            override fun utcOffsetMillis(epochMillis: Long): Long = offset
+        })
+        suspend fun number(code: String): Double = (engine.run(code) as JSNumber).value
+        assertEquals(8.0, number("new Date(0).getHours()"))
+        assertEquals(0.0, number("new Date(0).getUTCHours()"))
+        assertEquals(-480.0, number("new Date(0).getTimezoneOffset()"))
+        assertEquals(number("Date.UTC(2020, 0, 1)"), number("new Date(2020, 0, 1, 8, 0, 0).getTime()"))
+        assertEquals(-offset.toDouble(), number("var d = new Date(0); d.setHours(0); d.getTime()"))
+        assertEquals(number("Date.UTC(2020, 0, 1)"), number("Date.parse('2020-01-01T08:00:00')"))
+        assertEquals(number("Date.UTC(2020, 0, 1, 8)"), number("Date.parse('2020-01-01T08:00:00Z')"))
+        assertTrue((engine.run("new Date(0).toString()") as JSString).value.contains("GMT+0800"))
     }
 }

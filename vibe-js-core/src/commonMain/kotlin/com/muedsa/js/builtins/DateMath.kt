@@ -166,7 +166,7 @@ internal object DateMath {
      * 小时允许 24 且仅在分秒毫秒为 0 时顺延到次日；小数秒超过 3 位按截断处理。
      * 其他格式返回 NaN（与浏览器对非 ISO 格式的宽容解析不同）。
      */
-    fun parseDateString(text: String): Double {
+    fun parseDateString(text: String, localOffsetMillis: ((Double) -> Double)? = null): Double {
         val trimmed = text.trim()
         // 自身 toString/toUTCString 输出（"Thu, 01 Jan 1970 00:00:00 GMT"）
         val human = HUMAN_DATE_PATTERN.matchEntire(trimmed)
@@ -263,6 +263,9 @@ internal object DateMath {
             // ISO 时区偏移上限：小时 00..23、分钟 00..59
             if (zoneHours !in 0..23 || zoneMinutes !in 0..59) return Double.NaN
             time -= sign * (zoneHours * 60 + zoneMinutes) * MS_PER_MINUTE
+        } else if (zone.isEmpty() && match.groupValues[4].isNotEmpty() && localOffsetMillis != null) {
+            // 带时间但无时区的 ISO 字符串按本地时间解释（纯日期仍为 UTC）
+            time -= localOffsetMillis(time)
         }
         return timeClip(time)
     }

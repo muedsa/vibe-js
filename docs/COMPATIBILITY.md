@@ -73,7 +73,7 @@
 | JSON | ✅ | well-formed 字符串转义（孤立代理项）、parse（reviver 快照键/原型链 Get/CreateDataProperty 不变量与 context.source）、stringify（replacer/space 的包装对象转换、值位置按内部槽展开）、`rawJSON`/`isRawJSON`；字符串字面量允许 U+2028/U+2029（JSON 超集） |
 | Error | ✅ | Error/TypeError/RangeError/ReferenceError/SyntaxError/EvalError/URIError、SuppressedError（error/suppressed/可选 message）、`Error.isError`、Error.prototype.toString（name/message 缺省规则与不可强制转换接收者）、Error.prototype.stack 访问器 |
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile 与旧式八进制数字转义、超大 `{m,n}` 量词与零宽迭代/捕获回滚、u+i 基于 CaseFolding.txt 的简单折叠、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
-| Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、ISO 缺省字段与 0..99 年映射差异（构造器/UTC 映射，setFullYear 不映射）、24:00 顺延次日与超长小数秒截断、时区偏移范围校验、常用 getter/setter（无效日期参数顺序、参数无效时内部时间同步失效、规范 length）、toString 本地格式/toUTCString 与负年份补零、toISOString（扩展年份符号 + 6 位数字）/toJSON；本地时间按 UTC 处理 |
+| Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、ISO 缺省字段与 0..99 年映射差异（构造器/UTC 映射，setFullYear 不映射）、24:00 顺延次日与超长小数秒截断、时区偏移范围校验、常用 getter/setter（无效日期参数顺序、参数无效时内部时间同步失效、规范 length）、toString 本地格式/toUTCString 与负年份补零、toISOString（扩展年份符号 + 6 位数字）/toJSON；本地时间通过宿主 utcOffsetMillis（默认 UTC）换算，构造/本地 setter/toString/无时区 ISO 解析均按该偏移处理 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；forEach 与迭代器为实时语义（墓碑存储：遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代，支持非注册 Symbol 键 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
@@ -107,15 +107,15 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 509 + 宿主 20 个测试 |
-| JS（Node） | ✅ | 核心 509 + 宿主 20 个测试 |
-| Wasm（Node） | ✅ | 核心 509 + 宿主 20 个测试 |
+| JVM | ✅ | 核心 510 + 宿主 20 个测试 |
+| JS（Node） | ✅ | 核心 510 + 宿主 20 个测试 |
+| Wasm（Node） | ✅ | 核心 510 + 宿主 20 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
 ## 6. 已知差异
 
-- `Date` 的本地时间方法按 UTC 实现（common 代码无法获取时区），`getTimezoneOffset()` 恒为 0；
+- `Date` 默认 `HostEnvironment.utcOffsetMillis` 返回 0（UTC）；宿主可按时刻返回毫秒偏移以启用本地时间，内核不内置 DST 规则；`toString` 的时区后缀显示为 `UTC±HH:MM`；
 - `JSON.parse` 使用独立严格 JSON 语法，不再复用宽松的 JS Parser；
 - RegExp 使用 Kotlin Regex 主路径 + 纯 Kotlin 回退引擎；回退路径按 JS-only 构造精确启用（空字符类、`\0`/`\c`、前向反向引用、lookbehind、量词组捕获重置、码元级 `.` 等）；忽略大小写且模式含字母时统一走回退引擎（规范的 Canonicalize），Kotlin 路径只处理不涉及大小写折叠的模式；
 - `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；

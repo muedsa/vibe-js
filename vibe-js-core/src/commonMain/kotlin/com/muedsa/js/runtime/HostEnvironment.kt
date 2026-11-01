@@ -83,6 +83,9 @@ interface HostEnvironment {
 
     /** 已上报的拒绝随后被 then/catch 处理；默认忽略。 */
     fun reportRejectionHandled(reason: JSValue) {}
+
+    /** 指定 UTC 时刻的本地时区偏移（毫秒，东为正）；默认 0（UTC）。 */
+    fun utcOffsetMillis(epochMillis: Long): Long = 0L
 }
 
 /** 默认宿主环境。 */
