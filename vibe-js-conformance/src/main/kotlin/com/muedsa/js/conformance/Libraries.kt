@@ -931,6 +931,69 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "markdown-it",
+        url = "https://cdn.jsdelivr.net/npm/markdown-it@13.0.2/dist/markdown-it.min.js",
+        globalName = "markdownit",
+        cases = listOf(
+            SmokeCase(
+                "heading",
+                assertion("markdownit().render('# Hi').indexOf('<h1>Hi</h1>') >= 0"),
+            ),
+            SmokeCase(
+                "bold and code",
+                assertion(
+                    "markdownit().render('**bold**').indexOf('<strong>bold</strong>') >= 0 && " +
+                        "markdownit().render('`x`').indexOf('<code>x</code>') >= 0"
+                ),
+            ),
+            SmokeCase(
+                "list",
+                assertion("markdownit().render('- a\\n- b').indexOf('<li>a</li>') >= 0"),
+            ),
+            SmokeCase(
+                "link and html option",
+                assertion(
+                    "markdownit().render('[x](https://a)').indexOf('href=\"https://a\"') >= 0 && " +
+                        "markdownit({ html: true }).render('<b>x</b>').indexOf('<b>x</b>') >= 0"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "handlebars",
+        url = "https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js",
+        globalName = "Handlebars",
+        cases = listOf(
+            SmokeCase(
+                "interpolate",
+                assertion("Handlebars.compile('Hello {{name}}')({ name: 'World' }) === 'Hello World'"),
+            ),
+            SmokeCase(
+                "each and if",
+                assertion(
+                    "Handlebars.compile('{{#each list}}{{this}},{{/each}}')({ list: [1, 2] })" +
+                        " === '1,2,' && Handlebars.compile('{{#if ok}}y{{else}}n{{/if}}')({ ok: true })" +
+                        " === 'y'"
+                ),
+            ),
+            SmokeCase(
+                "escaping",
+                assertion(
+                    "Handlebars.compile('{{x}}')({ x: '<b>' }) === '&lt;b&gt;' && " +
+                        "Handlebars.compile('{{{x}}}')({ x: '<b>' }) === '<b>'"
+                ),
+            ),
+            SmokeCase(
+                "helper",
+                assertion(
+                    "(function () { Handlebars.registerHelper('up', function (s) { " +
+                        "return String(s).toUpperCase(); }); " +
+                        "return Handlebars.compile('{{up name}}')({ name: 'ab' }) === 'AB'; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
