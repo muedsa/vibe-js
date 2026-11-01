@@ -994,6 +994,58 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "ajv",
+        url = "https://cdn.jsdelivr.net/npm/ajv@6.12.6/dist/ajv.min.js",
+        globalName = "Ajv",
+        cases = listOf(
+            SmokeCase(
+                "compile object schema",
+                assertion(
+                    "(function () { var validator = new Ajv({ logger: false }); var validate = validator.compile({ " +
+                        "type: 'object', properties: { a: { type: 'integer' } }, required: ['a'], " +
+                        "additionalProperties: false }); " +
+                        "return validate({ a: 1 }) === true && validate({ a: 'x' }) === false && " +
+                        "validate.errors.length === 1 && validate.errors[0].keyword === 'type'; })()"
+                ),
+            ),
+            SmokeCase(
+                "validate type",
+                assertion(
+                    "new Ajv({ logger: false }).validate({ type: 'string' }, 'x') === true && " +
+                        "new Ajv({ logger: false }).validate({ type: 'string' }, 1) === false"
+                ),
+            ),
+            SmokeCase(
+                "schema ref",
+                assertion(
+                    "(function () { var validator = new Ajv({ logger: false }); " +
+                        "validator.addSchema({ \$id: 's', type: 'number' }); " +
+                        "return validator.validate({ \$ref: 's' }, 5) === true && " +
+                        "validator.validate({ \$ref: 's' }, 'x') === false; })()"
+                ),
+            ),
+            SmokeCase(
+                "custom keyword",
+                assertion(
+                    "(function () { var validator = new Ajv({ logger: false }); validator.addKeyword('even', { " +
+                        "validate: function (schema, data) { " +
+                        "return typeof data === 'number' && data % 2 === 0; } }); " +
+                        "var validate = validator.compile({ type: 'object', " +
+                        "properties: { n: { even: true } } }); " +
+                        "return validate({ n: 2 }) === true && validate({ n: 3 }) === false; })()"
+                ),
+            ),
+            SmokeCase(
+                "array items",
+                assertion(
+                    "(function () { var validate = new Ajv({ logger: false }).compile({ " +
+                        "type: 'array', items: { type: 'number' } }); " +
+                        "return validate([1, 2]) === true && validate(['x']) === false; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
