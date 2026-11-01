@@ -1970,7 +1970,6 @@ class Interpreter(
                         if (initializer == null) {
                             // 无初始化器：绑定已在声明实例化阶段创建，运行时不做任何事
                             // （包括不得重建已通过 delete 移除的 sloppy eval 绑定）
-                            Unit
                         } else {
                             // 规范 13.3.2.4：先 ResolveBinding 捕获引用基环境，再求值初始化器；
                             // with 作用域内删除同名属性后仍写入原对象
@@ -2779,9 +2778,9 @@ class Interpreter(
                 isAsync = expression.isAsync,
                 lexicalThis = currentFrame.thisValue,
                 // 箭头函数继承最近的 this 绑定来源（跳过中间箭头，保留构造器 TDZ 状态）
-                lexicalThisSource = (currentFrame.function as? JSFunction)
+                lexicalThisSource = currentFrame.function
                     ?.takeIf { it.isArrow }?.lexicalThisSource ?: currentFrame,
-                lexicalFunction = (currentFrame.function as? JSFunction)
+                lexicalFunction = currentFrame.function
                     ?.takeIf { it.isArrow }?.lexicalFunction ?: currentFrame.function,
                 // arguments 语法限制同样穿过箭头函数
                 forbidsArguments = currentFrame.function?.forbidsArguments == true,
@@ -4942,8 +4941,6 @@ class Interpreter(
         val prototypeValue = getV(constructor as JSObject, PropertyKey.PROTOTYPE)
         val prototypeObject = prototypeValue as? JSObject
             ?: throw typeError("Function has non-object prototype in instanceof check")
-        if (value !is JSObject) return false
-
         if (value !is JSObject) return false
         var prototype = value.prototype
         while (prototype != null) {

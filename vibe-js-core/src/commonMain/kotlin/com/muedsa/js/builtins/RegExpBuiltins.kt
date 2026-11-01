@@ -52,7 +52,7 @@ object RegExpBuiltins {
                 // 内建正则直接使用原始 source/flags（不触发可覆盖属性）
                 pattern = patternValue.pattern
                 flags = if (hasFlags) {
-                    interpreter.toStringValue(flagsValue ?: JSUndefined)
+                    interpreter.toStringValue(flagsValue)
                 } else {
                     patternValue.flags
                 }
@@ -63,7 +63,7 @@ object RegExpBuiltins {
                     interpreter.getV(patternObject, PropertyKey.Str("source"))
                 )
                 flags = if (hasFlags) {
-                    interpreter.toStringValue(flagsValue ?: JSUndefined)
+                    interpreter.toStringValue(flagsValue)
                 } else {
                     interpreter.toStringValue(
                         interpreter.getV(patternObject, PropertyKey.Str("flags"))
@@ -71,7 +71,7 @@ object RegExpBuiltins {
                 }
             } else {
                 pattern = if (patternValue is JSUndefined) "" else interpreter.toStringValue(patternValue)
-                flags = if (hasFlags) interpreter.toStringValue(flagsValue ?: JSUndefined) else ""
+                flags = if (hasFlags) interpreter.toStringValue(flagsValue) else ""
             }
             interpreter.createRegExp(pattern, flags)
         }

@@ -206,7 +206,7 @@ internal object DisposableStackBuiltins {
                 pending = if (pending == null) {
                     error
                 } else {
-                    createSuppressedError(interpreter, error.value, pending!!.value)
+                    createSuppressedError(interpreter, error.value, pending.value)
                 }
             }
         }
