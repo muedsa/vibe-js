@@ -287,6 +287,31 @@ private val differentialCases = listOf(
     DifferentialCase("replace-anchor", "'a1b'.replace(/\\d/, '[$`]')"),
     DifferentialCase("typeof-symbol", "typeof Symbol('x')"),
     DifferentialCase("object-tag", "Object.prototype.toString.call(new Map())"),
+    // Number 精确十进制展开：覆盖常规值、次正规数、极值与舍入进位
+    DifferentialCase(
+        "num-toexponential-wide",
+        "(function () { var values = [123.456, 0.0001, 0.9999, 25, 12345, 1e21, 1e-21, 5e-324, " +
+            "1.7976931348623157e308, 0.1, 2.675]; " +
+            "var digits = [0, 1, 2, 3, 4, 16, 17, 18, 20, 100]; var out = []; " +
+            "for (var i = 0; i < values.length; i++) { for (var j = 0; j < digits.length; j++) { " +
+            "out.push(values[i].toExponential(digits[j])); } } return out.join('|'); })()"
+    ),
+    DifferentialCase(
+        "num-toprecision-wide",
+        "(function () { var values = [123.456, 0.0001, 0.9999, 1.2345e27, 1e-21, 1e21, 0.000001, " +
+            "5e-324, 0.1]; var out = []; " +
+            "for (var i = 0; i < values.length; i++) { " +
+            "for (var p = 1; p <= 21; p++) { out.push(values[i].toPrecision(p)); } } " +
+            "return out.join('|'); })()"
+    ),
+    DifferentialCase(
+        "num-tofixed-wide",
+        "(function () { var values = [1.005, 2.675, 123.456, 0.0001, 1e20, 1e21, 5e-324, " +
+            "-0.0001, 0.9999, 1.7976931348623157e308]; " +
+            "var digits = [0, 1, 2, 3, 5, 10, 20, 50, 100]; var out = []; " +
+            "for (var i = 0; i < values.length; i++) { for (var j = 0; j < digits.length; j++) { " +
+            "out.push(values[i].toFixed(digits[j])); } } return out.join('|'); })()"
+    ),
 )
 
 private fun jsonEscape(text: String): String {

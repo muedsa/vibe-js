@@ -12,8 +12,6 @@ import com.muedsa.js.runtime.value.NumberFormatting
 import com.muedsa.js.runtime.value.PropertyKey
 import kotlin.math.abs
 import kotlin.math.floor
-import kotlin.math.log10
-import kotlin.math.pow
 
 /**
  * Number 构造器与 Number.prototype。
@@ -264,25 +262,34 @@ object NumberBuiltins {
         if (digit < 10) ('0' + digit) else ('a' + (digit - 10))
 
     /**
-     * toFixed 的简化实现。
+     * toFixed 的精确实现。
+     *
+     * 按规范取使 n / 10^digits 最接近 |x| 的整数 n（并列时取更大的 n），
+     * 再按固定小数位输出；负值即使舍入为 0 也保留负号（如 (-0.0001).toFixed(2)）。
      */
     private fun toFixed(number: Double, digits: Int): String {
         if (!number.isFinite() || abs(number) >= 1e21) {
             return NumberFormatting.toString(number)
         }
-        val negative = number < 0
-        val value = abs(number)
-        var factor = 1.0
-        repeat(digits) { factor *= 10.0 }
-        val scaled = floor(value * factor + 0.5)
-        val integerPart = floor(scaled / factor).toLong()
-        val fractionPart = (scaled - integerPart * factor).toLong().toDouble()
-        val text = if (digits == 0) {
-            integerPart.toString()
-        } else {
-            "${integerPart}.${fractionPart.toLong().toString().padStart(digits, '0')}"
+        // ±0 输出正零格式
+        if (number == 0.0) {
+            return if (digits == 0) "0" else "0." + "0".repeat(digits)
         }
-        return if (negative && (integerPart != 0L || fractionPart != 0.0)) "-$text" else text
+        val negative = number < 0
+        val decimal = exactDecimal(abs(number))
+        val shift = decimal.decimalExponent + digits
+        val scaled = if (shift >= 0) {
+            decimal.magnitude.also { it.timesPowerOfTen(shift) }
+        } else {
+            decimal.magnitude.dropDigitsWithHalfUp(-shift)
+        }
+        var text = scaled.toString()
+        if (digits > 0) {
+            // 补足至少 1 位整数与 digits 位小数
+            if (text.length <= digits) text = text.padStart(digits + 1, '0')
+            text = text.substring(0, text.length - digits) + "." + text.substring(text.length - digits)
+        }
+        return (if (negative) "-" else "") + text
     }
 
     /**
@@ -360,8 +367,12 @@ object NumberBuiltins {
         fun dropDigitsWithHalfUp(dropCount: Int): DecimalBigInt {
             if (dropCount <= 0) return this
             val text = toString()
-            if (dropCount >= text.length) return fromLong(0L)
+            if (dropCount > text.length) return fromLong(0L)
             val cut = text.length - dropCount
+            // 全部位数被丢弃（如 0.9999 保留 0 位小数）：按最高位判断是否进位到 1
+            if (cut == 0) {
+                return if (text[0] >= '5') fromLong(1L) else fromLong(0L)
+            }
             val result = fromDecimalString(text.substring(0, cut))
             if (text[cut] >= '5') result.increment()
             return result
@@ -376,21 +387,26 @@ object NumberBuiltins {
         }
     }
 
+    /** 一个正有限 Double 的精确十进制表示：value = digits × 10^decimalExponent。 */
+    private class ExactDecimal(
+        val magnitude: DecimalBigInt,
+        val digits: String,
+        val decimalExponent: Int,
+    ) {
+        /** 最高位数字的十进制指数，即精确的 floor(log10(value))。 */
+        val leadingExponent: Int
+            get() = digits.length - 1 + decimalExponent
+    }
+
     /**
-     * 规范要求的精确十进制展开（fractionDigits 已定义时的 toExponential）。
+     * 把正有限 Double 精确展开为十进制大整数。
      *
-     * 将 Double 分解为 m × 2^e 后改写成十进制大整数：
-     * - e ≥ 0 时 x = (m × 2^e) × 10^0；
-     * - e < 0 时 x = (m × 5^(-e)) × 10^e。
-     * 这样 x 的完整十进制数字串可以精确保存，再按保留位数舍入；
-     * 规范要求恰为半值时取更大的 n，即对绝对值执行“逢五进一”。
-     *
-     * @return `d.ddd...e±E` 形式的无符号文本；非有限值或参数越界时返回 null
+     * 依据 IEEE 754 分解 x = m × 2^e：e ≥ 0 时 x = (m × 2^e) × 10^0；
+     * e < 0 时 x = (m × 5^(-e)) × 10^e，从而完整保留所有有效数字。
      */
-    private fun exactToExponential(value: Double, fractionDigits: Int): String? {
+    private fun exactDecimal(value: Double): ExactDecimal {
         val bits = value.toRawBits()
         val exponentBits = ((bits ushr 52) and 0x7FFL).toInt()
-        if (exponentBits == 0x7FF) return null
         val fractionBits = bits and ((1L shl 52) - 1L)
         val mantissa: Long
         val binaryExponent: Int
@@ -402,9 +418,6 @@ object NumberBuiltins {
             mantissa = fractionBits or (1L shl 52)
             binaryExponent = exponentBits - 1075
         }
-        if (mantissa == 0L) return null
-
-        // 精确十进制表示：x = magnitude × 10^decimalExponent
         val magnitude = DecimalBigInt.fromLong(mantissa)
         val decimalExponent: Int
         if (binaryExponent >= 0) {
@@ -415,38 +428,104 @@ object NumberBuiltins {
             repeat(-binaryExponent) { magnitude.multiplySmall(5) }
             decimalExponent = binaryExponent
         }
-
-        val digitsText = magnitude.toString()
-        // 最高位数字对应的十进制指数；由数字串长度精确得出，避免 log10 误差
-        var exponent = digitsText.length - 1 + decimalExponent
-        val keptDigits = fractionDigits + 1
-        // 保留 keptDigits 位：多余低位四舍五入，不足则补零
-        val dropped = digitsText.length - keptDigits
-        var rounded = if (dropped > 0) {
-            magnitude.dropDigitsWithHalfUp(dropped)
-        } else {
-            magnitude.also { it.timesPowerOfTen(-dropped) }
-        }
-        var roundedText = rounded.toString()
-        // 高位全为 9 时舍入进位会多出一位（如 9.99 → 10.0），提升指数
-        if (roundedText.length > keptDigits) {
-            rounded = rounded.dropDigitsWithHalfUp(roundedText.length - keptDigits)
-            roundedText = rounded.toString()
-            exponent++
-        }
-        val mantissaText = if (fractionDigits == 0) {
-            roundedText
-        } else {
-            roundedText.substring(0, 1) + "." + roundedText.substring(1)
-        }
-        val exponentSign = if (exponent >= 0) "+" else "-"
-        return mantissaText + "e" + exponentSign + abs(exponent)
+        return ExactDecimal(magnitude, magnitude.toString(), decimalExponent)
     }
 
     /**
-     * toExponential 的简化实现。
+     * 把精确十进制值舍入到 kept 个有效数字（规范在并列时取更大的 n）。
      *
-     * @param digits 小数位数；null 表示使用最短表示
+     * 返回数字串；若高位全为 9 导致进位（如 999… → 1000…），长度会多一位。
+     */
+    private fun roundSignificant(decimal: ExactDecimal, kept: Int): String {
+        val dropped = decimal.digits.length - kept
+        val rounded = if (dropped > 0) {
+            decimal.magnitude.dropDigitsWithHalfUp(dropped)
+        } else {
+            decimal.magnitude.also { it.timesPowerOfTen(-dropped) }
+        }
+        return rounded.toString()
+    }
+
+    /** 指数形式的后缀：`e+E` / `e-E`（E 为绝对值）。 */
+    private fun exponentSuffix(exponent: Int): String =
+        (if (exponent >= 0) "+" else "-") + abs(exponent)
+
+    /**
+     * 规范要求的精确十进制展开（fractionDigits 已定义时的 toExponential）。
+     *
+     * 返回 `d.ddd...e±E` 形式的无符号文本，舍入并列时取更大的 n。
+     */
+    private fun exactToExponential(value: Double, fractionDigits: Int): String {
+        val decimal = exactDecimal(value)
+        var exponent = decimal.leadingExponent
+        val keptDigits = fractionDigits + 1
+        var digits = roundSignificant(decimal, keptDigits)
+        if (digits.length > keptDigits) {
+            // 高位全为 9 时进位会多出一位（如 9.99 → 10.0），提升指数
+            digits = digits.substring(0, keptDigits)
+            exponent++
+        }
+        val mantissaText = if (fractionDigits == 0) {
+            digits
+        } else {
+            digits[0] + "." + digits.substring(1)
+        }
+        return mantissaText + "e" + exponentSuffix(exponent)
+    }
+
+    /**
+     * 规范要求的 toPrecision 精确实现（precision 已定义且为非零有限值）。
+     *
+     * 先按 precision 位有效数字舍入；若进位使指数提升，则按提升后的指数
+     * 判断指数/定点形式（例如 1e-6 的双精度值在 16 位有效数字时进位到 e=-6）。
+     */
+    private fun exactToPrecision(value: Double, precision: Int): String {
+        val decimal = exactDecimal(value)
+        var exponent = decimal.leadingExponent
+        var digits = roundSignificant(decimal, precision)
+        if (digits.length > precision) {
+            digits = digits.substring(0, precision)
+            exponent++
+        }
+        if (exponent < -6 || exponent >= precision) {
+            val mantissaText = if (precision == 1) digits else digits[0] + "." + digits.substring(1)
+            return mantissaText + "e" + exponentSuffix(exponent)
+        }
+        return if (exponent >= 0) {
+            val integerDigits = exponent + 1
+            if (integerDigits == digits.length) {
+                digits
+            } else {
+                digits.substring(0, integerDigits) + "." + digits.substring(integerDigits)
+            }
+        } else {
+            "0." + "0".repeat(-exponent - 1) + digits
+        }
+    }
+
+    /**
+     * 未提供 fractionDigits 的 toExponential：使用 Number::toString 的最短往返
+     * 十进制表示，再改写为指数形式（n 的位数尽可能少）。
+     */
+    private fun shortestExponentialText(value: Double): String {
+        val text = NumberFormatting.toString(value)
+        if (text.contains('e')) return text
+        val integerPart = text.substringBefore('.')
+        val fractionPart = text.substringAfter('.', "")
+        val allDigits = integerPart + fractionPart
+        val firstNonZero = allDigits.indexOfFirst { it != '0' }
+        // 非零有限值的数字串必然包含非零位
+        val exponent = integerPart.length - firstNonZero - 1
+        val significant = allDigits.substring(firstNonZero).trimEnd('0')
+        val mantissa = significant[0] +
+            (if (significant.length > 1) "." + significant.substring(1) else "")
+        return mantissa + "e" + exponentSuffix(exponent)
+    }
+
+    /**
+     * toExponential。
+     *
+     * @param digits 小数位数；null 表示使用最短往返表示
      */
     private fun toExponential(number: Double, digits: Int?): String {
         if (!number.isFinite()) return NumberFormatting.toString(number)
@@ -458,35 +537,16 @@ object NumberBuiltins {
 
         val negative = number < 0
         val value = abs(number)
-        // 保留 4 位以上有效数字时使用精确十进制展开（二进制浮点的完整有效位），
-        // 低位超出 Double 的近似精度，必须按规范对精确值舍入
-        if (digits != null && digits >= 3) {
-            exactToExponential(value, digits)?.let { text ->
-                return (if (negative) "-" else "") + text
-            }
+        val text = if (digits != null) {
+            exactToExponential(value, digits)
+        } else {
+            shortestExponentialText(value)
         }
-        var exponent = floor(log10(value)).toInt()
-        val decimals = digits ?: 15
-        var factor = 1.0
-        repeat(decimals) { factor *= 10.0 }
-        var mantissa = value / 10.0.pow(exponent)
-        mantissa = floor(mantissa * factor + 0.5) / factor
-        if (mantissa >= 10.0) {
-            mantissa /= 10.0
-            exponent++
-        }
-
-        var text = toFixed(mantissa, decimals)
-        if (digits == null && text.contains('.')) {
-            text = text.trimEnd('0').trimEnd('.')
-        }
-        val sign = if (negative) "-" else ""
-        val exponentSign = if (exponent >= 0) "+" else "-"
-        return "$sign$text" + "e$exponentSign${abs(exponent)}"
+        return (if (negative) "-" else "") + text
     }
 
     /**
-     * toPrecision 的简化实现。
+     * toPrecision。
      */
     private fun toPrecision(number: Double, precision: Int): String {
         if (!number.isFinite()) return NumberFormatting.toString(number)
@@ -494,17 +554,7 @@ object NumberBuiltins {
         if (number == 0.0) {
             return if (precision == 1) "0" else "0." + "0".repeat(precision - 1)
         }
-
-        val negative = number < 0
-        val value = abs(number)
-        val exponent = floor(log10(value)).toInt()
-        val sign = if (negative) "-" else ""
-
-        if (exponent < -6 || exponent >= precision) {
-            return sign + toExponential(value, precision - 1)
-        }
-
-        val decimals = (precision - exponent - 1).coerceAtLeast(0)
-        return sign + toFixed(value, decimals)
+        val sign = if (number < 0) "-" else ""
+        return sign + exactToPrecision(abs(number), precision)
     }
 }

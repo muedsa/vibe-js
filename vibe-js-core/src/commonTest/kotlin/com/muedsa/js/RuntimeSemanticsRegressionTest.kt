@@ -2914,6 +2914,38 @@ class RuntimeSemanticsRegressionTest {
         // toPrecision 有效数字 4 位以上走精确路径
         assertEquals("1.234e+27", runtime.evalString("(1.2345e+27).toPrecision(4)"))
         assertEquals("1.23449999999999996e+27", runtime.evalString("(1.2345e+27).toPrecision(18)"))
+        // 次正规数在 0..2 位小数时同样必须使用精确展开（近似路径会下溢为 Infinity）
+        assertEquals("5e-324", runtime.evalString("(5e-324).toExponential(0)"))
+        assertEquals("4.9e-324", runtime.evalString("(5e-324).toExponential(1)"))
+        // 未指定 fractionDigits 时使用最短往返表示
+        assertEquals("1.23456e+2", runtime.evalString("(123.456).toExponential()"))
+        assertEquals("5e-324", runtime.evalString("(5e-324).toExponential()"))
+        // 指数形式的选择取决于舍入后的十进制指数（1e-6 在 17 位时进位消失）
+        assertEquals(
+            "0.000001000000000000000",
+            runtime.evalString("(0.000001).toPrecision(16)")
+        )
+        assertEquals(
+            "9.9999999999999995e-7",
+            runtime.evalString("(0.000001).toPrecision(17)")
+        )
+        assertEquals("123.456000000000003", runtime.evalString("(123.456).toPrecision(18)"))
+    }
+
+    @Test
+    fun `Number toFixed 按精确十进制值舍入并保留负零结果符号`() = runTest {
+        val runtime = TestRuntime()
+        // 0.9999 的精确值小于 1，但保留 0 位小数时进位为 1
+        assertEquals("1", runtime.evalString("(0.9999).toFixed(0)"))
+        // 1.005 的双精度值略小于 1.005，保留两位小数为 1.00
+        assertEquals("1.00", runtime.evalString("(1.005).toFixed(2)"))
+        // 大数高位与 20 位小数的精确展开
+        assertEquals("100000000000000000000.00", runtime.evalString("(1e20).toFixed(2)"))
+        assertEquals("123.45600000000000306954", runtime.evalString("(123.456).toFixed(20)"))
+        // 负值即使舍入为 0 也保留负号
+        assertEquals("-0.00", runtime.evalString("(-0.0001).toFixed(2)"))
+        // ≥ 1e21 直接返回 Number::toString
+        assertEquals("1e+21", runtime.evalString("(1e21).toFixed(2)"))
     }
 
     @Test
