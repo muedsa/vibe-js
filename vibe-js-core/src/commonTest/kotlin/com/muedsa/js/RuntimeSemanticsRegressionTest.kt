@@ -2949,6 +2949,37 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Number toString 非十进制使用最短往返表示`() = runTest {
+        val runtime = TestRuntime()
+        // 0.1 的精确二进制展开需要 52 位有效数字，不能被截断
+        assertEquals(
+            "0.0001100110011001100110011001100110011001100110011001101",
+            runtime.evalString("(0.1).toString(2)")
+        )
+        assertEquals("1010.1", runtime.evalString("(10.5).toString(2)"))
+        assertEquals("ff.8", runtime.evalString("(255.5).toString(16)"))
+        // 非 2 的幂进制按最近可往返值舍入
+        assertEquals(
+            "0.0022002200220022002200220022002201",
+            runtime.evalString("(0.1).toString(3)")
+        )
+        assertEquals("3f.gez4w97ry", runtime.evalString("(123.456).toString(36)"))
+        // 超过 2^63 的整数不再溢出，输出完整数字
+        assertEquals("3635c9adc5dea00000", runtime.evalString("(1e21).toString(16)"))
+        assertEquals("70", runtime.evalString("String((1e21).toString(2).length)"))
+        assertEquals("20000000000000", runtime.evalString("(2 ** 53).toString(16)"))
+        // 负号与次正规数
+        assertEquals(
+            "-0.0001100110011001100110011001100110011001100110011001101",
+            runtime.evalString("(-0.1).toString(2)")
+        )
+        assertEquals(
+            "0." + "0".repeat(1073) + "1",
+            runtime.evalString("(5e-324).toString(2)")
+        )
+    }
+
+    @Test
     fun `RegExp source 访问器的转义与接收者校验`() = runTest {
         val runtime = TestRuntime()
         assertEquals("(?:)", runtime.evalString("new RegExp('').source"))

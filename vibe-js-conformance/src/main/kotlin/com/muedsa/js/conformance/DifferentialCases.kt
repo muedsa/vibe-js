@@ -285,6 +285,47 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 
     // 日期
     DifferentialCase("date-utc-normalize", "Date.UTC(2020, 12, 1)"),
+    // 非十进制 toString 的最短往返表示与超大整数
+    DifferentialCase(
+        "num-radix-matrix",
+        "[(0.1).toString(2), (0.5).toString(2), (255.5).toString(16), (0.1).toString(3), " +
+            "(123.456).toString(36), (1e21).toString(16), (1e21).toString(2).length, " +
+            "(-0.1).toString(2), (2 ** 53).toString(16), (2 ** 53 + 1).toString(16)].join('|')"
+    ),
+    // Date 的 UTC/TimeClip/ISO 解析与溢出矩阵（避免依赖本地时区的构造与 getter）
+    DifferentialCase(
+        "date-utc-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return Date.UTC(2020, 0, 1); }); " +
+            "push(function () { return Date.UTC(99, 0, 1); }); " +
+            "push(function () { return Date.UTC(0, 0, 1); }); " +
+            "push(function () { return Date.UTC(2020, -1, 1); }); " +
+            "push(function () { return Date.UTC(2020, 0, 0); }); " +
+            "push(function () { return Date.UTC(2020, 1, 30, 25, 61, 61, 1001); }); " +
+            "push(function () { return new Date(8640000000000000).getTime(); }); " +
+            "push(function () { return new Date(8640000000000001).getTime(); }); " +
+            "push(function () { return new Date(-8640000000000000).getTime(); }); " +
+            "push(function () { return new Date(8.64e15).toISOString(); }); " +
+            "push(function () { return new Date(-8.64e15).toISOString(); }); " +
+            "push(function () { return new Date(NaN).toISOString(); }); " +
+            "push(function () { return new Date(NaN).toUTCString(); }); " +
+            "push(function () { return new Date(0).toUTCString(); }); " +
+            "push(function () { return new Date(0).toJSON(); }); " +
+            "push(function () { return Date.parse('2020-01-01T00:00:00.123Z'); }); " +
+            "push(function () { return Date.parse('2020-01-01T08:00:00+08:00'); }); " +
+            "push(function () { return Date.parse('2020-01-01'); }); " +
+            "push(function () { return Date.parse('2020-02-30T00:00:00Z'); }); " +
+            "push(function () { return new Date('2020-01-01T00:00:00.000+00:00').toISOString(); }); " +
+            "push(function () { return new Date(0).getUTCFullYear() + ',' + new Date(0).getUTCMonth() + ',' + " +
+            "new Date(0).getUTCDate() + ',' + new Date(0).getUTCDay(); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 31)); d.setUTCMonth(1); return d.toISOString(); }); " +
+            "push(function () { var d = new Date(0); d.setUTCHours(25); return d.toISOString(); }); " +
+            "push(function () { var d = new Date(Date.UTC(2020, 0, 1)); return [d.getUTCFullYear(), " +
+            "d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), " +
+            "d.getUTCMilliseconds()].join(','); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase("date-local-constructor", "new Date(2020, 0, 1).getFullYear()"),
     DifferentialCase("date-parse-iso", "new Date('2020-01-01T00:00:00Z').toISOString()"),
     DifferentialCase("date-month-overflow", "(function () { var d = new Date(2020, 12, 1); return d.getFullYear() + '-' + d.getMonth(); })()"),

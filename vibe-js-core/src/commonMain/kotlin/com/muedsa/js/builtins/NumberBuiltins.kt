@@ -9,9 +9,9 @@ import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.NumberFormatting
+import com.muedsa.js.runtime.value.NumberRadixFormatting
 import com.muedsa.js.runtime.value.PropertyKey
 import kotlin.math.abs
-import kotlin.math.floor
 
 /**
  * Number 构造器与 Number.prototype。
@@ -228,7 +228,10 @@ object NumberBuiltins {
     }
 
     /**
-     * 数字转指定进制字符串（支持 2-36 进制）。
+     * 数字转指定进制字符串（2-36 进制）。
+     *
+     * 10 进制使用 NumberFormatting 的规范格式化；其余进制使用精确二进制
+     * 大整数展开并按最短往返规则选择有效数字（见 NumberRadixFormatting）。
      */
     private fun numberToString(number: Double, radix: Int): String {
         if (radix == 10) return NumberFormatting.toString(number)
@@ -238,28 +241,9 @@ object NumberBuiltins {
         if (number == 0.0) return "0"
 
         val negative = number < 0
-        val value = abs(number)
-        val integerPart = floor(value).toLong()
-        var integerText = if (integerPart == 0L) "0" else integerPart.toString(radix)
-
-        var fraction = value - floor(value)
-        val fractionBuilder = StringBuilder()
-        var iteration = 0
-        while (fraction > 0.0 && iteration < 20) {
-            fraction *= radix
-            val digit = floor(fraction).toInt()
-            fractionBuilder.append(digitChar(digit))
-            fraction -= digit
-            iteration++
-        }
-        val fractionText = fractionBuilder.toString().trimEnd('0')
-
-        val text = if (fractionText.isEmpty()) integerText else "$integerText.$fractionText"
+        val text = NumberRadixFormatting.toString(abs(number), radix)
         return if (negative) "-$text" else text
     }
-
-    private fun digitChar(digit: Int): Char =
-        if (digit < 10) ('0' + digit) else ('a' + (digit - 10))
 
     /**
      * toFixed 的精确实现。
