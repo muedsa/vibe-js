@@ -1,7 +1,6 @@
 package com.muedsa.js.conformance
 
 import java.io.File
-import java.net.URI
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -47,7 +46,7 @@ fun main(args: Array<String>) {
 private fun downloadAtomically(url: String, target: File) {
     val temp = File.createTempFile("${target.name}-", ".part", target.parentFile)
     try {
-        URI(url).toURL().openStream().use { input ->
+        openDownload(url).use { input ->
             temp.outputStream().use { output -> input.copyTo(output) }
         }
         check(temp.length() > 0) { "下载内容为空：$url" }

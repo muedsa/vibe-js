@@ -1,7 +1,6 @@
 package com.muedsa.js.conformance
 
 import java.io.File
-import java.net.URI
 import java.util.zip.ZipInputStream
 
 /**
@@ -34,8 +33,7 @@ fun main(args: Array<String>) {
     val archive = File.createTempFile("test262-", ".zip")
     try {
         println("下载 test262@$commit ...")
-        val url = URI("https://codeload.github.com/tc39/test262/zip/$commit").toURL()
-        url.openStream().use { input ->
+        openDownload("https://codeload.github.com/tc39/test262/zip/$commit").use { input ->
             archive.outputStream().use { output -> input.copyTo(output) }
         }
         ZipInputStream(archive.inputStream().buffered()).use { zip ->
