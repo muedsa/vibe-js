@@ -35,6 +35,10 @@ fun main(args: Array<String>) {
     if (report.crashed > 0) {
         exitProcess(2)
     }
+    if (strict && (report.results.isEmpty() || report.skipped > 0)) {
+        println("存在缺失库文件或库列表为空，严格模式判定失败")
+        exitProcess(1)
+    }
     if (strict && report.failed > 0) {
         exitProcess(1)
     }
@@ -179,6 +183,8 @@ private data class LibraryReport(
         get() = results.sumOf { result ->
             result.cases.count { it.status == "crash" } + if (result.status == "crash") 1 else 0
         }
+    val skipped: Int
+        get() = results.count { it.status == "skip" }
 
     fun writeMarkdown(file: File) {
         file.writeText(
@@ -186,7 +192,7 @@ private data class LibraryReport(
                 appendLine("# 真实 JS 库 UMD 冒烟")
                 appendLine()
                 appendLine("- 生成时间：$generatedAt")
-                appendLine("- 通过：$passed，失败：$failed，崩溃：$crashed，耗时：${elapsedMillis}ms")
+                appendLine("- 通过：$passed，失败：$failed，崩溃：$crashed，跳过：$skipped，耗时：${elapsedMillis}ms")
                 appendLine()
                 appendLine("| 库 | 状态 | 用例 | 详情 |")
                 appendLine("|---|---|---|---|")
@@ -212,6 +218,7 @@ private data class LibraryReport(
                 appendLine("  \"passed\": $passed,")
                 appendLine("  \"failed\": $failed,")
                 appendLine("  \"crashed\": $crashed,")
+                appendLine("  \"skipped\": $skipped,")
                 appendLine("  \"elapsedMillis\": $elapsedMillis,")
                 appendLine("  \"libraries\": [")
                 results.forEachIndexed { index, result ->
@@ -262,7 +269,7 @@ private data class LibraryReport(
         for (result in results) {
             println("  ${result.name}: ${result.status} (${result.cases.count { it.status == "pass" }}/${result.cases.size})")
         }
-        println("  通过 $passed，失败 $failed，崩溃 $crashed，耗时 ${elapsedMillis}ms")
+        println("  通过 $passed，失败 $failed，崩溃 $crashed，跳过 $skipped，耗时 ${elapsedMillis}ms")
     }
 }
 

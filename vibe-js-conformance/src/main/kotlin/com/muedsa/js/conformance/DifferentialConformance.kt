@@ -27,7 +27,12 @@ fun main(args: Array<String>) {
 
     if (report.nodeUnavailable) {
         println("未找到 Node，差分测试已跳过")
+        if (strict) exitProcess(1)
         return
+    }
+    if (strict && report.results.isEmpty()) {
+        println("差分用例为空，严格模式判定失败")
+        exitProcess(1)
     }
     if (strict && report.mismatches > 0) {
         exitProcess(1)
