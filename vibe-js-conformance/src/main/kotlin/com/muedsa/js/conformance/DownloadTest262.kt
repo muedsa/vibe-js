@@ -1,7 +1,6 @@
 package com.muedsa.js.conformance
 
 import java.io.File
-import java.util.zip.ZipInputStream
 
 /**
  * 下载并解压 tc39/test262 语料。
@@ -36,22 +35,7 @@ fun main(args: Array<String>) {
         openDownload("https://codeload.github.com/tc39/test262/zip/$commit").use { input ->
             archive.outputStream().use { output -> input.copyTo(output) }
         }
-        ZipInputStream(archive.inputStream().buffered()).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                val relativePath = entry.name.substringAfter('/', missingDelimiterValue = "")
-                if (relativePath.isNotEmpty()) {
-                    val target = File(targetDirectory, relativePath)
-                    if (entry.isDirectory) {
-                        target.mkdirs()
-                    } else {
-                        target.parentFile?.mkdirs()
-                        target.outputStream().use { output -> zip.copyTo(output) }
-                    }
-                }
-                zip.closeEntry()
-            }
-        }
+        extractZip(archive, targetDirectory)
     } finally {
         archive.delete()
     }
