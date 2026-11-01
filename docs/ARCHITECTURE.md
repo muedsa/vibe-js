@@ -168,6 +168,7 @@ engine.install(MyModule())
 | `Environment` 使用 Map 链式查找 | 预解析变量为槽位索引 / 扁平化闭包 | 仅 Environment 与 Interpreter 内部 |
 | 无词法声明的块/函数体、无词法循环头的 `for`/try/catch/finally 复用外层环境 | 已实现（Parser 预计算 `BlockStatement.requiresEnvironment`；箭头表达式体复用 var 环境） | 仅 Parser 与 Interpreter |
 | 资源释放作用域仅在语句列表直接含 `using` 时创建 | 已实现（Parser 预计算 `hasUsingDeclaration`，普通块/函数体/循环不再分配 `DisposalScope`） | 仅 Parser 与 Interpreter |
+| `JSNumber` 包装对象分配 | 已实现特殊值（±0/NaN/±Infinity）与 [-128, 1024] 小整数缓存；解释器字面量/算术/自增/长度路径复用实例 | 值模型与 Interpreter 热路径 |
 | 每次函数调用执行预计算的 hoist 列表 | 已避免 AST 全量扫描；可进一步缓存函数对象 | 仅 Interpreter |
 | 语句控制流使用 `Completion` | 保持不变 | 无 |
 | AST 遍历执行 | 新增 `Executor` 实现（指令/闭包） | Parser/AST/内建/API 不变 |
@@ -187,7 +188,7 @@ engine.install(MyModule())
 | 函数调用 | ~128,000 – 152,000 |
 | 100 次数组 push 循环 | ~7,600 – 8,700 |
 
-数值为本机（JDK 17、单线程、10 × 300ms，2026-11-01 空环境省略优化后）的粗略量级，仅用于纵向对比；多次运行波动约 ±10%。`arrayLoop` 受逐条语句执行与 `push` 调用开销影响明显，是后续优化（槽位化环境、内联缓存）的首要观察点。
+数值为本机（JDK 17、单线程、10 × 300ms，2026-11-01 空环境省略优化后）的粗略量级，仅用于纵向对比；空闲时多次运行波动约 ±10%，系统高负载时可能显著偏低，应择机复测。`arrayLoop` 受逐条语句执行与 `push` 调用开销影响明显，是后续优化（槽位化环境、内联缓存）的首要观察点。
 
 ## 10. 阶段状态
 

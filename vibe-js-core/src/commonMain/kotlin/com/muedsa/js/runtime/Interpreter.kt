@@ -522,7 +522,7 @@ class Interpreter(
 
         is JSString -> {
             if (key == PropertyKey.LENGTH) {
-                JSNumber(base.value.length.toDouble())
+                JSNumber.of(base.value.length.toDouble())
             } else {
                 val index = canonicalIndex(key)
                 if (index != null && index >= 0 && index < base.value.length.toLong()) {
@@ -789,7 +789,7 @@ class Interpreter(
         if (value is JSString) {
             wrapper.defineDataProperty(
                 key = PropertyKey.LENGTH,
-                value = JSNumber(value.value.length.toDouble()),
+                value = JSNumber.of(value.value.length.toDouble()),
                 writable = false,
                 enumerable = false,
                 configurable = false,
@@ -1325,7 +1325,7 @@ class Interpreter(
         val arguments = JSArguments(prototype = intrinsics.objectPrototype)
         arguments.defineDataProperty(
             key = PropertyKey.LENGTH,
-            value = JSNumber(args.size.toDouble()),
+            value = JSNumber.of(args.size.toDouble()),
             writable = true,
             enumerable = false,
             configurable = true,
@@ -2706,7 +2706,7 @@ class Interpreter(
             is Identifier -> currentFrame.lexicalEnv.getBinding(expression.name)
                 ?: throw referenceError("${expression.name} is not defined")
 
-            is NumberLiteral -> JSNumber(expression.value)
+            is NumberLiteral -> JSNumber.of(expression.value)
             is BigIntLiteral -> throw typeError("BigInt literals are not supported")
             is StringLiteral -> JSString(expression.value)
             is BooleanLiteral -> JSBoolean.getJsBoolean(expression.value)
@@ -4643,9 +4643,9 @@ class Interpreter(
                 val owner = findBindingOwner(target.name)
                 val oldValue = readIdentifierReference(owner, target.name)
                 val oldNumber = toNumber(oldValue)
-                val newValue = JSNumber(oldNumber + delta)
+                val newValue = JSNumber.of(oldNumber + delta)
                 writeIdentifierReference(owner, target.name, newValue)
-                if (expression.prefix) newValue else JSNumber(oldNumber)
+                if (expression.prefix) newValue else (oldValue as? JSNumber ?: JSNumber.of(oldNumber))
             }
 
             is MemberExpr -> {
@@ -4664,11 +4664,11 @@ class Interpreter(
                     }
                     val oldValue = getV(base, key)
                     val oldNumber = toNumber(oldValue)
-                    val newValue = JSNumber(oldNumber + delta)
+                    val newValue = JSNumber.of(oldNumber + delta)
                     putSuperProperty(
                         base, currentFrame.thisValue, key, newValue, currentFrame.strict,
                     )
-                    return if (expression.prefix) newValue else JSNumber(oldNumber)
+                    return if (expression.prefix) newValue else (oldValue as? JSNumber ?: JSNumber.of(oldNumber))
                 }
                 val base = evaluate(target.obj)
                 val privateMember = (target.property as? PrivateIdentifier)?.name
@@ -4676,16 +4676,16 @@ class Interpreter(
                     val name = resolvePrivateName(privateMember)
                     val oldValue = getPrivateMember(base, name)
                     val oldNumber = toNumber(oldValue)
-                    val newValue = JSNumber(oldNumber + delta)
+                    val newValue = JSNumber.of(oldNumber + delta)
                     setPrivateMember(base, name, newValue)
-                    if (expression.prefix) newValue else JSNumber(oldNumber)
+                    if (expression.prefix) newValue else (oldValue as? JSNumber ?: JSNumber.of(oldNumber))
                 } else {
                     val key = memberKey(target)
                     val oldValue = getV(base, key)
                     val oldNumber = toNumber(oldValue)
-                    val newValue = JSNumber(oldNumber + delta)
+                    val newValue = JSNumber.of(oldNumber + delta)
                     putV(base, key, newValue, currentFrame.strict)
-                    if (expression.prefix) newValue else JSNumber(oldNumber)
+                    if (expression.prefix) newValue else (oldValue as? JSNumber ?: JSNumber.of(oldNumber))
                 }
             }
 
@@ -4716,10 +4716,10 @@ class Interpreter(
         val operand = evaluate(expression.operand)
         return when (operator) {
             "typeof" -> JSString(typeOf(operand))
-            "+" -> JSNumber(toNumber(operand))
-            "-" -> JSNumber(-toNumber(operand))
+            "+" -> (operand as? JSNumber ?: JSNumber.of(toNumber(operand)))
+            "-" -> JSNumber.of(-toNumber(operand))
             "!" -> JSBoolean.getJsBoolean(!toBoolean(operand))
-            "~" -> JSNumber(toInt32(operand).inv().toDouble())
+            "~" -> JSNumber.of(toInt32(operand).inv().toDouble())
             "void" -> JSUndefined
             "await" -> {
                 // 规范 Await：非 Promise 值先经 PromiseResolve 采纳（thenable 通过微任务调用 then）
@@ -4859,15 +4859,15 @@ class Interpreter(
                             conversions.toString(rightPrimitive)
                     )
                 } else {
-                    JSNumber(conversions.toNumber(leftPrimitive) + conversions.toNumber(rightPrimitive))
+                    JSNumber.of(conversions.toNumber(leftPrimitive) + conversions.toNumber(rightPrimitive))
                 }
             }
 
-            "-" -> JSNumber(toNumber(left) - toNumber(right))
-            "*" -> JSNumber(toNumber(left) * toNumber(right))
-            "/" -> JSNumber(toNumber(left) / toNumber(right))
-            "%" -> JSNumber(toNumber(left) % toNumber(right))
-            "**" -> JSNumber(toNumber(left).pow(toNumber(right)))
+            "-" -> JSNumber.of(toNumber(left) - toNumber(right))
+            "*" -> JSNumber.of(toNumber(left) * toNumber(right))
+            "/" -> JSNumber.of(toNumber(left) / toNumber(right))
+            "%" -> JSNumber.of(toNumber(left) % toNumber(right))
+            "**" -> JSNumber.of(toNumber(left).pow(toNumber(right)))
 
             "<" -> JSBoolean.getJsBoolean(compareRelational(left, right) == -1)
             "<=" -> {
@@ -4886,26 +4886,26 @@ class Interpreter(
             "===" -> JSBoolean.getJsBoolean(strictEquals(left, right))
             "!==" -> JSBoolean.getJsBoolean(!strictEquals(left, right))
 
-            "&" -> JSNumber((toInt32(left) and toInt32(right)).toDouble())
-            "|" -> JSNumber((toInt32(left) or toInt32(right)).toDouble())
-            "^" -> JSNumber((toInt32(left) xor toInt32(right)).toDouble())
+            "&" -> JSNumber.of((toInt32(left) and toInt32(right)).toDouble())
+            "|" -> JSNumber.of((toInt32(left) or toInt32(right)).toDouble())
+            "^" -> JSNumber.of((toInt32(left) xor toInt32(right)).toDouble())
             "<<" -> {
                 // 规范顺序：先 ToInt32(left)，再 ToUint32(right)
                 val leftInt = toInt32(left)
                 val shift = (toUint32(right) and 31L).toInt()
-                JSNumber((leftInt shl shift).toDouble())
+                JSNumber.of((leftInt shl shift).toDouble())
             }
 
             ">>" -> {
                 val leftInt = toInt32(left)
                 val shift = (toUint32(right) and 31L).toInt()
-                JSNumber((leftInt shr shift).toDouble())
+                JSNumber.of((leftInt shr shift).toDouble())
             }
 
             ">>>" -> {
                 val leftInt = toUint32(left)
                 val shift = (toUint32(right) and 31L).toInt()
-                JSNumber((leftInt shr shift).toDouble())
+                JSNumber.of((leftInt shr shift).toDouble())
             }
 
             "in" -> {
