@@ -2212,4 +2212,92 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('||');
 })()""",
     ),
+
+    DifferentialCase(
+        "early-error-matrix",
+        """(function () {
+  var sources = [
+    '{ let a; let a; }',
+    '{ let a; var a; }',
+    'let a; { var a; }',
+    'switch (1) { case 1: let x; case 2: let x; }',
+    'try {} catch (e) { let e; }',
+    'try {} catch ([e]) { var e; }',
+    'function f(a, a) {}',
+    'function f(a, a) { "use strict"; }',
+    '(a, a) => 0',
+    'function f(...a, b) {}',
+    'function f(...a,) {}',
+    'function f(...a = 1) {}',
+    'class A { constructor() {} constructor() {} }',
+    'class A { static prototype() {} }',
+    'class A { get constructor() {} }',
+    'class A { #x; #x; }',
+    'class A { static #x; #x; }',
+    'class A { constructor() { super(); } }',
+    'class A extends null { constructor() { super(); } }',
+    'new.target;',
+    'super.x;',
+    'a: a: ;',
+    'a: { break b; }',
+    'a: { continue a; }',
+    'return;',
+    '{ function f() {} let f; }',
+    'function f() { let arguments; }',
+    'function f() { "use strict"; let arguments; }',
+    'function f(eval) { "use strict"; }',
+    'with ({}) {}',
+    'function f() { "use strict"; with ({}) {} }',
+    'function f() { "use strict"; 010; }',
+    'function f() { "use strict"; delete x; }',
+    'function f() { "use strict"; var yield; }',
+    'function f() { "use strict"; var implements; }',
+    'let [a];',
+    'const {a};',
+    '({a});',
+    '({a} = {});',
+    'for (let [a] in {}) {}',
+    'for (const x of []) {}',
+    'for (const x;;) {}',
+    'async function f() { var await; }',
+    'function f() { await; }',
+    'async function f() { await; }',
+    'function f() { for await (const x of []) {} }',
+    '/(?<a>x)(?<a>y)/',
+    '/(?<a>x)|(?<a>y)/',
+    '/\\p{Unknown}/u',
+    '/(?<=a)*/u',
+    'tag`\\unicode`;',
+    '`\\unicode`;',
+    'var let = 1;',
+    'let let = 1;',
+    'let a; let a;',
+    'var a; let a;',
+    'function f() { function g() {} function g() {} }',
+    'function f() { "use strict"; function g() {} function g() {} }',
+    'class A { ["constructor"]() {} constructor() {} }',
+    'class A { static constructor() {} }',
+    '({ get a() {}, set a(v) {} });',
+    '({ get a() {}, get a() {} });',
+    'function f(a = 1) { "use strict"; }',
+    'function f(a = 1) { let a; }',
+    'function f({a}) { var a; }',
+    'function f(a) { let a; }',
+    'let {a: {b}} = {};',
+    'let {a: [b] = 1} = {};',
+    '({a: {b = 1}} = {});',
+    'for (let let of []) {}'
+  ];
+  var out = [];
+  for (var i = 0; i < sources.length; i++) {
+    try {
+      eval(sources[i]);
+      out.push(i + '=OK');
+    } catch (e) {
+      out.push(i + '=' + e.name);
+    }
+  }
+  return out.join(';');
+})()""",
+    ),
 )
