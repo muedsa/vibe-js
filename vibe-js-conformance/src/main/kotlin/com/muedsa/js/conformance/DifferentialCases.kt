@@ -563,6 +563,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-duplicate-named", "'b'.match(/(?<x>a)|(?<x>b)/).groups.x"),
     DifferentialCase("regexp-modifier-i", "/(?i:a)/.test('A')"),
     DifferentialCase("regexp-lookbehind-greedy", "'fooo'.match(/(?<=f(o+))o/)[1]"),
+    // u/s 标志与 Unicode 简单大小写折叠的边界语义
+    DifferentialCase("regexp-dotall-fallback", "[/a.b/s.exec('a\\nb')[0], /a.b/s.test('a\\rb'), /a.b/.test('a\\nb'), /(?<=a.b)/s.test('a\\nb')].join(',')"),
+    DifferentialCase("regexp-astral-dot-u", "[/^(.)$/u.exec(String.fromCodePoint(128512))[0].length, /^.{1}$/u.test(String.fromCodePoint(128512)), /^.{2}$/u.test(String.fromCodePoint(128512))].join(',')"),
+    DifferentialCase("regexp-astral-quantifier-u", "String.fromCodePoint(128512).repeat(2).match(/\\u{1F600}{2}/u)[0].length"),
+    DifferentialCase("regexp-simple-fold-iu", "[/\\u017F/iu.test('s'), /\\u212A/iu.test('k'), /k/iu.test('\\u212A'), /s/iu.test('\\u017F'), /i/iu.test('\\u0130'), /\\u0130/iu.test('i')].join(',')"),
+    DifferentialCase("regexp-canonicalize-nonu", "[/k/i.test('\\u212A'), /s/i.test('\\u017F')].join(',')"),
+    DifferentialCase("regexp-sticky-lastindex", "(function () { var r = /a/y; r.lastIndex = 1; var m = r.exec('ba'); var first = r.lastIndex; var second = r.test('ba'); return [m[0], first, second, r.lastIndex].join(','); })()"),
+    DifferentialCase("regexp-multiline-anchors", "['a\\nb'.match(/^b/m)[0], /a$/m.test('a\\nb'), 'a\\r\\nb'.match(/a$/m)[0]].join(',')"),
+    DifferentialCase("regexp-backreference-i", "/(a)\\1/i.exec('aA')[0]"),
+    DifferentialCase("regexp-boundary-B", "[/\\B/.test('a'), /a\\B/.test('a'), /\\Ba/.test('a'), /a\\B/.test('ab')].join(',')"),
+    DifferentialCase("regexp-empty-negated-class", "[/[^]/.test('\\n'), /[^]/u.test('\\n'), /[^]/.test('')].join(',')"),
+    DifferentialCase("regexp-property-astral", "[/\\p{Script=Deseret}/u.test(String.fromCodePoint(66560)), /\\p{Script=Deseret}/u.test('a')].join(',')"),
+    DifferentialCase("regexp-fold-class-nonu", "[/[k]/i.test('\\u212A'), /[a-z]/i.test('\\u212A'), /[a-z]/i.test('\\u017F'), /[a-z]/i.test('K'), /[\\u00DF]/i.test('\\u1E9E')].join(',')"),
+    DifferentialCase("regexp-fold-class-iu", "[/[k]/iu.test('\\u212A'), /[a-z]/iu.test('\\u212A'), /[a-z]/iu.test('\\u017F'), /[k]/iu.test('K'), /[\\u00DF]/iu.test('\\u1E9E')].join(',')"),
+    DifferentialCase("regexp-fold-word-nonu", "[/\\w/i.test('\\u212A'), /\\w/i.test('\\u017F'), /\\w/i.test('\\u03C2'), /\\B/i.test('\\u212A'), /\\b/i.test('a\\u212A')].join(',')"),
+    DifferentialCase("regexp-fold-word-iu", "[/\\w/iu.test('\\u212A'), /\\w/iu.test('\\u017F'), /\\w/iu.test('\\u03C2'), /\\B/iu.test('\\u212A'), /\\b/iu.test('a\\u212A')].join(',')"),
 
     // Unicode 标识符与尾调用结果
     DifferentialCase("ident-astral-escape", "(function () { var \\u{1D49C} = 1; return \\u{1D49C}; })()"),

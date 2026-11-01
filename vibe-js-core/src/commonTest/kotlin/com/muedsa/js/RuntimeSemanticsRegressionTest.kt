@@ -2111,9 +2111,9 @@ class RuntimeSemanticsRegressionTest {
         assertEquals(true, runtime.evalBoolean(
             "/(?i:(?-i:a))/.test('a') && !/(?i:(?-i:a))/.test('A')"
         ))
-        // i 修饰符影响 \w/\b 的 Canonicalize
+        // i 修饰符影响 \w/\b 的 Canonicalize：只有 u 模式的简单折叠会落到 ASCII
         assertEquals(true, runtime.evalBoolean(
-            "/(?i:\\w)/.test('\u017F') && !/\\w/.test('\u017F')"
+            "/(?i:\\w)/u.test('\u017F') && !/(?i:\\w)/.test('\u017F') && !/\\w/u.test('\u017F')"
         ))
         // 语法错误在求值时抛 SyntaxError
         assertEquals(true, runtime.evalBoolean(
@@ -3803,5 +3803,35 @@ class RuntimeSemanticsRegressionTest {
                 " /[\\uFB05]/ui.test('\\uFB06') && /[\\uFB06]/ui.test('\\uFB05') &&" +
                 " /\\u212A/ui.test('k')"
         ))
+    }
+
+    @Test
+    fun `RegExp 忽略大小写区分非 u 大写映射与 u 简单折叠`() = runTest {
+        val runtime = TestRuntime()
+        // 非 u 模式只做单码点大写映射：U+212A/U+017F 不回退到 ASCII，ß 与 ẞ 不相等
+        assertEquals(
+            "false,false,false",
+            runtime.evalString(
+                "[/k/i.test('\\u212A'), /s/i.test('\\u017F'), /\\u00DF/i.test('\\u1E9E')].join(',')"
+            )
+        )
+        // 非 u 字符类、范围与 \w 同样按 Canonicalize 判定
+        assertEquals(
+            "false,false,false",
+            runtime.evalString(
+                "[/[k]/i.test('\\u212A'), /[a-z]/i.test('\\u212A'), /\\w/i.test('\\u212A')].join(',')"
+            )
+        )
+        // u 模式使用 CaseFolding 简单折叠：Kelvin/长 s 折叠到 k/s，İ 不折叠到 i
+        assertEquals(
+            "true,true,true,false",
+            runtime.evalString(
+                "[/\\u212A/iu.test('k'), /[a-z]/iu.test('\\u017F'), /\\w/iu.test('\\u212A')," +
+                    " /i/iu.test('\\u0130')].join(',')"
+            )
+        )
+        // u 模式下希腊 sigma 折叠后仍非 ASCII 单词字符
+        assertEquals(false, runtime.evalBoolean("/\\w/iu.test('\\u03C2')"))
+        assertEquals(true, runtime.evalBoolean("/\\W/iu.test('\\u03C2')"))
     }
 }

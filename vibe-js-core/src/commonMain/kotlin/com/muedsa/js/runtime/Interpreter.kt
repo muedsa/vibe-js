@@ -5155,7 +5155,7 @@ class Interpreter(
             ('u' in flags && hasUnicodePropertyEscape(pattern)) ||
             hasWhitespaceEscape(pattern) || hasSurrogatePattern(pattern) ||
             hasClassEscapeRange(pattern) ||
-            ('i' in flags && hasNonAsciiCasePattern(pattern)) ||
+            ('i' in flags && needsCaseFoldingFallback(pattern)) ||
             hasLiteralBrace(enginePattern) ||
             hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
         ) {
@@ -5257,6 +5257,16 @@ class Interpreter(
         }
         return false
     }
+
+    /**
+     * 忽略大小写时是否需要回退到纯 Kotlin 引擎。
+     *
+     * Kotlin/Java 的 UNICODE_CASE 使用简单大小写映射，与规范的 Canonicalize
+     * （非 u：单码点大写并保留非 ASCII→ASCII 字符；u：CaseFolding 简单折叠）
+     * 在 U+0130、U+212A、U+017F、ß/ẞ 等字符上不同；含字母的模式统一走回退引擎。
+     */
+    private fun needsCaseFoldingFallback(pattern: String): Boolean =
+        pattern.any { it.isLetter() } || hasNonAsciiCasePattern(pattern)
 
     /** 是否包含需要按非 u 规则做大小写折叠的非 ASCII 字符/转义。 */
     private fun hasNonAsciiCasePattern(pattern: String): Boolean {

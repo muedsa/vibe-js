@@ -312,6 +312,21 @@ private val differentialCases = listOf(
             "for (var i = 0; i < values.length; i++) { for (var j = 0; j < digits.length; j++) { " +
             "out.push(values[i].toFixed(digits[j])); } } return out.join('|'); })()"
     ),
+    // 三种格式化方法 × 多组取值/位数的矩阵，覆盖往返与舍入边界
+    DifferentialCase(
+        "num-format-matrix",
+        "(function () { var values = [0.1, 0.2, 0.3, 1 / 3, 2 / 3, Math.PI, 1e-7, 1e-6, 1e21, 1e22, " +
+            "1.7976931348623157e308, 5e-324, 9007199254740992, 9007199254740993, 1.25, 2.675, " +
+            "0.9999999999999999, 123456789.123456789, -1.5, -0.0001]; " +
+            "var expDigits = [0, 1, 2, 5, 15, 16, 17, 20, 50, 100]; " +
+            "var precDigits = [1, 2, 3, 4, 5, 10, 15, 16, 17, 20, 21, 50, 100]; " +
+            "var fixedDigits = [0, 1, 2, 5, 10, 20, 50, 100]; var out = []; " +
+            "for (var i = 0; i < values.length; i++) { " +
+            "for (var j = 0; j < expDigits.length; j++) { out.push(values[i].toExponential(expDigits[j])); } " +
+            "for (var k = 0; k < precDigits.length; k++) { out.push(values[i].toPrecision(precDigits[k])); } " +
+            "for (var m = 0; m < fixedDigits.length; m++) { out.push(values[i].toFixed(fixedDigits[m])); } " +
+            "} return out.join('|'); })()"
+    ),
 )
 
 private fun jsonEscape(text: String): String {

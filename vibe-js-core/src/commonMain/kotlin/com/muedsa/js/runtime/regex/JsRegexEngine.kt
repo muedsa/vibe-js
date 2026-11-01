@@ -869,14 +869,11 @@ class JsRegexEngine(
         }
     }
 
-    private fun canonicalizeNonUnicode(character: Char): Char {
-        val upper = character.uppercaseChar()
-        return if (character.code >= 128 && upper.code < 128) character else upper
-    }
-
     /**
-     * 单词字符判定（ASCII \w）；i 模式下 ς/ſ/K 等会大小写折叠到 ASCII 字母，
-     * 与非 u 模式 JS 的 Canonicalize 语义一致。
+     * 单词字符判定（ASCII \w）。
+     *
+     * i 模式下按规范对输入做 Canonicalize：u 模式用简单折叠（U+212A/U+017F
+     * 折叠为 k/s 属于单词字符），非 u 模式用单码点大写映射（二者均为非单词字符）。
      */
     private fun isWord(character: Char, ignoreCase: Boolean): Boolean {
         if (character in 'a'..'z' || character in 'A'..'Z' ||
@@ -885,7 +882,12 @@ class JsRegexEngine(
             return true
         }
         if (!ignoreCase) return false
-        return isAsciiWord(character.lowercaseChar()) || isAsciiWord(character.uppercaseChar())
+        return if (unicode) {
+            val folded = UnicodeCaseFoldingData.simpleFold(character.code)
+            folded <= 0xFFFF && isAsciiWord(folded.toChar())
+        } else {
+            isAsciiWord(canonicalizeNonUnicode(character))
+        }
     }
 
     private fun isAsciiWord(character: Char): Boolean =
@@ -980,7 +982,9 @@ class JsRegexEngine(
                         UnicodeCaseFoldingData.simpleFold(this.codePoint)
                 }
                 if (codePoint > 0xFFFF || this.codePoint > 0xFFFF) return false
-                return codePoint.toChar().equals(this.codePoint.toChar(), ignoreCase = true)
+                // 非 u 模式按规范比较单码点大写映射，避免 UNICODE_CASE 过度折叠 U+212A 等
+                return canonicalizeNonUnicode(codePoint.toChar()) ==
+                    canonicalizeNonUnicode(this.codePoint.toChar())
             }
         }
 
@@ -997,14 +1001,12 @@ class JsRegexEngine(
                     val foldedEnd = UnicodeCaseFoldingData.simpleFold(end)
                     return folded in start..end || codePoint in foldedStart..foldedEnd
                 }
-                // 非 u 模式沿用大写映射的近似语义
-                val character = codePoint.toChar()
-                val lower = character.lowercaseChar().code
-                val upper = character.uppercaseChar().code
-                if (lower in start..end || upper in start..end) return true
-                val foldedStart = start.toChar().lowercaseChar().code
-                val foldedEnd = end.toChar().lowercaseChar().code
-                return lower in foldedStart..foldedEnd
+                // 非 u 模式：比较 Canonicalize 后的字符，避免把 U+212A/U+017F 折叠为 ASCII
+                val canonical = canonicalizeNonUnicode(codePoint.toChar()).code
+                if (canonical in start..end) return true
+                val canonicalStart = canonicalizeNonUnicode(start.toChar()).code
+                val canonicalEnd = canonicalizeNonUnicode(end.toChar()).code
+                return canonical in canonicalStart..canonicalEnd
             }
         }
 
@@ -2215,4 +2217,13 @@ class JsRegexEngine(
             return false
         }
     }
+}
+
+/**
+ * 非 u 模式 Canonicalize：取单码点大写映射；当非 ASCII 字符的大写映射落在
+ * ASCII 范围时保持原字符（如 U+212A KELVIN SIGN、U+017F 长 s），与规范一致。
+ */
+private fun canonicalizeNonUnicode(character: Char): Char {
+    val upper = character.uppercaseChar()
+    return if (character.code >= 128 && upper.code < 128) character else upper
 }
