@@ -4,6 +4,7 @@ import com.muedsa.js.runtime.value.JSNumber
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
 
 /**
  * 基础执行能力：字面量、运算、变量、函数、闭包、控制流。
@@ -175,5 +176,16 @@ class BasicExecutionTest {
         assertEquals(true, runtime.evalBoolean("typeof lazyBinding === 'undefined'"))
         runtime.engine.run(lazy)
         assertEquals(1.0, runtime.evalNumber("lazyBinding"))
+        // 同一 AST 的标签模板站点在多次执行间复用缓存对象
+        val tagged = runtime.engine.parse("function tag(s) { return s; } tag`x`")
+        val firstTemplate = runtime.engine.run(tagged)
+        val secondTemplate = runtime.engine.run(tagged)
+        assertSame(firstTemplate, secondTemplate)
+        // 与 run(source) 一致：脚本结束后冲刷微任务
+        val asyncProgram = runtime.engine.parse(
+            "Promise.resolve(1).then(function () { globalThis.parsedAsync = 2; });"
+        )
+        runtime.engine.run(asyncProgram)
+        assertEquals(2.0, runtime.evalNumber("parsedAsync"))
     }
 }

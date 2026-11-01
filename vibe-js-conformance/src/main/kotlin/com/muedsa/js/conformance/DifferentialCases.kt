@@ -582,6 +582,44 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             "new Date(0).setSeconds(NaN, arg('ms')); " +
             "new Date(0).setUTCMonth(NaN, arg('uday')); return log.join(','); })()"
     ),
+    DifferentialCase(
+        "date-utc-setter-fuzz",
+        "(function () { " +
+            "var methods = ['setUTCFullYear', 'setUTCMonth', 'setUTCDate', 'setUTCHours', " +
+            "'setUTCMinutes', 'setUTCSeconds', 'setUTCMilliseconds', 'setTime']; " +
+            "var values = [0, 1, 5, 12, 31, 99, 100, -1, NaN, Infinity, -Infinity, undefined, '7', -0]; " +
+            "var times = [0, NaN, 123456789, -1, 8640000000000000, -8640000000000000, " +
+            "8640000000000001, -8640000000000001, 123.456, -123.456, 1e20]; " +
+            "var seed = 12345; function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; } " +
+            "var out = []; for (var i = 0; i < 150; i++) { " +
+            "var t = times[rnd(times.length)]; var name = methods[rnd(methods.length)]; " +
+            "var d = new Date(t); var args = []; " +
+            "var count = name === 'setTime' ? 1 : rnd(5); " +
+            "for (var j = 0; j < count; j++) { args.push(values[rnd(values.length)]); } " +
+            "var result; try { result = String(d[name].apply(d, args)); } " +
+            "catch (e) { result = 'THROW:' + e.name; } " +
+            "out.push(i + ':' + name + ':' + t + ':' + count + ':' + result + ':' + String(d.getTime())); } " +
+            "return out.join(';'); })()"
+    ),
+    DifferentialCase(
+        "date-setter-boundary-matrix",
+        "(function () { var out = []; " +
+            "function t(label, fn) { try { out.push(label + '=' + fn()); } " +
+            "catch (e) { out.push(label + '=THROW:' + e.name); } } " +
+            "t('y99', function () { var d = new Date(0); d.setYear(99); return d.getTime(); }); " +
+            "t('yinf', function () { var d = new Date(0); d.setYear(Infinity); return d.getTime(); }); " +
+            "t('ynan', function () { var d = new Date(0); return d.setYear(NaN) + '|' + d.getTime(); }); " +
+            "t('monthUndef', function () { var d = new Date(0); d.setMonth(1, undefined); return d.getTime(); }); " +
+            "t('hoursInf', function () { var d = new Date(0); d.setHours(Infinity); return d.getTime(); }); " +
+            "t('fullYearInf', function () { var d = new Date(0); d.setFullYear(Infinity); return d.getTime(); }); " +
+            "t('fullYearUndefMonth', function () { var d = new Date(0); " +
+            "d.setFullYear(2000, undefined); return d.getTime(); }); " +
+            "t('utcFullYearUndefDay', function () { var d = new Date(0); " +
+            "d.setUTCFullYear(2000, 1, undefined); return d.getTime(); }); " +
+            "t('invalidSetHours', function () { var d = new Date(NaN); " +
+            "return d.setHours(1) + '|' + d.getTime(); }); " +
+            "return out.join(';'); })()"
+    ),
     DifferentialCase("date-set-invalid-no-coerce", "(function () { var called = false; var arg = { valueOf: function () { called = true; return 1; } }; new Date(NaN).setMonth(arg); return called; })()"),
     DifferentialCase("date-setfullyear-invalid", "(function () { var d = new Date(NaN); d.setFullYear(2020); return d.getFullYear(); })()"),
     DifferentialCase("date-parse-tostring-roundtrip", "Date.parse(new Date(0).toString())"),
