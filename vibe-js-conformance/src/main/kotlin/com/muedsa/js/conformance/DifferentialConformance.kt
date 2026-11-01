@@ -258,8 +258,9 @@ private class DifferentialRunner {
             """
             for (const [name, expression] of cases) {
               try {
-                const value = eval(expression);
-                const json = JSON.stringify(value);
+                // 间接 eval：在全局作用域求值，避免表达式看到运行器局部绑定
+                const result = (0, eval)(expression);
+                const json = JSON.stringify(result);
                 process.stdout.write(name + '\t' + (json === undefined ? 'undefined' : json) + '\n');
               } catch (error) {
                 const errorName = error && error.name ? error.name : 'Error';
@@ -283,7 +284,7 @@ private class DifferentialRunner {
                 (async () => {
                   for (const [name, source] of asyncCases) {
                     try {
-                      await (async () => { eval(source); })();
+                      await (async () => { (0, eval)(source); })();
                       // 冲刷所有已入队的微任务（宏任务边界）
                       await new Promise((resolve) => setImmediate(resolve));
                       const json = JSON.stringify(globalThis.__diffResult);

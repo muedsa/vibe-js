@@ -2349,6 +2349,54 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "param-destructuring-fuzz",
+        """
+        (function () {
+          var out = [];
+          function check(label, body) {
+            try { out.push(label + '=' + String(body())); }
+            catch (e) { out.push(label + '=THROW:' + e.name); }
+          }
+          function f(a, { b = 2, c: { d = 3 } = {} } = {}, ...rest) {
+            return [String(a), b, d, rest.length, arguments.length].join('|');
+          }
+          check('defaults', function () { return f(1, {}); });
+          check('nested', function () { return f(1, { b: 5, c: { d: 6 } }, 7, 8); });
+          check('noArgs', function () { return f(); });
+          check('nullSecond', function () { return f(1, null); });
+          function g({ x = y, y = 2 } = {}) { return x + ':' + y; }
+          check('tdz', function () { return g({}); });
+          function h([a, , b = 9] = []) { return [String(a), b, arguments.length].join('|'); }
+          check('arrayPattern', function () { return h([1, 2]); });
+          check('lengths', function () { return [f.length, g.length, h.length].join(','); });
+          var calls = [];
+          function mark(value) { calls.push(value); return value; }
+          function order(a = mark('a'), b = mark('b')) { return calls.join(','); }
+          check('defaultOrder', function () { return order(); });
+          var assignLog = [];
+          var source = {
+            get a() { assignLog.push('ga'); return 1; },
+            get b() { assignLog.push('gb'); return 2; }
+          };
+          check('assignOrder', function () {
+            var x;
+            var y;
+            ({ a: x, b: y } = source);
+            return assignLog.join(',') + ':' + x + ':' + y;
+          });
+          var outer = 1;
+          function scope(a = outer) { let outer = 2; return a; }
+          check('paramScope', function () { return scope(); });
+          function bodyVar(a = typeof value) { var value = 1; return a; }
+          check('bodyVarHidden', function () { return bodyVar(); });
+          check('duplicateSimpleParams', function () {
+            return eval('function dup(a, a) { return a; } dup(1, 2)');
+          });
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "class-private-fuzz",
         """
         (function () {
