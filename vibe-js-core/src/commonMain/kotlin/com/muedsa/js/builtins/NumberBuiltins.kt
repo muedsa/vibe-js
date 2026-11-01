@@ -286,6 +286,164 @@ object NumberBuiltins {
     }
 
     /**
+     * 轻量十进制大整数（基 10^6，小端存储）。
+     *
+     * 仅用于 Double 的精确十进制展开：乘以 2/5 的幂、十进制左移、
+     * 按位舍入以及十进制字符串输出；不追求通用大数能力。
+     */
+    private class DecimalBigInt private constructor(private val limbs: MutableList<Int>) {
+
+        companion object {
+            private const val BASE = 1_000_000
+
+            fun fromLong(value: Long): DecimalBigInt {
+                var current = value
+                val digits = mutableListOf<Int>()
+                while (current > 0L) {
+                    digits.add((current % BASE).toInt())
+                    current /= BASE
+                }
+                if (digits.isEmpty()) digits.add(0)
+                return DecimalBigInt(digits)
+            }
+
+            /** 由纯数字字符串构造（每 6 位一组，从低位开始解析）。 */
+            fun fromDecimalString(text: String): DecimalBigInt {
+                val digits = mutableListOf<Int>()
+                var end = text.length
+                while (end > 0) {
+                    val start = (end - 6).coerceAtLeast(0)
+                    digits.add(text.substring(start, end).toInt())
+                    end = start
+                }
+                if (digits.isEmpty()) digits.add(0)
+                return DecimalBigInt(digits)
+            }
+        }
+
+        fun multiplySmall(factor: Int) {
+            var carry = 0L
+            for (index in limbs.indices) {
+                val product = limbs[index].toLong() * factor + carry
+                limbs[index] = (product % BASE).toInt()
+                carry = product / BASE
+            }
+            while (carry > 0L) {
+                limbs.add((carry % BASE).toInt())
+                carry /= BASE
+            }
+        }
+
+        fun increment() {
+            var index = 0
+            while (index < limbs.size) {
+                val value = limbs[index] + 1
+                if (value < BASE) {
+                    limbs[index] = value
+                    return
+                }
+                limbs[index] = 0
+                index++
+            }
+            limbs.add(1)
+        }
+
+        /** 乘以 10 的 power 次（十进制左移）。 */
+        fun timesPowerOfTen(power: Int) {
+            repeat(power) { multiplySmall(10) }
+        }
+
+        /**
+         * 删除最低的 dropCount 个十进制位并按“四舍五入”取整
+         * （规范在恰好半值时选择更大的 n）。
+         */
+        fun dropDigitsWithHalfUp(dropCount: Int): DecimalBigInt {
+            if (dropCount <= 0) return this
+            val text = toString()
+            if (dropCount >= text.length) return fromLong(0L)
+            val cut = text.length - dropCount
+            val result = fromDecimalString(text.substring(0, cut))
+            if (text[cut] >= '5') result.increment()
+            return result
+        }
+
+        override fun toString(): String {
+            val builder = StringBuilder(limbs.last().toString())
+            for (index in limbs.lastIndex - 1 downTo 0) {
+                builder.append(limbs[index].toString().padStart(6, '0'))
+            }
+            return builder.toString()
+        }
+    }
+
+    /**
+     * 规范要求的精确十进制展开（fractionDigits 已定义时的 toExponential）。
+     *
+     * 将 Double 分解为 m × 2^e 后改写成十进制大整数：
+     * - e ≥ 0 时 x = (m × 2^e) × 10^0；
+     * - e < 0 时 x = (m × 5^(-e)) × 10^e。
+     * 这样 x 的完整十进制数字串可以精确保存，再按保留位数舍入；
+     * 规范要求恰为半值时取更大的 n，即对绝对值执行“逢五进一”。
+     *
+     * @return `d.ddd...e±E` 形式的无符号文本；非有限值或参数越界时返回 null
+     */
+    private fun exactToExponential(value: Double, fractionDigits: Int): String? {
+        val bits = value.toRawBits()
+        val exponentBits = ((bits ushr 52) and 0x7FFL).toInt()
+        if (exponentBits == 0x7FF) return null
+        val fractionBits = bits and ((1L shl 52) - 1L)
+        val mantissa: Long
+        val binaryExponent: Int
+        if (exponentBits == 0) {
+            // 次正规数没有隐含首位 1，指数固定为 -1074
+            mantissa = fractionBits
+            binaryExponent = -1074
+        } else {
+            mantissa = fractionBits or (1L shl 52)
+            binaryExponent = exponentBits - 1075
+        }
+        if (mantissa == 0L) return null
+
+        // 精确十进制表示：x = magnitude × 10^decimalExponent
+        val magnitude = DecimalBigInt.fromLong(mantissa)
+        val decimalExponent: Int
+        if (binaryExponent >= 0) {
+            repeat(binaryExponent) { magnitude.multiplySmall(2) }
+            decimalExponent = 0
+        } else {
+            // m × 2^e = m × 5^(-e) × 10^e
+            repeat(-binaryExponent) { magnitude.multiplySmall(5) }
+            decimalExponent = binaryExponent
+        }
+
+        val digitsText = magnitude.toString()
+        // 最高位数字对应的十进制指数；由数字串长度精确得出，避免 log10 误差
+        var exponent = digitsText.length - 1 + decimalExponent
+        val keptDigits = fractionDigits + 1
+        // 保留 keptDigits 位：多余低位四舍五入，不足则补零
+        val dropped = digitsText.length - keptDigits
+        var rounded = if (dropped > 0) {
+            magnitude.dropDigitsWithHalfUp(dropped)
+        } else {
+            magnitude.also { it.timesPowerOfTen(-dropped) }
+        }
+        var roundedText = rounded.toString()
+        // 高位全为 9 时舍入进位会多出一位（如 9.99 → 10.0），提升指数
+        if (roundedText.length > keptDigits) {
+            rounded = rounded.dropDigitsWithHalfUp(roundedText.length - keptDigits)
+            roundedText = rounded.toString()
+            exponent++
+        }
+        val mantissaText = if (fractionDigits == 0) {
+            roundedText
+        } else {
+            roundedText.substring(0, 1) + "." + roundedText.substring(1)
+        }
+        val exponentSign = if (exponent >= 0) "+" else "-"
+        return mantissaText + "e" + exponentSign + abs(exponent)
+    }
+
+    /**
      * toExponential 的简化实现。
      *
      * @param digits 小数位数；null 表示使用最短表示
@@ -300,6 +458,13 @@ object NumberBuiltins {
 
         val negative = number < 0
         val value = abs(number)
+        // 保留 4 位以上有效数字时使用精确十进制展开（二进制浮点的完整有效位），
+        // 低位超出 Double 的近似精度，必须按规范对精确值舍入
+        if (digits != null && digits >= 3) {
+            exactToExponential(value, digits)?.let { text ->
+                return (if (negative) "-" else "") + text
+            }
+        }
         var exponent = floor(log10(value)).toInt()
         val decimals = digits ?: 15
         var factor = 1.0

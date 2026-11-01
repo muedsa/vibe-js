@@ -2896,6 +2896,27 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Number toExponential 与 toPrecision 按精确十进制值舍入`() = runTest {
+        val runtime = TestRuntime()
+        // 123.456 的精确值为 123.4560000000000030695...，低位必须基于精确展开舍入
+        assertEquals("1.235e+2", runtime.evalString("(123.456).toExponential(3)"))
+        assertEquals("1.23456000000000003e+2", runtime.evalString("(123.456).toExponential(17)"))
+        assertEquals("1.23456000000000003070e+2", runtime.evalString("(123.456).toExponential(20)"))
+        // 舍入进位导致最高位溢出时提升指数
+        assertEquals("1.00e+0", runtime.evalString("(0.9999).toExponential(2)"))
+        assertEquals("3e+1", runtime.evalString("(25).toExponential(0)"))
+        // 极小值同样使用精确展开（0.0001 的双精度值略大于 1e-4）
+        assertEquals("1.00000000000000005e-4", runtime.evalString("(0.0001).toExponential(17)"))
+        assertEquals(
+            "9.999999999999999e-22",
+            runtime.evalString("(0.000000000000000000001).toPrecision(16)")
+        )
+        // toPrecision 有效数字 4 位以上走精确路径
+        assertEquals("1.234e+27", runtime.evalString("(1.2345e+27).toPrecision(4)"))
+        assertEquals("1.23449999999999996e+27", runtime.evalString("(1.2345e+27).toPrecision(18)"))
+    }
+
+    @Test
     fun `RegExp source 访问器的转义与接收者校验`() = runTest {
         val runtime = TestRuntime()
         assertEquals("(?:)", runtime.evalString("new RegExp('').source"))
