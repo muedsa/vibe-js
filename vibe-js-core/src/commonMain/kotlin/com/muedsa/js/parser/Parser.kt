@@ -30,6 +30,8 @@ class Parser(
     argumentsForbiddenContext: Boolean = false,
     /** 直接 eval 继承调用方词法可见的私有名（null 表示普通脚本解析） */
     evalPrivateNames: Set<String>? = null,
+    /** 原始源码（Function.prototype.toString 的源码文本切片使用；null 表示不可用） */
+    private val source: String? = null,
 ) {
 
     /** 当前语句列表是否允许 using 声明（脚本体、eval 顶层与 case 子句不允许）。 */
@@ -37,6 +39,15 @@ class Parser(
 
     /** 当前解析位置（tokens 下标）。 */
     private var pos = 0
+
+    /** 按源码范围切片；源码不可用或范围越界时返回 null。 */
+    private fun sourceSlice(range: SourceRange): String? {
+        val text = source ?: return null
+        val start = range.start.offset
+        val end = range.end.offset
+        if (start < 0 || end > text.length || end < start) return null
+        return text.substring(start, end)
+    }
 
     /** 解析起点的严格模式（直接 eval 可继承调用方严格模式）。 */
     private val initialStrict = strictContext
@@ -930,6 +941,7 @@ class Parser(
                 superClass = superClass,
                 members = members,
                 range = SourceRange(start, previous().range.end),
+                sourceText = sourceSlice(SourceRange(start, previous().range.end)),
             )
         } finally {
             strict = outerStrict
@@ -958,6 +970,7 @@ class Parser(
                 superClass = superClass,
                 members = members,
                 range = SourceRange(start, previous().range.end),
+                sourceText = sourceSlice(SourceRange(start, previous().range.end)),
             )
         } finally {
             strict = outerStrict
@@ -1026,26 +1039,32 @@ class Parser(
 
                 var kind = ClassMemberKind.METHOD
                 var isAsync = false
+                var modifierStart: SourcePosition? = null
                 if (peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
                     canStartClassMember(1)
                 ) {
                     when (peek().value) {
                         "get" -> {
                             kind = ClassMemberKind.GET
+                            modifierStart = peek().range.start
                             advance()
                         }
 
                         "set" -> {
                             kind = ClassMemberKind.SET
+                            modifierStart = peek().range.start
                             advance()
                         }
 
                         "async" -> {
                             isAsync = true
+                            modifierStart = peek().range.start
                             advance()
                         }
                     }
                 }
+                // Function.prototype.toString 的源码文本：static 修饰符不计入
+                val memberTextStart = modifierStart ?: peek().range.start
 
                 val (key, computed) = if (check(TokenType.PRIVATE_IDENTIFIER)) {
                     val token = advance()
@@ -1164,6 +1183,9 @@ class Parser(
                     functionDeclarations = bodyInfo.functionDeclarations,
                     range = SourceRange(key.range.start, bodyInfo.body.range.end),
                     isMethodDefinition = true,
+                    sourceText = sourceSlice(
+                        SourceRange(memberTextStart, bodyInfo.body.range.end)
+                    ),
                 )
                 members.add(
                     ClassMember(
@@ -1315,6 +1337,7 @@ class Parser(
             varDeclarations = bodyInfo.varDeclarations,
             functionDeclarations = bodyInfo.functionDeclarations,
             range = SourceRange(start, bodyInfo.body.range.end),
+            sourceText = sourceSlice(SourceRange(start, bodyInfo.body.range.end)),
         )
     }
 
@@ -1347,6 +1370,7 @@ class Parser(
             varDeclarations = bodyInfo.varDeclarations,
             functionDeclarations = bodyInfo.functionDeclarations,
             range = SourceRange(startPos, bodyInfo.body.range.end),
+            sourceText = sourceSlice(SourceRange(startPos, bodyInfo.body.range.end)),
         )
     }
 
@@ -2406,6 +2430,7 @@ class Parser(
                 functionDeclarations = bodyInfo.functionDeclarations,
                 range = SourceRange(start, bodyInfo.body.range.end),
                 allowsNewTarget = newTargetAllowed,
+                sourceText = sourceSlice(SourceRange(start, bodyInfo.body.range.end)),
             )
         }
 
@@ -2428,6 +2453,7 @@ class Parser(
                 functionDeclarations = emptyList(),
                 range = SourceRange(start, expression.range.end),
                 allowsNewTarget = newTargetAllowed,
+                sourceText = sourceSlice(SourceRange(start, expression.range.end)),
             )
         } finally {
             asyncContext = outerAsync
@@ -3240,6 +3266,9 @@ class Parser(
                         functionDeclarations = bodyInfo.functionDeclarations,
                         range = SourceRange(key.range.start, bodyInfo.body.range.end),
                         isMethodDefinition = true,
+                        sourceText = sourceSlice(
+                            SourceRange(propertyStart, bodyInfo.body.range.end)
+                        ),
                     )
                 }
 

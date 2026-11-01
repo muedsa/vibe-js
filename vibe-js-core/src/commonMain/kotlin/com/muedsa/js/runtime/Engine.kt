@@ -69,7 +69,7 @@ class Engine(
      */
     suspend fun run(source: String): JSValue {
         val tokens = Lexer(source).tokenize()
-        val program = Parser(tokens).parseProgram()
+        val program = Parser(tokens, source = source).parseProgram()
         // 解释器与全局环境不是线程安全的：与定时器回调等宿主任务串行执行
         return eventLoop.runtimeMutex.withLock {
             try {

@@ -265,6 +265,7 @@ class Interpreter(
                     environment.collectNames(names)
                     names
                 } ?: emptySet(),
+                source = source,
             ).parseProgram()
         } catch (error: ParseException) {
             syntaxError(error.message ?: "Invalid eval code")
@@ -348,7 +349,7 @@ class Interpreter(
      */
     suspend fun evaluateIndirectEval(source: String): JSValue {
         val program = try {
-            Parser(Lexer(source).tokenize()).parseProgram()
+            Parser(Lexer(source).tokenize(), source = source).parseProgram()
         } catch (error: ParseException) {
             syntaxError(error.message ?: "Invalid eval code")
         } catch (error: LexerException) {
@@ -1117,6 +1118,7 @@ class Interpreter(
         superConstructor: JSValue? = null,
         superBase: JSObject? = null,
         functionPrototypeObject: JSObject? = null,
+        sourceText: String? = null,
     ): JSFunction {
         // async 函数不是构造器，没有 own "prototype" 属性
         val prototypeObject = if (isArrow || isMethod || isAsync) {
@@ -1153,6 +1155,7 @@ class Interpreter(
             superConstructor = superConstructor,
             superBase = superBase,
         )
+        function.sourceText = sourceText
         // ES5 15.3.5.4：非严格普通函数的 caller/arguments 是值为 null 的自有数据属性；
         // 严格函数、箭头、方法与 async 函数不定义（读取落到 Function.prototype 拒绝访问器）
         if (!strict && !isArrow && !isMethod && !isAsync) {
@@ -1239,9 +1242,9 @@ class Interpreter(
         }
         if (function != null) {
             if (function.strict) {
-                // 严格模式下访问 callee/caller 必须抛 TypeError
-                val thrower = JSNativeFunction(
-                    name = "thrower",
+                // 严格模式下访问 callee/caller 必须抛 TypeError；与 Function.prototype 共用 %ThrowTypeError%
+                val thrower = intrinsics.throwTypeErrorFunction ?: JSNativeFunction(
+                    name = "",
                     length = 0,
                     prototype = intrinsics.functionPrototype,
                 ) { interpreter, _, _ ->
@@ -1286,9 +1289,10 @@ class Interpreter(
      */
     fun createDynamicFunction(paramStrings: List<String>, body: String): JSFunction {
         val parameters = paramStrings.joinToString(",")
-        val source = "(function($parameters) {\n$body\n})"
-        val function = parseDynamicFunctionSource(source)
-        return createFunction(
+        // 规范：')' 前与函数体前后保留换行，参数末尾的行注释不会吞掉右括号
+        val sourceText = "function anonymous($parameters\n) {\n$body\n}"
+        val function = parseDynamicFunctionSource("($sourceText)")
+        val created = createFunction(
             name = function.name ?: "anonymous",
             params = function.params,
             body = function.body,
@@ -1298,6 +1302,8 @@ class Interpreter(
             functionDeclarations = function.functionDeclarations,
             isAsync = function.isAsync,
         )
+        created.sourceText = sourceText
+        return created
     }
 
     /**
@@ -1327,7 +1333,7 @@ class Interpreter(
     /** 解析动态函数源码并返回函数表达式节点。 */
     private fun parseDynamicFunctionSource(source: String): FunctionExpression {
         val expression = try {
-            val program = Parser(Lexer(source).tokenize()).parseProgram()
+            val program = Parser(Lexer(source).tokenize(), source = source).parseProgram()
             val statement = program.body.singleOrNull()
             if (statement !is ExpressionStatement) {
                 throw syntaxError("Invalid dynamic function arguments")
@@ -1468,6 +1474,7 @@ class Interpreter(
                 isAsync = declaration.isAsync,
                 // 函数声明同样闭包捕获当前上下文的私有名环境
                 privateEnvironment = frame?.function?.privateEnvironment,
+                sourceText = declaration.sourceText,
             )
             if (varScope is ObjectEnvironment) {
                 varScope.createGlobalFunctionBinding(
@@ -1531,7 +1538,7 @@ class Interpreter(
 
             is ExpressionStatement -> Completion.Normal(evaluate(statement.expression))
             is ClassDeclaration -> {
-                val classValue = evaluateClass(statement.name, statement.superClass, statement.members)
+                val classValue = evaluateClass(statement.name, statement.superClass, statement.members, statement.sourceText)
                 if (!initializeLexicalIfDeclared(currentFrame.lexicalEnv, statement.name, classValue)) {
                     // class 声明的绑定是可变词法绑定（可重新赋值）
                     currentFrame.lexicalEnv.createLetBinding(statement.name, classValue)
@@ -2459,7 +2466,7 @@ class Interpreter(
             is RegExpLiteral -> createRegExp(expression.pattern, expression.flags)
             is TemplateLiteral -> evaluateTemplateLiteral(expression)
             is TaggedTemplate -> evaluateTaggedTemplate(expression, tail)
-            is ClassExpression -> evaluateClass(expression.name, expression.superClass, expression.members)
+            is ClassExpression -> evaluateClass(expression.name, expression.superClass, expression.members, expression.sourceText)
             is SuperExpr -> throw syntaxError("'super' keyword unexpected here")
             is NewTargetExpr -> currentFrame.newTarget ?: JSUndefined
 
@@ -2481,6 +2488,7 @@ class Interpreter(
                         isAsync = expression.isAsync,
                         isMethod = expression.isMethodDefinition,
                         privateEnvironment = currentFrame.function?.privateEnvironment,
+                        sourceText = expression.sourceText,
                     )
                 } else {
                     // ES5 13：具名函数表达式的名字只在其自身作用域内可见（用于递归），
@@ -2496,6 +2504,7 @@ class Interpreter(
                         functionDeclarations = expression.functionDeclarations,
                         isAsync = expression.isAsync,
                         privateEnvironment = currentFrame.function?.privateEnvironment,
+                        sourceText = expression.sourceText,
                     )
                     nameEnvironment.createFunctionNameBinding(name, function)
                     function
@@ -2527,6 +2536,7 @@ class Interpreter(
                 homeObject = currentFrame.function?.homeObject,
                 superBase = currentFrame.function?.superBase,
                 privateEnvironment = currentFrame.function?.privateEnvironment,
+                sourceText = expression.sourceText,
             )
 
             is MemberExpr -> {
@@ -2956,6 +2966,7 @@ class Interpreter(
         name: String?,
         superClassExpression: Expression?,
         members: List<ClassMember>,
+        sourceText: String? = null,
     ): JSValue {
         // 匿名 class 表达式在 NamedEvaluation 场景（如 var C = class {...}）中
         // 需要在静态初始化之前就带上名称
@@ -3021,6 +3032,7 @@ class Interpreter(
                 homeObject = prototype,
                 functionPrototypeObject = prototype,
                 privateEnvironment = privateEnvironment,
+                sourceText = sourceText ?: constructorMember.value.sourceText,
             )
         } else {
             createFunction(
@@ -3036,6 +3048,7 @@ class Interpreter(
                 homeObject = prototype,
                 functionPrototypeObject = prototype,
                 privateEnvironment = privateEnvironment,
+                sourceText = sourceText,
             )
         }
 
@@ -3147,6 +3160,7 @@ class Interpreter(
                 superBase = superBase,
                 homeObject = target,
                 privateEnvironment = privateEnvironment,
+                sourceText = member.value.sourceText,
             )
             if (privateName != null) {
                 // 私有方法/访问器不安装为公开属性，而是安装到实例/构造器的私有槽位

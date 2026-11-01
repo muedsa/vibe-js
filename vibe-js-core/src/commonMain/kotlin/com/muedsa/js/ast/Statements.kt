@@ -83,6 +83,8 @@ class FunctionDeclaration(
     val varDeclarations: List<String>,
     val functionDeclarations: List<FunctionDeclaration>,
     override val range: SourceRange,
+    /** 源码文本（Function.prototype.toString 使用） */
+    val sourceText: String? = null,
 ) : Statement()
 
 /** if 语句。 */
@@ -246,6 +248,8 @@ class ClassDeclaration(
     val superClass: Expression?,
     val members: List<ClassMember>,
     override val range: SourceRange,
+    /** 源码文本（class 构造器的 Function.prototype.toString 使用） */
+    val sourceText: String? = null,
 ) : Statement()
 
 /** break 语句（可选标签）。 */

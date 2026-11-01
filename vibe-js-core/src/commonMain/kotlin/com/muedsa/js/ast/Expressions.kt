@@ -153,6 +153,8 @@ class FunctionExpression(
     val isMethodDefinition: Boolean = false,
     /** class 字段初始化表达式（仅 FIELD 成员使用；null 表示初始化为 undefined） */
     val fieldInitializer: Expression? = null,
+    /** 源码文本（Function.prototype.toString 使用；null 表示不可用） */
+    val sourceText: String? = null,
 ) : Expression()
 
 /**
@@ -171,6 +173,8 @@ class ArrowFunction(
     override val range: SourceRange,
     /** 箭头函数体所处的 new.target 语法上下文 */
     val allowsNewTarget: Boolean = false,
+    /** 源码文本（Function.prototype.toString 使用） */
+    val sourceText: String? = null,
 ) : Expression()
 
 /** 成员访问，例如 `obj.prop` 或 `obj[key]`。 */
@@ -278,6 +282,8 @@ class ClassExpression(
     val superClass: Expression?,
     val members: List<ClassMember>,
     override val range: SourceRange,
+    /** 源码文本（class 构造器的 Function.prototype.toString 使用） */
+    val sourceText: String? = null,
 ) : Expression()
 
 /** super 引用（用于 super() 与 super.method）。 */

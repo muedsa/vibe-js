@@ -417,6 +417,7 @@ private class Test262Runner(
                 test.source.contains("Proxy") ||
                 test.source.contains("function *") ||
                 test.source.contains("function*") ||
+                generatorFunctionPattern.containsMatchIn(test.source) ||
                 test.source.contains("async *") ||
                 test.source.contains("async*") ||
                 test.source.contains("for await") ||
@@ -566,7 +567,7 @@ private class Test262Runner(
             ) { interpreter, _, args ->
                 val sourceText = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
                 val program = try {
-                    Parser(Lexer(sourceText).tokenize()).parseProgram()
+                    Parser(Lexer(sourceText).tokenize(), source = sourceText).parseProgram()
                 } catch (error: ParseException) {
                     throw interpreter.syntaxError(error.message ?: "Invalid evalScript source")
                 } catch (error: LexerException) {
@@ -685,7 +686,12 @@ private class Test262Runner(
         /** BigInt 字面量检测（项目明确排除 BigInt）。 */
         /** 生成器方法语法（`*keys() {}` / `*[Symbol.iterator]() {}`），项目未实现。 */
         private val generatorMethodPattern = Regex(
-            """(?m)(?:^\s*|[{(,;]\s*|\bstatic\s+|\basync\s+)\*\s*(?:[A-Za-z_$][A-Za-z0-9_$]*|\[[^\]]*\]|#[^\s(]*)\s*\("""
+            """(?m)(?:^\s*|[{(,;]\s*|\*/\s*|\bstatic\s+|\basync\s+)\*\s*(?:/\*[\s\S]*?\*/\s*)*(?:[A-Za-z_$][A-Za-z0-9_$]*|\[[^\]]*\]|#[^\s(]*)\s*(?:/\*[\s\S]*?\*/\s*)*\("""
+        )
+
+        /** 生成器函数声明/表达式（允许 function 与 * 之间夹注释）。 */
+        private val generatorFunctionPattern = Regex(
+            """\bfunction\s*(?:/\*[\s\S]*?\*/\s*)*\*"""
         )
 
         /** `$262.<member>` 访问的成员名：当前只放行 evalScript。 */

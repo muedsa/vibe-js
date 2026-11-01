@@ -63,7 +63,7 @@
 | 全局常量/函数 | ✅ | undefined、NaN、Infinity、globalThis、parseInt、parseFloat、isNaN、isFinite、Annex B escape/unescape |
 | Object | ✅ | 构造器；keys/values/entries/assign/create/getPrototypeOf/setPrototypeOf/getOwnPropertyDescriptor/getOwnPropertyNames/getOwnPropertySymbols/defineProperty/defineProperties/is/freeze/seal/preventExtensions/isFrozen/isSealed/isExtensible |
 | Object.prototype | ✅ | hasOwnProperty、isPrototypeOf、propertyIsEnumerable、valueOf、toString、toLocaleString、`__proto__`、Annex B `__defineGetter__`/`__defineSetter__`/`__lookupGetter__`/`__lookupSetter__` |
-| Function | ✅ | call/apply/bind/toString（动态函数源码，其余 NativeFunction 形式）、动态 Function 构造器 |
+| Function | ✅ | call/apply/bind/toString（函数声明/表达式/方法/类构造器/动态函数返回源码文本，无源码时 NativeFunction 形式）、bind 的 length 仅取自有 length 并支持 Infinity、caller/arguments 与严格 arguments.callee 共用 %ThrowTypeError% |
 | Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；方法为泛型实现（ToObject/HasProperty/Get/Delete，遵循原型链与稀疏语义），array-like 支持 2^53-1 长度边界 |
 | String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表）；原型方法统一 RequireObjectCoercible，pad 默认空格、localeCompare 规范等价、replace/split 按规范求值顺序 |
 | Number | ✅ | 常量、toString(radix)（最短十进制表示，如 5e-324）、toFixed/toExponential/toPrecision（非有限值与负零格式化）、静态判断与解析 |
@@ -103,9 +103,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 460 + 宿主 15 个测试 |
-| JS（Node） | ✅ | 核心 460 + 宿主 15 个测试 |
-| Wasm（Node） | ✅ | 核心 460 + 宿主 15 个测试 |
+| JVM | ✅ | 核心 461 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 461 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 461 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

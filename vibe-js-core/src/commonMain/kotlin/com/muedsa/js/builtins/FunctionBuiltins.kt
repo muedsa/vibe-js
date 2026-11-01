@@ -11,6 +11,7 @@ import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
+import com.muedsa.js.runtime.value.PropertyDescriptor
 import com.muedsa.js.runtime.value.PropertyKey
 
 /**
@@ -56,6 +57,7 @@ object FunctionBuiltins {
                 "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions"
             )
         }
+        intrinsics.throwTypeErrorFunction = restrictedAccessor
         functionPrototype.defineAccessorProperty(
             key = PropertyKey.Str("caller"),
             get = restrictedAccessor,
@@ -153,14 +155,27 @@ object FunctionBuiltins {
                 // 规范：Get(Target, "name") 可能触发访问器并传播异常；非字符串按空串处理
                 val targetNameValue = interpreter.getV(thisValue, PropertyKey.NAME)
                 val targetName = (targetNameValue as? JSString)?.value ?: ""
-                // 绑定函数 length = max(0, 目标 length - 已绑定参数个数)
-                val targetLength = (targetObject?.getOwnDataValue(PropertyKey.LENGTH) as? JSNumber)?.value ?: 0.0
-                val boundLength = (targetLength - boundArguments.size).coerceAtLeast(0.0).toInt()
+                // 绑定函数 length：仅当目标自有 length 时 Get 并按 ToIntegerOrInfinity 计算
+                val hasOwnLength = (thisValue as? JSObject)?.hasOwnProperty(PropertyKey.LENGTH) == true
+                val targetLength = if (hasOwnLength) {
+                    (interpreter.getV(thisValue, PropertyKey.LENGTH) as? JSNumber)?.value
+                } else {
+                    null
+                }
+                val boundLength = when {
+                    targetLength == null || targetLength.isNaN() -> 0.0
+                    targetLength == Double.POSITIVE_INFINITY -> Double.POSITIVE_INFINITY
+                    targetLength == Double.NEGATIVE_INFINITY -> 0.0
+                    else -> kotlin.math.max(
+                        kotlin.math.truncate(targetLength) - boundArguments.size,
+                        0.0,
+                    )
+                }
                 // 目标是构造器时，绑定函数也可用 new 调用（转交给目标的 [[Construct]]）
                 val constructable = interpreter.isConstructor(thisValue)
                 JSNativeFunction(
                     name = "bound $targetName",
-                    length = boundLength,
+                    length = 0,
                     prototype = functionPrototype,
                     constructFunction = if (constructable) {
                         { inner, constructArgs ->
@@ -172,6 +187,16 @@ object FunctionBuiltins {
                     boundTarget = thisValue,
                 ) { inner, _, callArgs ->
                     inner.callFunction(thisValue, boundThis, boundArguments + callArgs)
+                }.also { boundFunction ->
+                    boundFunction.defineOwnProperty(
+                        PropertyKey.LENGTH,
+                        PropertyDescriptor.data(
+                            JSNumber(boundLength),
+                            writable = false,
+                            enumerable = false,
+                            configurable = true,
+                        ),
+                    )
                 }
             },
         )

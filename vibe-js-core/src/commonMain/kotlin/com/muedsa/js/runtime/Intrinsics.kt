@@ -26,6 +26,9 @@ class Intrinsics(val globalObject: GlobalObject) {
     /** %eval% 内建函数：直接 eval 判定使用，不受全局属性被覆盖影响。 */
     var evalFunction: JSValue? = null
 
+    /** %ThrowTypeError% 内建函数：caller/arguments 访问器与严格 arguments.callee 共用同一对象。 */
+    var throwTypeErrorFunction: JSNativeFunction? = null
+
     /** Array.prototype.values（arguments 的 @@iterator 复用同一函数）。 */
     var arrayValuesFunction: JSValue? = null
     lateinit var arrayPrototype: JSArray

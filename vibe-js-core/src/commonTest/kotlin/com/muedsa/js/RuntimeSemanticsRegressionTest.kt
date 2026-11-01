@@ -3049,4 +3049,47 @@ class RuntimeSemanticsRegressionTest {
         assertFailsWith<JSException> { runtime.eval("new RegExp('(')") }
         assertFailsWith<LexerException> { runtime.eval("/[/;") }
     }
+
+    @Test
+    fun `Function toString 使用源码文本与 bind length 语义`() = runTest {
+        val runtime = TestRuntime()
+        // 函数声明/方法保留源码文本（含注释）
+        assertEquals(true, runtime.evalBoolean(
+            "function /*c*/ foo(a) { return a; }" +
+                " var ok1 = foo.toString() === 'function /*c*/ foo(a) { return a; }';" +
+                " var o = { /*a*/ m /*b*/ ( /*c*/ ) { /*d*/ } };" +
+                " var ok2 = o.m.toString() === 'm /*b*/ ( /*c*/ ) { /*d*/ }';" +
+                " ok1 && ok2"
+        ))
+        // class 构造器的源码文本是整段 class 定义
+        assertEquals(true, runtime.evalBoolean(
+            "class A { constructor(x) { this.x = x; } }" +
+                " A.toString() === 'class A { constructor(x) { this.x = x; } }'"
+        ))
+        // 动态函数按规范拼接源码文本
+        assertEquals(true, runtime.evalBoolean(
+            "Function('a', 'b').toString() === 'function anonymous(a\\n) {\\nb\\n}'"
+        ))
+        // bind length：仅自有 length、ToIntegerOrInfinity、保留 Infinity
+        assertEquals(true, runtime.evalBoolean(
+            "var f = function () {};" +
+                " Object.defineProperty(f, 'length', { value: Infinity });" +
+                " var infinite = f.bind().length === Infinity;" +
+                " Object.defineProperty(f, 'length', { value: 5 });" +
+                " var subtracted = f.bind(null, 1, 2).length === 3;" +
+                " function bar() {}" +
+                " Object.setPrototypeOf(bar, { length: 42 });" +
+                " delete bar.length;" +
+                " var notOwn = Function.prototype.bind.call(bar, null, 1).length === 0;" +
+                " infinite && subtracted && notOwn"
+        ))
+        // caller/arguments 访问器与严格 arguments.callee 共用 %ThrowTypeError%
+        assertEquals(true, runtime.evalBoolean(
+            "var thrower = Object.getOwnPropertyDescriptor(Function.prototype, 'caller').get;" +
+                " var calleeThrower = (function () { 'use strict';" +
+                " return Object.getOwnPropertyDescriptor(arguments, 'callee').get; })();" +
+                " thrower === calleeThrower &&" +
+                " Object.getOwnPropertyDescriptor(Function.prototype, 'arguments').get === thrower"
+        ))
+    }
 }
