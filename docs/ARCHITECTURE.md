@@ -159,7 +159,10 @@ engine.install(MyModule())
 ### 8.4 自定义宿主能力
 
 实现 `HostEnvironment`（Console / Clock / Scheduler）并传给 `Engine` 构造函数，
-即可接管输出、时间与定时任务。
+即可接管输出、时间与定时任务。另可覆写：
+
+- `utcOffsetMillis(epochMillis)`：Date 本地时间使用的时区偏移（毫秒，东为正；默认 UTC）；
+- `reportUnhandledRejection(reason)` / `reportRejectionHandled(reason)`：Promise 未处理拒绝与补挂处理的宿主通知（默认忽略）。
 
 ## 9. 性能优化的预留点
 

@@ -116,7 +116,7 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 - `Engine`：门面，持有全局对象、内建注册表、事件循环与解释器；
 - `Executor`：执行器接口，当前实现是 AST 解释器，后续可替换为编译执行器而不改语义；
 - `BuiltinModule`：内建模块注册接口；标准库（`CoreBuiltins`）与宿主模块（`HostModule`）都通过它安装；
-- `HostEnvironment`：宿主能力抽象（Console / Scheduler / Clock）；
+- `HostEnvironment`：宿主能力抽象（Console / Scheduler / Clock），并可注入 Date 时区偏移与 Promise 拒绝生命周期回调；
 - `EventLoop`：微任务队列 + 宏任务调度，支撑 Promise 与定时器；
 - `PropertyDescriptor` + `JSObject`：属性描述符与原型链模型。
 
