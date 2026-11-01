@@ -5,7 +5,7 @@ Vibe JS 是一个使用 Kotlin 多平台从零实现的轻量级 JavaScript 运�
 - 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 `async/await`）；
 - 定位：通用 Kotlin 库，核心不绑定任何浏览器/平台原生 API；
 - 构建目标：JVM、Android、JS、Wasm、Linux、Windows、macOS、iOS、tvOS、watchOS；
-- 宿主能力（console、定时器、window 等）位于独立的 `:vibe-js-host` 模块。
+- 宿主能力（console、定时器、window、performance 等）位于独立的 `:vibe-js-host` 模块。
 
 ## 使用方式
 
@@ -62,7 +62,8 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 ```
 
 `HostModule` 提供 `window`/`self`、`console`、`setTimeout`/`clearTimeout`、
-`setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`，
+`setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`、
+`performance.now()`/`performance.timeOrigin`，
 全部由纯 Kotlin 实现，不绑定平台原生 API。
 
 ## 已支持

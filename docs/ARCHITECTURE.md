@@ -123,7 +123,8 @@ engine.run("""
 ```
 
 - `HostModule` 提供 `window`/`self`、`console`、`setTimeout`/`clearTimeout`、
-  `setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`；
+  `setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`、
+  `performance.now()`/`performance.timeOrigin`；
 - 定时任务通过 `EventLoop` 的 `Scheduler` 执行，console 通过 `Console` 注入；解释器与全局环境非线程安全，`Engine.run`、`EventLoop.schedule` 与 `setInterval` 回调共享 `EventLoop.runtimeMutex` 串行执行，`clearTimeout`/`clearInterval` 可互相取消。
 
 ### 8.2 自定义内建模块
@@ -213,6 +214,6 @@ engine.install(MyModule())
   spread、for-of、class/extends/super/new.target、Symbol、Map/Set/WeakMap/WeakSet、
   Promise、async/await）。
 - **阶段 D（已完成）**：独立宿主模块 `:vibe-js-host`（console、定时器、window/self、
-  queueMicrotask、atob/btoa）。
+  queueMicrotask、atob/btoa、performance）。
 - **明确排除**：Generator、import/export、Proxy/Reflect、BigInt、Intl、TypedArray、
   异步迭代（`for await` / AsyncIterator 原型）、DOM/fetch 等真实 Web API。

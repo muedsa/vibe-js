@@ -35,6 +35,7 @@ private const val BASE64_ALPHABET =
  * - `console`（log/error/warn/info/debug）
  * - `setTimeout` / `clearTimeout` / `queueMicrotask`
  * - `atob` / `btoa`
+ * - `performance.now()` / `performance.timeOrigin`
  *
  * 说明：不绑定任何平台原生 API；定时任务通过核心 EventLoop 的 Scheduler 执行，
  * console 输出通过可注入的 [Console] 实现。
@@ -53,6 +54,9 @@ class HostModule(
     private var nextTimerId: Int = 1
     private val timers: MutableMap<Int, ScheduledTask> = mutableMapOf()
     private val intervals: MutableMap<Int, Job> = mutableMapOf()
+
+    /** performance 时间原点（宿主时钟毫秒）；首次访问时确定。 */
+    private var performanceOriginMillis: Double? = null
 
     override fun install(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
@@ -75,6 +79,7 @@ class HostModule(
         )
 
         installConsole(registry)
+        installPerformance(registry)
         installTimers(registry)
         installEncoding(registry)
     }
@@ -110,6 +115,52 @@ class HostModule(
         registry.defineGlobal(
             name = "console",
             value = consoleObject,
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+    }
+
+    /** performance.now 的时间原点；首次访问使用当前时钟值。 */
+    private fun performanceOrigin(interpreter: Interpreter): Double {
+        val existing = performanceOriginMillis
+        if (existing != null) return existing
+        val current = interpreter.currentTimeMillis()
+        performanceOriginMillis = current
+        return current
+    }
+
+    private fun installPerformance(registry: BuiltinRegistry) {
+        val intrinsics = registry.intrinsics
+        val performanceObject = JSObject(prototype = intrinsics.objectPrototype)
+        performanceObject.defineDataProperty(
+            key = PropertyKey.Str("now"),
+            value = BuiltinHelpers.method(intrinsics, "performance.now", 0) { interpreter, _, _ ->
+                JSNumber(interpreter.currentTimeMillis() - performanceOrigin(interpreter))
+            },
+            writable = true,
+            enumerable = true,
+            configurable = true,
+        )
+        performanceObject.defineAccessorProperty(
+            key = PropertyKey.Str("timeOrigin"),
+            get = BuiltinHelpers.method(intrinsics, "get timeOrigin", 0) { interpreter, _, _ ->
+                JSNumber(performanceOrigin(interpreter))
+            },
+            set = null,
+            enumerable = true,
+            configurable = true,
+        )
+        performanceObject.defineDataProperty(
+            key = PropertyKey.Sym(intrinsics.symbolToStringTag),
+            value = JSString("Performance"),
+            writable = false,
+            enumerable = false,
+            configurable = true,
+        )
+        registry.defineGlobal(
+            name = "performance",
+            value = performanceObject,
             writable = true,
             enumerable = false,
             configurable = true,

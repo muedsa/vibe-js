@@ -337,6 +337,25 @@ class HostModuleTest {
         assertEquals(fixedTime.toDouble(), (engine.run("new Date().getTime()") as JSNumber).value)
     }
 
+    @OptIn(ExperimentalTime::class)
+    @Test
+    fun `performance 使用注入时钟并固定时间原点`() = runTest {
+        var nowMillis = 1_000_000L
+        val clock = object : Clock {
+            override fun now(): Instant = Instant.fromEpochMilliseconds(nowMillis)
+        }
+        val engine = Engine(DefaultHostEnvironment(clock = clock))
+        engine.install(HostModule(engine.eventLoop, RecordingConsole()))
+        assertEquals(0.0, (engine.run("performance.now()") as JSNumber).value)
+        assertEquals(1_000_000.0, (engine.run("performance.timeOrigin") as JSNumber).value)
+        nowMillis += 250
+        assertEquals(250.0, (engine.run("performance.now()") as JSNumber).value)
+        assertEquals(
+            "[object Performance]",
+            (engine.run("Object.prototype.toString.call(performance)") as JSString).value,
+        )
+    }
+
     @Test
     fun `setInterval 周期执行并可被 clearInterval 停止`() = runTest {
         val engine = Engine()

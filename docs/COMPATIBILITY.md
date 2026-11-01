@@ -109,9 +109,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 522 + 宿主 20 个测试 |
-| JS（Node） | ✅ | 核心 522 + 宿主 20 个测试 |
-| Wasm（Node） | ✅ | 核心 522 + 宿主 20 个测试 |
+| JVM | ✅ | 核心 522 + 宿主 21 个测试 |
+| JS（Node） | ✅ | 核心 522 + 宿主 21 个测试 |
+| Wasm（Node） | ✅ | 核心 522 + 宿主 21 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
