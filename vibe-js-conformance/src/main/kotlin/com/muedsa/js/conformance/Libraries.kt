@@ -1971,6 +1971,54 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "date-and-time",
+        url = "https://unpkg.com/date-and-time@2.4.3/date-and-time.js",
+        globalName = "date",
+        cases = listOf(
+            SmokeCase(
+                "format masks",
+                assertion(
+                    "(function () { var dt = new Date(2015, 10, 1, 22, 15, 30, 123); " +
+                        "return date.format(dt, 'YYYY/MM/DD HH:mm:ss.SSS') === '2015/11/01 22:15:30.123' && " +
+                        "date.format(dt, 'ddd MMM DD YYYY') === 'Sun Nov 01 2015' && " +
+                        "date.format(dt, 'hh:mm A') === '10:15 PM'; })()"
+                ),
+            ),
+            SmokeCase(
+                "parse fields",
+                assertion(
+                    "(function () { var parsed = date.parse('2015/11/01 22:15:30.123', " +
+                        "'YYYY/MM/DD HH:mm:ss.SSS'); return parsed instanceof Date && " +
+                        "parsed.getFullYear() === 2015 && parsed.getMonth() === 10 && " +
+                        "parsed.getDate() === 1 && parsed.getHours() === 22 && parsed.getMinutes() === 15 && " +
+                        "parsed.getSeconds() === 30 && parsed.getMilliseconds() === 123; })()"
+                ),
+            ),
+            SmokeCase(
+                "date arithmetic",
+                assertion(
+                    "(function () { var dt = new Date(2015, 10, 1, 22, 15, 30); var later = date.addDays(dt, 2); " +
+                        "var month = date.addMonths(new Date(2015, 0, 31), 1); " +
+                        "var diff = date.subtract(dt, new Date(2015, 10, 1, 20, 15, 30)); " +
+                        "return later.getDate() === 3 && month.getMonth() === 2 && month.getDate() === 3 && " +
+                        "diff.toHours() === 2 && date.addMilliseconds(dt, 500).getMilliseconds() === 500; })()"
+                ),
+            ),
+            SmokeCase(
+                "checks and transform",
+                assertion(
+                    "(function () { return date.isValid('2015-11-01 22:15:30', 'YYYY-MM-DD HH:mm:ss') && " +
+                        "!date.isValid('2015-02-30', 'YYYY-MM-DD') && date.isLeapYear(2016) && " +
+                        "!date.isLeapYear(2015) && date.isLeapYear(2000) && !date.isLeapYear(1900) && " +
+                        "date.isSameDay(new Date(2015, 0, 1, 1), new Date(2015, 0, 1, 23)) && " +
+                        "!date.isSameDay(new Date(2015, 0, 1), new Date(2015, 0, 2)) && " +
+                        "date.transform('2015-11-01 22:15:30', 'YYYY-MM-DD HH:mm:ss', " +
+                        "'MMM DD, YYYY hh:mm A') === 'Nov 01, 2015 10:15 PM'; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
