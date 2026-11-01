@@ -1728,6 +1728,39 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "compare-versions",
+        url = "https://unpkg.com/compare-versions@6.1.0/lib/umd/index.js",
+        globalName = "compareVersions",
+        cases = listOf(
+            SmokeCase(
+                "ordering",
+                assertion(
+                    "compareVersions.compareVersions('1.2.3', '1.2.4') === -1 && " +
+                        "compareVersions.compareVersions('1.2.3', '1.2.3') === 0 && " +
+                        "compareVersions.compareVersions('2.0.0', '1.9.9') === 1"
+                ),
+            ),
+            SmokeCase(
+                "compare operator",
+                assertion(
+                    "compareVersions.compare('1.2.3', '1.2.4', '<') && " +
+                        "!compareVersions.compare('1.2.3', '1.2.4', '>=')"
+                ),
+            ),
+            SmokeCase(
+                "validate",
+                assertion("compareVersions.validate('1.2.3') && compareVersions.validate('1.2') && !compareVersions.validate('foo')"),
+            ),
+            SmokeCase(
+                "satisfies",
+                assertion(
+                    "compareVersions.satisfies('1.2.3', '>=1.2.0 <2.0.0') && " +
+                        "!compareVersions.validateStrict('1.2')"
+                ),
+            ),
+        ),
+    ),
 )
 
 

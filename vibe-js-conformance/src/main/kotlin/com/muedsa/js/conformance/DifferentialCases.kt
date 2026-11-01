@@ -2873,4 +2873,16 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // npm semver 风格正则（嵌套可选组/惰性星号/字符类）回退引擎回归
+    DifferentialCase(
+        "regexp-semver-pattern",
+        """(function () {
+  var re = /^[v^~<>=]*?(\d+)(?:\.([x*]|\d+)(?:\.([x*]|\d+)(?:\.([x*]|\d+))?(?:-([\da-z\-]+(?:\.[\da-z\-]+)*))?(?:\+[\da-z\-]+(?:\.[\da-z\-]+)*)?)?)?$/i;
+  var inputs = ['1.2.3', '1.2', 'v1.2.3', '1.2.3-rc.1', '1.2.3+build', 'foo', '>=1.2.3'];
+  var out = [];
+  for (var i = 0; i < inputs.length; i++) out.push(re.test(inputs[i]) ? '1' : '0');
+  return out.join('');
+})()""",
+    ),
 )
