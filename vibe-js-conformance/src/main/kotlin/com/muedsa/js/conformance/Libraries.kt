@@ -1701,6 +1701,33 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "simple-statistics",
+        url = "https://unpkg.com/simple-statistics@7.8.3/dist/simple-statistics.min.js",
+        globalName = "ss",
+        cases = listOf(
+            SmokeCase(
+                "mean and median",
+                assertion("ss.mean([1, 2, 3]) === 2 && ss.median([3, 1, 2]) === 2"),
+            ),
+            SmokeCase(
+                "standard deviation",
+                assertion("ss.standardDeviation([1, 2, 3, 4]) === 1.118033988749895"),
+            ),
+            SmokeCase(
+                "quantile",
+                assertion("ss.quantile([1, 2, 3, 4], 0.5) === 2.5"),
+            ),
+            SmokeCase(
+                "linear regression",
+                assertion(
+                    "(function () { var model = ss.linearRegression([[0, 1], [1, 3], [2, 5]]); " +
+                        "return model.m === 2 && model.b === 1 && " +
+                        "ss.linearRegressionLine(model)(2) === 5; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
