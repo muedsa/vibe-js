@@ -1761,6 +1761,216 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "moo",
+        url = "https://unpkg.com/moo@0.5.2/moo.js",
+        globalName = "moo",
+        cases = listOf(
+            SmokeCase(
+                "token stream",
+                assertion(
+                    "(function () { var lexer = moo.compile({ ws: /[ ]+/, number: /[0-9]+/, word: /[a-zA-Z]+/ }); " +
+                        "lexer.reset('foo 123 bar'); var a = lexer.next(), b = lexer.next(), c = lexer.next(), " +
+                        "d = lexer.next(), e = lexer.next(); return a.type === 'word' && a.value === 'foo' && " +
+                        "a.line === 1 && a.col === 1 && b.type === 'ws' && b.col === 4 && " +
+                        "c.type === 'number' && c.value === '123' && c.col === 5 && d.type === 'ws' && " +
+                        "e.type === 'word' && e.value === 'bar' && e.col === 9 && lexer.next() === undefined; })()"
+                ),
+            ),
+            SmokeCase(
+                "newline line tracking",
+                assertion(
+                    "(function () { var lexer = moo.compile({ nl: { match: /\\n/, lineBreaks: true }, " +
+                        "ws: /[ ]+/, word: /[a-z]+/ }); lexer.reset('a\\nb'); " +
+                        "var a = lexer.next(), b = lexer.next(), c = lexer.next(); " +
+                        "return a.line === 1 && b.type === 'nl' && b.lineBreaks === 1 && " +
+                        "c.line === 2 && c.col === 1 && c.value === 'b'; })()"
+                ),
+            ),
+            SmokeCase(
+                "keyword transform",
+                assertion(
+                    "(function () { var lexer = moo.compile({ ws: /[ ]+/, word: { match: /[a-z]+/, " +
+                        "type: moo.keywords({ kw_if: 'if', kw_then: 'then' }) } }); " +
+                        "lexer.reset('if then other'); var a = lexer.next(), b = lexer.next(), " +
+                        "c = lexer.next(), d = lexer.next(), e = lexer.next(); " +
+                        "return a.type === 'kw_if' && a.value === 'if' && b.type === 'ws' && " +
+                        "c.type === 'kw_then' && d.type === 'ws' && e.type === 'word' && e.value === 'other'; })()"
+                ),
+            ),
+            SmokeCase(
+                "iterator",
+                assertion(
+                    "(function () { var lexer = moo.compile({ ws: /[ ]+/, num: /[0-9]+/, word: /[a-z]+/ }); " +
+                        "lexer.reset('a 1 b'); var types = []; for (var token of lexer) { types.push(token.type); } " +
+                        "return types.join(',') === 'word,ws,num,ws,word'; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "fecha",
+        url = "https://unpkg.com/fecha@4.2.3/dist/fecha.min.js",
+        globalName = "fecha",
+        cases = listOf(
+            SmokeCase(
+                "format masks",
+                assertion(
+                    "(function () { var date = new Date(2015, 10, 1, 22, 15, 30, 123); " +
+                        "return fecha.format(date, 'YYYY-MM-DD HH:mm:ss.SSS') === '2015-11-01 22:15:30.123' && " +
+                        "fecha.format(date, 'ddd MMM D YYYY') === 'Sun Nov 1 2015' && " +
+                        "fecha.format(date, 'Do') === '1st' && fecha.format(date, 'h:mm A') === '10:15 PM'; })()"
+                ),
+            ),
+            SmokeCase(
+                "parse fields",
+                assertion(
+                    "(function () { var parsed = fecha.parse('2015-11-01 22:15:30.123', " +
+                        "'YYYY-MM-DD HH:mm:ss.SSS'); return parsed instanceof Date && " +
+                        "parsed.getFullYear() === 2015 && parsed.getMonth() === 10 && parsed.getDate() === 1 && " +
+                        "parsed.getHours() === 22 && parsed.getMinutes() === 15 && " +
+                        "parsed.getSeconds() === 30 && parsed.getMilliseconds() === 123; })()"
+                ),
+            ),
+            SmokeCase(
+                "invalid input",
+                assertion(
+                    "(function () { var failed = false; " +
+                        "try { fecha.format(new Date(NaN), 'YYYY'); } catch (e) { failed = e instanceof Error; } " +
+                        "return failed && fecha.parse('nope', 'YYYY-MM-DD') === null; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "deep-diff",
+        url = "https://unpkg.com/deep-diff@1.0.2/index.js",
+        globalName = "DeepDiff",
+        cases = listOf(
+            SmokeCase(
+                "object changes",
+                assertion(
+                    "(function () { var changes = DeepDiff({ a: 1, b: { c: 2 } }, { a: 2, b: { c: 3 } }); " +
+                        "return changes.length === 2 && changes[0].kind === 'E' && " +
+                        "changes[0].path.join('.') === 'a' && changes[0].lhs === 1 && changes[0].rhs === 2 && " +
+                        "changes[1].path.join('.') === 'b.c'; })()"
+                ),
+            ),
+            SmokeCase(
+                "array changes",
+                assertion(
+                    "(function () { var changes = DeepDiff([1, 2, 3], [1, 4, 3, 5]); " +
+                        "return changes.length === 2 && changes[0].kind === 'A' && changes[0].index === 3 && " +
+                        "changes[1].kind === 'E' && changes[1].path[0] === 1; })()"
+                ),
+            ),
+            SmokeCase(
+                "apply and revert",
+                assertion(
+                    "(function () { var target = { a: 1, b: { c: 2 } }; " +
+                        "var source = { a: 1, b: { c: 3, d: 4 } }; var changes = DeepDiff(target, source); " +
+                        "DeepDiff.applyChange(target, source, changes[0]); var applied = target.b.c === 3; " +
+                        "DeepDiff.revertChange(target, source, changes[0]); " +
+                        "return applied && target.b.c === 2 && typeof DeepDiff.observableDiff === 'function'; })()"
+                ),
+            ),
+            SmokeCase(
+                "nested addition",
+                assertion(
+                    "(function () { var changes = DeepDiff({ a: { x: 1 }, b: 2 }, { a: { x: 1, y: 3 } }); " +
+                        "return changes.length === 2 && changes[0].kind === 'N' && " +
+                        "changes[0].path.join('.') === 'a.y' && changes[0].rhs === 3 && " +
+                        "changes[1].kind === 'D' && changes[1].path[0] === 'b'; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "object-path",
+        url = "https://unpkg.com/object-path@0.11.8/index.js",
+        globalName = "objectPath",
+        cases = listOf(
+            SmokeCase(
+                "get and set",
+                assertion(
+                    "(function () { var target = { a: { b: [{ c: 1 }] } }; " +
+                        "objectPath.set(target, ['a', 'b', 1, 'd'], 2); " +
+                        "return objectPath.get(target, 'a.b.0.c') === 1 && " +
+                        "objectPath.get(target, ['a', 'b', 1, 'd']) === 2 && target.a.b.length === 2; })()"
+                ),
+            ),
+            SmokeCase(
+                "push and ensure",
+                assertion(
+                    "(function () { var target = {}; objectPath.push(target, 'list', 5); " +
+                        "objectPath.push(target, 'list', 6); objectPath.ensureExists(target, 'deep.value', 3); " +
+                        "return target.list.join(',') === '5,6' && target.deep.value === 3 && " +
+                        "objectPath.get(target, 'list.length') === 2; })()"
+                ),
+            ),
+            SmokeCase(
+                "has and delete",
+                assertion(
+                    "(function () { var target = { a: { b: 1 }, c: 2 }; " +
+                        "var had = objectPath.has(target, ['a', 'b']); objectPath.del(target, 'a.b'); " +
+                        "objectPath.del(target, 'missing.path'); return had && " +
+                        "!objectPath.has(target, 'a.b') && objectPath.has(target, 'c') && target.c === 2; })()"
+                ),
+            ),
+            SmokeCase(
+                "inherited props",
+                assertion(
+                    "(function () { var base = { x: { y: 7 } }; var child = Object.create(base); " +
+                        "var inherited = objectPath.withInheritedProps; " +
+                        "return objectPath.get(child, 'x.y') === undefined && " +
+                        "inherited.get(child, 'x.y') === 7 && typeof objectPath.create === 'function'; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "validate",
+        url = "https://unpkg.com/validate.js@0.13.1/validate.min.js",
+        globalName = "validate",
+        cases = listOf(
+            SmokeCase(
+                "sync errors",
+                assertion(
+                    "(function () { var errors = validate({ name: null, age: 15 }, " +
+                        "{ name: { presence: true }, age: { presence: true, numericality: { greaterThan: 18 } } }); " +
+                        "return errors.name[0] === \"Name can't be blank\" && " +
+                        "errors.age[0] === 'Age must be greater than 18' && " +
+                        "validate({ name: 'ok', age: 20 }, { name: { presence: true }, " +
+                        "age: { numericality: { greaterThan: 18 } } }) === undefined; })()"
+                ),
+            ),
+            SmokeCase(
+                "validators and promise",
+                assertion(
+                    "validate.isDefined(null) === false && validate.isString('a') && validate.isNumber(3) && " +
+                        "validate.isInteger(3) === true && validate.isInteger(3.5) === false && " +
+                        "validate.isPromise(validate.async({}, {}))"
+                ),
+            ),
+            SmokeCase(
+                "custom validator",
+                assertion(
+                    "(function () { validate.validators.even = function (value) { " +
+                        "return value % 2 === 0 ? undefined : 'must be even'; }; " +
+                        "var errors = validate({ num: 3 }, { num: { even: true } }); " +
+                        "return errors.num[0].indexOf('must be even') >= 0 && " +
+                        "validate({ num: 4 }, { num: { even: true } }) === undefined; })()"
+                ),
+            ),
+            SmokeCase(
+                "async rejection",
+                "(function () { validate.async({ name: null }, { name: { presence: true } }).then(function () { " +
+                    "globalThis.__libResult = false; }, function (errors) { " +
+                    "globalThis.__libResult = errors.name.length === 1; }); })();",
+                async = true,
+            ),
+        ),
+    ),
 )
 
 
