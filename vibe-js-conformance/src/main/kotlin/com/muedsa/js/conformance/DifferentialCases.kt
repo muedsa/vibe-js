@@ -2349,6 +2349,42 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "js-expression-fuzz",
+        """
+        (function () {
+          var seed = 314159;
+          function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+          var atoms = ['0', '1', '-1', '2.5', 'NaN', 'Infinity', '-Infinity', 'true', 'false',
+            'null', 'undefined', '""', '"a"', '"1"', '[]', '[1, 2]', '({})', '({ a: 1 })',
+            '(function () { return 1; })'];
+          var ops = ['+', '-', '*', '/', '%', '**', '<', '<=', '>', '>=', '==', '!=', '===',
+            '!==', '&&', '||', '??', '&', '|', '^', '<<', '>>', '>>>'];
+          var unary = ['-', '+', '!', '~', 'typeof ', 'void '];
+          function makeExpr(depth) {
+            if (depth <= 0) { return atoms[rnd(atoms.length)]; }
+            var kind = rnd(10);
+            if (kind < 7) {
+              return '(' + makeExpr(depth - 1) + ' ' + ops[rnd(ops.length)] + ' ' +
+                makeExpr(depth - 1) + ')';
+            }
+            if (kind < 9) { return '(' + unary[rnd(unary.length)] + makeExpr(depth - 1) + ')'; }
+            return '(' + makeExpr(depth - 1) + ' ? ' + makeExpr(depth - 1) + ' : ' +
+              makeExpr(depth - 1) + ')';
+          }
+          var out = [];
+          for (var i = 0; i < 80; i++) {
+            var source = makeExpr(1 + rnd(3));
+            try {
+              out.push(i + ':' + source + '=' + String(JSON.stringify(eval(source))));
+            } catch (e) {
+              out.push(i + ':' + source + '=THROW:' + e.name);
+            }
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "json-stringify-fuzz",
         """(function () {
   var out = [];
