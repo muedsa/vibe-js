@@ -151,8 +151,9 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 ./gradlew :vibe-js-host:jsNodeTest
 ./gradlew :vibe-js-host:wasmJsNodeTest
 
-# 基准测试编译
+# 基准测试编译/运行
 ./gradlew :vibe-js-core:jvmBenchmarkClasses
+./gradlew :vibe-js-core:jvmBenchmarkBenchmark
 
 # 解析一致性基线（首次运行自动下载 test262-parser-tests）
 ./gradlew :vibe-js-conformance:parserConformance
@@ -164,12 +165,12 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 # 限制用例数/并行度
 ./gradlew :vibe-js-conformance:test262Conformance -Ptest262Limit=1000 -Ptest262Jobs=4
 
-# Test262 ES2015 特性子集（报告模式）
+# Test262 ES2015 特性子集（默认报告模式；严格门禁使用 -Pstrict）
 ./gradlew :vibe-js-conformance:test262Es2015Conformance
 
-# 真实库 UMD 冒烟（首次自动下载固定版本）
+# 真实库 UMD 冒烟（首次自动下载固定版本；严格门禁使用 -Pstrict）
 ./gradlew :vibe-js-conformance:librarySmoke
-# 与 Node 的差分基线
+# 与 Node 的差分基线（需要 Node 24；严格门禁使用 -Pstrict）
 ./gradlew :vibe-js-conformance:differentialConformance
 ```
 
