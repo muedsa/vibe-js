@@ -57,6 +57,43 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("str-locale-compare", "'ab'.localeCompare('ac')"),
     DifferentialCase("str-trim-unicode", "'\\u00A0x\\u2028'.trim().length"),
     DifferentialCase("str-sigma-context", "'A\\u03A3B'.toLowerCase()"),
+    // String 原型方法的索引/填充/查找/归一化边界矩阵
+    DifferentialCase(
+        "str-methods-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return 'abcdef'.slice(-3) + '|' + 'abcdef'.slice(-3, -1) + '|' + " +
+            "'abcdef'.slice(2, -1) + '|' + 'abcdef'.slice(4, 2); }); " +
+            "push(function () { return 'abcdef'.substring(-2, 2) + '|' + 'abcdef'.substring(3, 1); }); " +
+            "push(function () { return 'abcdef'.substr(-2, 1) + '|' + 'abcdef'.substr(2, -1); }); " +
+            "push(function () { return 'abc'.at(-1) + '|' + 'abc'.at(3) + '|' + 'abc'.at(1.9); }); " +
+            "push(function () { return ('abc'.charAt(5) === '') + '|' + String('abc'.charCodeAt(5)); }); " +
+            "push(function () { return '\\uD842\\uDFB7a'.codePointAt(0) + '|' + " +
+            "'\\uD842\\uDFB7a'.codePointAt(1) + '|' + '\\uD842\\uDFB7a'.length; }); " +
+            "push(function () { return '5'.padStart(3, '0') + '|' + 'abc'.padEnd(5, '12') + '|' + " +
+            "'x'.padStart(4) + '|' + 'x'.padEnd(3, ''); }); " +
+            "push(function () { return 'x'.repeat(0) + '|' + 'ab'.repeat(3) + '|' + 'x'.repeat(2.9); }); " +
+            "push(function () { try { 'x'.repeat(-1); return 'no'; } catch (e) { return e.name; } }); " +
+            "push(function () { try { 'x'.repeat(Infinity); return 'no'; } catch (e) { return e.name; } }); " +
+            "push(function () { return ' a b '.trim() + '|' + ' a b '.trimStart().length + '|' + " +
+            "' a b '.trimEnd().length; }); " +
+            "push(function () { return '\\u3000x\\u00A0'.trim().length; }); " +
+            "push(function () { return 'abc'.includes('b', 2) + '|' + 'abc'.startsWith('b', 1) + '|' + " +
+            "'abc'.endsWith('b', 2); }); " +
+            "push(function () { return 'abc'.indexOf('') + '|' + 'abc'.lastIndexOf('') + '|' + " +
+            "'abc'.indexOf('', 2) + '|' + 'abc'.lastIndexOf('', 2); }); " +
+            "push(function () { return 'abc'.indexOf('b', NaN) + '|' + 'abc'.lastIndexOf('b', NaN); }); " +
+            "push(function () { return 'a-b-c'.split('-', 0).length + '|' + 'a-b-c'.split('-', -1).length + " +
+            "'|' + 'a-b-c'.split('-', 2).join('|'); }); " +
+            "push(function () { return 'abc'.concat('d', 1, null, undefined); }); " +
+            "push(function () { return String.raw({ raw: ['a', 'b', 'c'] }, 1, 2); }); " +
+            "push(function () { return 'abc'.normalize('NFD').length + '|' + " +
+            "'\\u00E9'.normalize('NFD').length; }); " +
+            "push(function () { return 'abc'.replaceAll('b'); }); " +
+            "push(function () { try { 'abc'.replaceAll(/(?:)/g, '-'); return 'ok'; } catch (e) { return e.name; } }); " +
+            "push(function () { return Array.from('a\\uD842\\uDFB7b').join('|'); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase("str-codepoint-low-surrogate", "String.fromCodePoint(128512).charCodeAt(1)"),
     DifferentialCase("str-repeat-zero", "'a'.repeat(0).length"),
     DifferentialCase("fn-tostring-source", "(function /*c*/ f(a) { return a; }).toString()"),
