@@ -1616,4 +1616,68 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('|');
 })()""",
     ),
+
+    // eval/with 作用域、instanceof/in 与 Array.prototype.concat 的展开语义
+    DifferentialCase(
+        "eval-with-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { var x = 1; function f() { var x = 2; return eval('x'); } return f() + ':' + x; });
+  push(function () { var x = 1; function f() { var x = 2; var e = eval; return e('x'); } return f(); });
+  push(function () { function f() { eval('var y = 3;'); return y; } return f(); });
+  push(function () { function f() { 'use strict'; eval('var z = 4;'); return typeof z; } return f(); });
+  push(function () { var log = []; function f() { eval('var a = 1;'); log.push(a); } f(); return log.join(',') + ':' + typeof a; });
+  push(function () { return eval('1 + 2'); });
+  push(function () { return String(eval('var q = 5')); });
+  push(function () { try { eval('var ='); } catch (e) { return e.name; } });
+  push(function () { var s = 'x'; return eval('s + s'); });
+  push(function () { function f(a) { eval('a = 9'); return a; } return f(1); });
+  push(function () { function f() { eval('arguments[0] = 7'); return arguments[0]; } return f(1); });
+  push(function () { var log = []; function f() { eval('var b = 1;'); function g() { return typeof b; } log.push(g()); } f(); return log.join(','); });
+  push(function () { return typeof eval('function h() {}') + ':' + typeof h; });
+  push(function () { var o = { x: 1 }; with (o) { return x; } });
+  push(function () { var o = { x: 1 }; with (o) { x = 2; } return o.x; });
+  push(function () { var o = { x: 1 }; var x = 9; with (o) { x = 2; } return o.x + ':' + x; });
+  push(function () { function f() { return typeof this; } return f() + ':' + f.call(null); });
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "instanceof-in-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { class A { static [Symbol.hasInstance](x) { return x === 1; } } return (1 instanceof A) + ':' + (2 instanceof A); });
+  push(function () { function F() {} var b = new F(); return (b instanceof F) + ':' + ({} instanceof F) + ':' + F[Symbol.hasInstance](b); });
+  push(function () { var b = (function () {}).bind(null); return b[Symbol.hasInstance]({}) + ':' + ({} instanceof b); });
+  push(function () { return ('x' in { x: 1 }) + ':' + ('x' in Object.create({ x: 1 })) + ':' + (0 in [1]); });
+  push(function () { try { 'x' in 'str'; return 'ok'; } catch (e) { return e.name; } });
+  push(function () { try { 'x' in 1; return 'ok'; } catch (e) { return e.name; } });
+  push(function () { var s = Symbol('k'); var o = { [s]: 1 }; return (s in o) + ':' + ('k' in o); });
+  push(function () { var proto = { [Symbol.hasInstance](x) { return typeof x === 'string'; } }; return 'a' instanceof proto; });
+  push(function () { return 1 instanceof 5; });
+  push(function () { var o = Object.create(null); return o instanceof Object; });
+  push(function () { try { ({}).hasOwnProperty('x'); return 'ok'; } catch (e) { return e.name; } });
+  return out.join('|');
+})()""",
+    ),
+    DifferentialCase(
+        "concat-spreadable-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { return [1].concat([2, 3], 4).join(','); });
+  push(function () { return JSON.stringify([1, , 2].concat([3, , 4])); });
+  push(function () { var o = { length: 2, 0: 'a', 1: 'b' }; return [0].concat(o).length + ':' + Array.isArray([0].concat(o)[1]); });
+  push(function () { var o = { length: 1, 0: 'a', [Symbol.isConcatSpreadable]: true }; return [0].concat(o).join(','); });
+  push(function () { var a = [1, 2]; a[Symbol.isConcatSpreadable] = false; return [0].concat(a).length; });
+  push(function () { class A extends Array {} return new A(1, 2).concat([3]).length; });
+  push(function () { return Array.prototype.concat.call({ length: 1, 0: 1 }, 2).length; });
+  push(function () { var log = []; var o = { get length() { log.push('l'); return 1; }, get 0() { log.push('g'); return 'x'; } }; var r = [0].concat(o); return r.join(',') + ':' + log.join(','); });
+  push(function () { return [].concat.call(null).length; });
+  push(function () { return [1].concat(null, undefined, [2]).join(','); });
+  return out.join('|');
+})()""",
+    ),
 )
