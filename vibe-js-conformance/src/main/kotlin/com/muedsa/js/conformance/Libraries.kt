@@ -1548,6 +1548,72 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "ohm",
+        url = "https://unpkg.com/ohm-js@17.1.0/dist/ohm.min.js",
+        globalName = "ohm",
+        cases = listOf(
+            SmokeCase(
+                "version",
+                assertion("ohm.version === '17.1.0' && typeof ohm.grammar === 'function'"),
+            ),
+            SmokeCase(
+                "grammar match",
+                assertion(
+                    "(function () { var g = ohm.grammar('G { start = d+  d = \"0\"..\"9\" }'); " +
+                        "return g.match('123').succeeded(); })()"
+                ),
+            ),
+            SmokeCase(
+                "grammar mismatch",
+                assertion(
+                    "(function () { var g = ohm.grammar('G { start = d+  d = \"0\"..\"9\" }'); " +
+                        "return g.match('12a').failed(); })()"
+                ),
+            ),
+            SmokeCase(
+                "builtin letter rule",
+                assertion(
+                    "(function () { var g = ohm.grammar('G { start = letter+ }'); " +
+                        "return g.match('abc').succeeded() && g.match('1').failed(); })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "jsonata",
+        url = "https://unpkg.com/jsonata@2.1.0/jsonata.js",
+        globalName = "jsonata",
+        cases = listOf(
+            SmokeCase(
+                "exports",
+                assertion("typeof jsonata === 'function'"),
+            ),
+            SmokeCase(
+                "path ast",
+                assertion(
+                    "(function () { var ast = jsonata('a.b').ast(); " +
+                        "return ast.type === 'path' && ast.steps.length === 2 && " +
+                        "ast.steps[0].value === 'a' && ast.steps[1].value === 'b'; })()"
+                ),
+            ),
+            SmokeCase(
+                "binary ast",
+                assertion(
+                    "(function () { var ast = jsonata('1 + 2').ast(); " +
+                        "return ast.type === 'binary' && ast.value === '+' && " +
+                        "ast.lhs.value === 1 && ast.rhs.value === 2; })()"
+                ),
+            ),
+            SmokeCase(
+                "syntax error",
+                assertion(
+                    "(function () { try { jsonata('1 +'); return false; } catch (e) { " +
+                        "return e.message === 'Unexpected end of expression'; } })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
