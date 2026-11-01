@@ -2325,6 +2325,65 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "d3-time",
+        url = "https://unpkg.com/d3-time@3.1.0/dist/d3-time.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "utc day offset",
+                assertion(
+                    "d3.utcDay.offset(new Date(Date.UTC(2020, 0, 1)), 2).toISOString() === " +
+                        "'2020-01-03T00:00:00.000Z'"
+                ),
+            ),
+            SmokeCase(
+                "utc year count",
+                assertion(
+                    "d3.utcYear.count(new Date(Date.UTC(2020, 0, 1)), " +
+                        "new Date(Date.UTC(2022, 0, 1))) === 2"
+                ),
+            ),
+            SmokeCase(
+                "utc hour range",
+                assertion(
+                    "d3.utcHour.range(new Date(Date.UTC(2020, 0, 1)), " +
+                        "new Date(Date.UTC(2020, 0, 1, 3))).length === 3"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "d3-time-format",
+        url = "https://unpkg.com/d3-time-format@4.1.0/dist/d3-time-format.min.js",
+        globalName = "d3",
+        dependencies = listOf("d3-time"),
+        cases = listOf(
+            SmokeCase(
+                "utc format",
+                assertion(
+                    "d3.utcFormat('%Y-%m-%d %H:%M:%S')" +
+                        "(new Date(Date.UTC(2020, 0, 1, 12, 30, 45))) === '2020-01-01 12:30:45' && " +
+                        "d3.utcFormat('%Y-%j')(new Date(Date.UTC(2020, 11, 31))) === '2020-366'"
+                ),
+            ),
+            SmokeCase(
+                "utc parse",
+                assertion(
+                    "d3.utcParse('%Y-%m-%d %H:%M:%S')('2020-01-01 12:30:45')" +
+                        ".toISOString() === '2020-01-01T12:30:45.000Z'"
+                ),
+            ),
+            SmokeCase(
+                "iso roundtrip",
+                assertion(
+                    "d3.isoFormat(new Date(Date.UTC(2020, 0, 1))) === " +
+                        "'2020-01-01T00:00:00.000Z' && " +
+                        "d3.isoParse('2020-01-01T00:00:00.000Z').getTime() === Date.UTC(2020, 0, 1)"
+                ),
+            ),
+        ),
+    ),
 )
 
 
