@@ -3,7 +3,8 @@
 状态说明：✅ 支持　⚠️ 部分支持/有已知差异　❌ 尚未支持
 
 > 当前覆盖 ES5 与 ES2015 的常用语法和内建；明确排除 Generator、模块系统、
-> Proxy/Reflect、BigInt、Intl、TypedArray 与真实 Web API（DOM/fetch 等）。
+> Proxy/Reflect、BigInt、Intl、TypedArray、异步迭代（`for await` / AsyncIterator 原型）
+> 与真实 Web API（DOM/fetch 等）。
 
 ## 1. 词法
 

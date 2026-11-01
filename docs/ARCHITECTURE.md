@@ -215,4 +215,4 @@ engine.install(MyModule())
 - **阶段 D（已完成）**：独立宿主模块 `:vibe-js-host`（console、定时器、window/self、
   queueMicrotask、atob/btoa）。
 - **明确排除**：Generator、import/export、Proxy/Reflect、BigInt、Intl、TypedArray、
-  DOM/fetch 等真实 Web API。
+  异步迭代（`for await` / AsyncIterator 原型）、DOM/fetch 等真实 Web API。
