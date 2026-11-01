@@ -1133,6 +1133,45 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
     DifferentialCase("regexp-source-prototype", "RegExp.prototype.source"),
     DifferentialCase(
+        "regexp-string-methods-fuzz",
+        """
+        (function () {
+          var atoms = ['a', 'b', 'c', '.', '[ab]', '[^a]', '[a-c]', '\\d', '\\w', '\\s',
+            '\\D', '(a)', '(b|c)', '(?:ab)', 'a*', 'b+', 'c?', 'a{2}', 'b{1,2}',
+            '^', String.fromCharCode(36), '\\b', '\\B', '(a|b)', '(a*)'];
+          var flagsPool = ['', 'g', 'i', 'm', 's', 'gi', 'gim', 'u', 'gu', 'iu', 'y', 'gy', 'd', 'gd'];
+          var inputs = ['', 'a', 'ab', 'ba', 'abc', 'aaa', 'a b', 'A', '1a2', 'a\nb', ' ',
+            'cab', 'bbb', 'ac'];
+          var seed = 13579;
+          function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+          var out = [];
+          function replacement() {
+            return '[' + Array.prototype.slice.call(arguments, 0, arguments.length - 2).join('|') + ']';
+          }
+          for (var i = 0; i < 80; i++) {
+            var parts = [];
+            var count = 1 + rnd(4);
+            for (var j = 0; j < count; j++) { parts.push(atoms[rnd(atoms.length)]); }
+            var src = parts.join('');
+            var flags = flagsPool[rnd(flagsPool.length)];
+            var input = inputs[rnd(inputs.length)];
+            try {
+              var replaced = input.replace(new RegExp(src, flags), replacement);
+              var split = input.split(new RegExp(src, flags), 5);
+              var matched = input.match(new RegExp(src, flags));
+              var searched = input.search(new RegExp(src, flags));
+              out.push(i + ':' + src + ':' + flags + ':' + JSON.stringify(input) + ':' +
+                JSON.stringify(replaced) + '|' + JSON.stringify(split) + '|' +
+                JSON.stringify(matched) + '|' + searched);
+            } catch (e) {
+              out.push(i + ':' + src + ':' + flags + ':THROW:' + e.name);
+            }
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "regexp-fuzz-ascii",
         """
         (function () {
