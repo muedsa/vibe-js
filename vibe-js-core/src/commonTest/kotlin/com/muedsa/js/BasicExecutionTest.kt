@@ -170,5 +170,10 @@ class BasicExecutionTest {
         val call = runtime.engine.parse("function twice(x) { return x * 2; } twice(21)")
         assertEquals(42.0, (runtime.engine.run(call) as JSNumber).value)
         assertEquals(42.0, (runtime.engine.run(call) as JSNumber).value)
+        // 解析阶段不接触全局环境：声明实例化只在执行时发生
+        val lazy = runtime.engine.parse("var lazyBinding = 1;")
+        assertEquals(true, runtime.evalBoolean("typeof lazyBinding === 'undefined'"))
+        runtime.engine.run(lazy)
+        assertEquals(1.0, runtime.evalNumber("lazyBinding"))
     }
 }

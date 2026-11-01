@@ -1,5 +1,6 @@
 package benchmark
 
+import com.muedsa.js.ast.Program
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSString
@@ -18,8 +19,8 @@ import kotlinx.coroutines.runBlocking
 /**
  * 解释器吞吐基准。
  *
- * 说明：当前基准包含词法/语法解析与执行，衡量的是 Engine.run 的整体吞吐；
- * 后续若引入编译执行器，可在同一基准下对比。
+ * 说明：`*` 方法衡量 Engine.run 的整体吞吐（含词法/语法解析与执行），
+ * `parsed*` 方法复用 Engine.parse 得到的 AST，仅衡量执行期吞吐。
  */
 @State(Scope.Benchmark)
 @Measurement(iterations = 10, time = 300, timeUnit = BenchmarkTimeUnit.MILLISECONDS)
@@ -29,6 +30,7 @@ open class InterpreterBenchmark {
 
     private lateinit var engine: Engine
     private lateinit var programs: List<String>
+    private lateinit var parsedPrograms: List<Program>
 
     @Setup
     open fun setUp() {
@@ -43,11 +45,13 @@ open class InterpreterBenchmark {
             // 数组迭代
             "var arr = []; for (var i = 0; i < 100; i++) { arr.push(i); } arr.length;",
         )
+        parsedPrograms = programs.map { engine.parse(it) }
     }
 
     @TearDown
     open fun tearDown() {
         programs = emptyList()
+        parsedPrograms = emptyList()
     }
 
     @Benchmark
@@ -68,5 +72,25 @@ open class InterpreterBenchmark {
     @Benchmark
     open fun arrayLoop(): Double = runBlocking {
         (engine.run(programs[3]) as JSNumber).value
+    }
+
+    @Benchmark
+    open fun parsedArithmetic(): Double = runBlocking {
+        (engine.run(parsedPrograms[0]) as JSNumber).value
+    }
+
+    @Benchmark
+    open fun parsedObjectConcat(): String = runBlocking {
+        (engine.run(parsedPrograms[1]) as JSString).value
+    }
+
+    @Benchmark
+    open fun parsedFunctionCall(): String = runBlocking {
+        (engine.run(parsedPrograms[2]) as JSString).value
+    }
+
+    @Benchmark
+    open fun parsedArrayLoop(): Double = runBlocking {
+        (engine.run(parsedPrograms[3]) as JSNumber).value
     }
 }
