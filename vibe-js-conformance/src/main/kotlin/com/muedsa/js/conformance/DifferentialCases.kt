@@ -1132,6 +1132,55 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-nonunicode-split-identity", "JSON.stringify('x'.split(/\\x/))"),
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
     DifferentialCase("regexp-source-prototype", "RegExp.prototype.source"),
+    DifferentialCase(
+        "regexp-fuzz-ascii",
+        """
+        (function () {
+          var atoms = ['a', 'b', 'c', '.', '[ab]', '[^a]', '[a-c]', '\\d', '\\w', '\\s',
+            '\\D', '(a)', '(b|c)', '(?:ab)', 'a*', 'b+', 'c?', 'a{2}', 'b{1,2}',
+            '^', String.fromCharCode(36), '\\b', '\\B', '(a|b)', '(a*)'];
+          var flagsPool = ['', 'g', 'i', 'm', 's', 'gi', 'gim', 'u', 'gu', 'iu', 'y', 'gy', 'd', 'gd'];
+          var inputs = ['', 'a', 'ab', 'ba', 'abc', 'aaa', 'a b', 'A', '1a2', 'a\nb', ' ',
+            'cab', 'bbb', 'ac'];
+          var seed = 24680;
+          function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+          var out = [];
+          for (var i = 0; i < 120; i++) {
+            var parts = [];
+            var count = 1 + rnd(4);
+            for (var j = 0; j < count; j++) { parts.push(atoms[rnd(atoms.length)]); }
+            var src = parts.join('');
+            var flags = flagsPool[rnd(flagsPool.length)];
+            var input = inputs[rnd(inputs.length)];
+            try {
+              var re = new RegExp(src, flags);
+              var match = re.exec(input);
+              out.push(i + ':E:' + src + ':' + flags + ':' + JSON.stringify(input) + ':' +
+                (match ? JSON.stringify(Array.prototype.slice.call(match)) + '@' + match.index +
+                  ':' + re.lastIndex : 'null'));
+            } catch (e) {
+              out.push(i + ':E:' + src + ':' + flags + ':THROW:' + e.name);
+            }
+            if (flags.indexOf('g') >= 0 || flags.indexOf('y') >= 0) {
+              try {
+                var loopRe = new RegExp(src, flags);
+                var found = [];
+                var m;
+                var guard = 0;
+                while ((m = loopRe.exec(input)) && guard++ < 20) {
+                  found.push(m[0] + '@' + m.index + ':' + loopRe.lastIndex);
+                  if (m[0] === '') { loopRe.lastIndex++; }
+                }
+                out.push(i + ':L:' + found.join(','));
+              } catch (e) {
+                out.push(i + ':L:THROW:' + e.name);
+              }
+            }
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
     DifferentialCase("regexp-source-escape", "JSON.stringify(new RegExp('a/b' + String.fromCharCode(10)).source)"),
     DifferentialCase("regexp-source-escaped-slash", "JSON.stringify(new RegExp('\\/').source)"),
     DifferentialCase("regexp-source-invalid", "(function () { try { Object.getOwnPropertyDescriptor(RegExp.prototype, 'source').get.call({}); return 'none'; } catch (e) { return e.name; } })()"),
