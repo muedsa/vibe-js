@@ -635,4 +635,42 @@ class BuiltinObjectDateRegExpTest {
         assertEquals(0.0, number("Date.parse(new Date(0).toString())"))
         assertEquals(0.0, number("Date.parse(new Date(0).toUTCString())"))
     }
+
+    @Test
+    fun `Date 本地时区支持负偏移与半小时偏移`() = runTest {
+        val negative = Engine(DefaultHostEnvironment(timeZoneOffset = { -3L * 3_600_000L - 30L * 60_000L }))
+        suspend fun negNumber(code: String): Double = (negative.run(code) as JSNumber).value
+        suspend fun negText(code: String): String = (negative.run(code) as JSString).value
+        assertEquals(210.0, negNumber("new Date(0).getTimezoneOffset()"))
+        assertEquals(20.0, negNumber("new Date(0).getHours()"))
+        assertEquals(30.0, negNumber("new Date(0).getMinutes()"))
+        assertEquals(69.0, negNumber("new Date(0).getYear()"))
+        assertEquals(
+            "Wed Dec 31 1969 20:30:00 GMT-0330 (UTC-03:30)",
+            negText("new Date(0).toString()"),
+        )
+        assertEquals(0.0, negNumber("Date.parse(new Date(0).toString())"))
+        // 纯日期 ISO 仍按 UTC，带时间无时区按宿主本地时间解释
+        assertEquals(0.0, negNumber("new Date('2020-01-01').getTime() - Date.UTC(2020, 0, 1)"))
+        assertEquals(
+            0.0,
+            negNumber(
+                "new Date('2020-01-01T00:00:00').getTime() - (Date.UTC(2020, 0, 1) + 3 * 3600000 + 30 * 60000)"
+            ),
+        )
+
+        val positive = Engine(DefaultHostEnvironment(timeZoneOffset = { 5L * 3_600_000L + 30L * 60_000L }))
+        suspend fun posNumber(code: String): Double = (positive.run(code) as JSNumber).value
+        suspend fun posText(code: String): String = (positive.run(code) as JSString).value
+        assertEquals(-330.0, posNumber("new Date(0).getTimezoneOffset()"))
+        assertEquals(
+            "Thu Jan 01 1970 05:30:00 GMT+0530 (UTC+05:30)",
+            posText("new Date(0).toString()"),
+        )
+        assertEquals(0.0, posNumber("Date.parse(new Date(0).toString())"))
+        assertEquals(
+            0.0,
+            posNumber("new Date(2020, 0, 1).getTime() - (Date.UTC(2020, 0, 1) - 5.5 * 3600000)"),
+        )
+    }
 }
