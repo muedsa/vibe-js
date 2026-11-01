@@ -292,6 +292,21 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             "(123.456).toString(36), (1e21).toString(16), (1e21).toString(2).length, " +
             "(-0.1).toString(2), (2 ** 53).toString(16), (2 ** 53 + 1).toString(16)].join('|')"
     ),
+    // 进制转换的边界矩阵：2 的幂进制下 V8 的输出可精确往返，可直接比较完整文本。
+    // 非 2 的幂进制（3/5/7/36 等）的 V8 输出常无法解析回原 double，
+    // 本项目按规范实现最短往返表示，差异记录于 docs/COMPATIBILITY.md。
+    DifferentialCase(
+        "num-radix-boundary-matrix",
+        "(function () { var values = [0.1, 0.2, 1 / 3, 2 / 3, 1 / 7, 0.5, 1.5, 2.5, " +
+            "1.0000000000000002, 0.9999999999999999, 123.456, 1e-7, 1e-6, 1e-5, 1e10, 1e15, " +
+            "1e20, 1e21, 2 ** 53, 2 ** 53 - 1, 2 ** 53 + 2, 2 ** 52, 2 ** -52, 5e-324, " +
+            "2.2250738585072014e-308, 1.7976931348623157e308, 6.02214076e23, 3.141592653589793, " +
+            "1e-300, 4.9406564584124654e-324]; " +
+            "var radices = [2, 4, 8, 16, 32]; var out = []; " +
+            "for (var i = 0; i < values.length; i++) { " +
+            "for (var j = 0; j < radices.length; j++) { out.push(values[i].toString(radices[j])); } } " +
+            "return out.join('|'); })()"
+    ),
     // Date 的 UTC/TimeClip/ISO 解析与溢出矩阵（避免依赖本地时区的构造与 getter）
     DifferentialCase(
         "date-utc-matrix",

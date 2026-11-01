@@ -2977,6 +2977,17 @@ class RuntimeSemanticsRegressionTest {
             "0." + "0".repeat(1073) + "1",
             runtime.evalString("(5e-324).toString(2)")
         )
+        // 非 2 的幂进制：最近候选不可往返时仍需接受同长度的另一侧候选
+        assertEquals(
+            "0.1111111111111111111111111111111112",
+            runtime.evalString("(0.5).toString(3)")
+        )
+        // V8 的非 2 的幂进制输出可能无法解析回原 double；此处按规范的最短往返结果断言
+        assertEquals(
+            "0.022222222222222222222223",
+            runtime.evalString("(0.1).toString(5)")
+        )
+        assertEquals("344015313561621001500000", runtime.evalString("(1e20).toString(7)"))
     }
 
     @Test

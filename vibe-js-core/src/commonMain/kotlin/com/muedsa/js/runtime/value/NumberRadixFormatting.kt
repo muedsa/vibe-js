@@ -41,13 +41,24 @@ internal object NumberRadixFormatting {
                 radix,
                 exponent,
             )
+            // 逐位测试两个相邻候选：较短位数下可能只有远离中点的候选可往返
+            val down = significand
+            val up = significand.addSmall(1)
+            val downInside = inRoundingInterval(down, exponent, bounds, radix, decomposition.mantissa)
+            val upInside = inRoundingInterval(up, exponent, bounds, radix, decomposition.mantissa)
             val candidate = when {
-                comparison > 0 -> significand.addSmall(1)
-                comparison < 0 -> significand
-                // 恰好位于两个候选中间：选择有效数字为偶数的候选（round-half-even）
-                else -> if (significand.isEven) significand else significand.addSmall(1)
+                downInside && upInside -> when {
+                    comparison > 0 -> up
+                    comparison < 0 -> down
+                    // 恰在中点：选择有效数字为偶数的候选（round-half-even）
+                    else -> if (significand.isEven) down else up
+                }
+
+                downInside -> down
+                upInside -> up
+                else -> null
             }
-            if (inRoundingInterval(candidate, exponent, bounds, radix, decomposition.mantissa)) {
+            if (candidate != null) {
                 chosenSignificand = candidate
                 chosenExponent = exponent
                 break

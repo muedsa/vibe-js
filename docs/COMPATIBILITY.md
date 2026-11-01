@@ -123,7 +123,8 @@
 - 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消；`async` 函数体在独立解释器实例上以 `Dispatchers.Unconfined` 恢复执行，不持有 `runtimeMutex`，当前模型面向单线程事件循环，宿主不应在多线程并发调用执行入口；
 - 参数初始化阶段的直接 eval 若声明与参数环境同名绑定（包括隐式 `arguments`），按规范与 Test262 期望抛 `SyntaxError`；Node/V8 对隐式 `arguments` 允许该声明，该分支不纳入差分用例；
 - `++super[key]` 按规范在 ToPropertyKey 之前读取 GetSuperBase（Test262 期望）；Node/V8 在键转换后读取原型，二者结果不同，该分支不纳入差分用例；
-- 严格模式下对 RHS 求值前已不可解析的标识符赋值（如 `x = (globalThis.x = 1)`），按规范/Test262 抛 `ReferenceError`；Node/V8 会重新解析并成功写入，该分支不纳入差分用例。
+- 严格模式下对 RHS 求值前已不可解析的标识符赋值（如 `x = (globalThis.x = 1)`），按规范/Test262 抛 `ReferenceError`；Node/V8 会重新解析并成功写入，该分支不纳入差分用例；
+- `Number.prototype.toString(radix)` 在非 2 的幂进制下按规范生成最短往返表示（有效数字最短且能解析回同一 double）；Node/V8 的实现会截断/近似，部分输出无法解析回原 double（如 `(0.1).toString(5)`），因此差分仅对 2 的幂进制比较完整文本，其余进制由自校验与用例覆盖。
 
 ## 7. 测试对应
 
