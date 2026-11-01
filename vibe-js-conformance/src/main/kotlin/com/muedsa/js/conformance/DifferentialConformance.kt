@@ -245,6 +245,7 @@ private class DifferentialRunner {
         asyncCases: List<AsyncDifferentialCase>,
     ): String {
         val builder = StringBuilder()
+        builder.appendLine("const vm = require('vm');")
         builder.appendLine("const cases = [")
         for (case in cases) {
             builder.append("  [")
@@ -256,11 +257,11 @@ private class DifferentialRunner {
         builder.appendLine("];")
         builder.appendLine(
             """
+            const syncContext = vm.createContext({});
             for (const [name, expression] of cases) {
               try {
-                // 间接 eval：在全局作用域求值，避免表达式看到运行器局部绑定
-                const result = (0, eval)(expression);
-                const json = JSON.stringify(result);
+                // 与 Vibe 一致：在裸上下文执行 JSON.stringify((expression))
+                const json = vm.runInContext('JSON.stringify((' + expression + '))', syncContext);
                 process.stdout.write(name + '\t' + (json === undefined ? 'undefined' : json) + '\n');
               } catch (error) {
                 const errorName = error && error.name ? error.name : 'Error';
@@ -270,7 +271,6 @@ private class DifferentialRunner {
             """.trimIndent()
         )
         if (asyncCases.isNotEmpty()) {
-            builder.appendLine("const vm = require('vm');")
             builder.appendLine("const asyncCases = [")
             for (case in asyncCases) {
                 builder.append("  [")
