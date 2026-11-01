@@ -56,7 +56,9 @@ object DateBuiltins {
                             dayNumber,
                             DateMath.makeTimeDouble(hours, minutes, seconds, milliseconds),
                         )
-                        toUtcFromLocal(interpreter, DateMath.timeClip(wallTime))
+                        // 先按与 UTC 的偏移换算，再等待外层 TimeClip：
+                        // 边界值可能因偏移回到可表示范围内
+                        toUtcFromLocal(interpreter, wallTime)
                     }
                 }
                 JSDate(DateMath.timeClip(time), datePrototype)

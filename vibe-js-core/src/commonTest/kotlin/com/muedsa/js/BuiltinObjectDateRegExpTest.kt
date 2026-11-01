@@ -675,6 +675,16 @@ class BuiltinObjectDateRegExpTest {
     }
 
     @Test
+    fun `Date 构造器在本地偏移下对极值边界先换算后裁剪`() = runTest {
+        val positive = Engine(DefaultHostEnvironment(timeZoneOffset = { 1L }))
+        val posTime = (positive.run("new Date(275760, 8, 13, 0, 0, 0, 1).getTime()") as JSNumber).value
+        assertEquals(8.64e15, posTime)
+        val negative = Engine(DefaultHostEnvironment(timeZoneOffset = { -1L }))
+        val negTime = (negative.run("new Date(-271821, 3, 20, 0, 0, 0, -1).getTime()") as JSNumber).value
+        assertEquals(-8.64e15, negTime)
+    }
+
+    @Test
     fun `Date 的 setYear 在 NaN 参数下写入无效时间`() = runTest {
         val runtime = TestRuntime()
         assertEquals(
