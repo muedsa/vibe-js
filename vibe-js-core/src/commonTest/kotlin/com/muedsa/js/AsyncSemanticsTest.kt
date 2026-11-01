@@ -537,4 +537,29 @@ class AsyncSemanticsTest {
         assertEquals(1, rejected.size)
         assertEquals("c", (rejected[0] as JSString).value)
     }
+
+    @Test
+    fun `已上报拒绝后补挂处理通知 rejectionhandled`() = runTest {
+        val unhandled = mutableListOf<JSValue>()
+        val handled = mutableListOf<JSValue>()
+        val base = DefaultHostEnvironment()
+        val engine = Engine(object : HostEnvironment by base {
+            override fun reportUnhandledRejection(reason: JSValue) {
+                unhandled.add(reason)
+            }
+
+            override fun reportRejectionHandled(reason: JSValue) {
+                handled.add(reason)
+            }
+        })
+        engine.run("var p = Promise.reject('late');")
+        assertEquals(1, unhandled.size)
+        assertEquals(0, handled.size)
+        engine.run("p.catch(function () {});")
+        assertEquals(1, handled.size)
+        assertEquals("late", (handled[0] as JSString).value)
+        // 再次订阅不应重复通知
+        engine.run("p.catch(function () {});")
+        assertEquals(1, handled.size)
+    }
 }

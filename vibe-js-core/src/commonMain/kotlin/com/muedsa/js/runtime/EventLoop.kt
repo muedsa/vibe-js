@@ -42,9 +42,24 @@ class EventLoop(
     /** 未处理拒绝的宿主回调；由 Engine 注入。 */
     internal var unhandledRejectionReporter: ((JSValue) -> Unit)? = null
 
+    /** 已上报拒绝随后被处理时的宿主回调；由 Engine 注入。 */
+    internal var rejectionHandledReporter: ((JSValue) -> Unit)? = null
+
     /** 登记一个未处理的拒绝，等待本轮微任务结束后确认。 */
     fun trackUnhandledRejection(promise: JSPromise) {
         unhandledRejections.addLast(promise)
+    }
+
+    /** 给已上报的拒绝补挂处理时通知宿主（只通知一次）。 */
+    fun reportRejectionHandled(promise: JSPromise) {
+        if (!promise.unhandledReported || promise.rejectionHandledReported) return
+        promise.rejectionHandledReported = true
+        val reporter = rejectionHandledReporter ?: return
+        try {
+            reporter(promise.result)
+        } catch (_: Throwable) {
+            // 宿主回调异常不应破坏事件循环
+        }
     }
 
     /** 排队一个微任务。 */

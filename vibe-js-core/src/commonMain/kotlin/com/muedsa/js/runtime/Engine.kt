@@ -48,6 +48,7 @@ class Engine(
     init {
         // 未处理拒绝在每轮微任务清空后交给宿主回调
         eventLoop.unhandledRejectionReporter = { reason -> host.reportUnhandledRejection(reason) }
+        eventLoop.rejectionHandledReporter = { reason -> host.reportRejectionHandled(reason) }
 
         // 1. 创建原型骨架
         intrinsics.initialize()

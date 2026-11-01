@@ -107,9 +107,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 507 + 宿主 20 个测试 |
-| JS（Node） | ✅ | 核心 507 + 宿主 20 个测试 |
-| Wasm（Node） | ✅ | 核心 507 + 宿主 20 个测试 |
+| JVM | ✅ | 核心 508 + 宿主 20 个测试 |
+| JS（Node） | ✅ | 核心 508 + 宿主 20 个测试 |
+| Wasm（Node） | ✅ | 核心 508 + 宿主 20 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -120,7 +120,7 @@
 - RegExp 使用 Kotlin Regex 主路径 + 纯 Kotlin 回退引擎；回退路径按 JS-only 构造精确启用（空字符类、`\0`/`\c`、前向反向引用、lookbehind、量词组捕获重置、码元级 `.` 等）；忽略大小写且模式含字母时统一走回退引擎（规范的 Canonicalize），Kotlin 路径只处理不涉及大小写折叠的模式；
 - `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；
 - `String` 大小写转换使用仓库内置 Unicode 17.0.0 UCD 表（UnicodeData 简单映射 + SpecialCasing 无条件完整映射 + Final_Sigma），JVM/JS/Wasm 行为一致；V8（Unicode 16）尚缺 A7CE/A7CF、A7D2/A7D3、A7D4/A7D5 三组 Unicode 17 新增配对，BMP 差分审计跳过这些码点，单元测试固定 17.0.0 行为；
-- Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷）；未处理拒绝在每轮微任务清空后通过 `HostEnvironment.reportUnhandledRejection` 上报（默认无行为，已订阅或已上报的拒绝不会重复上报）；
+- Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷）；未处理拒绝在每轮微任务清空后通过 `HostEnvironment.reportUnhandledRejection` 上报（默认无行为，已订阅或已上报的拒绝不会重复上报）；已上报的拒绝随后被订阅时通过 `reportRejectionHandled` 通知一次；
 - 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消；`async` 函数体在独立解释器实例上以 `Dispatchers.Unconfined` 恢复执行，不持有 `runtimeMutex`，当前模型面向单线程事件循环，宿主不应在多线程并发调用执行入口；
 - 参数初始化阶段的直接 eval 若声明与参数环境同名绑定（包括隐式 `arguments`），按规范与 Test262 期望抛 `SyntaxError`；Node/V8 对隐式 `arguments` 允许该声明，该分支不纳入差分用例；
 - `++super[key]` 按规范在 ToPropertyKey 之前读取 GetSuperBase（Test262 期望）；Node/V8 在键转换后读取原型，二者结果不同，该分支不纳入差分用例；

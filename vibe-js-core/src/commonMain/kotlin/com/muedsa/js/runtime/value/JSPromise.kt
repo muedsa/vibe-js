@@ -40,6 +40,9 @@ class JSPromise(
 
     /** 是否已向宿主上报未处理拒绝（避免重复上报）。 */
     var unhandledReported: Boolean = false
+
+    /** 已上报后又订阅时，是否已通知宿主 rejectionhandled。 */
+    var rejectionHandledReported: Boolean = false
     val deferred = CompletableDeferred<JSValue>()
     val reactions: MutableList<Reaction> = mutableListOf()
 

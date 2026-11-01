@@ -80,6 +80,9 @@ interface HostEnvironment {
 
     /** 微任务清空后仍未处理的 Promise 拒绝；默认忽略。 */
     fun reportUnhandledRejection(reason: JSValue) {}
+
+    /** 已上报的拒绝随后被 then/catch 处理；默认忽略。 */
+    fun reportRejectionHandled(reason: JSValue) {}
 }
 
 /** 默认宿主环境。 */

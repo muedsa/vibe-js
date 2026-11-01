@@ -170,7 +170,11 @@ object PromiseSupport {
         promise: JSPromise,
         reaction: JSPromise.Reaction,
     ) {
+        val wasReported = promise.unhandledReported
         promise.handled = true
+        if (wasReported) {
+            interpreter.context.eventLoop.reportRejectionHandled(promise)
+        }
         if (promise.state == JSPromise.State.PENDING) {
             promise.reactions.add(reaction)
         } else {
