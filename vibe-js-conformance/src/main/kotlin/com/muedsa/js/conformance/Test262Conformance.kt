@@ -512,7 +512,10 @@ private class Test262Runner(
             for (include in includes) {
                 engine.run(include)
             }
-            engine.run(source)
+            // 主用例走预解析路径：解析错误仍在同一 try 内等价抛出，
+            // 同时让全部语料覆盖 Engine.run(Program) 的语义
+            val program = engine.parse(source)
+            engine.run(program)
             if (negativePhase == "runtime") {
                 fail("期望抛出 ${test.metadata.negativeType ?: "Error"}，但脚本正常结束", startedAt)
             } else if (asyncDone != null) {
