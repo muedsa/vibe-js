@@ -270,6 +270,7 @@ private class DifferentialRunner {
             """.trimIndent()
         )
         if (asyncCases.isNotEmpty()) {
+            builder.appendLine("const vm = require('vm');")
             builder.appendLine("const asyncCases = [")
             for (case in asyncCases) {
                 builder.append("  [")
@@ -283,17 +284,18 @@ private class DifferentialRunner {
                 """
                 (async () => {
                   for (const [name, source] of asyncCases) {
+                    // 每个异步用例使用独立 vm 上下文，与 Vibe 每例新建 Engine 对齐
+                    const context = vm.createContext({});
                     try {
-                      await (async () => { (0, eval)(source); })();
+                      vm.runInContext(source, context);
                       // 冲刷所有已入队的微任务（宏任务边界）
                       await new Promise((resolve) => setImmediate(resolve));
-                      const json = JSON.stringify(globalThis.__diffResult);
+                      const json = JSON.stringify(context.__diffResult);
                       process.stdout.write(name + '\t' + (json === undefined ? 'undefined' : json) + '\n');
                     } catch (error) {
                       const errorName = error && error.name ? error.name : 'Error';
                       process.stdout.write(name + '\tTHROW:' + errorName + '\n');
                     }
-                    delete globalThis.__diffResult;
                   }
                 })();
                 """.trimIndent()
