@@ -344,4 +344,58 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         });
         """.trimIndent(),
     ),
+
+    AsyncDifferentialCase(
+        "async-from-async-mapper-close",
+        """
+        var log = [];
+        var iterable = {
+          [Symbol.asyncIterator]: function () {
+            var i = 0;
+            return {
+              next: function () {
+                log.push('n' + i);
+                return Promise.resolve(i < 3 ? { value: ++i, done: false } : { done: true });
+              },
+              return: function () { log.push('r'); return Promise.resolve({ done: true }); }
+            };
+          }
+        };
+        Array.fromAsync(iterable, function (v) {
+          if (v === 2) throw new Error('m');
+          return v;
+        }).then(function () {
+          log.push('ok');
+        }, function (e) {
+          log.push('rej:' + e.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-from-async-next-reject",
+        """
+        var log = [];
+        var iterable = {
+          [Symbol.asyncIterator]: function () {
+            var i = 0;
+            return {
+              next: function () {
+                log.push('n' + i);
+                if (i++ === 0) return Promise.reject(new Error('x'));
+                return Promise.resolve({ done: true });
+              },
+              return: function () { log.push('r'); return Promise.resolve({ done: true }); }
+            };
+          }
+        };
+        Array.fromAsync(iterable).then(null, function (e) {
+          log.push('rej:' + e.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
 )

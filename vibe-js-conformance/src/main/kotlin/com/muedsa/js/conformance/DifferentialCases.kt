@@ -2344,4 +2344,45 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // WeakMap/WeakSet：对象与 Symbol 键、构造迭代器关闭、接收者与键类型校验
+    DifferentialCase(
+        "weakmap-set-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { var k = {}; var wm = new WeakMap([[k, 1]]); wm.set(k, 2); return wm.get(k) + ':' + wm.has(k) + ':' + wm.delete(k) + ':' + wm.has(k); });
+  push(function () { var wm = new WeakMap(); return wm.set(1, 1); });
+  push(function () { return new WeakMap([[1, 1]]); });
+  push(function () { var sym = Symbol('s'); var wm = new WeakMap(); wm.set(sym, 1); return wm.get(sym) + ':' + wm.has(sym) + ':' + wm.delete(sym); });
+  push(function () { var ws = new WeakSet([{}, {}]); return ws.has({}); });
+  push(function () { var k = {}; var ws = new WeakSet([k]); return ws.has(k) + ':' + ws.delete(k) + ':' + ws.has(k); });
+  push(function () { var wm = new WeakMap(); return String(wm) + ':' + Object.prototype.toString.call(wm); });
+  push(function () {
+    var wm = new WeakMap();
+    var log = [];
+    var iterable = {};
+    iterable[Symbol.iterator] = function () {
+      var i = 0;
+      return {
+        next: function () {
+          log.push('n' + i);
+          if (i === 1) return { value: [{}, 1], done: false };
+          i++;
+          return { done: true };
+        },
+        return: function () { log.push('r'); return { done: true }; }
+      };
+    };
+    try { new WeakMap(iterable); } catch (e) {}
+    return log.join(',');
+  });
+  push(function () { return WeakMap.prototype.get.call({}, {}); });
+  push(function () { return new WeakMap().get(1); });
+  push(function () { return new WeakSet(1); });
+  push(function () { var wm = new WeakMap(); return wm.get() + ':' + wm.has(); });
+  push(function () { var ws = new WeakSet(); return ws.add(1); });
+  return out.join('|');
+})()""",
+    ),
 )
