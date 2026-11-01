@@ -2701,4 +2701,72 @@ class RuntimeSemanticsRegressionTest {
                 " try { String.prototype.normalize.call(o); 'none' } catch (e) { e.name }"
         ))
     }
+
+    @Test
+    fun `跨脚本全局声明实例化冲突与绑定描述符`() = runTest {
+        // 先前脚本的 var/function 属性不可配置，后续 let 同名声明抛 SyntaxError
+        val lexAfterVar = TestRuntime()
+        lexAfterVar.eval("var conflictVar = 1;")
+        val lexError = assertFailsWith<JSException> { lexAfterVar.eval("let conflictVar;") }
+        assertEquals(
+            true,
+            lexError.value is com.muedsa.js.runtime.value.JSError &&
+                lexError.value.errorName == "SyntaxError"
+        )
+        // 先前脚本的 let 绑定，后续 var/function 声明同样抛 SyntaxError
+        val varAfterLex = TestRuntime()
+        varAfterLex.eval("let conflictLet;")
+        assertEquals(
+            true,
+            assertFailsWith<JSException> { varAfterLex.eval("var conflictLet;") }
+                .let { it.value is com.muedsa.js.runtime.value.JSError && it.value.errorName == "SyntaxError" }
+        )
+        assertEquals(
+            true,
+            assertFailsWith<JSException> { varAfterLex.eval("function conflictLet() {}") }
+                .let { it.value is com.muedsa.js.runtime.value.JSError && it.value.errorName == "SyntaxError" }
+        )
+        // 可配置的同名全局属性被函数声明按 CreateGlobalFunctionBinding 重定义
+        val functionBinding = TestRuntime()
+        functionBinding.eval(
+            "Object.defineProperty(this, 'redeclared'," +
+                " { value: 0, writable: true, enumerable: false, configurable: true });"
+        )
+        assertEquals(true, functionBinding.evalBoolean(
+            "function redeclared() { return 1; }" +
+                " var desc = Object.getOwnPropertyDescriptor(this, 'redeclared');" +
+                " typeof redeclared === 'function' && desc.writable === true &&" +
+                " desc.enumerable === true && desc.configurable === false"
+        ))
+        // 不可配置但可写且可枚举的同名属性只更新值，描述符保持不变
+        functionBinding.eval(
+            "Object.defineProperty(this, 'kept'," +
+                " { value: 0, writable: true, enumerable: true, configurable: false });"
+        )
+        assertEquals(true, functionBinding.evalBoolean(
+            "function kept() { return 2; }" +
+                " var keptDesc = Object.getOwnPropertyDescriptor(this, 'kept');" +
+                " kept() === 2 && keptDesc.writable === true &&" +
+                " keptDesc.enumerable === true && keptDesc.configurable === false"
+        ))
+        // 不可配置且不可枚举的属性拒绝函数声明（CanDeclareGlobalFunction=false）
+        functionBinding.eval(
+            "Object.defineProperty(this, 'rejected'," +
+                " { value: 0, writable: true, enumerable: false, configurable: false });"
+        )
+        assertEquals(
+            true,
+            assertFailsWith<JSException> { functionBinding.eval("function rejected() {}") }
+                .let {
+                    it.value is com.muedsa.js.runtime.value.JSError &&
+                        it.value.errorName == "TypeError"
+                }
+        )
+        // 间接 eval 创建的全局 var 按 D=true 可删除
+        val evalBinding = TestRuntime()
+        assertEquals(true, evalBinding.evalBoolean(
+            "(0, eval)('var evalCreated = 1;');" +
+                " delete globalThis.evalCreated === true && typeof evalCreated === 'undefined'"
+        ))
+    }
 }

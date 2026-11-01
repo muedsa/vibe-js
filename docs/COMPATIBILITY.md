@@ -41,7 +41,7 @@
 | spread：数组/调用/new/对象 | ✅ | |
 | class/extends/super/new.target | ✅ | 实例/静态方法、getter/setter、静态初始化块 `static { }`、公有/私有实例与静态字段（含计算键与字段初始化器）、私有方法与访问器、`#x in obj`、默认派生构造器；类名 TDZ、`Get(superclass, "prototype")` 校验、构造器 prototype 不可写、静态 `prototype` 成员拒绝、super 访问器以实际 this 为接收者 |
 | 块级函数声明 / Annex B | ✅ | strict 下仅在块作用域可见；sloppy 在块入口实例化并同步包围 var 绑定（块外执行前为 undefined） |
-| 全局声明实例化 | ✅ | 顶层 let/const/class 不得遮蔽不可配置全局属性；重复词法声明与 var 冲突为早期错误 |
+| 全局声明实例化 | ✅ | 顶层 let/const/class 不得遮蔽不可配置全局属性；跨脚本词法/var/function 冲突检查、CanDeclareGlobalFunction/Var、CreateGlobalFunctionBinding/CreateGlobalVarBinding 描述符与 eval 全局绑定可删除性均按规范 |
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
 | 模板字符串 / 标签模板 | ✅ | |
 | 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器 |
@@ -103,9 +103,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 448 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 448 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 448 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 449 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 449 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 449 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

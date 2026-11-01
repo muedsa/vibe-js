@@ -380,7 +380,13 @@ private class Test262Runner(
             return "unsupported feature: $unsupportedFeature"
         }
         if (test.source.contains("\$262")) {
-            return "unsupported harness: \$262"
+            // 仅放行只使用 $262.evalScript 的用例；其余宿主钩子（agent/createRealm 等）仍跳过
+            val members = dollar262MemberPattern.findAll(test.source)
+                .map { it.groupValues[1] }
+                .toSet()
+            if (members.isEmpty() || members.any { it != "evalScript" }) {
+                return "unsupported harness: \$262"
+            }
         }
         // 个别测试把宿主调试用的 print 挂到对象上，核心 runner 未提供该全局
         if (test.source.contains("Array.print")) {
@@ -466,6 +472,8 @@ private class Test262Runner(
         val engine = Engine()
         // 属性转义语料的 buildString 由宿主实现，避免在解释器中逐码点构造字符串
         registerBuildString(engine)
+        // $262.evalScript 宿主钩子：在同一 realm 中执行新 Script（GlobalDeclarationInstantiation 生效）
+        registerDollar262(engine)
         // flags: [async] 的用例通过 $DONE 报告结果；runner 注入最小实现
         val asyncDone = if ("async" in test.metadata.flags) CompletableDeferred<JSValue>() else null
         if (asyncDone != null) {
@@ -536,6 +544,39 @@ private class Test262Runner(
         } catch (error: Throwable) {
             crash(error.describe(), startedAt)
         }
+    }
+
+    /** 以同一 realm 的新 Script 执行 evalScript 源码。 */
+    private fun registerDollar262(engine: Engine) {
+        val host = JSObject(prototype = engine.intrinsics.objectPrototype)
+        host.defineDataProperty(
+            key = PropertyKey.Str("evalScript"),
+            value = JSNativeFunction(
+                name = "evalScript",
+                length = 1,
+                prototype = engine.intrinsics.functionPrototype,
+            ) { interpreter, _, args ->
+                val sourceText = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
+                val program = try {
+                    Parser(Lexer(sourceText).tokenize()).parseProgram()
+                } catch (error: ParseException) {
+                    throw interpreter.syntaxError(error.message ?: "Invalid evalScript source")
+                } catch (error: LexerException) {
+                    throw interpreter.syntaxError(error.message ?: "Invalid evalScript source")
+                }
+                engine.interpreter.runProgram(program, engine.context.globalEnvironment)
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        engine.globalObject.defineDataProperty(
+            key = PropertyKey.Str("\$262"),
+            value = host,
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
     }
 
     private fun registerBuildString(engine: Engine) {
@@ -638,6 +679,10 @@ private class Test262Runner(
         private val generatorMethodPattern = Regex(
             """(?m)(?:^\s*|[{(,;]\s*|\bstatic\s+|\basync\s+)\*\s*(?:[A-Za-z_$][A-Za-z0-9_$]*|\[[^\]]*\]|#[^\s(]*)\s*\("""
         )
+
+        /** `$262.<member>` 访问的成员名：当前只放行 evalScript。 */
+        private val dollar262MemberPattern =
+            Regex("""\$262\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)""")
 
         private val bigIntLiteralPattern = Regex(
             """(?<![A-Za-z0-9_$])(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*)n\b"""

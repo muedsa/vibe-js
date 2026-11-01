@@ -114,7 +114,7 @@ val test262Conformance by tasks.registering(JavaExec::class) {
 }
 
 /**
- * 运行 Test262 ES2015 特性子集（报告模式）。
+ * 运行 Test262 ES2015 特性子集（CI 门禁使用 -Pstrict）。
  *
  * 选择 test/language 与 test/built-ins 中 features 全部落在支持集合内的用例；
  * 未支持特性/Generator/模块等继续跳过，用于推进 ES2015 语义收敛。

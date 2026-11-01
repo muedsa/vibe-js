@@ -86,6 +86,44 @@ jobs:
         path: vibe-js-conformance/build/reports/conformance/
         retention-days: 30
 
+  test262-es2015:
+    name: Test262 ES2015 Subset
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v6
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v6
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Run Test262 ES2015 subset
+      run: ./gradlew :vibe-js-conformance:test262Es2015Conformance -Pstrict --console=plain
+
+    - name: Publish summary
+      if: always()
+      run: |
+        if [ -f vibe-js-conformance/build/reports/conformance/test262-es2015/test262-summary.md ]; then
+          cat vibe-js-conformance/build/reports/conformance/test262-es2015/test262-summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload Test262 ES2015 report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: test262-es2015-report
+        path: vibe-js-conformance/build/reports/conformance/
+        retention-days: 30
+
   libraries-differential:
     name: Libraries & Node Differential
     runs-on: ubuntu-latest

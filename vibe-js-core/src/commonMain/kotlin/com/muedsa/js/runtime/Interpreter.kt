@@ -191,10 +191,11 @@ class Interpreter(
         )
         pushStackFrame("<global>")
         try {
-            // 全局词法声明不得遮蔽不可配置的全局属性（如 undefined/NaN/Infinity）
-            checkGlobalLexicalRestrictedNames(environment, program.body)
-            hoistDeclarations(environment, program.functionDeclarations, program.varDeclarations)
+            // GlobalDeclarationInstantiation：词法绑定先于 var/function 实例化，
+            // 冲突与可定义性检查失败时不创建任何 var/function 绑定
+            checkGlobalDeclarationInstantiation(environment, program)
             predeclareLexical(program.body, environment)
+            hoistDeclarations(environment, program.functionDeclarations, program.varDeclarations)
             val completion = executeStatements(program.body)
             return when (completion) {
                 is Completion.Normal -> completion.value
@@ -312,6 +313,7 @@ class Interpreter(
                 varEnvironment,
                 program.functionDeclarations,
                 program.varDeclarations,
+                globalDeletable = true,
             )
             predeclareLexical(program.body, executionEnvironment)
             when (val completion = executeStatements(program.body)) {
@@ -380,6 +382,7 @@ class Interpreter(
                 varEnvironment,
                 program.functionDeclarations,
                 program.varDeclarations,
+                globalDeletable = true,
             )
             predeclareLexical(program.body, executionEnvironment)
             when (val completion = executeStatements(program.body)) {
@@ -1340,44 +1343,76 @@ class Interpreter(
     }
 
     /**
-     * GlobalDeclarationInstantiation：顶层 let/const/class/using 名称
-     * 不得遮蔽全局对象上的不可配置属性（HasRestrictedGlobalProperty）。
+     * GlobalDeclarationInstantiation 的检查阶段：
+     * 1. 顶层词法名不得遮蔽不可配置的全局属性（含先前脚本的 var/function 声明）；
+     * 2. var/function 名不得与既有全局词法绑定冲突；
+     * 3. 函数/var 名称需通过 CanDeclareGlobalFunction / CanDeclareGlobalVar。
+     *
+     * 全部检查先于任何绑定创建，失败时全局对象不会残留新属性。
      */
-    private fun checkGlobalLexicalRestrictedNames(
-        environment: Environment,
-        body: List<Statement>,
-    ) {
+    private fun checkGlobalDeclarationInstantiation(environment: Environment, program: Program) {
         val varScope = environment.findVarScope() as? ObjectEnvironment ?: return
         val globalObject = varScope.bindingObject
-        val names = mutableListOf<String>()
-        for (statement in body) {
+        val globalLexical = environment as? DeclarativeEnvironment
+        val lexicalNames = mutableListOf<String>()
+        for (statement in program.body) {
             when (statement) {
                 is VarDeclaration -> if (statement.kind != DeclarationKind.VAR) {
                     for (declaration in statement.declarations) {
-                        declaration.name?.let { names.add(it) }
-                        declaration.pattern?.let { collectPatternNames(it, names) }
+                        declaration.name?.let { lexicalNames.add(it) }
+                        declaration.pattern?.let { collectPatternNames(it, lexicalNames) }
                     }
                 }
 
-                is ClassDeclaration -> names.add(statement.name)
-                is UsingDeclaration -> statement.declarations.forEach { names.add(it.name) }
+                is ClassDeclaration -> lexicalNames.add(statement.name)
+                is UsingDeclaration -> statement.declarations.forEach { lexicalNames.add(it.name) }
                 else -> Unit
             }
         }
-        for (name in names) {
+        // 1. HasRestrictedGlobalProperty：先前脚本的 var/function 属性不可配置
+        for (name in lexicalNames) {
             val own = globalObject.getOwnProperty(PropertyKey.Str(name)) ?: continue
             if (!own.configurable) {
                 throw syntaxError("Identifier '$name' has already been declared")
             }
         }
+        val existingLexical = globalLexical?.ownLexicalNames() ?: emptySet()
+        val functionNames = LinkedHashSet<String>()
+        for (declaration in program.functionDeclarations.asReversed()) {
+            functionNames.add(declaration.name)
+        }
+        // 2. var/function 与既有全局词法绑定冲突
+        for (name in program.varDeclarations) {
+            if (name in existingLexical) {
+                throw syntaxError("Identifier '$name' has already been declared")
+            }
+        }
+        for (name in functionNames) {
+            if (name in existingLexical) {
+                throw syntaxError("Identifier '$name' has already been declared")
+            }
+        }
+        // 3. 可定义性检查（失败时抛 TypeError，且不创建任何绑定）
+        for (name in functionNames) {
+            if (!canDeclareGlobalFunction(globalObject, name)) {
+                throw typeError("Cannot declare global function '$name'")
+            }
+        }
+        for (name in program.varDeclarations) {
+            if (name in functionNames) continue
+            if (!canDeclareGlobalVar(globalObject, name)) {
+                throw typeError("Cannot declare global variable '$name'")
+            }
+        }
     }
 
-    /** CanDeclareGlobalFunction：全局函数声明是否允许（不可配置且不可写/可枚举时拒绝）。 */
+    /** CanDeclareGlobalFunction：可配置属性，或可写且可枚举的不可配置数据属性。 */
     private fun canDeclareGlobalFunction(globalObject: JSObject, name: String): Boolean {
         val descriptor = globalObject.getOwnProperty(PropertyKey.Str(name))
             ?: return globalObject.extensible
         if (descriptor.isAccessor) return false
-        return !(!descriptor.configurable && (!descriptor.writable || descriptor.enumerable))
+        if (descriptor.configurable) return true
+        return descriptor.writable && descriptor.enumerable
     }
 
     /** CanDeclareGlobalVar：已有自有属性或全局对象可扩展时允许。 */
@@ -1410,11 +1445,15 @@ class Interpreter(
 
     /**
      * 变量提升：函数声明优先，其次 var。
+     *
+     * 全局对象环境使用 CreateGlobalFunctionBinding/CreateGlobalVarBinding；
+     * eval 代码传入 [globalDeletable] = true（规范 D 参数）。
      */
     private fun hoistDeclarations(
         environment: Environment,
         functionDeclarations: List<FunctionDeclaration>,
         varDeclarations: List<String>,
+        globalDeletable: Boolean = false,
     ) {
         val varScope = environment.findVarScope()
         for (declaration in functionDeclarations) {
@@ -1430,10 +1469,22 @@ class Interpreter(
                 // 函数声明同样闭包捕获当前上下文的私有名环境
                 privateEnvironment = frame?.function?.privateEnvironment,
             )
-            varScope.createVarBinding(declaration.name, function)
+            if (varScope is ObjectEnvironment) {
+                varScope.createGlobalFunctionBinding(
+                    declaration.name,
+                    function,
+                    deletable = globalDeletable,
+                )
+            } else {
+                varScope.createVarBinding(declaration.name, function)
+            }
         }
         for (name in varDeclarations) {
-            varScope.ensureVarBinding(name)
+            if (varScope is ObjectEnvironment) {
+                varScope.createGlobalVarBinding(name, deletable = globalDeletable)
+            } else {
+                varScope.ensureVarBinding(name)
+            }
         }
     }
 

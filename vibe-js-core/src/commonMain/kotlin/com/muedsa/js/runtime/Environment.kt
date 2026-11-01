@@ -5,6 +5,7 @@ import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
+import com.muedsa.js.runtime.value.PropertyDescriptor
 import com.muedsa.js.runtime.value.PropertyKey
 
 /**
@@ -204,6 +205,10 @@ class DeclarativeEnvironment(
     /** 当前作用域是否存在同名词法绑定（let/const/class）。 */
     fun hasOwnLexicalBinding(name: String): Boolean = bindings[name]?.lexical == true
 
+    /** 当前作用域的全体词法绑定名（GlobalDeclarationInstantiation 冲突检查使用）。 */
+    fun ownLexicalNames(): Set<String> =
+        bindings.entries.filter { it.value.lexical }.mapTo(LinkedHashSet()) { it.key }
+
     /** 初始化通过 [declareLexical] 预声明的绑定。 */
     fun initializeLexical(name: String, value: JSValue) {
         val binding = bindings[name] ?: return
@@ -333,6 +338,50 @@ class ObjectEnvironment(
                 writable = true,
                 enumerable = true,
                 configurable = false,
+            )
+        }
+    }
+
+    /**
+     * CreateGlobalFunctionBinding：创建/更新全局函数绑定。
+     *
+     * 已存在的可配置属性按数据属性重定义；不可配置但可写的数据属性只更新值。
+     * [deletable] 对应规范的 D 参数（间接/直接 eval 为 true，脚本为 false）。
+     */
+    fun createGlobalFunctionBinding(name: String, value: JSValue, deletable: Boolean = false) {
+        val key = PropertyKey.Str(name)
+        val existing = bindingObject.getOwnProperty(key)
+        if (existing == null || existing.configurable) {
+            bindingObject.defineOwnProperty(
+                key,
+                PropertyDescriptor.data(
+                    value,
+                    writable = true,
+                    enumerable = true,
+                    configurable = deletable,
+                ),
+            )
+        } else if (existing.isData && existing.writable) {
+            existing.value = value
+        }
+    }
+
+    /**
+     * CreateGlobalVarBinding：全局 var 绑定。
+     *
+     * 属性已存在时保持原值/描述符；不存在时创建可写、可枚举的 undefined 属性。
+     */
+    fun createGlobalVarBinding(name: String, deletable: Boolean = false) {
+        val key = PropertyKey.Str(name)
+        if (bindingObject.getOwnProperty(key) == null) {
+            bindingObject.defineOwnProperty(
+                key,
+                PropertyDescriptor.data(
+                    JSUndefined,
+                    writable = true,
+                    enumerable = true,
+                    configurable = deletable,
+                ),
             )
         }
     }
