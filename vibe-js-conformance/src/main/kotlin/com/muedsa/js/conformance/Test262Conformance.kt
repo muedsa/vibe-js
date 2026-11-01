@@ -775,6 +775,17 @@ private class Test262Runner(
             // 宿主型二进制内建（ArrayBuffer/Uint8Array）明确不在支持范围
             "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/",
             "test/language/statements/class/subclass/builtins.js",
+            // TypedArray 的 Object.seal 用例无 features 标注，依赖明确排除的 TypedArray
+            "test/built-ins/Object/seal/seal-int8array.js",
+            "test/built-ins/Object/seal/seal-int16array.js",
+            "test/built-ins/Object/seal/seal-int32array.js",
+            "test/built-ins/Object/seal/seal-uint8array.js",
+            "test/built-ins/Object/seal/seal-uint8clampedarray.js",
+            "test/built-ins/Object/seal/seal-uint16array.js",
+            "test/built-ins/Object/seal/seal-uint32array.js",
+            "test/built-ins/Object/seal/seal-float32array.js",
+            "test/built-ins/Object/seal/seal-float64array.js",
+            "test/built-ins/Object/seal/seal-biguint64array.js",
         )
 
         /** 当前范围外或尚未实现的特性。 */
