@@ -1,5 +1,6 @@
 package com.muedsa.js
 
+import com.muedsa.js.parser.ParseException
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.value.JSNumber
 import kotlinx.coroutines.Dispatchers
@@ -9,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 
@@ -204,6 +206,17 @@ class BasicExecutionTest {
         // 含标签模板的源码不缓存，站点对象仍按每次解析隔离
         val tagged = "function tag(s) { return s; } tag`x`"
         assertNotSame(engine.run(tagged), engine.run(tagged))
+    }
+
+    @Test
+    fun `解析缓存按容量淘汰且不缓存语法错误`() = runTest {
+        assertFailsWith<IllegalArgumentException> { Engine(parseCacheSize = -1) }
+        val engine = Engine(parseCacheSize = 1)
+        assertFailsWith<ParseException> { engine.run("var =") }
+        assertFailsWith<ParseException> { engine.run("var =") }
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+        assertEquals(2.0, (engine.run("2") as JSNumber).value)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
 
     @Test
