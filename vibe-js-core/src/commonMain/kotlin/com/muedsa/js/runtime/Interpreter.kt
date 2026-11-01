@@ -1681,8 +1681,34 @@ class Interpreter(
                 executeUsingDeclaration(statement)
                 Completion.Normal(JSUndefined, hasValue = false)
             }
-            // 已提升
-            is FunctionDeclaration -> Completion.Normal(JSUndefined, hasValue = false)
+            is FunctionDeclaration -> {
+                if (statement.annexBLegacy) {
+                    // Annex B B.3.3：单语句 if/else 分支函数在求值点创建，
+                    // 词法绑定位于隐式块环境，并同步包围 var 作用域的同名绑定
+                    val environment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+                    val function = createFunction(
+                        name = statement.name,
+                        params = statement.params,
+                        body = statement.body,
+                        closure = environment,
+                        strict = statement.strict,
+                        varDeclarations = statement.varDeclarations,
+                        functionDeclarations = statement.functionDeclarations,
+                        isAsync = statement.isAsync,
+                        privateEnvironment = frame?.function?.privateEnvironment,
+                        sourceText = statement.sourceText,
+                    )
+                    environment.initializeBinding(statement.name, function)
+                    if (statement.annexBVarEligible) {
+                        val varScope = currentFrame.lexicalEnv.findVarScope()
+                        if (!varScope.setBinding(statement.name, function, strict = false)) {
+                            varScope.createVarBinding(statement.name, function)
+                        }
+                    }
+                }
+                // 普通函数声明已提升，运行时无操作
+                Completion.Normal(JSUndefined, hasValue = false)
+            }
             is IfStatement -> executeIf(statement)
             is WhileStatement -> executeWhile(statement)
             is DoWhileStatement -> executeDoWhile(statement)
@@ -1744,10 +1770,11 @@ class Interpreter(
                 functionDeclarations = statement.functionDeclarations,
                 isAsync = statement.isAsync,
                 privateEnvironment = frame?.function?.privateEnvironment,
+                sourceText = statement.sourceText,
             )
             declarative.initializeBinding(statement.name, function)
-            // Annex B 的 var 提升仅适用于普通函数声明；async 函数声明保持块级词法作用域
-            if (!statement.strict && !statement.isAsync) {
+            // Annex B：仅当无词法冲突且为 sloppy 普通函数时同步包围 var 绑定
+            if (statement.annexBVarEligible) {
                 environment.findVarScope().createVarBinding(statement.name, function)
             }
         }
@@ -2122,6 +2149,13 @@ class Interpreter(
                     )
                 }
                 currentFrame.lexicalEnv = headEnvironment
+            }
+            // Annex B 旧式初始化器：在 RHS 之前求值一次并写入循环变量
+            statement.initializer?.let { initializer ->
+                val value = evaluate(initializer)
+                statement.variableName?.let { name ->
+                    writeIdentifierReference(findBindingOwner(name), name, value)
+                }
             }
             val rightValue = evaluate(statement.right)
             if (rightValue is JSNull || rightValue is JSUndefined) {
@@ -4167,6 +4201,12 @@ class Interpreter(
                 value
             }
 
+            is CallExpr -> {
+                // Annex B web-compat：先求值调用，再抛 ReferenceError（不执行 RHS）
+                evaluate(target)
+                throw referenceError("Invalid left-hand side in assignment")
+            }
+
             else -> throw syntaxError("Invalid assignment target")
         }
     }
@@ -4571,6 +4611,12 @@ class Interpreter(
                 }
             }
 
+            is CallExpr -> {
+                // Annex B web-compat：调用求值后抛 ReferenceError
+                evaluate(target)
+                throw referenceError("Invalid left-hand side in update operation")
+            }
+
             else -> throw syntaxError("Invalid update target")
         }
     }
@@ -4963,6 +5009,11 @@ class Interpreter(
 
             is ArrayLiteral, is ObjectLiteral ->
                 bindPattern(target, value, kind = null, environment = null)
+
+            is CallExpr -> {
+                evaluate(target)
+                throw referenceError("Invalid left-hand side in for-in/of")
+            }
 
             else -> throw syntaxError("Invalid assignment target")
         }
@@ -5363,6 +5414,71 @@ class Interpreter(
         return false
     }
 
+    /**
+     * Annex B 旧式八进制数字转义：数字超过捕获组数量时按八进制字符解释。
+     *
+     * Kotlin/Java 会将其当作反向引用或报错，需要回退到 JsRegexEngine。
+     */
+    private fun hasLegacyOctalEscape(pattern: String): Boolean {
+        // 统计捕获组数量（跳过转义与字符类；命名组也算捕获组）
+        var groupCount = 0
+        var scan = 0
+        var scanInClass = false
+        while (scan < pattern.length) {
+            val c = pattern[scan]
+            when {
+                c == '\\' -> scan++
+                scanInClass -> if (c == ']') scanInClass = false
+                c == '[' -> scanInClass = true
+                c == '(' -> {
+                    val named = scan + 2 < pattern.length && pattern[scan + 1] == '?' &&
+                        pattern[scan + 2] == '<'
+                    if (scan + 1 >= pattern.length || pattern[scan + 1] != '?' || named) {
+                        groupCount++
+                    }
+                }
+            }
+            scan++
+        }
+
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> {
+                    val next = pattern.getOrNull(index + 1) ?: return false
+                    if (next in '0'..'9') {
+                        if (inClass) return true
+                        var number = next - '0'
+                        var cursor = index + 2
+                        while (cursor < pattern.length && pattern[cursor] in '0'..'9') {
+                            number = number * 10 + (pattern[cursor] - '0')
+                            cursor++
+                        }
+                        if (number > groupCount) return true
+                        index = cursor
+                        continue
+                    }
+                    index += 2
+                }
+
+                inClass -> {
+                    if (c == ']') inClass = false
+                    index++
+                }
+
+                c == '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                else -> index++
+            }
+        }
+        return false
+    }
+
     /** lookahead 中包含数字反向引用的模式（Java 对反向引用语义与 JS 不同）。 */
     private fun hasLookaheadBackReference(pattern: String): Boolean {
         if (!pattern.contains("(?=") && !pattern.contains("(?!")) return false
@@ -5380,6 +5496,7 @@ class Interpreter(
             pattern.contains("(?:)") ||
             hasBackspaceInsideClass(pattern) || hasBracketInsideClass(pattern)
         if (hasJsClassSyntax) return true
+        if (hasLegacyOctalEscape(pattern)) return true
         if (hasLookaheadBackReference(pattern)) return true
         if (hasForwardBackReference(pattern)) return true
         // Java 在量词组内保留上一轮捕获值，JS 要求每轮重置

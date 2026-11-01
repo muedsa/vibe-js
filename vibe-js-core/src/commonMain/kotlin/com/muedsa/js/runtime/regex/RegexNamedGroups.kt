@@ -350,11 +350,15 @@ internal object RegexNamedGroups {
                                     builder.append(pattern, index, cursor)
                                     index = cursor
                                 } else {
-                                    // Annex B：超出组数时按八进制转义（首字符 8/9 为 IdentityEscape）
+                                    // Annex B：超出组数时按八进制转义（首字符 8/9 为 IdentityEscape）；
+                                    // 0-3 开头最多 3 位，4-7 开头最多 2 位
+                                    val firstDigit = pattern[index + 1]
+                                    val maxOctalDigits = if (firstDigit in '0'..'3') 3 else 2
                                     var octal = 0
                                     var digits = 0
                                     var octalCursor = index + 1
-                                    while (digits < 3 && octalCursor < pattern.length &&
+                                    while (digits < maxOctalDigits &&
+                                        octalCursor < pattern.length &&
                                         pattern[octalCursor] in '0'..'7'
                                     ) {
                                         octal = octal * 8 + (pattern[octalCursor] - '0')

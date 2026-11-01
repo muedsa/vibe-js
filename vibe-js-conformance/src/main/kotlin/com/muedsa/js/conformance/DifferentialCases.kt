@@ -388,6 +388,29 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             " catch (e) { return e.name; } })()"
     ),
     DifferentialCase(
+        "annexb-if-fn-var-update",
+        "(function () { var init, after;" +
+            " eval('init = f; f = 123; after = f;" +
+            " if (true) function f() {} else function _f() {}');" +
+            " return [init === undefined, typeof after].join(':'); })()"
+    ),
+    DifferentialCase(
+        "annexb-block-fn-skip-param",
+        "(function (f) { { function f() {} } return f; })(123)"
+    ),
+    DifferentialCase(
+        "annexb-call-target-runtime-error",
+        "(function () { var fc = 0, gc = 0;" +
+            " function f() { fc++; return {}; } function g() { gc++; }" +
+            " try { f() = g(); return 'none'; }" +
+            " catch (e) { return e.name + ':' + fc + ':' + gc; } })()"
+    ),
+    DifferentialCase(
+        "for-in-legacy-initializer",
+        "(function () { var effects = 0; for (var a = ++effects in {});" +
+            " return effects; })()"
+    ),
+    DifferentialCase(
         "let-asi-single-statement",
         "(function () { var y = 0; for (var x in null) let\n y = 1; return y; })()"
     ),

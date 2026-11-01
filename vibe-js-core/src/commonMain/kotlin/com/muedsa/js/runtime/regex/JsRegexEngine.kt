@@ -1116,6 +1116,32 @@ class JsRegexEngine(
         private var position = 0
         var groupCount: Int = 0
             private set
+
+        /** 整个模式的总捕获组数（解析前统计，用于区分前向反向引用与旧式八进制转义）。 */
+        private val totalGroupCount: Int = countCapturingGroups(pattern)
+
+        private fun countCapturingGroups(source: String): Int {
+            var count = 0
+            var index = 0
+            var inClass = false
+            while (index < source.length) {
+                val c = source[index]
+                when {
+                    c == '\\' -> index++
+                    inClass -> if (c == ']') inClass = false
+                    c == '[' -> inClass = true
+                    c == '(' -> {
+                        val named = index + 2 < source.length && source[index + 1] == '?' &&
+                            source[index + 2] == '<'
+                        if (index + 1 >= source.length || source[index + 1] != '?' || named) {
+                            count++
+                        }
+                    }
+                }
+                index++
+            }
+            return count
+        }
         private val namedGroups = LinkedHashMap<String, MutableList<Int>>()
             .apply {
                 for ((name, indices) in initialNameCandidates) {
@@ -1979,7 +2005,21 @@ class JsRegexEngine(
                 't' -> Node.CharNode('\t')
                 'f' -> Node.CharNode('\u000C')
                 'v' -> Node.CharNode('\u000B')
-                '0' -> Node.CharNode('\u0000')
+                '0' -> if (!unicode && position < pattern.length &&
+                    peek() in '0'..'7'
+                ) {
+                    // Annex B：\0 后跟八进制数字构成 LegacyOctalEscapeSequence（最多 3 位）
+                    var value = 0
+                    var count = 0
+                    while (count < 2 && position < pattern.length && peek() in '0'..'7') {
+                        value = value * 8 + (peek() - '0')
+                        position++
+                        count++
+                    }
+                    Node.CharNode(value.toChar())
+                } else {
+                    Node.CharNode('\u0000')
+                }
                 'x' -> {
                     // Annex B：非 u 模式下 \x 后不足两位十六进制时按 IdentityEscape 'x'
                     if (!unicode &&
@@ -2036,12 +2076,31 @@ class JsRegexEngine(
                 in '1'..'9' -> {
                     var index = character - '0'
                     while (position < pattern.length && peek() in '0'..'9' &&
-                        index * 10 + (peek() - '0') <= groupCount
+                        index * 10 + (peek() - '0') <= totalGroupCount
                     ) {
                         index = index * 10 + (peek() - '0')
                         position++
                     }
-                    Node.BackReferenceNode(listOf(index))
+                    if (index <= totalGroupCount) {
+                        Node.BackReferenceNode(listOf(index))
+                    } else if (unicode) {
+                        // u 模式：无效反向引用由解析期校验拦截
+                        Node.BackReferenceNode(listOf(index))
+                    } else {
+                        // Annex B：无对应捕获组的数字转义按 LegacyOctalEscapeSequence 解释
+                        val first = character
+                        val maxDigits = if (first in '0'..'3') 3 else 2
+                        var value = first - '0'
+                        var count = 1
+                        while (count < maxDigits && position < pattern.length &&
+                            peek() in '0'..'7'
+                        ) {
+                            value = value * 8 + (peek() - '0')
+                            position++
+                            count++
+                        }
+                        Node.CharNode(value.toChar())
+                    }
                 }
 
                 'k' -> {

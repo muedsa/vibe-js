@@ -1640,21 +1640,41 @@ class Lexer(private val input: String) {
         }
     }
 
-    /** 当前行从行首到当前位置是否只有空白（用于 Annex B `-->` 注释）。 */
+    /**
+     * Annex B：`-->` 是否可作为 HTMLCloseComment。
+     *
+     * 合法情形：`-->` 位于行首（仅前置空白），或紧跟在“内部含换行”的
+     * MultiLineComment 之后（可隔空白与同一行的定界注释）。
+     * 仅由同一行定界注释与空白分隔时不算行首。
+     */
     private fun isAtLineStartIgnoringWhitespace(): Boolean {
         var index = pos - 1
         while (index >= 0) {
             val c = input[index]
-            if (c == '\n' || c == '\r' || c == '\u2028' || c == '\u2029') return true
+            if (c == '\n' || c == '\r' || c == '\u2028' || c == '\u2029') {
+                return true
+            }
             if (c == '/' && index >= 1 && input[index - 1] == '*') {
-                // 跳过紧邻的块注释，再继续检查注释前的行首
+                // 找到相邻块注释的起点，判断其内部是否含换行
                 var cursor = index - 2
                 while (cursor >= 1) {
                     if (input[cursor - 1] == '/' && input[cursor] == '*') break
                     cursor--
                 }
                 if (cursor < 1) return false
-                index = cursor - 2
+                val commentStart = cursor - 1
+                var hasLineTerminator = false
+                var scan = commentStart
+                while (scan <= index) {
+                    val ch = input[scan]
+                    if (ch == '\n' || ch == '\r' || ch == '\u2028' || ch == '\u2029') {
+                        hasLineTerminator = true
+                        break
+                    }
+                    scan++
+                }
+                if (hasLineTerminator) return true
+                index = commentStart - 1
                 continue
             }
             val isWhitespace = c == ' ' || c == '\t' || c == '\u000B' || c == '\u000C' ||

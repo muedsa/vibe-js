@@ -547,6 +547,9 @@ class Parser(
     /** 当前是否位于单语句上下文（if/循环/with/label 的 body）。 */
     private var singleStatementContext = false
 
+    /** 是否允许 `in` 作为关系运算符（for-in 旧式初始化器按 [~In] 解析）。 */
+    private var inOperatorAllowed = true
+
     /** 单语句上下文中是否允许 sloppy 的函数声明（Annex B 的 if 分支）。 */
     private var allowFunctionInSingleStatement = false
 
@@ -565,6 +568,10 @@ class Parser(
         val kind: DeclScopeKind,
         val parameterNames: Set<String> = emptySet(),
         val catchHasPattern: Boolean = false,
+        /** Annex B：包围函数的全部形参名（含默认/解构），用于 skip-param 规则 */
+        val annexParameterNames: Set<String> = emptySet(),
+        /** Annex B：包围函数是否创建 arguments 绑定（普通函数，非箭头/静态块） */
+        val hasArgumentsBinding: Boolean = false,
     ) {
         val lexicalNames = mutableSetOf<String>()
         val functionNames = mutableSetOf<String>()
@@ -588,8 +595,18 @@ class Parser(
         kind: DeclScopeKind,
         parameterNames: Set<String> = emptySet(),
         catchHasPattern: Boolean = false,
+        annexParameterNames: Set<String> = emptySet(),
+        hasArgumentsBinding: Boolean = false,
     ) {
-        declScopes.add(DeclScope(kind, parameterNames, catchHasPattern))
+        declScopes.add(
+            DeclScope(
+                kind,
+                parameterNames,
+                catchHasPattern,
+                annexParameterNames,
+                hasArgumentsBinding,
+            )
+        )
     }
 
     private fun popDeclScope() {
@@ -661,6 +678,40 @@ class Parser(
                 break
             }
         }
+    }
+
+    /**
+     * Annex B 扩展资格：模拟把块级函数声明替换为 `var F` 是否会产生早期错误。
+     *
+     * 从当前作用域向外直到最近的函数体/程序作用域，检查同名词法绑定；
+     * 解构 catch 参数视为词法绑定，简单 catch 参数按 Annex B 允许同名。
+     */
+    private fun isAnnexBVarEligible(name: String, allowSameBlockFunction: Boolean): Boolean {
+        val ownScopeIndex = declScopes.lastIndex
+        for (index in declScopes.indices.reversed()) {
+            val scope = declScopes[index]
+            if (name in scope.lexicalNames) {
+                // 同一块内的同名块级函数不构成冲突；外层块的同名函数仍构成冲突
+                val sameBlockFunction = allowSameBlockFunction && index == ownScopeIndex &&
+                    name in scope.functionNames
+                if (!sameBlockFunction) return false
+            }
+            if (scope.kind == DeclScopeKind.CATCH && scope.catchHasPattern &&
+                name in scope.parameterNames
+            ) {
+                return false
+            }
+            if (scope.kind == DeclScopeKind.PROGRAM || scope.kind == DeclScopeKind.FUNCTION_BODY) {
+                // FunctionDeclarationInstantiation 的 skip 规则：
+                // 同名形参或 arguments 绑定存在时不建立 var 扩展
+                if (scope.kind == DeclScopeKind.FUNCTION_BODY) {
+                    if (name in scope.annexParameterNames) return false
+                    if (name == "arguments" && scope.hasArgumentsBinding) return false
+                }
+                break
+            }
+        }
+        return true
     }
 
     /** 登记 function 声明：块级按词法声明，其他位置按 var 声明。 */
@@ -1326,6 +1377,14 @@ class Parser(
         if (isAsync) advance() // async
         consume(TokenType.FUNCTION, "Expected 'function'")
         val name = consumeBindingIdentifier("Expected function name")
+        // Annex B：在登记函数名之前判定扩展资格，避免把函数自身的词法绑定当作冲突
+        val blockScoped = annexBLegacy ||
+            declScopes.lastOrNull()?.treatsFunctionsAsLexical == true
+        val annexBVarEligible = !isAsync && !strict && blockScoped &&
+            isAnnexBVarEligible(
+                name.value,
+                allowSameBlockFunction = !annexBLegacy && blockScoped,
+            )
         // 函数声明登记到外层作用域；Annex B 的 if 分支函数不参与早期冲突检查
         if (!annexBLegacy) declareFunctionBinding(name.value, isAsync)
         val params = withFunctionContext(false, false, true) {
@@ -1347,6 +1406,8 @@ class Parser(
             functionDeclarations = bodyInfo.functionDeclarations,
             range = SourceRange(start, bodyInfo.body.range.end),
             sourceText = sourceSlice(SourceRange(start, bodyInfo.body.range.end)),
+            annexBLegacy = annexBLegacy,
+            annexBVarEligible = annexBVarEligible,
         )
     }
 
@@ -1511,7 +1572,12 @@ class Parser(
         } else {
             collectParameterNames(params).toSet()
         }
-        pushDeclScope(DeclScopeKind.FUNCTION_BODY, parameterNames)
+        pushDeclScope(
+            DeclScopeKind.FUNCTION_BODY,
+            parameterNames,
+            annexParameterNames = collectParameterNames(params).toSet(),
+            hasArgumentsBinding = !isArrow && !staticBlock,
+        )
         val body = try {
             parseBlockStatement(trackScope = false)
         } finally {
@@ -1954,6 +2020,7 @@ class Parser(
         var pattern: Expression? = null
         var target: Expression? = null
         var usingMode: UsingMode? = null
+        var forInInitializer: Expression? = null
 
         val usingHead = isUsingDeclarationStart(allowOf = false)
         if (isAwaitUsingDeclarationStart() || usingHead) {
@@ -2006,13 +2073,24 @@ class Parser(
                     }
                 }
             }
-            // 兼容旧式 for (var k = 0 in obj)：初始化表达式仅解析并忽略；
+            // 兼容旧式 for (var k = 0 in obj)：初始化表达式按 [~In] 解析并忽略；
             // for-of 的声明形式不允许初始化器
             if (match(TokenType.ASSIGN)) {
                 if (isOf) {
                     throw error("for-of loop variable declaration may not have an initializer")
                 }
-                parseAssignment()
+                // Annex B 仅允许 sloppy 下 `for (var x = init in obj)`；
+                // let/const 与解构模式一律早期错误
+                if (declarationKind != DeclarationKind.VAR || pattern != null || strict) {
+                    throw error("for-in loop variable declaration may not have an initializer")
+                }
+                val previousInAllowed = inOperatorAllowed
+                inOperatorAllowed = false
+                try {
+                    forInInitializer = parseAssignment()
+                } finally {
+                    inOperatorAllowed = previousInAllowed
+                }
             }
         } else {
             val defaultsBefore = patternDefaultsSeen
@@ -2020,7 +2098,9 @@ class Parser(
             val expression = withPatternSyntax { parseLeftHandSide() }
             if (expression is ArrayLiteral || expression is ObjectLiteral) {
                 validateAssignmentPattern(expression)
-            } else if (expression !is Identifier && expression !is MemberExpr) {
+            } else if (expression !is Identifier && expression !is MemberExpr &&
+                !(expression is CallExpr && !strict)
+            ) {
                 throw error("Invalid left-hand side in for-in/of")
             }
             // for-of 左值不允许裸 async（Lookahead 限制）；
@@ -2091,6 +2171,7 @@ class Parser(
                 right = right,
                 body = body,
                 range = range,
+                initializer = forInInitializer,
             )
         }
     }
@@ -2325,7 +2406,12 @@ class Parser(
                 validateAssignmentPattern(left)
                 // 赋值模式不是 ObjectLiteral，允许重复 __proto__ 属性名
                 clearDuplicateProtoRanges(left)
-            } else if (left !is Identifier && left !is MemberExpr) {
+            } else if (left !is Identifier && left !is MemberExpr &&
+                !(left is CallExpr && !strict &&
+                    token.value != "&&=" && token.value != "||=" && token.value != "??=")
+            ) {
+                // Annex B web-compat：sloppy 下 CallExpression 可作普通/复合赋值目标，
+                // 运行时抛 ReferenceError；逻辑赋值仍要求简单目标（早期错误）
                 throw error("Invalid assignment target")
             }
             validateStrictAssignmentTarget(left)
@@ -2575,7 +2661,8 @@ class Parser(
         while (true) {
             val operator = when (peek().type) {
                 TokenType.LT, TokenType.LTE, TokenType.GT, TokenType.GTE,
-                TokenType.IN, TokenType.INSTANCEOF -> advance()
+                TokenType.INSTANCEOF -> advance()
+                TokenType.IN -> if (inOperatorAllowed) advance() else break
                 else -> break
             }
             val right = parseShift()
@@ -2650,7 +2737,9 @@ class Parser(
             TokenType.INCREMENT, TokenType.DECREMENT -> {
                 advance()
                 val operand = parseUnary()
-                if (operand !is Identifier && operand !is MemberExpr) {
+                if (operand !is Identifier && operand !is MemberExpr &&
+                    !(operand is CallExpr && !strict)
+                ) {
                     throw error("Invalid left-hand side expression in prefix operation")
                 }
                 validateStrictAssignmentTarget(operand)
@@ -2689,7 +2778,9 @@ class Parser(
         if ((token.type == TokenType.INCREMENT || token.type == TokenType.DECREMENT) &&
             !token.precededByNewline
         ) {
-            if (expression !is Identifier && expression !is MemberExpr) {
+            if (expression !is Identifier && expression !is MemberExpr &&
+                !(expression is CallExpr && !strict)
+            ) {
                 throw error("Invalid left-hand side expression in postfix operation")
             }
             validateStrictAssignmentTarget(expression)
@@ -3485,8 +3576,10 @@ class Parser(
                 is FunctionDeclaration -> {
                     if (inBlockScope) {
                         // Annex B：sloppy 下块级普通函数在包围 var 作用域建立同名未初始化 var；
-                        // async 函数声明始终是块级词法绑定，不参与 var 提升
-                        if (!strictMode && !statement.isAsync) varNames.add(statement.name)
+                        // async 函数声明始终是块级词法绑定；词法冲突时不建立 var 绑定
+                        if (!strictMode && !statement.isAsync && statement.annexBVarEligible) {
+                            varNames.add(statement.name)
+                        }
                     } else {
                         functions.add(statement)
                     }
@@ -3494,8 +3587,11 @@ class Parser(
 
                 is BlockStatement -> statement.statements.forEach { scan(it, true) }
                 is IfStatement -> {
-                    scan(statement.consequent, inBlockScope)
-                    statement.alternate?.let { scan(it, inBlockScope) }
+                    // Annex B 的 if/else 分支函数声明按块级绑定处理
+                    scan(statement.consequent, inBlockScope || statement.consequent is FunctionDeclaration)
+                    statement.alternate?.let {
+                        scan(it, inBlockScope || it is FunctionDeclaration)
+                    }
                 }
 
                 is WhileStatement -> scan(statement.body, inBlockScope)

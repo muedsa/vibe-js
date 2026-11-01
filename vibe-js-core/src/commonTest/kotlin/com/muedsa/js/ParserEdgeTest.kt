@@ -132,10 +132,14 @@ class ParserEdgeTest {
     @Test
     fun `for 头部与 for-in of 左值错误`() {
         val parser = { code: String -> com.muedsa.js.parser.Parser(com.muedsa.js.lexer.Lexer(code).tokenize()).parseProgram() }
-        assertFailsWith<ParseException> { parser("for (foo() in {}) {}") }
+        // Annex B web-compat：sloppy 下 CallExpression 可作 for-in/of 左值（运行时 ReferenceError）；
+        // 严格模式仍是早期错误
+        assertFailsWith<ParseException> { parser("'use strict'; for (foo() in {}) {}") }
+        assertFailsWith<ParseException> { parser("'use strict'; for (foo() of []) {}") }
+        parser("for (foo() in {}) {}")
+        parser("for (foo() of []) {}")
         assertFailsWith<ParseException> { parser("for (var i = 0; i < 1 i++) {}") }
         assertFailsWith<ParseException> { parser("for (var i = 0; i < 1; i++ {}") }
-        assertFailsWith<ParseException> { parser("for (foo() of []) {}") }
     }
 
     @Test

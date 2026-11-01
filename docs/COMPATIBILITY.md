@@ -95,6 +95,8 @@
 | instanceof、in、delete | ✅ |
 | arguments | ✅ | 类数组对象；sloppy 参数映射与 defineProperty 联动（不可配置/不可枚举后仍保持映射，writable:false 或改为访问器时解除；描述符层面呈现为可写数据属性） |
 | 参数环境与函数体 var 环境 | ✅ | 非简单参数下分离参数环境与 var 环境；参数初始化阶段 eval var 对参数闭包/函数体可见、同名冲突 SyntaxError、同名 var 取形参当前值 |
+| Annex B B.3.3 块级函数 | ✅ | eval/function/global code 的 var 绑定预置与求值同步、同块重复函数、skip-early-err 词法/catch 解构冲突、function code 形参/arguments 跳过、if/else 单语句函数 |
+| Annex B 其他 web-compat | ✅ | HTMLCloseComment（多行注释后/行首定界注释序列）、CallExpression 作为 sloppy 赋值/自增/for-in/of 目标（运行时 ReferenceError，逻辑赋值仍早期错误）、for-in 旧式初始化器（先于 RHS 求值一次）、非 u 正则旧式八进制数字转义 |
 | 箭头函数词法 this/arguments | ✅ |
 | class 构造器调用限制、super、new.target | ✅ |
 | Symbol.toPrimitive | ✅ |
@@ -105,9 +107,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 478 + 宿主 15 个测试 |
-| JS（Node） | ✅ | 核心 478 + 宿主 15 个测试 |
-| Wasm（Node） | ✅ | 核心 478 + 宿主 15 个测试 |
+| JVM | ✅ | 核心 479 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 479 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 479 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

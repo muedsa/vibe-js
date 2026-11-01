@@ -85,6 +85,14 @@ class FunctionDeclaration(
     override val range: SourceRange,
     /** 源码文本（Function.prototype.toString 使用） */
     val sourceText: String? = null,
+    /** 是否为 Annex B 单语句 if/else 分支中的函数声明 */
+    val annexBLegacy: Boolean = false,
+    /**
+     * Annex B 扩展是否可建立包围 var 绑定。
+     *
+     * 存在同名词法绑定或 catch 解构参数冲突时跳过扩展（不报早期错误）。
+     */
+    val annexBVarEligible: Boolean = true,
 ) : Statement()
 
 /** if 语句。 */
@@ -158,6 +166,8 @@ class ForInStatement(
     val right: Expression,
     val body: Statement,
     override val range: SourceRange,
+    /** Annex B 旧式 for-in 初始化器（sloppy 的 `for (var x = init in obj)`） */
+    val initializer: Expression? = null,
 ) : Statement()
 
 /**

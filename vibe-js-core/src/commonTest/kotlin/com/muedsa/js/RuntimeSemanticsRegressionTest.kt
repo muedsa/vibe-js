@@ -3633,4 +3633,51 @@ class RuntimeSemanticsRegressionTest {
                 " try { new Derived(); 'none' } catch (e) { e.name }"
         ))
     }
+
+    @Test
+    fun `Annex B 块级函数 var 扩展与 CallExpression 赋值目标`() = runTest {
+        val runtime = TestRuntime()
+        // if 分支函数：执行前 var 绑定为 undefined，执行后更新为函数
+        assertEquals(true, runtime.evalBoolean(
+            "(function () { var init, changed, after;" +
+                " eval('init = f; f = 123; changed = f;" +
+                " if (true) function f() {} else function _f() {} after = f;');" +
+                " return init === undefined && changed === 123 &&" +
+                " typeof after === 'function'; })()"
+        ))
+        // 参数同名时 FunctionDeclarationInstantiation 跳过扩展
+        assertEquals(123.0, runtime.evalNumber(
+            "(function (f) { { function f() {} } return f; })(123)"
+        ))
+        // arguments 绑定存在时跳过扩展
+        assertEquals(true, runtime.evalBoolean(
+            "(function () { { function arguments() {} }" +
+                " return arguments.toString() === '[object Arguments]'; })()"
+        ))
+        // 嵌套块：内层同名函数因外层块级函数而不参与扩展
+        assertEquals(1.0, runtime.evalNumber(
+            "(function () { { function f() { return 1; } { function f() { return 2; } }" +
+                " return f(); } })()"
+        ))
+        // CallExpression 赋值目标：先求值 LHS，抛 ReferenceError，不执行 RHS
+        assertEquals(true, runtime.evalBoolean(
+            "var fCalled = false, gCalled = false;" +
+                " function f() { fCalled = true; return {}; }" +
+                " function g() { gCalled = true; }" +
+                " try { f() = g(); false; }" +
+                " catch (e) { e.name === 'ReferenceError' && fCalled && !gCalled }"
+        ))
+        // for-in 旧式初始化器按 [~In] 解析，且只执行一次
+        assertEquals(true, runtime.evalBoolean(
+            "var effects = 0; for (var a = ++effects in {}); effects === 1"
+        ))
+        // Annex B HTMLCloseComment：含换行的多行注释后、行首有其它 token 也生效
+        assertEquals(3.0, runtime.evalNumber(
+            "var counter = 0;" +
+                "0/*\n*/-->\ncounter += 1;" +
+                "0/* optional\nMultiLineCommentChars */-->\ncounter += 1;" +
+                "0/*\n*/ /* delimiter */-->\ncounter += 1;" +
+                "counter"
+        ))
+    }
 }
