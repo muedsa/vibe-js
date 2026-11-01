@@ -157,7 +157,7 @@ class JsRegexEngine(
             val width = if (codePoint > 0xFFFF) 2 else 1
             var matched = false
             for (item in node.items) {
-                if (item.matches(codePoint, baseFlags.ignoreCase)) {
+                if (item.matches(codePoint, baseFlags.ignoreCase, unicode)) {
                     matched = true
                     break
                 }
@@ -277,7 +277,7 @@ class JsRegexEngine(
                         var matched = false
                         val codePoint = codePointBefore(pos)
                         for (item in node.items) {
-                            if (item.matches(codePoint, flags.ignoreCase)) {
+                            if (item.matches(codePoint, flags.ignoreCase, unicode)) {
                                 matched = true
                                 break
                             }
@@ -323,7 +323,7 @@ class JsRegexEngine(
                         var matched = false
                         val codePoint = codePointAt(pos)
                         for (item in node.items) {
-                            if (item.matches(codePoint, flags.ignoreCase)) {
+                            if (item.matches(codePoint, flags.ignoreCase, unicode)) {
                                 matched = true
                                 break
                             }
@@ -728,7 +728,7 @@ class JsRegexEngine(
             if (pos > 0) {
                 val codePoint = codePointBefore(pos)
                 for (item in node.items) {
-                    if (item.matches(codePoint, flags.ignoreCase)) {
+                    if (item.matches(codePoint, flags.ignoreCase, unicode)) {
                         best = maxOf(best, codePointWidthBefore(pos))
                         break
                     }
@@ -743,7 +743,7 @@ class JsRegexEngine(
             if (pos < inputForMatch.length) {
                 val codePoint = codePointAt(pos)
                 for (item in node.items) {
-                    if (item.matches(codePoint, flags.ignoreCase)) {
+                    if (item.matches(codePoint, flags.ignoreCase, unicode)) {
                         best = maxOf(best, codePointWidthAt(pos))
                         break
                     }
@@ -779,7 +779,7 @@ class JsRegexEngine(
                     val codePoint = codePointBefore(pos)
                     var matched = false
                     for (item in node.items) {
-                        if (item.matches(codePoint, flags.ignoreCase)) {
+                        if (item.matches(codePoint, flags.ignoreCase, unicode)) {
                             matched = true
                             break
                         }
@@ -808,7 +808,7 @@ class JsRegexEngine(
                 val codePoint = codePointAt(pos)
                 var matched = false
                 for (item in node.items) {
-                    if (item.matches(codePoint, flags.ignoreCase)) {
+                    if (item.matches(codePoint, flags.ignoreCase, unicode)) {
                         matched = true
                         break
                     }
@@ -859,7 +859,10 @@ class JsRegexEngine(
         if (!ignoreCase) return left == right
         if (left == right) return true
         return if (unicode) {
-            left.equals(right, ignoreCase = true)
+            // 规范 Canonicalize：仅应用 CaseFolding.txt 的简单/通用折叠，
+            // 不用 Kotlin 的完整大小写转换（后者会在 U+1FD3 等字符上过度折叠）
+            UnicodeCaseFoldingData.simpleFold(left.code) ==
+                UnicodeCaseFoldingData.simpleFold(right.code)
         } else {
             // 非 u 模式：非 ASCII 字符转为 ASCII 大写时保持原字符（如 U+212A）
             canonicalizeNonUnicode(left) == canonicalizeNonUnicode(right)
@@ -966,21 +969,35 @@ class JsRegexEngine(
     }
 
     private sealed class ClassItem {
-        abstract fun matches(codePoint: Int, ignoreCase: Boolean): Boolean
+        abstract fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean
 
         data class Single(val codePoint: Int) : ClassItem() {
-            override fun matches(codePoint: Int, ignoreCase: Boolean): Boolean {
+            override fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean {
                 if (codePoint == this.codePoint) return true
-                if (!ignoreCase || codePoint > 0xFFFF || this.codePoint > 0xFFFF) return false
+                if (!ignoreCase) return false
+                if (unicode) {
+                    return UnicodeCaseFoldingData.simpleFold(codePoint) ==
+                        UnicodeCaseFoldingData.simpleFold(this.codePoint)
+                }
+                if (codePoint > 0xFFFF || this.codePoint > 0xFFFF) return false
                 return codePoint.toChar().equals(this.codePoint.toChar(), ignoreCase = true)
             }
         }
 
         data class Range(val start: Int, val end: Int) : ClassItem() {
-            override fun matches(codePoint: Int, ignoreCase: Boolean): Boolean {
+            override fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean {
                 if (codePoint in start..end) return true
-                // 大小写折叠仅近似覆盖 BMP（common 标准库缺少完整的 Unicode 折叠数据）
-                if (!ignoreCase || codePoint > 0xFFFF || start > 0xFFFF || end > 0xFFFF) return false
+                if (!ignoreCase || codePoint > 0xFFFF || start > 0xFFFF || end > 0xFFFF) {
+                    return false
+                }
+                if (unicode) {
+                    // 规范：比较输入与集合成员的 Canonicalize 结果
+                    val folded = UnicodeCaseFoldingData.simpleFold(codePoint)
+                    val foldedStart = UnicodeCaseFoldingData.simpleFold(start)
+                    val foldedEnd = UnicodeCaseFoldingData.simpleFold(end)
+                    return folded in start..end || codePoint in foldedStart..foldedEnd
+                }
+                // 非 u 模式沿用大写映射的近似语义
                 val character = codePoint.toChar()
                 val lower = character.lowercaseChar().code
                 val upper = character.uppercaseChar().code
@@ -995,16 +1012,21 @@ class JsRegexEngine(
             val description: String,
             val predicate: (Int, Boolean) -> Boolean,
         ) : ClassItem() {
-            override fun matches(codePoint: Int, ignoreCase: Boolean): Boolean =
+            override fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean =
                 predicate(codePoint, ignoreCase)
         }
 
         /** v 模式扩展字符类求值后的码点集合。 */
         data class Ranges(val set: CodePointSet) : ClassItem() {
-            override fun matches(codePoint: Int, ignoreCase: Boolean): Boolean {
+            override fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean {
                 if (set.contains(codePoint)) return true
                 if (!ignoreCase || codePoint > 0xFFFF) return false
                 val character = codePoint.toChar()
+                if (unicode) {
+                    return set.contains(UnicodeCaseFoldingData.simpleFold(codePoint)) ||
+                        set.contains(character.uppercaseChar().code) ||
+                        set.contains(character.lowercaseChar().code)
+                }
                 return set.contains(character.uppercaseChar().code) ||
                     set.contains(character.lowercaseChar().code)
             }
@@ -1017,12 +1039,19 @@ class JsRegexEngine(
          * 折叠变体；因此 `(?i:\P{Lu})` 能匹配大写字母（其小写形态属于补集）。
          */
         data class Property(val set: UnicodePropertySet, val negated: Boolean) : ClassItem() {
-            override fun matches(codePoint: Int, ignoreCase: Boolean): Boolean {
+            override fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean {
                 if (containsEffective(codePoint)) return true
                 if (!ignoreCase || codePoint > 0xFFFF) return false
                 val character = codePoint.toChar()
                 val upper = character.uppercaseChar()
                 val lower = character.lowercaseChar()
+                if (unicode) {
+                    // 规范同时折叠输入与集合成员；只检查大小写映射的近似集合
+                    return containsEffective(UnicodeCaseFoldingData.simpleFold(codePoint)) ||
+                        containsEffective(upper.code) ||
+                        containsEffective(lower.code) ||
+                        containsEffective(upper.lowercaseChar().code)
+                }
                 return containsEffective(upper.code) ||
                     containsEffective(lower.code) ||
                     containsEffective(upper.lowercaseChar().code)

@@ -3739,4 +3739,16 @@ class RuntimeSemanticsRegressionTest {
         // nullable quantifier：可选迭代不得匹配空串，驱动内部懒量词消费字符
         assertEquals("ab", runtime.evalString("/(a?b??)*/.exec('ab')[0]"))
     }
+
+    @Test
+    fun `Unicode 忽略大小写使用简单折叠映射`() = runTest {
+        val runtime = TestRuntime()
+        // Canonicalize 应用 CaseFolding.txt 的简单/通用映射（含特殊希腊字母与连字）
+        assertEquals(true, runtime.evalBoolean(
+            "/[\\u0390]/ui.test('\\u1FD3') && /[\\u1FD3]/ui.test('\\u0390') &&" +
+                " /[\\u03B0]/ui.test('\\u1FE3') && /[\\u1FE3]/ui.test('\\u03B0') &&" +
+                " /[\\uFB05]/ui.test('\\uFB06') && /[\\uFB06]/ui.test('\\uFB05') &&" +
+                " /\\u212A/ui.test('k')"
+        ))
+    }
 }
