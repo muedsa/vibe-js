@@ -212,7 +212,7 @@ Node 差分基线：**351 个用例**（Array 方法在稀疏数组/原型链/ar
 
 ## 推进顺序
 
-1. Test262 ES5 子集与解析一致性基线已收敛；特性子集（含 esid 核心语义用例）已全部通过（37329/37329，覆盖 ES2015 核心语义与已实现的 ES2016+ 语法/内建），后续可继续扩展特性选择范围（如更多 ES2022+ 方法）；
+1. Test262 ES5 子集与解析一致性基线已收敛；特性子集（含 esid 核心语义用例）已全部通过（37329/37329，覆盖 ES2015 核心语义与已实现的 ES2016+ 语法/内建）。已实现特性均已纳入选择范围，剩余跳过项均为明确排除的 Generator/BigInt/Proxy/TypedArray/Temporal/模块等；进一步扩展需先实现这些排除项或扩大语料范围；
 2. 继续扩大真实库覆盖（已加入 semver/punycode/json5/papaparse/js-yaml/ramda/he/numeral/showdown/seedrandom/pluralize/highlight.js/tinycolor2/deepmerge/big-integer/rxjs/eventemitter3/mitt/immutable/redux，后续补充更多 UMD 构建与用例）；
 3. 严格门禁已就绪：`-Pstrict` 在 parser / Test262 / 真实库 / 差分四个基线均通过（parser 的 Generator 项走显式允许列表）；接入 PR 触发需确认 CI 反馈成本后再启用。
 
