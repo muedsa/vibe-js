@@ -264,8 +264,10 @@ internal object DateMath {
             if (zoneHours !in 0..23 || zoneMinutes !in 0..59) return Double.NaN
             time -= sign * (zoneHours * 60 + zoneMinutes) * MS_PER_MINUTE
         } else if (zone.isEmpty() && match.groupValues[4].isNotEmpty() && localOffsetMillis != null) {
-            // 带时间但无时区的 ISO 字符串按本地时间解释（纯日期仍为 UTC）
-            time -= localOffsetMillis(time)
+            // 带时间但无时区的 ISO 字符串按本地时间解释（纯日期仍为 UTC）；
+            // 两轮偏移修正与构造器的本地换算一致，覆盖偏移随时刻变化的场景
+            val firstGuess = time - localOffsetMillis(time)
+            time -= localOffsetMillis(firstGuess)
         }
         return timeClip(time)
     }

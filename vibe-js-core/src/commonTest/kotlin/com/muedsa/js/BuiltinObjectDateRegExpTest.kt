@@ -645,6 +645,15 @@ class BuiltinObjectDateRegExpTest {
         assertEquals(1.0, number("new Date(${dstStart}).getHours()"))
         assertEquals(0.0, number("Date.parse(new Date(0).toString())"))
         assertEquals(0.0, number("Date.parse(new Date(0).toUTCString())"))
+        // DST 切换后：无时区 ISO 解析与本地构造器一致，使用切换后的偏移
+        assertEquals(
+            number("Date.UTC(2020, 5, 1, 1, 30) - 9 * 3600000"),
+            number("new Date(2020, 5, 1, 1, 30, 0).getTime()")
+        )
+        assertEquals(
+            number("Date.UTC(2020, 5, 1, 1, 30) - 9 * 3600000"),
+            number("Date.parse('2020-06-01T01:30:00')")
+        )
     }
 
     @Test
