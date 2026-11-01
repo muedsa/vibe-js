@@ -20,7 +20,8 @@ import kotlinx.coroutines.runBlocking
  * 解释器吞吐基准。
  *
  * 说明：`*` 方法衡量 Engine.run 的整体吞吐（含词法/语法解析与执行），
- * `parsed*` 方法复用 Engine.parse 得到的 AST，仅衡量执行期吞吐。
+ * `parsed*` 方法复用 Engine.parse 得到的 AST，仅衡量执行期吞吐；
+ * `cached*` 方法使用开启 parseCacheSize 的 Engine，衡量同源码重复 run 的吞吐。
  */
 @State(Scope.Benchmark)
 @Measurement(iterations = 10, time = 300, timeUnit = BenchmarkTimeUnit.MILLISECONDS)
@@ -29,12 +30,14 @@ import kotlinx.coroutines.runBlocking
 open class InterpreterBenchmark {
 
     private lateinit var engine: Engine
+    private lateinit var cachedEngine: Engine
     private lateinit var programs: List<String>
     private lateinit var parsedPrograms: List<Program>
 
     @Setup
     open fun setUp() {
         engine = Engine()
+        cachedEngine = Engine(parseCacheSize = 4)
         programs = listOf(
             // 算术运算
             "1 + 2 * 3",
@@ -92,5 +95,15 @@ open class InterpreterBenchmark {
     @Benchmark
     open fun parsedArrayLoop(): Double = runBlocking {
         (engine.run(parsedPrograms[3]) as JSNumber).value
+    }
+
+    @Benchmark
+    open fun cachedArithmetic(): Double = runBlocking {
+        (cachedEngine.run(programs[0]) as JSNumber).value
+    }
+
+    @Benchmark
+    open fun cachedArrayLoop(): Double = runBlocking {
+        (cachedEngine.run(programs[3]) as JSNumber).value
     }
 }

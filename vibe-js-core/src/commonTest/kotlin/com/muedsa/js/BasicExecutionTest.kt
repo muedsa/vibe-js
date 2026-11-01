@@ -1,5 +1,6 @@
 package com.muedsa.js
 
+import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.value.JSNumber
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -8,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 
 /**
@@ -191,6 +193,29 @@ class BasicExecutionTest {
         )
         runtime.engine.run(asyncProgram)
         assertEquals(2.0, runtime.evalNumber("parsedAsync"))
+    }
+
+    @Test
+    fun `可选解析缓存复用相同源码并保持标签模板语义`() = runTest {
+        val engine = Engine(parseCacheSize = 2)
+        val counter = "var cachedRunCount = (cachedRunCount || 0) + 1; cachedRunCount"
+        assertEquals(1.0, (engine.run(counter) as JSNumber).value)
+        assertEquals(2.0, (engine.run(counter) as JSNumber).value)
+        // 含标签模板的源码不缓存，站点对象仍按每次解析隔离
+        val tagged = "function tag(s) { return s; } tag`x`"
+        assertNotSame(engine.run(tagged), engine.run(tagged))
+    }
+
+    @Test
+    fun `开启解析缓存后并发 run 仍串行执行`() = runTest {
+        val engine = Engine(parseCacheSize = 4)
+        val source = "globalThis.cachedConcurrent = (globalThis.cachedConcurrent || 0) + 1;"
+        withContext(Dispatchers.Default) {
+            coroutineScope {
+                repeat(20) { launch { engine.run(source) } }
+            }
+        }
+        assertEquals(20.0, (engine.run("cachedConcurrent") as JSNumber).value)
     }
 
     @Test

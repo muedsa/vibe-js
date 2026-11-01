@@ -7,6 +7,7 @@ import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSValue
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
@@ -23,9 +24,13 @@ import kotlinx.coroutines.sync.withLock
  * - 宿主能力（console、window、timer 等）通过 [install] 注册 BuiltinModule；
  * - 所有执行都是 suspend，便于后续接入 async/await；
  * - 同一个 Engine 可重复执行多段脚本，共享全局环境。
+ *
+ * @param parseCacheSize 相同源码的 AST LRU 缓存容量；0（默认）表示不缓存。
+ * 含反引号的源码不缓存，确保标签模板站点对象仍按每次解析隔离。
  */
 class Engine(
     val host: HostEnvironment = DefaultHostEnvironment(),
+    private val parseCacheSize: Int = 0,
 ) {
 
     /** 全局对象。 */
@@ -46,7 +51,12 @@ class Engine(
     /** 解释器。 */
     val interpreter = Interpreter(context)
 
+    /** 解析缓存及其互斥量：run(source) 可能被并发调用。 */
+    private val parseCacheMutex = Mutex()
+    private val parseCache = LinkedHashMap<String, Program>()
+
     init {
+        require(parseCacheSize >= 0) { "parseCacheSize must be >= 0" }
         // 未处理拒绝在每轮微任务清空后交给宿主回调
         eventLoop.unhandledRejectionReporter = { reason -> host.reportUnhandledRejection(reason) }
         eventLoop.rejectionHandledReporter = { reason -> host.reportRejectionHandled(reason) }
@@ -82,8 +92,29 @@ class Engine(
 
     /**
      * 执行一段脚本，返回最后一个表达式的值（通常是 undefined）。
+     *
+     * 开启 [parseCacheSize] 时，相同源码会复用已解析的 AST。
      */
-    suspend fun run(source: String): JSValue = run(parse(source))
+    suspend fun run(source: String): JSValue {
+        if (parseCacheSize == 0) return run(parse(source))
+        val program = parseCacheMutex.withLock {
+            val cached = parseCache.remove(source)
+            if (cached != null) {
+                parseCache[source] = cached
+                cached
+            } else {
+                parse(source).also { compiled ->
+                    if (!source.contains('`')) {
+                        parseCache[source] = compiled
+                        while (parseCache.size > parseCacheSize) {
+                            parseCache.remove(parseCache.keys.first())
+                        }
+                    }
+                }
+            }
+        }
+        return run(program)
+    }
 
     /**
      * 执行预解析得到的脚本 AST。

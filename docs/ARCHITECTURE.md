@@ -159,6 +159,9 @@ engine.install(MyModule())
 `Engine.parse(source)` 可在不接触全局环境时完成词法/语法分析并返回不可变 AST，
 `Engine.run(program)` 复用该 AST 重复执行；每次执行仍会重新做全局声明实例化，
 语义与重复执行同一 Script 一致。`Engine.run(source)` 等价于 `run(parse(source))`。
+`Engine(parseCacheSize = N)` 可启用有界 AST LRU 缓存（默认关闭），
+使相同源码的重复 `run(source)` 复用解析结果；含反引号的源码不缓存，
+以保持标签模板站点对象按每次解析隔离。
 
 ### 8.4 自定义宿主能力
 
@@ -198,6 +201,8 @@ engine.install(MyModule())
 | 100 次数组 push 循环 | ~8,700 – 9,200 | ~9,200 – 9,800 |
 
 数值为本机（JDK 17、单线程、10 × 300ms，2026-11-01 复测）的粗略量级，仅用于纵向对比；空闲时多次运行波动约 ±10%，系统高负载时可能显著偏低，应择机复测。小脚本的 `Engine.run` 吞吐主要受词法/语法解析限制，重复执行时应使用 `Engine.parse` 复用 AST（算术场景解析开销约 8 倍）；`arrayLoop` 的解析占比较低，主要受逐条语句执行与 `push` 调用开销影响，是后续优化（槽位化环境、内联缓存）的首要观察点。
+
+`Engine(parseCacheSize = N)` 的重复 `run(source)` 在本机复测中算术约 1.5–1.6M ops/s、数组 push 循环约 8,500–9,000，接近预解析执行；缓存查找与互斥开销使算术略低于纯预解析（同轮纯预解析约 1.7M）。
 
 ## 10. 阶段状态
 

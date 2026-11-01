@@ -43,6 +43,14 @@ engine.run(program) // 7
 engine.run(program) // 每次执行都会重新实例化脚本声明
 ```
 
+同一段源码需要反复执行时，也可开启有界 AST 缓存（默认关闭；含标签模板的源码不缓存）：
+
+```kotlin
+val engine = Engine(parseCacheSize = 16)
+engine.run("1 + 2 * 3") // 首次解析并缓存
+engine.run("1 + 2 * 3") // 复用 AST
+```
+
 ### 安装宿主能力
 
 ```kotlin
