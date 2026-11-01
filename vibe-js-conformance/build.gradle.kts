@@ -130,6 +130,9 @@ val test262Es2015Conformance by tasks.registering(JavaExec::class) {
         test262Dir.asFile.absolutePath,
         es2015ReportDir.get().asFile.absolutePath,
         "--suite", "es2015",
+        // 无 features 标注的 esid 用例同样属于已实现的核心语义，
+        // 纳入默认基线以扩大回归覆盖面（差异分析见 docs/CONFORMANCE.md）
+        "--include-esid",
     )
     if (project.hasProperty("test262Limit")) {
         args("--limit", project.property("test262Limit").toString())
@@ -142,9 +145,6 @@ val test262Es2015Conformance by tasks.registering(JavaExec::class) {
     }
     if (project.hasProperty("strict")) {
         args("--strict")
-    }
-    if (project.hasProperty("test262IncludeEsid")) {
-        args("--include-esid")
     }
     inputs.dir(test262Dir)
     outputs.dir(es2015ReportDir)
