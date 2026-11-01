@@ -653,6 +653,73 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "highlight.js",
+        url = "https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.9.0/highlight.min.js",
+        globalName = "hljs",
+        cases = listOf(
+            SmokeCase(
+                "highlight javascript",
+                assertion(
+                    "hljs.highlight('var x = 1;', { language: 'javascript' }).value" +
+                        ".indexOf('hljs-keyword') >= 0"
+                ),
+            ),
+            SmokeCase(
+                "language registry",
+                assertion("hljs.getLanguage('javascript') !== undefined"),
+            ),
+            SmokeCase(
+                "highlightAuto",
+                assertion("hljs.highlightAuto('const x = 1;').value.length > 0"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "tinycolor2",
+        url = "https://cdn.jsdelivr.net/npm/tinycolor2@1.6.0/dist/tinycolor-min.js",
+        globalName = "tinycolor",
+        cases = listOf(
+            SmokeCase(
+                "hex",
+                assertion("tinycolor('#ff0000').toHexString() === '#ff0000'"),
+            ),
+            SmokeCase(
+                "rgb",
+                assertion("tinycolor('rgb(0, 128, 255)').toRgb().g === 128"),
+            ),
+            SmokeCase(
+                "alpha",
+                assertion("tinycolor('rgba(0,0,0,0.5)').getAlpha() === 0.5"),
+            ),
+            SmokeCase(
+                "hsl",
+                assertion("tinycolor('hsl(120, 100%, 50%)').toHexString() === '#00ff00'"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "deepmerge",
+        url = "https://cdn.jsdelivr.net/npm/deepmerge@4.3.1/dist/umd.js",
+        globalName = "deepmerge",
+        cases = listOf(
+            SmokeCase(
+                "nested merge",
+                assertion(
+                    "(function () { var o = deepmerge({ a: { b: 1 } }, { a: { c: 2 } }); " +
+                        "return o.a.b === 1 && o.a.c === 2; })()"
+                ),
+            ),
+            SmokeCase(
+                "overwrite",
+                assertion("deepmerge({ a: 1 }, { a: 2 }).a === 2"),
+            ),
+            SmokeCase(
+                "array concat",
+                assertion("deepmerge([1, 2], [3]).join(',') === '1,2,3'"),
+            ),
+        ),
+    ),
 )
 
 
