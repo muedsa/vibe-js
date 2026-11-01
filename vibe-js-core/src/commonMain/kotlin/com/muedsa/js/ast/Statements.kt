@@ -7,10 +7,17 @@ class EmptyStatement(
     override val range: SourceRange,
 ) : Statement()
 
-/** 代码块 `{ ... }`。 */
+/**
+ * 代码块 `{ ... }`。
+ *
+ * [requiresEnvironment] 由 Parser 计算：块内存在 let/const/class/using/function
+ * 等词法声明时为 true；只有 var/表达式/嵌套语句的块不需要独立环境，
+ * 解释器可直接复用外层词法环境（空的块环境对外不可观察）。
+ */
 class BlockStatement(
     val statements: List<Statement>,
     override val range: SourceRange,
+    val requiresEnvironment: Boolean = true,
 ) : Statement()
 
 /** 表达式语句，例如 `a = 1;` 或函数调用。 */

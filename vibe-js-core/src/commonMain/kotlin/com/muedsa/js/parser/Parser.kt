@@ -1848,6 +1848,8 @@ class Parser(
     private fun parseBlockStatement(trackScope: Boolean = true): BlockStatement {
         val start = consume(TokenType.LBRACE, "Expected '{'").range.start
         if (trackScope) pushDeclScope(DeclScopeKind.BLOCK)
+        // 块内登记的词法名决定解释期是否需要独立环境（无则复用外层）
+        val blockScope = if (trackScope) declScopes.last() else null
         val statements = mutableListOf<Statement>()
         // 块语句列表允许 using 声明（函数体同样复用该方法）
         val previousUsingAllowed = usingDeclarationAllowed
@@ -1861,7 +1863,9 @@ class Parser(
             if (trackScope) popDeclScope()
         }
         val end = consume(TokenType.RBRACE, "Expected '}'").range.end
-        return BlockStatement(statements, SourceRange(start, end))
+        // trackScope=false 的块由调用方（函数体/catch）自行管理环境，保守保留独立环境
+        val requiresEnvironment = blockScope == null || blockScope.lexicalNames.isNotEmpty()
+        return BlockStatement(statements, SourceRange(start, end), requiresEnvironment)
     }
 
     /** if 语句。 */

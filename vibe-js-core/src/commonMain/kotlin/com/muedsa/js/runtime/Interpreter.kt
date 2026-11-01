@@ -1663,7 +1663,11 @@ class Interpreter(
             is EmptyStatement -> Completion.Normal(JSUndefined, hasValue = false)
             is BlockStatement -> executeBlock(
                 statement.statements,
-                DeclarativeEnvironment(parent = currentFrame.lexicalEnv),
+                if (statement.requiresEnvironment) {
+                    DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+                } else {
+                    currentFrame.lexicalEnv
+                },
             )
 
             is ExpressionStatement -> Completion.Normal(evaluate(statement.expression))
@@ -2035,27 +2039,40 @@ class Interpreter(
         statement: ForStatement,
         labels: List<String>,
     ): Completion {
-        val forEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
-        val previousEnvironment = currentFrame.lexicalEnv
-        currentFrame.lexicalEnv = forEnvironment
-        try {
-            // for (let/const ...) 的词法绑定名（支持解构）
-            var loopVariableNames: List<String> = emptyList()
-            var loopMutable = true
-            val init = statement.init
-            if (init is VarDeclaration && init.kind != DeclarationKind.VAR) {
-                loopMutable = init.kind == DeclarationKind.LET
-                val names = LinkedHashSet<String>()
-                for (declaration in init.declarations) {
-                    declaration.name?.let { names.add(it) }
-                    declaration.pattern?.let { pattern ->
-                        val patternNames = mutableListOf<String>()
-                        collectPatternNames(pattern, patternNames)
-                        names.addAll(patternNames)
-                    }
+        // for (let/const ...) 的词法绑定名（支持解构）
+        var loopVariableNames: List<String> = emptyList()
+        var loopMutable = true
+        val init = statement.init
+        if (init is VarDeclaration && init.kind != DeclarationKind.VAR) {
+            loopMutable = init.kind == DeclarationKind.LET
+            val names = LinkedHashSet<String>()
+            for (declaration in init.declarations) {
+                declaration.name?.let { names.add(it) }
+                declaration.pattern?.let { pattern ->
+                    val patternNames = mutableListOf<String>()
+                    collectPatternNames(pattern, patternNames)
+                    names.addAll(patternNames)
                 }
-                loopVariableNames = names.toList()
             }
+            loopVariableNames = names.toList()
+        }
+
+        val previousEnvironment = currentFrame.lexicalEnv
+        // 循环头为词法声明（let/const/using/await using）时必须创建独立环境；
+        // 表达式或 var 初始化时环境为空，直接复用外层环境避免多余分配
+        val requiresLexicalHead = when (init) {
+            is VarDeclaration -> init.kind != DeclarationKind.VAR
+            is UsingDeclaration -> true
+            else -> false
+        }
+        val headEnvironment = if (requiresLexicalHead) {
+            DeclarativeEnvironment(parent = previousEnvironment)
+        } else {
+            null
+        }
+        val loopBaseEnvironment: Environment = headEnvironment ?: previousEnvironment
+        currentFrame.lexicalEnv = loopBaseEnvironment
+        try {
             if (init != null) {
                 val initCompletion = executeStatement(init)
                 if (initCompletion !is Completion.Normal) return initCompletion
@@ -2075,11 +2092,12 @@ class Interpreter(
                 return environment
             }
 
-            var loopEnvironment = if (loopVariableNames.isEmpty()) {
-                forEnvironment
+            var iterationEnvironment: DeclarativeEnvironment? = if (loopVariableNames.isEmpty()) {
+                null
             } else {
-                createIterationEnvironment(forEnvironment)
+                headEnvironment?.let { createIterationEnvironment(it) }
             }
+            var loopEnvironment: Environment = iterationEnvironment ?: loopBaseEnvironment
             currentFrame.lexicalEnv = loopEnvironment
 
             var lastValue: JSValue = JSUndefined
@@ -2110,9 +2128,12 @@ class Interpreter(
                     }
                 }
 
-                if (loopVariableNames.isNotEmpty()) {
-                    loopEnvironment = createIterationEnvironment(loopEnvironment)
-                    currentFrame.lexicalEnv = loopEnvironment
+                val currentIteration = iterationEnvironment
+                if (currentIteration != null) {
+                    val next = createIterationEnvironment(currentIteration)
+                    iterationEnvironment = next
+                    loopEnvironment = next
+                    currentFrame.lexicalEnv = next
                 }
                 statement.update?.let { evaluate(it) }
             }
@@ -2541,7 +2562,11 @@ class Interpreter(
         try {
             pending = executeBlock(
                 statement.block.statements,
-                DeclarativeEnvironment(parent = currentFrame.lexicalEnv),
+                if (statement.block.requiresEnvironment) {
+                    DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+                } else {
+                    currentFrame.lexicalEnv
+                },
             )
         } catch (exception: JSException) {
             normalizeErrorValue(exception.value)
@@ -2576,7 +2601,11 @@ class Interpreter(
                     // 参数默认值中的闭包看不到块内的 let/const 声明
                     pending = executeBlock(
                         handler.body.statements,
-                        DeclarativeEnvironment(parent = catchEnvironment),
+                        if (handler.body.requiresEnvironment) {
+                            DeclarativeEnvironment(parent = catchEnvironment)
+                        } else {
+                            catchEnvironment
+                        },
                     )
                 } catch (catchException: JSException) {
                     thrown = catchException
@@ -2593,7 +2622,11 @@ class Interpreter(
             try {
                 val completion = executeBlock(
                     finalizer.statements,
-                    DeclarativeEnvironment(parent = currentFrame.lexicalEnv),
+                    if (finalizer.requiresEnvironment) {
+                        DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+                    } else {
+                        currentFrame.lexicalEnv
+                    },
                 )
                 if (completion !is Completion.Normal) {
                     // finally 的 abrupt 完成（break/continue/return）覆盖之前的 throw

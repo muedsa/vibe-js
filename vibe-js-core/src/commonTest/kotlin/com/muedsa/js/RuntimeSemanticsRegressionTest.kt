@@ -3896,4 +3896,29 @@ class RuntimeSemanticsRegressionTest {
         assertEquals("\uD801\uDC28", runtime.evalString("'𐐀'.toLowerCase()"))
         assertEquals("\uABB3", runtime.evalString("'Ꮳ'.toLowerCase()"))
     }
+
+    @Test
+    fun `无词法声明的块与循环头复用外层环境保持语义`() = runTest {
+        val runtime = TestRuntime()
+        // 块内 var 仍提升到函数作用域
+        assertEquals(1.0, runtime.evalNumber("(function () { { var x = 1; } return x; })()"))
+        // 块内 let 仍隔离，块结束后外层绑定不变
+        assertEquals(
+            "outer",
+            runtime.evalString("(function () { var x = 'outer'; { let x = 'inner'; } return x; })()")
+        )
+        // 循环头的 let 仍按每迭代创建绑定（闭包捕获不同值）
+        assertEquals(
+            "0,1,2",
+            runtime.evalString(
+                "(function () { var out = []; for (let i = 0; i < 3; i++) { out.push(i); } " +
+                    "return out.join(','); })()"
+            )
+        )
+        // 无词法循环头时 var 仍写入函数作用域
+        assertEquals(
+            3.0,
+            runtime.evalNumber("(function () { for (var i = 0; i < 3; i++) {} return i; })()")
+        )
+    }
 }
