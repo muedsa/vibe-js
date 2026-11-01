@@ -10,3 +10,8 @@ ef81b93cf9bdb4ec.js
 79f882da06f88c9f.js
 0d5e450f1da8a92a.js
 92b6af54adef3624.js
+# a8beb1480f385441.js: func() = 4 —— 非严格模式下 CallExpression 可作赋值目标
+# （Annex B 网页兼容语义，运行期对非引用赋值抛 ReferenceError），语料负例过期
+a8beb1480f385441.js
+# e3fbcf63d7e43ead.js: for (var x = 1 in [1,2,3]) —— Annex B B.3.5 允许的旧式 for-in 初始化器
+e3fbcf63d7e43ead.js

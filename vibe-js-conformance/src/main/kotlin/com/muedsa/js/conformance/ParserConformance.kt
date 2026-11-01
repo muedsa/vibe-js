@@ -53,6 +53,7 @@ private val parserPassAllowlist: Set<String> = loadParserPassAllowlist()
 
 /**
  * fail 负例允许列表（按文件名匹配）：语料早于 ES2022 公有字段，
+ * 且部分负例属于现行 Annex B 允许的非严格模式语义；
  * 这类文件在现行规范下合法，strict 模式下不计为门禁失败。
  */
 private val parserFailAllowlist: Set<String> = loadAllowlist("parser-fail-allowlist.txt")
