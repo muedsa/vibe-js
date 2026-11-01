@@ -589,6 +589,26 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-fold-class-iu", "[/[k]/iu.test('\\u212A'), /[a-z]/iu.test('\\u212A'), /[a-z]/iu.test('\\u017F'), /[k]/iu.test('K'), /[\\u00DF]/iu.test('\\u1E9E')].join(',')"),
     DifferentialCase("regexp-fold-word-nonu", "[/\\w/i.test('\\u212A'), /\\w/i.test('\\u017F'), /\\w/i.test('\\u03C2'), /\\B/i.test('\\u212A'), /\\b/i.test('a\\u212A')].join(',')"),
     DifferentialCase("regexp-fold-word-iu", "[/\\w/iu.test('\\u212A'), /\\w/iu.test('\\u017F'), /\\w/iu.test('\\u03C2'), /\\B/iu.test('\\u212A'), /\\b/iu.test('a\\u212A')].join(',')"),
+    // 正则匹配矩阵：u/s/m 标志、astral、命名组、断言、转义与回溯
+    DifferentialCase(
+        "regexp-match-matrix",
+        "(function () { var cases = [" +
+            "[/./, '\\n'], [/./s, '\\n'], [/./u, '\uD83D\uDE00'], [/.{1}/u, '\uD83D\uDE00'], " +
+            "[/.{2}/u, '\uD83D\uDE00'], [/^.$/u, '\uD83D\uDE00'], [/[^]/, '\\n'], [/\\s/u, '\\u3000'], " +
+            "[/\\S/u, '\\u3000'], [/\\w/iu, '\\u212A'], [/\\W/iu, '\\u212A'], " +
+            "[/\\b/iu, 'a\\u212A'], [/\\B/iu, 'a\\u212A'], [/\\u{1F600}/u, '\uD83D\uDE00'], " +
+            "[/[\\u{1F600}-\\u{1F64F}]/u, '\uD83D\uDE00'], [/(?<x>a)\\k<x>/, 'aa'], " +
+            "[/(?<=a+)b/, 'aaab'], [/(?<!a)b/, 'cb'], [/(?i:a)b/, 'Ab'], " +
+            "[/(?s:.)/, '\\n'], [/(?m:^b)/, 'a\\nb'], [/a{2,3}/, 'aaa'], [/(a|ab)c/, 'abc'], " +
+            "[/(?=(a+))a/, 'aaa'], [/[\\s\\S]/, '\\n'], [/\\0/, '\\0'], [/[\\b]/, '\\b'], " +
+            "[/\\cA/, '\\u0001'], [/\\x41/, 'A'], [/\\u0041/, 'A'], [/$/m, 'a\\nb'], " +
+            "[/^/m, 'a\\nb'], [/\\p{Script=Greek}/u, '\\u03B1'], [/\\p{Lu}/iu, 'a'], " +
+            "[/[\\d]/, '5'], [/\\8/, '8'], [/[\\8]/, '8'], [/\\1/, 'a']]; " +
+            "var out = []; " +
+            "for (var i = 0; i < cases.length; i++) { var re = cases[i][0]; var m = re.exec(cases[i][1]); " +
+            "out.push(re.source + '/' + re.flags + ':' + (m ? m[0] + '@' + m.index : 'null')); } " +
+            "return out.join('|'); })()"
+    ),
 
     // Unicode 标识符与尾调用结果
     DifferentialCase("ident-astral-escape", "(function () { var \\u{1D49C} = 1; return \\u{1D49C}; })()"),
