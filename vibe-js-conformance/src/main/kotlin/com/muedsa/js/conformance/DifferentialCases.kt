@@ -2114,6 +2114,93 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 
     // JSON 序列化随机值树与随机 UTF-16 码元转义（well-formed JSON.stringify）
     DifferentialCase(
+        "map-set-live-fuzz",
+        """
+        (function () {
+          var seed = 77777;
+          function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+          var obj1 = { id: 1 };
+          var obj2 = { id: 2 };
+          var keys = [NaN, -0, 0, 1, '1', 'a', true, null, undefined, obj1, obj2];
+          var values = [0, 1, 'v', NaN, undefined];
+          function sk(value) {
+            if (value !== null && typeof value === 'object') { return 'o' + value.id; }
+            if (typeof value === 'number' && Object.is(value, -0)) { return 'n:-0'; }
+            return typeof value + ':' + String(value);
+          }
+          function mapSnap(map) {
+            var parts = [];
+            map.forEach(function (value, key) { parts.push(sk(key) + '=' + sk(value)); });
+            return parts.join(',');
+          }
+          function setSnap(set) {
+            var parts = [];
+            set.forEach(function (value) { parts.push(sk(value)); });
+            return parts.join(',');
+          }
+          var out = [];
+          var map = new Map();
+          var iterator = map.entries();
+          for (var i = 0; i < 60; i++) {
+            var op = rnd(7);
+            var key = keys[rnd(keys.length)];
+            try {
+              if (op < 3) {
+                map.set(key, values[rnd(values.length)]);
+                out.push(i + ':S:' + mapSnap(map));
+              } else if (op === 3) {
+                out.push(i + ':D:' + String(map.delete(key)) + ':' + mapSnap(map));
+              } else if (op === 4) {
+                out.push(i + ':G:' + sk(map.get(key)) + ':' + String(map.has(key)) + ':' + map.size);
+              } else if (op === 5) {
+                var mapNext = iterator.next();
+                out.push(i + ':N:' + (mapNext.done ? 'done' :
+                  sk(mapNext.value[0]) + '=' + sk(mapNext.value[1])));
+              } else {
+                if (rnd(6) === 0) {
+                  map.clear();
+                  out.push(i + ':C:' + mapSnap(map));
+                } else {
+                  iterator = map.entries();
+                  out.push(i + ':I:' + mapSnap(map));
+                }
+              }
+            } catch (e) {
+              out.push(i + ':THROW:' + e.name + ':' + mapSnap(map));
+            }
+          }
+          var set = new Set();
+          var setIterator = set.values();
+          for (var j = 0; j < 60; j++) {
+            var setOp = rnd(6);
+            var setKey = keys[rnd(keys.length)];
+            try {
+              if (setOp < 3) {
+                set.add(setKey);
+                out.push('s' + j + ':A:' + setSnap(set));
+              } else if (setOp === 3) {
+                out.push('s' + j + ':D:' + String(set.delete(setKey)) + ':' + setSnap(set));
+              } else if (setOp === 4) {
+                var setNext = setIterator.next();
+                out.push('s' + j + ':N:' + (setNext.done ? 'done' : sk(setNext.value)));
+              } else {
+                if (rnd(6) === 0) {
+                  set.clear();
+                  out.push('s' + j + ':C:' + setSnap(set));
+                } else {
+                  setIterator = set.values();
+                  out.push('s' + j + ':I:' + setSnap(set));
+                }
+              }
+            } catch (e) {
+              out.push('s' + j + ':THROW:' + e.name + ':' + setSnap(set));
+            }
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "object-descriptor-array-fuzz",
         """
         (function () {
