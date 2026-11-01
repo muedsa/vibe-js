@@ -231,6 +231,16 @@ class RuntimeSemanticsRegressionTest {
         ))
     }
 
+
+    @Test
+    fun `v 模式 q 字符串在 i 下按码点折叠`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "/[\\q{ab}]/iv.test('AB') && !/[\\q{ab}]/v.test('AB') && " +
+                "/[\\q{𐐨}]/iv.test('𐐀') && /[\\q{𐐨𐐀}]/iv.test('𐐀𐐨')"
+        ))
+    }
+
     @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()

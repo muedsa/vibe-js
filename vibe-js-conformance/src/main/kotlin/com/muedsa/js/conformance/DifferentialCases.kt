@@ -2854,4 +2854,23 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // v 模式 \q 字符串析取在 i 标志下的码点折叠
+    DifferentialCase(
+        "regexp-v-string-casefold",
+        """(function () {
+  var patterns = [
+    new RegExp('[\\q{ab}]', 'iv'),
+    new RegExp('[\\q{ab}]', 'v')
+  ];
+  var inputs = ['ab', 'AB', 'Ab', 'aB', '𐐨', '𐐀', 'x'];
+  var out = [];
+  for (var i = 0; i < patterns.length; i++) {
+    var bits = '';
+    for (var j = 0; j < inputs.length; j++) bits += patterns[i].test(inputs[j]) ? '1' : '0';
+    out.push(bits);
+  }
+  return out.join(';');
+})()""",
+    ),
 )

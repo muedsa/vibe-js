@@ -44,7 +44,7 @@
 | 全局声明实例化 | ✅ | 顶层 let/const/class 不得遮蔽不可配置全局属性；跨脚本词法/var/function 冲突检查、CanDeclareGlobalFunction/Var、CreateGlobalFunctionBinding/CreateGlobalVarBinding 描述符与 eval 全局绑定可删除性均按规范 |
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
 | 模板字符串 / 标签模板 | ✅ | 标签模板对象按 AST 站点缓存（每个 realm 一份，重复求值返回同一冻结对象，raw 冻结）；非法转义在标签模板中 cooked=undefined、raw 保留原文，普通模板仍为解析期 SyntaxError |
-| 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；source 按 EscapeRegExpPattern 转义、原型访问器接收者校验；非 u 模式 Annex B IdentityEscape（\x/\u 缺位、\c 等）；忽略大小写按规范 Canonicalize（非 u 单码点大写并保留 U+212A/U+017F 等，u 模式 CaseFolding 简单折叠），字面量、字符类、范围、`\w`/`\b`/反向引用一致；`$` 非 m 模式按 JS 只在输入末尾匹配（JVM 回退规避 Java 的末尾换行差异）；m 模式 ^/$ 按 JS 行终止符集合（CRLF 视为两个终止符、不含 NEL）；Annex B 转义按 JS：字符类内控制转义支持数字/下划线，类外非法控制转义为字面反斜杠，非法十六进制/Unicode 转义按 IdentityEscape，垂直制表符按 U+000B；非 v 模式字符类中的 && 按字面 & 处理；/\B 按 JS 的 ASCII 单词判定处理非 ASCII 输入（JVM 回退）；命名组名按 Unicode 17 ID_Start/Continue 校验（含 $/_、astral 与 ZWNJ）；\p{...} 在 i+u 下按简单大小写与折叠正反向匹配（含 ß/ẞ 与 astral 字母）；字符类单点/范围在 i+u/i+v 下同样按简单折叠匹配（含 astral、Kelvin、ß）；astral 字面量与反向引用按完整码点折叠（含后向断言） |
+| 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；source 按 EscapeRegExpPattern 转义、原型访问器接收者校验；非 u 模式 Annex B IdentityEscape（\x/\u 缺位、\c 等）；忽略大小写按规范 Canonicalize（非 u 单码点大写并保留 U+212A/U+017F 等，u 模式 CaseFolding 简单折叠），字面量、字符类、范围、`\w`/`\b`/反向引用一致；`$` 非 m 模式按 JS 只在输入末尾匹配（JVM 回退规避 Java 的末尾换行差异）；m 模式 ^/$ 按 JS 行终止符集合（CRLF 视为两个终止符、不含 NEL）；Annex B 转义按 JS：字符类内控制转义支持数字/下划线，类外非法控制转义为字面反斜杠，非法十六进制/Unicode 转义按 IdentityEscape，垂直制表符按 U+000B；非 v 模式字符类中的 && 按字面 & 处理；/\B 按 JS 的 ASCII 单词判定处理非 ASCII 输入（JVM 回退）；命名组名按 Unicode 17 ID_Start/Continue 校验（含 $/_、astral 与 ZWNJ）；\p{...} 在 i+u 下按简单大小写与折叠正反向匹配（含 ß/ẞ 与 astral 字母）；字符类单点/范围在 i+u/i+v 下同样按简单折叠匹配（含 astral、Kelvin、ß）；astral 字面量与反向引用按完整码点折叠（含后向断言）；v 模式 q 字符串在 i 下按码点简单折叠（V8 仅折叠 ASCII，见已知差异） |
 | 赋值/复合赋值/逻辑赋值（`??=`/`&&=`/`||=`/`**=` 等） | ✅ | |
 | typeof、delete、void、in、instanceof | ✅ | 自定义 `Symbol.hasInstance` 未支持 |
 | 可选链 `?.` | ✅ | 含短路、this 保留与 delete |
@@ -107,9 +107,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 508 + 宿主 20 个测试 |
-| JS（Node） | ✅ | 核心 508 + 宿主 20 个测试 |
-| Wasm（Node） | ✅ | 核心 508 + 宿主 20 个测试 |
+| JVM | ✅ | 核心 509 + 宿主 20 个测试 |
+| JS（Node） | ✅ | 核心 509 + 宿主 20 个测试 |
+| Wasm（Node） | ✅ | 核心 509 + 宿主 20 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 
@@ -119,6 +119,7 @@
 - `JSON.parse` 使用独立严格 JSON 语法，不再复用宽松的 JS Parser；
 - RegExp 使用 Kotlin Regex 主路径 + 纯 Kotlin 回退引擎；回退路径按 JS-only 构造精确启用（空字符类、`\0`/`\c`、前向反向引用、lookbehind、量词组捕获重置、码元级 `.` 等）；忽略大小写且模式含字母时统一走回退引擎（规范的 Canonicalize），Kotlin 路径只处理不涉及大小写折叠的模式；
 - `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；
+- `RegExp` v 模式 `\q{...}` 字符串在 i 下按规范对每个码点做简单折叠；V8 仅折叠 ASCII，非 ASCII（ß、Kelvin、Deseret）结果不同，差分仅比较 ASCII 串；
 - `String` 大小写转换使用仓库内置 Unicode 17.0.0 UCD 表（UnicodeData 简单映射 + SpecialCasing 无条件完整映射 + Final_Sigma），JVM/JS/Wasm 行为一致；V8（Unicode 16）尚缺 A7CE/A7CF、A7D2/A7D3、A7D4/A7D5 三组 Unicode 17 新增配对，BMP 差分审计跳过这些码点，单元测试固定 17.0.0 行为；
 - Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷）；未处理拒绝在每轮微任务清空后通过 `HostEnvironment.reportUnhandledRejection` 上报（默认无行为，已订阅或已上报的拒绝不会重复上报）；已上报的拒绝随后被订阅时通过 `reportRejectionHandled` 通知一次；
 - 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消；`async` 函数体在独立解释器实例上以 `Dispatchers.Unconfined` 恢复执行，不持有 `runtimeMutex`，当前模型面向单线程事件循环，宿主不应在多线程并发调用执行入口；

@@ -294,7 +294,7 @@ class JsRegexEngine(
                             }
                             if (!result) {
                                 for (string in node.strings) {
-                                    if (matchesEndingAt(pos, string, false) &&
+                                    if (matchesEndingAt(pos, string, flags.ignoreCase) &&
                                         continuation(pos - string.length, captures)
                                     ) {
                                         result = true
@@ -340,7 +340,7 @@ class JsRegexEngine(
                             }
                             if (!result) {
                                 for (string in node.strings) {
-                                    if (matchesAt(pos, string, false) &&
+                                    if (matchesAt(pos, string, flags.ignoreCase) &&
                                         continuation(pos + string.length, captures)
                                     ) {
                                         result = true
@@ -737,7 +737,7 @@ class JsRegexEngine(
                 }
             }
             for (string in node.strings) {
-                if (string.length > best && matchesEndingAt(pos, string, false)) {
+                if (string.length > best && matchesEndingAt(pos, string, flags.ignoreCase)) {
                     best = string.length
                 }
             }
@@ -752,7 +752,7 @@ class JsRegexEngine(
                 }
             }
             for (string in node.strings) {
-                if (string.length > best && matchesAt(pos, string, false)) {
+                if (string.length > best && matchesAt(pos, string, flags.ignoreCase)) {
                     best = string.length
                 }
             }
