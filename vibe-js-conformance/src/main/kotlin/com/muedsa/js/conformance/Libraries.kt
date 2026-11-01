@@ -2374,6 +2374,40 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
         ),
     ),
     LibrarySpec(
+        name = "d3-dispatch",
+        url = "https://unpkg.com/d3-dispatch@3.0.1/dist/d3-dispatch.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "dispatch args",
+                assertion(
+                    "(function () { var seen = {}; var dispatch = d3.dispatch('a', 'b'); " +
+                        "dispatch.on('a', function (value) { seen.tag = this.tag; seen.value = value; }); " +
+                        "dispatch.call('a', { tag: 't' }, 7); " +
+                        "return seen.tag === 't' && seen.value === 7; })()"
+                ),
+            ),
+            SmokeCase(
+                "remove listener",
+                assertion(
+                    "(function () { var count = 0; var dispatch = d3.dispatch('a'); " +
+                        "dispatch.on('a', function () { count++; }); dispatch.call('a'); " +
+                        "dispatch.on('a', null); dispatch.call('a'); " +
+                        "return count === 1 && dispatch.on('a') === undefined; })()"
+                ),
+            ),
+            SmokeCase(
+                "listener order",
+                assertion(
+                    "(function () { var order = []; var dispatch = d3.dispatch('a'); " +
+                        "dispatch.on('a.first', function () { order.push(1); }); " +
+                        "dispatch.on('a.second', function () { order.push(2); }); " +
+                        "dispatch.call('a'); return order.join(',') === '1,2'; })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
         name = "d3-time",
         url = "https://unpkg.com/d3-time@3.1.0/dist/d3-time.min.js",
         globalName = "d3",
