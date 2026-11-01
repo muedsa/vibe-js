@@ -47,11 +47,20 @@ kotlin {
     }
     js {
         browser() // 浏览器环境
-        nodejs() // Node.js 环境
+        nodejs {
+            testTask {
+                // 深递归/大语料用例在 CI 负载下可能超过 mocha 默认 2s 超时
+                useMocha { timeout = "120s" }
+            }
+        }
     }
     wasmJs {
         browser()
-        nodejs()
+        nodejs {
+            testTask {
+                useMocha { timeout = "120s" }
+            }
+        }
     }
     // Native 桌面/服务器目标
     linuxX64()   // Linux (x64)
