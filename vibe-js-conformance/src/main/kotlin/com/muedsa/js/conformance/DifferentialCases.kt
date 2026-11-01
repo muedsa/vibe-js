@@ -606,6 +606,35 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("json-stringify-boxed-replacer", "(function () { var num = new Number(10); num.toString = function () { return 'toString'; }; return JSON.stringify({ 10: 1, toString: 2 }, [num]); })()"),
     DifferentialCase("json-parse-reviver-prototype", "(function () { Object.prototype.b = 3; var obj = JSON.parse('{\"a\":1,\"b\":2}', function (k, v) { if (k === 'a') { delete this.b; } return v; }); delete Object.prototype.b; return obj.a + '|' + obj.hasOwnProperty('b') + '|' + obj.b; })()"),
     DifferentialCase("json-parse-reviver-nonconfigurable", "(function () { var arr = JSON.parse('[1,2]', function (k, v) { if (k === '0') { Object.defineProperty(this, '1', { configurable: false }); } if (k === '1') return 22; return v; }); return arr.join(','); })()"),
+    // JSON 序列化/解析矩阵：toJSON、replacer、space、包装对象与 well-formed 输出
+    DifferentialCase(
+        "json-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "var obj = { a: 1, b: [true, null, 'x'], c: undefined, d: function () {}, e: Symbol('s') }; " +
+            "push(function () { return JSON.stringify(obj); }); " +
+            "push(function () { return JSON.stringify([undefined, function () {}, Symbol('s')]); }); " +
+            "push(function () { return JSON.stringify({ x: NaN, y: Infinity, z: -Infinity }); }); " +
+            "push(function () { return JSON.stringify({ a: 1, b: 2 }, ['b']); }); " +
+            "push(function () { return JSON.stringify({ a: 1, b: 2 }, function (k, v) { " +
+            "return typeof v === 'number' ? v * 2 : v; }); }); " +
+            "push(function () { return JSON.stringify({ toJSON: function () { return { x: 1 }; } }); }); " +
+            "push(function () { return JSON.stringify({ a: 1 }, null, 2); }); " +
+            "push(function () { return JSON.stringify({ a: 1 }, null, '\\t'); }); " +
+            "push(function () { return JSON.stringify({ a: 1 }, null, 100); }); " +
+            "push(function () { return JSON.stringify('\\uD800'); }); " +
+            "push(function () { return JSON.stringify(new Number(8.5)) + '|' + " +
+            "JSON.stringify(new String('s')) + '|' + JSON.stringify(new Boolean(true)); }); " +
+            "push(function () { return JSON.stringify(new Date(0)); }); " +
+            "push(function () { return JSON.stringify({ 2: 'b', 1: 'a', x: 'c' }); }); " +
+            "push(function () { return JSON.parse('{\"a\":1}').a; }); " +
+            "push(function () { return JSON.parse('{\"a\":1}', function (k, v) { " +
+            "return typeof v === 'number' ? v + 1 : v; }).a; }); " +
+            "push(function () { return JSON.stringify(JSON.parse('1e400')); }); " +
+            "push(function () { return JSON.stringify(-0); }); " +
+            "push(function () { return JSON.stringify({ u: '\\u2028\\u2029' }); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase("regexp-nonunicode-x-identity", "[/\\x/.test('x'), /[\\x]/.test('x'), /\\u/.test('u'), /\\xA0/.test('\\u00A0')].join(',')"),
     DifferentialCase("regexp-nonunicode-split-identity", "JSON.stringify('x'.split(/\\x/))"),
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
@@ -645,6 +674,42 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-fold-class-iu", "[/[k]/iu.test('\\u212A'), /[a-z]/iu.test('\\u212A'), /[a-z]/iu.test('\\u017F'), /[k]/iu.test('K'), /[\\u00DF]/iu.test('\\u1E9E')].join(',')"),
     DifferentialCase("regexp-fold-word-nonu", "[/\\w/i.test('\\u212A'), /\\w/i.test('\\u017F'), /\\w/i.test('\\u03C2'), /\\B/i.test('\\u212A'), /\\b/i.test('a\\u212A')].join(',')"),
     DifferentialCase("regexp-fold-word-iu", "[/\\w/iu.test('\\u212A'), /\\w/iu.test('\\u017F'), /\\w/iu.test('\\u03C2'), /\\B/iu.test('\\u212A'), /\\b/iu.test('a\\u212A')].join(',')"),
+    // String 与 RegExp 的替换/分割/matchAll/lastIndex 交互矩阵
+    DifferentialCase(
+        "regexp-replace-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "var s = 'a1b2c3'; " +
+            "push(function () { return s.replace(/\\d/g, '[$&]'); }); " +
+            "push(function () { return s.replace(/(\\d)/g, function (m, p1, off, str) { " +
+            "return p1 + ':' + off + ':' + str.length; }); }); " +
+            "push(function () { return s.replace(/(?<d>\\d)/g, '$<d>$<d>'); }); " +
+            "push(function () { return s.replace(/(\\d)/g, '$1$`$\\'$$'); }); " +
+            "push(function () { return s.replace('', 'X'); }); " +
+            "push(function () { return 'abc'.replace(/b/g, '$$'); }); " +
+            "push(function () { return s.split(/(\\d)/).join('|'); }); " +
+            "push(function () { return s.split(/(\\d)/, 3).join('|'); }); " +
+            "push(function () { return 'a,b;c'.split(/[,;]/).join('|'); }); " +
+            "push(function () { return 'abc'.match(/(?<x>b)/).groups.x; }); " +
+            "push(function () { return 'a1b2'.match(/\\d/g).join(','); }); " +
+            "push(function () { var r = /\\d/g; r.lastIndex = 2; var m = r.exec('a1b2'); " +
+            "return m[0] + '@' + m.index + ':' + r.lastIndex; }); " +
+            "push(function () { var r = /\\d/y; r.lastIndex = 1; var m = r.exec('a1b2'); " +
+            "return m ? m[0] : 'null'; }); " +
+            "push(function () { var r = /\\d/gy; r.lastIndex = 1; var a = r.exec('a1b2'); " +
+            "var b = r.exec('a1b2'); return a[0] + ':' + b[0] + ':' + r.lastIndex; }); " +
+            "push(function () { return Array.from('a1b2'.matchAll(/\\d/g), function (m) { " +
+            "return m[0] + '@' + m.index; }).join(','); }); " +
+            "push(function () { return 'a1b2'.replaceAll(/\\d/g, '#'); }); " +
+            "push(function () { return 'a1b2'.replaceAll('b', '#'); }); " +
+            "push(function () { return 'aXbXc'.split(/x/i).join('|'); }); " +
+            "push(function () { return 'a'.replace(/a/, function () { return '$&'; }); }); " +
+            "push(function () { return 'abc'.replace(/(?:)/g, '-'); }); " +
+            "push(function () { return 'a1b'.search(/\\d/); }); " +
+            "push(function () { return 'abc'.replace(/(b)/, '$2'); }); " +
+            "push(function () { return 'abc'.replace(/(b)/, '$0'); }); " +
+            "return out.join('|'); })()"
+    ),
     // 正则匹配矩阵：u/s/m 标志、astral、命名组、断言、转义与回溯
     DifferentialCase(
         "regexp-match-matrix",
