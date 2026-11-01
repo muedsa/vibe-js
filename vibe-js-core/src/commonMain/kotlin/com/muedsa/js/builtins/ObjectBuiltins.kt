@@ -275,8 +275,12 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "values", 1) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
                 val values = ArrayList<JSValue?>()
-                for (key in enumerableOwnStringKeys(objectValue)) {
-                    values.add(interpreter.getV(objectValue, PropertyKey.Str(key)))
+                // 键在开始快照；每个 Get 前重新检查是否仍为可枚举自有属性
+                for (propertyKey in objectValue.ownPropertyKeys()) {
+                    if (propertyKey !is PropertyKey.Str) continue
+                    val descriptor = objectValue.getOwnProperty(propertyKey) ?: continue
+                    if (!descriptor.enumerable) continue
+                    values.add(interpreter.getV(objectValue, propertyKey))
                 }
                 JSArray(values, prototype = arrayPrototype)
             },
@@ -287,10 +291,13 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "entries", 1) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
                 val entries = ArrayList<JSValue?>()
-                for (key in enumerableOwnStringKeys(objectValue)) {
+                for (propertyKey in objectValue.ownPropertyKeys()) {
+                    if (propertyKey !is PropertyKey.Str) continue
+                    val descriptor = objectValue.getOwnProperty(propertyKey) ?: continue
+                    if (!descriptor.enumerable) continue
                     val pair = ArrayList<JSValue?>()
-                    pair.add(JSString(key))
-                    pair.add(interpreter.getV(objectValue, PropertyKey.Str(key)))
+                    pair.add(JSString(propertyKey.value))
+                    pair.add(interpreter.getV(objectValue, propertyKey))
                     entries.add(JSArray(pair, prototype = arrayPrototype))
                 }
                 JSArray(entries, prototype = arrayPrototype)
@@ -706,6 +713,19 @@ object ObjectBuiltins {
                     enumerable = current.enumerable,
                     configurable = true,
                 )
+            }
+        }
+
+        // 数组 length 的非法数值优先抛 RangeError（早于不可配置等描述符校验）
+        if (objectValue is com.muedsa.js.runtime.value.JSArray &&
+            key == PropertyKey.LENGTH && hasValue && value != null
+        ) {
+            val number = interpreter.toNumber(value)
+            if (number.isNaN() || number < 0.0 ||
+                number > com.muedsa.js.runtime.value.JSArray.MAX_LENGTH.toDouble() ||
+                number != kotlin.math.floor(number)
+            ) {
+                interpreter.rangeError("Invalid array length")
             }
         }
 

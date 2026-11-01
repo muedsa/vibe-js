@@ -57,6 +57,26 @@ object FunctionBuiltins {
                 "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions"
             )
         }
+        // %ThrowTypeError%：name/length 固定且整体冻结（不可扩展、属性不可配置不可写）
+        restrictedAccessor.defineOwnProperty(
+            PropertyKey.LENGTH,
+            PropertyDescriptor.data(
+                JSNumber(0.0),
+                writable = false,
+                enumerable = false,
+                configurable = false,
+            ),
+        )
+        restrictedAccessor.defineOwnProperty(
+            PropertyKey.NAME,
+            PropertyDescriptor.data(
+                JSString(""),
+                writable = false,
+                enumerable = false,
+                configurable = false,
+            ),
+        )
+        restrictedAccessor.preventExtensions()
         intrinsics.throwTypeErrorFunction = restrictedAccessor
         functionPrototype.defineAccessorProperty(
             key = PropertyKey.Str("caller"),

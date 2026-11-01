@@ -549,8 +549,7 @@ class Interpreter(
         }
         if (objectValue is JSArray && key == PropertyKey.LENGTH) {
             if (descriptor.isAccessor) return false
-            // length 恒为不可枚举、不可配置
-            if (descriptor.enumerable || descriptor.configurable) return false
+            // 规范顺序：先校验 length 数值（非法抛 RangeError），再拒绝描述符标志
             val value = descriptor.value
             val newLength = if (value == null) {
                 objectValue.lengthLong
@@ -563,6 +562,8 @@ class Interpreter(
                 }
                 number.toLong()
             }
+            // length 恒为不可枚举、不可配置
+            if (descriptor.enumerable || descriptor.configurable) return false
             return objectValue.defineLength(newLength, descriptor.writable)
         }
         return objectValue.defineOwnProperty(key, descriptor)
@@ -1241,8 +1242,12 @@ class Interpreter(
             }
         }
         if (function != null) {
-            if (function.strict) {
-                // 严格模式下访问 callee/caller 必须抛 TypeError；与 Function.prototype 共用 %ThrowTypeError%
+            // 非简单参数列表创建 unmapped arguments 对象，其 callee 也是 %ThrowTypeError%
+            val unmappedArguments = function.params.any {
+                it.rest || it.defaultValue != null || it.pattern != null
+            }
+            if (function.strict || unmappedArguments) {
+                // 严格/非简单参数下访问 callee/caller 必须抛 TypeError；与 Function.prototype 共用 %ThrowTypeError%
                 val thrower = intrinsics.throwTypeErrorFunction ?: JSNativeFunction(
                     name = "",
                     length = 0,

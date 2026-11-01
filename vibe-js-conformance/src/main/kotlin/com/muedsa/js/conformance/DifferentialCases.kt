@@ -169,6 +169,12 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("err-tostring-undefined-props", "Error.prototype.toString.call({ name: undefined, message: undefined })"),
     DifferentialCase("obj-isprototypeof-null-this", "(function () { try { Object.prototype.isPrototypeOf.call(null, {}); return 'none'; } catch (e) { return e.name; } })()"),
     DifferentialCase("arr-slice-undefined-end", "JSON.stringify([0,1,2,3,4].slice(3, undefined))"),
+    DifferentialCase("arr-from-constructor-length", "(function () { function C() { this.args = arguments; } return Array.from.call(C, { length: 3 }).args[0]; })()"),
+    DifferentialCase("arr-of-length-setter", "(function () { var hits = 0; function P() { Object.defineProperty(this, 'length', { set: function () { hits++; } }); } Array.of.call(P, 1, 2); return hits; })()"),
+    DifferentialCase("obj-entries-getter-deletes", "(function () { var o = { a: 'A', get b() { delete this.c; return 'B'; }, c: 'C' }; return JSON.stringify(Object.entries(o)); })()"),
+    DifferentialCase("math-max-coerce-count", "(function () { var calls = 0; var n = { valueOf: function () { calls++; } }; Math.max(NaN, n); return calls; })()"),
+    DifferentialCase("num-parse-identity", "Number.parseInt === parseInt && Number.parseFloat === parseFloat"),
+    DifferentialCase("arguments-unmapped-callee", "(function () { function f(a = 0) { return arguments; } return Object.getOwnPropertyDescriptor(f(), 'callee').get === Object.getOwnPropertyDescriptor(Function.prototype, 'caller').get; })()"),
     DifferentialCase("num-toexponential-nonfinite", "[(Infinity).toExponential(1000), NaN.toExponential(2)].join('|')"),
     DifferentialCase("date-settime-value", "(function () { var d = new Date(0); d.setTime(1000); return d.valueOf(); })()"),
 

@@ -196,9 +196,10 @@ object MathBuiltins {
                 var hasNaN = false
                 for (argument in args) {
                     val value = interpreter.toNumber(argument)
+                    // 规范要求对每个参数执行 ToNumber（即使已出现 NaN）
                     if (value.isNaN()) {
                         hasNaN = true
-                        break
+                        continue
                     }
                     result = max(result, value)
                 }
@@ -215,7 +216,7 @@ object MathBuiltins {
                     val value = interpreter.toNumber(argument)
                     if (value.isNaN()) {
                         hasNaN = true
-                        break
+                        continue
                     }
                     result = min(result, value)
                 }

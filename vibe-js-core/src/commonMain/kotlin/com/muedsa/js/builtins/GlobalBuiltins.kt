@@ -143,18 +143,17 @@ object GlobalBuiltins {
         )
 
         // parseInt / parseFloat
-        registry.defineGlobal(
-            name = "parseInt",
-            value = BuiltinHelpers.method(intrinsics, "parseInt", length = 2) { interpreter, _, args ->
+        // 与 Number.parseInt/Number.parseFloat 共享同一函数对象
+        val parseIntFunction = intrinsics.parseIntFunction
+            ?: BuiltinHelpers.method(intrinsics, "parseInt", length = 2) { interpreter, _, args ->
                 NumberParsing.parseInt(interpreter, args)
-            },
-        )
-        registry.defineGlobal(
-            name = "parseFloat",
-            value = BuiltinHelpers.method(intrinsics, "parseFloat", length = 1) { interpreter, _, args ->
+            }
+        val parseFloatFunction = intrinsics.parseFloatFunction
+            ?: BuiltinHelpers.method(intrinsics, "parseFloat", length = 1) { interpreter, _, args ->
                 NumberParsing.parseFloat(interpreter, args)
-            },
-        )
+            }
+        registry.defineGlobal(name = "parseInt", value = parseIntFunction)
+        registry.defineGlobal(name = "parseFloat", value = parseFloatFunction)
 
         // 全局 isNaN / isFinite（会做 ToNumber 转换）
         registry.defineGlobal(

@@ -210,18 +210,22 @@ object NumberBuiltins {
             },
         )
 
+        val parseIntFunction = BuiltinHelpers.method(intrinsics, "parseInt", 2) { interpreter, _, args ->
+            NumberParsing.parseInt(interpreter, args)
+        }
+        intrinsics.parseIntFunction = parseIntFunction
         numberConstructor.defineDataProperty(
             key = PropertyKey.Str("parseInt"),
-            value = BuiltinHelpers.method(intrinsics, "parseInt", 2) { interpreter, _, args ->
-                NumberParsing.parseInt(interpreter, args)
-            },
+            value = parseIntFunction,
         )
 
+        val parseFloatFunction = BuiltinHelpers.method(intrinsics, "parseFloat", 1) { interpreter, _, args ->
+            NumberParsing.parseFloat(interpreter, args)
+        }
+        intrinsics.parseFloatFunction = parseFloatFunction
         numberConstructor.defineDataProperty(
             key = PropertyKey.Str("parseFloat"),
-            value = BuiltinHelpers.method(intrinsics, "parseFloat", 1) { interpreter, _, args ->
-                NumberParsing.parseFloat(interpreter, args)
-            },
+            value = parseFloatFunction,
         )
     }
 

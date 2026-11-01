@@ -1291,20 +1291,15 @@ object ArrayBuiltins {
                     JSArray(emptyList(), prototype = arrayPrototype)
                 }
                 for (index in args.indices) {
-                    array.defineDataProperty(
-                        key = PropertyKey.Str(index.toString()),
-                        value = args[index],
-                        writable = true,
-                        enumerable = true,
-                        configurable = true,
-                    )
+                    // CreateDataPropertyOrThrow：不可扩展/不可配置属性必须抛 TypeError
+                    createDataPropertyOrThrow(interpreter, array, index.toLong(), args[index])
                 }
-                array.defineDataProperty(
-                    key = PropertyKey.Str("length"),
-                    value = JSNumber(length.toDouble()),
-                    writable = true,
-                    enumerable = false,
-                    configurable = false,
+                // Set(A, "length", len, true)：可能命中自定义 length setter
+                interpreter.putV(
+                    array,
+                    PropertyKey.LENGTH,
+                    JSNumber(length.toDouble()),
+                    strict = true,
                 )
                 array
             },
@@ -1327,13 +1322,11 @@ object ArrayBuiltins {
                     null
                 }
 
-                // C = this；可构造时先创建结果对象，构造异常先于迭代器获取
-                val array: JSObject = if (interpreter.isConstructor(thisValue)) {
-                    interpreter.construct(thisValue, emptyList()) as? JSObject
-                        ?: interpreter.typeError("Array.from constructor did not return an object")
-                } else {
-                    JSArray(prototype = arrayPrototype)
+                // GetMethod(items, @@iterator)：null/undefined 直接抛 TypeError
+                if (source is JSNull || source is JSUndefined) {
+                    interpreter.typeError("Array.from requires an array-like or iterable object")
                 }
+                val iterable = interpreter.isIterable(source)
 
                 suspend fun applyMap(item: JSValue, index: Int): JSValue =
                     if (mapFn != null) {
@@ -1346,53 +1339,49 @@ object ArrayBuiltins {
                         item
                     }
 
-                suspend fun setIndex(index: Int, value: JSValue) {
-                    val key = PropertyKey.Str(index.toString())
-                    // 已有不可配置属性：只允许写入相同的可写数据值
-                    val existing = array.getOwnProperty(key)
-                    if (existing != null && !existing.configurable) {
-                        // CreateDataProperty 要求 configurable: true，与不可配置属性冲突
-                        interpreter.typeError("Cannot redefine property '$key'")
-                    }
-                    val defined = array.defineOwnProperty(
-                        key,
-                        com.muedsa.js.runtime.value.PropertyDescriptor.data(
-                            value,
-                            writable = true,
-                            enumerable = true,
-                            configurable = true,
-                        ),
-                    )
-                    if (!defined) interpreter.typeError("Cannot define property '$key'")
-                }
-
+                val array: JSObject
                 var index = 0
-                if (source !is JSUndefined && source !is JSNull) {
-                    if (interpreter.isIterable(source)) {
-                        // 迭代路径逐项调用 mapfn；mapfn 抛错时关闭迭代器
-                        interpreter.consumeIterator(source) { item ->
-                            setIndex(index, applyMap(item, index))
-                            index++
-                        }
+                if (iterable) {
+                    // 迭代路径：GetMethod 之后再构造结果对象
+                    array = if (interpreter.isConstructor(thisValue)) {
+                        interpreter.construct(thisValue, emptyList()) as? JSObject
+                            ?: interpreter.typeError("Array.from constructor did not return an object")
                     } else {
-                        // 非可迭代对象按 array-like（ToObject + length）处理
-                        val objectValue = interpreter.toObject(source)
-                        val lengthNumber = interpreter.toNumber(
-                            interpreter.getV(objectValue, PropertyKey.LENGTH)
+                        JSArray(prototype = arrayPrototype)
+                    }
+                    interpreter.consumeIterator(source) { item ->
+                        createDataPropertyOrThrow(
+                            interpreter, array, index.toLong(), applyMap(item, index),
                         )
-                        val length = when {
-                            lengthNumber.isNaN() || lengthNumber <= 0.0 -> 0
-                            lengthNumber >= MAX_ARRAY_LIKE_LENGTH -> MAX_ARRAY_LIKE_LENGTH
-                            else -> floor(lengthNumber).toInt()
-                        }
-                        for (sourceIndex in 0 until length) {
-                            val item = interpreter.getV(
-                                objectValue,
-                                PropertyKey.Str(sourceIndex.toString()),
-                            )
-                            setIndex(index, applyMap(item, index))
-                            index++
-                        }
+                        index++
+                    }
+                } else {
+                    // array-like：先读取 length，再按长度构造结果对象
+                    val objectValue = interpreter.toObject(source)
+                    val lengthNumber = interpreter.toNumber(
+                        interpreter.getV(objectValue, PropertyKey.LENGTH)
+                    )
+                    val length = when {
+                        lengthNumber.isNaN() || lengthNumber <= 0.0 -> 0
+                        lengthNumber >= MAX_ARRAY_LIKE_LENGTH -> MAX_ARRAY_LIKE_LENGTH
+                        else -> floor(lengthNumber).toInt()
+                    }
+                    array = if (interpreter.isConstructor(thisValue)) {
+                        interpreter.construct(thisValue, listOf(JSNumber(length.toDouble())))
+                            as? JSObject
+                            ?: interpreter.typeError("Array.from constructor did not return an object")
+                    } else {
+                        createArrayWithLength(interpreter, length.toLong())
+                    }
+                    for (sourceIndex in 0 until length) {
+                        val item = interpreter.getV(
+                            objectValue,
+                            PropertyKey.Str(sourceIndex.toString()),
+                        )
+                        createDataPropertyOrThrow(
+                            interpreter, array, sourceIndex.toLong(), applyMap(item, sourceIndex),
+                        )
+                        index++
                     }
                 }
 

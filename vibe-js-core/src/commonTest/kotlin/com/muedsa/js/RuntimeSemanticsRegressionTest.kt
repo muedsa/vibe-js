@@ -3150,4 +3150,39 @@ class RuntimeSemanticsRegressionTest {
         assertEquals("Infinity", runtime.evalString("(Infinity).toExponential(1000)"))
         assertEquals("NaN", runtime.evalString("NaN.toExponential(2)"))
     }
+
+    @Test
+    fun `Array from of 内建身份与 unmapped arguments`() = runTest {
+        val runtime = TestRuntime()
+        // array-like 路径以 length 构造结果对象
+        assertEquals(3.0, runtime.evalNumber(
+            "function C() { this.args = arguments; }" +
+                " Array.from.call(C, { length: 3 }).args[0]"
+        ))
+        // Array.of 通过 Set 写入 length，可命中自定义 setter
+        assertEquals(1.0, runtime.evalNumber(
+            "var hits = 0;" +
+                " function P() { Object.defineProperty(this, 'length', { set: function () { hits++; } }); }" +
+                " Array.of.call(P, 1, 2); hits"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "Number.parseInt === parseInt && Number.parseFloat === parseFloat"
+        ))
+        // 非简单参数的 unmapped arguments 的 callee 为 %ThrowTypeError%
+        assertEquals(true, runtime.evalBoolean(
+            "function f(a = 0) { return arguments; }" +
+                " Object.getOwnPropertyDescriptor(f(), 'callee').get ===" +
+                " Object.getOwnPropertyDescriptor(Function.prototype, 'caller').get"
+        ))
+        // entries 迭代期间删除未来键时跳过
+        assertEquals(true, runtime.evalBoolean(
+            "var o = { a: 'A', get b() { delete this.c; return 'B'; }, c: 'C' };" +
+                " Object.entries(o).length === 2"
+        ))
+        // 非法数组 length 优先抛 RangeError
+        assertEquals("RangeError", runtime.evalString(
+            "try { Object.defineProperty([], 'length', { value: -1, configurable: true });" +
+                " 'none' } catch (e) { e.name }"
+        ))
+    }
 }
