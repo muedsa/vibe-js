@@ -160,7 +160,7 @@ Unicode 数据表（`\p{...}` 属性、属性字符串、标识符 ID_Start/ID_C
 ./gradlew :vibe-js-conformance:differentialConformance
 ```
 
-真实库基线（lodash 4.17.21 / mustache 4.2.0 / dayjs 1.11.10 / qs 6.12.3 / validator 13.12.0 / underscore 1.13.6 / moment 2.30.1 / semver 4.3.6 / punycode 1.4.1 / json5 2.2.3 / big.js 6.2.1 / diff 5.1.0 / lz-string 1.5.0 / marked 4.3.0 / bignumber.js 9.1.2 / decimal.js 10.4.3 / crypto-js 4.2.0 / papaparse 5.4.1 / js-yaml 4.1.0 / ramda 0.29.0 / he 1.2.0 / numeral 2.0.6 / showdown 2.1.0 / seedrandom 3.0.5 / pluralize 8.0.0 / highlight.js 11.9.0 / tinycolor2 1.6.0 / deepmerge 4.3.1 / big-integer 1.6.51 / rxjs 7.8.1 / eventemitter3 5.0.1 / mitt 3.0.1 / immutable 4.3.5 / redux 4.2.1 / markdown-it 13.0.2 / handlebars 4.7.8 / ajv 6.12.6 / esprima 4.0.1 / acorn 8.11.3 / astring 1.8.6 / acorn-walk 8.3.2 / crc-32 1.2.2）：
+真实库基线（lodash 4.17.21 / mustache 4.2.0 / dayjs 1.11.10 / qs 6.12.3 / validator 13.12.0 / underscore 1.13.6 / moment 2.30.1 / semver 4.3.6 / punycode 1.4.1 / json5 2.2.3 / big.js 6.2.1 / diff 5.1.0 / lz-string 1.5.0 / marked 4.3.0 / bignumber.js 9.1.2 / decimal.js 10.4.3 / crypto-js 4.2.0 / papaparse 5.4.1 / js-yaml 4.1.0 / ramda 0.29.0 / he 1.2.0 / numeral 2.0.6 / showdown 2.1.0 / seedrandom 3.0.5 / pluralize 8.0.0 / highlight.js 11.9.0 / tinycolor2 1.6.0 / deepmerge 4.3.1 / big-integer 1.6.51 / rxjs 7.8.1 / eventemitter3 5.0.1 / mitt 3.0.1 / immutable 4.3.5 / redux 4.2.1 / markdown-it 13.0.2 / handlebars 4.7.8 / ajv 6.12.6 / esprima 4.0.1 / acorn 8.11.3 / astring 1.8.6 / acorn-walk 8.3.2 / crc-32 1.2.2 / blueimp-md5 2.19.0）：
 
 | 库 | 状态 | 用例 |
 |---|---|---|
@@ -206,8 +206,9 @@ Unicode 数据表（`\p{...}` 属性、属性字符串、标识符 ID_Start/ID_C
 | astring | 可加载 | 5/5 |
 | acorn-walk | 可加载 | 4/4 |
 | crc-32 | 可加载 | 4/4 |
+| blueimp-md5 | 可加载 | 4/4 |
 
-合计：**169/169 用例通过，0 失败**。
+合计：**173/173 用例通过，0 失败**。
 
 `astring` 与 `acorn-walk` 直接消费 `acorn` 产出的 ESTree：运行器支持 `dependencies`，先在同一引擎中加载 `acorn`，再加载目标库并执行用例（`acorn-walk` 挂在 `acorn.walk`）。
 
@@ -226,7 +227,7 @@ Node 差分基线：**452 个用例**（String 方法对自定义 Symbol 协议�
 ## 推进顺序
 
 1. Test262 ES5 子集与解析一致性基线已收敛；特性子集（含 esid 核心语义用例）已全部通过（37329/37329，覆盖 ES2015 核心语义与已实现的 ES2016+ 语法/内建）。已实现特性均已纳入选择范围，剩余跳过项均为明确排除的 Generator/BigInt/Proxy/TypedArray/Temporal/模块等；进一步扩展需先实现这些排除项或扩大语料范围；
-2. 继续扩大真实库覆盖（已加入 semver/punycode/json5/papaparse/js-yaml/ramda/he/numeral/showdown/seedrandom/pluralize/highlight.js/tinycolor2/deepmerge/big-integer/rxjs/eventemitter3/mitt/immutable/redux/markdown-it/handlebars/ajv/esprima/acorn/astring/acorn-walk/crc-32，后续补充更多 UMD 构建与用例）；
+2. 继续扩大真实库覆盖（已加入 semver/punycode/json5/papaparse/js-yaml/ramda/he/numeral/showdown/seedrandom/pluralize/highlight.js/tinycolor2/deepmerge/big-integer/rxjs/eventemitter3/mitt/immutable/redux/markdown-it/handlebars/ajv/esprima/acorn/astring/acorn-walk/crc-32/blueimp-md5，后续补充更多 UMD 构建与用例）；
 3. 严格门禁已就绪：`-Pstrict` 在 parser / Test262 / 真实库 / 差分四个基线均通过（parser 的 Generator 项走显式允许列表）；接入 PR 触发需确认 CI 反馈成本后再启用。
 
 ## CI

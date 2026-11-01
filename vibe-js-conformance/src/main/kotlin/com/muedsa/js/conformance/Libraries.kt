@@ -1254,6 +1254,32 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "blueimp-md5",
+        url = "https://unpkg.com/blueimp-md5@2.19.0/js/md5.min.js",
+        globalName = "md5",
+        cases = listOf(
+            SmokeCase(
+                "ascii",
+                assertion("md5('abc') === '900150983cd24fb0d6963f7d28e17f72'"),
+            ),
+            SmokeCase(
+                "utf8",
+                assertion("md5('你好') === '7eca689f0d3389d9dea66ae112e5cfd7'"),
+            ),
+            SmokeCase(
+                "hmac",
+                assertion("md5('key', 'abc') === '42a724aeb701cef74eee75871d6770cd'"),
+            ),
+            SmokeCase(
+                "raw",
+                assertion(
+                    "(function () { var raw = md5('abc', null, true); " +
+                        "return raw.length === 16 && raw.charCodeAt(0) === 144; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
