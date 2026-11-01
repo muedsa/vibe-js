@@ -1,7 +1,11 @@
 package com.muedsa.js
 
 import com.muedsa.js.runtime.value.JSNumber
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
@@ -187,5 +191,19 @@ class BasicExecutionTest {
         )
         runtime.engine.run(asyncProgram)
         assertEquals(2.0, runtime.evalNumber("parsedAsync"))
+    }
+
+    @Test
+    fun `同一引擎的预解析脚本可并发串行执行`() = runTest {
+        val runtime = TestRuntime()
+        val program = runtime.engine.parse(
+            "globalThis.concurrentCount = (globalThis.concurrentCount || 0) + 1;"
+        )
+        withContext(Dispatchers.Default) {
+            coroutineScope {
+                repeat(20) { launch { runtime.engine.run(program) } }
+            }
+        }
+        assertEquals(20.0, runtime.evalNumber("concurrentCount"))
     }
 }
