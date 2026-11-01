@@ -129,6 +129,9 @@ object PromiseSupport {
         promise.result = normalized
         promise.deferred.completeExceptionally(JSException(normalized))
         flushReactions(interpreter, promise)
+        if (!promise.handled) {
+            interpreter.context.eventLoop.trackUnhandledRejection(promise)
+        }
     }
 
     /**
@@ -167,6 +170,7 @@ object PromiseSupport {
         promise: JSPromise,
         reaction: JSPromise.Reaction,
     ) {
+        promise.handled = true
         if (promise.state == JSPromise.State.PENDING) {
             promise.reactions.add(reaction)
         } else {

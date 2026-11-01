@@ -1,5 +1,10 @@
 package com.muedsa.js
 
+import com.muedsa.js.runtime.DefaultHostEnvironment
+import com.muedsa.js.runtime.Engine
+import com.muedsa.js.runtime.HostEnvironment
+import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSValue
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -482,5 +487,54 @@ class AsyncSemanticsTest {
             """.trimIndent()
         )
         assertEquals("ReferenceError", runtime.evalString("ctorName"))
+    }
+
+    @Test
+    fun `未处理 Promise 拒绝通过宿主回调上报且不重复`() = runTest {
+        val rejected = mutableListOf<JSValue>()
+        val base = DefaultHostEnvironment()
+        val engine = Engine(object : HostEnvironment by base {
+            override fun reportUnhandledRejection(reason: JSValue) {
+                rejected.add(reason)
+            }
+        })
+        engine.run("Promise.reject('boom');")
+        assertEquals(1, rejected.size)
+        assertEquals("boom", (rejected[0] as JSString).value)
+        // 已上报的拒绝不会在后续 drain 中重复上报
+        engine.run("0")
+        assertEquals(1, rejected.size)
+    }
+
+    @Test
+    fun `同步或微任务内 catch 抑制未处理拒绝上报`() = runTest {
+        val rejected = mutableListOf<JSValue>()
+        val base = DefaultHostEnvironment()
+        val engine = Engine(object : HostEnvironment by base {
+            override fun reportUnhandledRejection(reason: JSValue) {
+                rejected.add(reason)
+            }
+        })
+        engine.run("Promise.reject('a').catch(function () {});")
+        assertEquals(0, rejected.size)
+        engine.run(
+            "var p = Promise.reject('b');" +
+                "Promise.resolve().then(function () { p.catch(function () {}); });"
+        )
+        assertEquals(0, rejected.size)
+    }
+
+    @Test
+    fun `then 派生的未处理拒绝会独立上报`() = runTest {
+        val rejected = mutableListOf<JSValue>()
+        val base = DefaultHostEnvironment()
+        val engine = Engine(object : HostEnvironment by base {
+            override fun reportUnhandledRejection(reason: JSValue) {
+                rejected.add(reason)
+            }
+        })
+        engine.run("Promise.reject('c').then(function () {});")
+        assertEquals(1, rejected.size)
+        assertEquals("c", (rejected[0] as JSString).value)
     }
 }

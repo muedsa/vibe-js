@@ -1,5 +1,6 @@
 package com.muedsa.js.runtime
 
+import com.muedsa.js.runtime.value.JSValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -76,6 +77,9 @@ interface HostEnvironment {
     val console: Console
     val clock: Clock
     val scheduler: Scheduler
+
+    /** 微任务清空后仍未处理的 Promise 拒绝；默认忽略。 */
+    fun reportUnhandledRejection(reason: JSValue) {}
 }
 
 /** 默认宿主环境。 */

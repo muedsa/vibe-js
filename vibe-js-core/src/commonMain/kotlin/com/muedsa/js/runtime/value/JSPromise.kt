@@ -34,6 +34,12 @@ class JSPromise(
 
     var state: State = State.PENDING
     var result: JSValue = JSUndefined
+
+    /** 是否已有 then/catch 订阅（有订阅则不属于未处理拒绝）。 */
+    var handled: Boolean = false
+
+    /** 是否已向宿主上报未处理拒绝（避免重复上报）。 */
+    var unhandledReported: Boolean = false
     val deferred = CompletableDeferred<JSValue>()
     val reactions: MutableList<Reaction> = mutableListOf()
 

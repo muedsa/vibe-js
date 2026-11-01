@@ -1,6 +1,8 @@
 package com.muedsa.js.runtime
 
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.value.JSPromise
+import com.muedsa.js.runtime.value.JSValue
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -34,6 +36,17 @@ class EventLoop(
      */
     val runtimeMutex: Mutex = Mutex()
 
+    /** 已拒绝且尚无订阅的 Promise（在微任务队列清空后上报宿主）。 */
+    private val unhandledRejections: ArrayDeque<JSPromise> = ArrayDeque()
+
+    /** 未处理拒绝的宿主回调；由 Engine 注入。 */
+    internal var unhandledRejectionReporter: ((JSValue) -> Unit)? = null
+
+    /** 登记一个未处理的拒绝，等待本轮微任务结束后确认。 */
+    fun trackUnhandledRejection(promise: JSPromise) {
+        unhandledRejections.addLast(promise)
+    }
+
     /** 排队一个微任务。 */
     fun enqueueMicrotask(task: suspend () -> Unit) {
         microtasks.addLast(task)
@@ -52,6 +65,29 @@ class EventLoop(
                 task()
             } catch (_: JSException) {
                 // 微任务中的异常在阶段 C 会进入 Promise 拒绝回调
+            }
+        }
+        reportUnhandledRejections()
+    }
+
+    /** 微任务清空后上报仍未订阅的拒绝；已订阅或已上报的跳过。 */
+    private fun reportUnhandledRejections() {
+        if (unhandledRejections.isEmpty()) return
+        val reporter = unhandledRejectionReporter
+        while (unhandledRejections.isNotEmpty()) {
+            val promise = unhandledRejections.removeFirst()
+            if (promise.handled || promise.unhandledReported ||
+                promise.state != JSPromise.State.REJECTED
+            ) {
+                continue
+            }
+            promise.unhandledReported = true
+            if (reporter != null) {
+                try {
+                    reporter(promise.result)
+                } catch (_: Throwable) {
+                    // 宿主回调异常不应破坏事件循环
+                }
             }
         }
     }
