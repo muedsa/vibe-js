@@ -497,6 +497,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             "for (var j = 0; j < radices.length; j++) { out.push(values[i].toString(radices[j])); } } " +
             "return out.join('|'); })()"
     ),
+    // 确定性随机模糊：LCG 生成 mantissa × 2^exp 的有限 normal，验证 2 的幂进制最短往返
+    DifferentialCase(
+        "num-radix-fuzz",
+        "(function () { var out = []; var seed = 12345; " +
+            "function next() { seed = (seed * 48271) % 2147483647; return seed; } " +
+            "for (var i = 0; i < 30; i++) { " +
+            "var mantissa = 1 + (next() % 1048576) / 1048576; " +
+            "var exponent = (next() % 121) - 60; " +
+            "var value = mantissa * Math.pow(2, exponent); " +
+            "if (i % 2 === 1) value = -value; " +
+            "out.push(value.toString(2)); " +
+            "out.push(value.toString(8)); " +
+            "out.push(value.toString(16)); " +
+            "out.push(value.toString(32)); " +
+            "} return out.join('|'); })()"
+    ),
     // Date 的 UTC/TimeClip/ISO 解析与溢出矩阵（避免依赖本地时区的构造与 getter）
     DifferentialCase(
         "date-utc-matrix",
