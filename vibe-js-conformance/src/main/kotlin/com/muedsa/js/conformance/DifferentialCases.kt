@@ -168,6 +168,11 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "JSON.stringify(['\\8', '\\9', '\\08', '\\400'])"
     ),
     DifferentialCase(
+        "regex-huge-quantifier",
+        "(function () { var re = new RegExp('b' + Number.MAX_SAFE_INTEGER, 'u');" +
+            " return [re.test(''), re.test('a'), re.test('b')].join(','); })()"
+    ),
+    DifferentialCase(
         "regex-lookbehind-quantifier",
         "(function () { try { eval('/.(?<=.)?/'); return 'none'; }" +
             " catch (e) { return e.name; } })()"

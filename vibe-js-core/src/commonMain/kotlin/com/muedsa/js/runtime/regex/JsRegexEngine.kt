@@ -1239,7 +1239,10 @@ class JsRegexEngine(
             val start = position
             while (position < pattern.length && peek() in '0'..'9') position++
             if (position == start) return null
-            return pattern.substring(start, position).toIntOrNull()
+            val text = pattern.substring(start, position)
+            // 规范允许任意大的十进制数；钳制到 Int.MAX_VALUE 即可（超过输入长度必然不匹配）
+            return text.toLongOrNull()?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
+                ?: Int.MAX_VALUE
         }
 
         private fun parseAtom(): Node {

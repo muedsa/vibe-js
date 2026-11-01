@@ -3712,4 +3712,14 @@ class RuntimeSemanticsRegressionTest {
                 " return globalThis.sloppyProbe; })()"
         ))
     }
+
+    @Test
+    fun `正则超大数量词编译成功且不匹配`() = runTest {
+        val runtime = TestRuntime()
+        // 数量词上限为任意十进制整数；超过输入长度的最小次数必然失败
+        assertEquals("false,false,false", runtime.evalString(
+            "(function () { var re = new RegExp('b' + Number.MAX_SAFE_INTEGER, 'u');" +
+                " return [re.test(''), re.test('a'), re.test('b')].join(','); })()"
+        ))
+    }
 }

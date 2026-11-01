@@ -5493,6 +5493,54 @@ class Interpreter(
         return false
     }
 
+    /** 存在超过 Int 上限的 `{m,n}` 量词：Java 编译失败，需要回退引擎按钳制值处理。 */
+    private fun hasHugeBraceQuantifier(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            val c = pattern[index]
+            when {
+                c == '\\' -> index += 2
+                inClass -> {
+                    if (c == ']') inClass = false
+                    index++
+                }
+
+                c == '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                c == '{' -> {
+                    val close = pattern.indexOf('}', index + 1)
+                    if (close < 0) {
+                        index++
+                        continue
+                    }
+                    val body = pattern.substring(index + 1, close)
+                    if (body.isNotEmpty() &&
+                        body.all { it in '0'..'9' || it == ',' } &&
+                        body.count { it == ',' } <= 1
+                    ) {
+                        val parts = body.split(',', limit = 2)
+                        if (parts.any { part ->
+                                part.length >= 10 &&
+                                    (part.toLongOrNull() == null ||
+                                        part.toLong() > Int.MAX_VALUE.toLong())
+                            }
+                        ) {
+                            return true
+                        }
+                    }
+                    index = close + 1
+                }
+
+                else -> index++
+            }
+        }
+        return false
+    }
+
     /** lookahead 中包含数字反向引用的模式（Java 对反向引用语义与 JS 不同）。 */
     private fun hasLookaheadBackReference(pattern: String): Boolean {
         if (!pattern.contains("(?=") && !pattern.contains("(?!")) return false
@@ -5511,6 +5559,7 @@ class Interpreter(
             hasBackspaceInsideClass(pattern) || hasBracketInsideClass(pattern)
         if (hasJsClassSyntax) return true
         if (hasLegacyOctalEscape(pattern)) return true
+        if (hasHugeBraceQuantifier(pattern)) return true
         if (hasLookaheadBackReference(pattern)) return true
         if (hasForwardBackReference(pattern)) return true
         // Java 在量词组内保留上一轮捕获值，JS 要求每轮重置
