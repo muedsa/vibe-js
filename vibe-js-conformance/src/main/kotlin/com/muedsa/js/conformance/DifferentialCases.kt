@@ -2114,6 +2114,82 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 
     // JSON 序列化随机值树与随机 UTF-16 码元转义（well-formed JSON.stringify）
     DifferentialCase(
+        "object-descriptor-array-fuzz",
+        """
+        (function () {
+          var keys = ['0', '1', '2', 'length', 'a'];
+          var values = [0, 1, 2, -1, 3, 1.5, NaN, 'x', true, undefined];
+          var seed = 86420;
+          function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+          function valueSnap(value) {
+            if (typeof value === 'function') { return 'fn'; }
+            if (typeof value === 'number' && Object.is(value, -0)) { return 'num:-0'; }
+            return typeof value + ':' + String(value);
+          }
+          function descSnap(desc) {
+            if (!desc) { return 'none'; }
+            var parts = ['e' + desc.enumerable, 'c' + desc.configurable];
+            if ('value' in desc) {
+              parts.push('d', 'w' + desc.writable, valueSnap(desc.value));
+            } else {
+              parts.push('a', valueSnap(desc.get), valueSnap(desc.set));
+            }
+            return parts.join(',');
+          }
+          function snap(object) {
+            var names = Object.getOwnPropertyNames(object);
+            var parts = [];
+            for (var i = 0; i < names.length; i++) {
+              parts.push(names[i] + '{' + descSnap(Object.getOwnPropertyDescriptor(object, names[i])) + '}');
+            }
+            parts.push('ext' + Object.isExtensible(object), 'frz' + Object.isFrozen(object),
+              'seal' + Object.isSealed(object));
+            return parts.join('|');
+          }
+          function makeDesc() {
+            var desc = {};
+            if (rnd(4) < 2) {
+              desc.value = values[rnd(values.length)];
+              if (rnd(2) === 0) { desc.writable = rnd(2) === 0; }
+            } else {
+              if (rnd(2) === 0) { desc.get = function () { return 1; }; }
+              if (rnd(2) === 0) { desc.set = function (value) { }; }
+              if (!('get' in desc) && !('set' in desc)) { desc.get = function () { return 2; }; }
+            }
+            if (rnd(2) === 0) { desc.enumerable = rnd(2) === 0; }
+            if (rnd(2) === 0) { desc.configurable = rnd(2) === 0; }
+            return desc;
+          }
+          var target = [1, 2];
+          var out = [];
+          for (var i = 0; i < 80; i++) {
+            var key = keys[rnd(keys.length)];
+            var op = rnd(8);
+            try {
+              if (op <= 3) {
+                Object.defineProperty(target, key, makeDesc());
+                out.push(i + ':D:' + snap(target));
+              } else if (op === 4) {
+                out.push(i + ':G:' + descSnap(Object.getOwnPropertyDescriptor(target, key)) +
+                  ':' + target.length);
+              } else if (op === 5) {
+                out.push(i + ':DEL:' + String(delete target[key]) + ':' + snap(target));
+              } else if (op === 6) {
+                target[key] = values[rnd(values.length)];
+                out.push(i + ':SET:' + snap(target));
+              } else {
+                if (rnd(2) === 0) { Object.freeze(target); } else { Object.preventExtensions(target); }
+                out.push(i + ':F:' + snap(target));
+              }
+            } catch (e) {
+              out.push(i + ':THROW:' + e.name + ':' + snap(target));
+            }
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "json-stringify-fuzz",
         """(function () {
   var out = [];
