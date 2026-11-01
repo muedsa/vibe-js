@@ -855,6 +855,82 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "immutable",
+        url = "https://cdn.jsdelivr.net/npm/immutable@4.3.5/dist/immutable.min.js",
+        globalName = "Immutable",
+        cases = listOf(
+            SmokeCase(
+                "map set get",
+                assertion("Immutable.Map({ a: 1 }).set('b', 2).get('b') === 2"),
+            ),
+            SmokeCase(
+                "list map join",
+                assertion(
+                    "Immutable.List([1, 2, 3]).map(function (x) { return x * 2; }).join(',') === '2,4,6'"
+                ),
+            ),
+            SmokeCase(
+                "fromJS getIn",
+                assertion("Immutable.fromJS({ a: [1, 2] }).getIn(['a', 1]) === 2"),
+            ),
+            SmokeCase(
+                "equals",
+                assertion("Immutable.Map({ a: 1 }).equals(Immutable.Map({ a: 1 }))"),
+            ),
+            SmokeCase(
+                "iterator",
+                assertion("Array.from(Immutable.List([1, 2])).join(',') === '1,2'"),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "redux",
+        url = "https://cdn.jsdelivr.net/npm/redux@4.2.1/dist/redux.min.js",
+        globalName = "Redux",
+        cases = listOf(
+            SmokeCase(
+                "dispatch",
+                assertion(
+                    "(function () { var s = Redux.createStore(function (s, a) { s = s || 0; " +
+                        "return a.type === 'inc' ? s + 1 : s; }); s.dispatch({ type: 'inc' }); " +
+                        "return s.getState() === 1; })()"
+                ),
+            ),
+            SmokeCase(
+                "subscribe",
+                assertion(
+                    "(function () { var s = Redux.createStore(function (s, a) { s = s || 0; " +
+                        "return a.type === 'inc' ? s + 1 : s; }); var calls = 0; " +
+                        "s.subscribe(function () { calls++; }); s.dispatch({ type: 'inc' }); " +
+                        "return calls === 1; })()"
+                ),
+            ),
+            SmokeCase(
+                "combineReducers",
+                assertion(
+                    "(function () { var root = Redux.combineReducers({ " +
+                        "a: function (s, a) { s = s || 0; return a.type === 'inc' ? s + 1 : s; }, " +
+                        "b: function (s, a) { s = s || 'x'; return a.type === 'set' ? a.v : s; } }); " +
+                        "var s = Redux.createStore(root); s.dispatch({ type: 'inc' }); " +
+                        "s.dispatch({ type: 'set', v: 'y' }); return JSON.stringify(s.getState())" +
+                        " === '{\"a\":1,\"b\":\"y\"}'; })()"
+                ),
+            ),
+            SmokeCase(
+                "applyMiddleware",
+                assertion(
+                    "(function () { var seen = []; var mw = function (api) { " +
+                        "return function (next) { return function (action) { " +
+                        "seen.push(action.type); return next(action); }; }; }; " +
+                        "var s = Redux.createStore(function (s, a) { s = s || 0; " +
+                        "return a.type === 'inc' ? s + 1 : s; }, Redux.applyMiddleware(mw)); " +
+                        "s.dispatch({ type: 'inc' }); " +
+                        "return seen.join(',') === 'inc' && s.getState() === 1; })()"
+                ),
+            ),
+        ),
+    ),
 )
 
 
