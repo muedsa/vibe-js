@@ -40,6 +40,10 @@ fun main(args: Array<String>) {
     if (report.crashCount > 0) {
         exitProcess(2)
     }
+    if (strict && report.total == 0) {
+        System.err.println("解析一致性语料为空，严格模式判定失败")
+        exitProcess(1)
+    }
     if (strict && report.hasExpectedFailures()) {
         exitProcess(1)
     }
@@ -302,6 +306,8 @@ private data class ParserRunReport(
 ) {
     val crashCount: Int
         get() = categories.sumOf { it.crashes } + early.crashes
+    val total: Int
+        get() = categories.sumOf { it.total } + early.total
 
     fun hasExpectedFailures(): Boolean = categories.any { it.failed > 0 }
 
