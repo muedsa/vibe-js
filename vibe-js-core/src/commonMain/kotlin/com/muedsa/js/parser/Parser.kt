@@ -2858,7 +2858,7 @@ class Parser(
                         throw error("Invalid tagged template on optional chain")
                     }
                     val templateToken = advance()
-                    val template = parseTemplateLiteral(templateToken) as TemplateLiteral
+                    val template = parseTemplateLiteral(templateToken, tagged = true) as TemplateLiteral
                     expression = TaggedTemplate(
                         tag = expression,
                         quasis = template.quasis,
@@ -2930,7 +2930,7 @@ class Parser(
                 // new tag`...`：标签模板属于 MemberExpression，构造发生在其结果上
                 check(TokenType.TEMPLATE) -> {
                     val templateToken = advance()
-                    val template = parseTemplateLiteral(templateToken) as TemplateLiteral
+                    val template = parseTemplateLiteral(templateToken, tagged = true) as TemplateLiteral
                     constructor = TaggedTemplate(
                         tag = constructor,
                         quasis = template.quasis,
@@ -3207,9 +3207,13 @@ class Parser(
         }
     }
 
-    /** 模板字符串：解析 `${...}` 中的表达式源码。 */
-    private fun parseTemplateLiteral(token: Token): Expression {
-        val quasis = mutableListOf<String>()
+    /**
+     * 模板字符串：解析 `${...}` 中的表达式源码。
+     *
+     * [tagged] 为 true 时允许非法转义（cooked=null）；普通模板在解析期报 SyntaxError。
+     */
+    private fun parseTemplateLiteral(token: Token, tagged: Boolean = false): Expression {
+        val quasis = mutableListOf<String?>()
         val rawQuasis = mutableListOf<String>()
         val expressions = mutableListOf<Expression>()
 
@@ -3243,7 +3247,10 @@ class Parser(
 
         // 保证 quasis 数量为 expressions + 1
         while (quasis.size < expressions.size + 1) quasis.add("")
-        while (rawQuasis.size < quasis.size) rawQuasis.add(quasis[rawQuasis.size])
+        while (rawQuasis.size < quasis.size) rawQuasis.add(quasis[rawQuasis.size] ?: "")
+        if (!tagged && quasis.any { it == null }) {
+            throw ParseException("Invalid escape sequence in template literal", token.range)
+        }
         return TemplateLiteral(quasis, rawQuasis, expressions, token.range)
     }
 

@@ -388,6 +388,17 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
             " catch (e) { return e.name; } })()"
     ),
     DifferentialCase(
+        "template-invalid-escape-cooked",
+        "(function () { var cooked, raw;" +
+            " (function (s) { cooked = s[0]; raw = s.raw[0]; })`\\01`;" +
+            " return JSON.stringify([cooked === undefined, raw]); })()"
+    ),
+    DifferentialCase(
+        "template-invalid-escape-untagged",
+        "(function () { try { eval('`\\\\01`'); return 'none'; }" +
+            " catch (e) { return e.name; } })()"
+    ),
+    DifferentialCase(
         "annexb-if-fn-var-update",
         "(function () { var init, after;" +
             " eval('init = f; f = 123; after = f;" +

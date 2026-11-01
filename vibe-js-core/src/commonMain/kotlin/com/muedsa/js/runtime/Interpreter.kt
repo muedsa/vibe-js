@@ -3078,16 +3078,18 @@ class Interpreter(
     private suspend fun evaluateTemplateLiteral(expression: TemplateLiteral): JSValue {
         val builder = StringBuilder()
         for (index in expression.expressions.indices) {
-            builder.append(expression.quasis[index])
+            builder.append(expression.quasis[index] ?: "")
             builder.append(toStringValue(evaluate(expression.expressions[index])))
         }
-        builder.append(expression.quasis.last())
+        builder.append(expression.quasis.last() ?: "")
         return JSString(builder.toString())
     }
 
     /** 创建并冻结标签模板对象（含 raw 数组）。 */
     private fun createTemplateObject(expression: TaggedTemplate): JSArray {
-        val cooked = expression.quasis.map { JSString(it) as JSValue? }.toMutableList()
+        val cooked = expression.quasis.map { quasi ->
+            quasi?.let { JSString(it) as JSValue } ?: JSUndefined
+        }.toMutableList()
         val raw = expression.rawQuasis.map { JSString(it) as JSValue? }.toMutableList()
         val templateObject = JSArray(cooked, prototype = intrinsics.arrayPrototype)
         val rawObject = JSArray(raw, prototype = intrinsics.arrayPrototype)

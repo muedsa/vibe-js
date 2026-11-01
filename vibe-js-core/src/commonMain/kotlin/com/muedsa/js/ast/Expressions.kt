@@ -40,7 +40,8 @@ class RegExpLiteral(
  * @property expressions `${...}` 中的表达式
  */
 class TemplateLiteral(
-    val quasis: List<String>,
+    /** cooked 文本段；null 表示含非法转义（普通模板在解析期拒绝，标签模板传入 undefined） */
+    val quasis: List<String?>,
     val rawQuasis: List<String>,
     val expressions: List<Expression>,
     override val range: SourceRange,
@@ -319,7 +320,8 @@ class NewTargetExpr(
 /** 标签模板：tag`...${expr}...`。 */
 class TaggedTemplate(
     val tag: Expression,
-    val quasis: List<String>,
+    /** cooked 文本段；null 表示该段 cooked=undefined（非法转义） */
+    val quasis: List<String?>,
     val rawQuasis: List<String>,
     val expressions: List<Expression>,
     override val range: SourceRange,

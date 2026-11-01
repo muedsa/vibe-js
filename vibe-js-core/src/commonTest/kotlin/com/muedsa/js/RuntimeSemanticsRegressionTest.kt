@@ -3680,4 +3680,20 @@ class RuntimeSemanticsRegressionTest {
                 "counter"
         ))
     }
+
+    @Test
+    fun `标签模板非法转义 cooked 为 undefined 且普通模板报错`() = runTest {
+        val runtime = TestRuntime()
+        // 标签模板：非法转义段 cooked=undefined，raw 保留原始文本
+        assertEquals(true, runtime.evalBoolean(
+            "var cookedOk = false, rawOk = false;" +
+                " (function (s) { cookedOk = s[0] === undefined;" +
+                "   rawOk = s.raw[0] === '\\\\01'; })`\\01`;" +
+                " cookedOk && rawOk"
+        ))
+        // 普通模板仍为解析期 SyntaxError
+        assertEquals("SyntaxError", runtime.evalString(
+            "try { eval('`\\\\01`'); 'none' } catch (e) { e.name }"
+        ))
+    }
 }

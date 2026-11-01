@@ -43,7 +43,7 @@
 | 块级函数声明 / Annex B | ✅ | strict 下仅在块作用域可见；sloppy 在块入口实例化并同步包围 var 绑定（块外执行前为 undefined） |
 | 全局声明实例化 | ✅ | 顶层 let/const/class 不得遮蔽不可配置全局属性；跨脚本词法/var/function 冲突检查、CanDeclareGlobalFunction/Var、CreateGlobalFunctionBinding/CreateGlobalVarBinding 描述符与 eval 全局绑定可删除性均按规范 |
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
-| 模板字符串 / 标签模板 | ✅ | 标签模板对象按 AST 站点缓存（每个 realm 一份，重复求值返回同一冻结对象，raw 冻结）；非法转义 cooked=undefined 尚未支持 |
+| 模板字符串 / 标签模板 | ✅ | 标签模板对象按 AST 站点缓存（每个 realm 一份，重复求值返回同一冻结对象，raw 冻结）；非法转义在标签模板中 cooked=undefined、raw 保留原文，普通模板仍为解析期 SyntaxError |
 | 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；source 按 EscapeRegExpPattern 转义、原型访问器接收者校验；非 u 模式 Annex B IdentityEscape（\x/\u 缺位、\c 等） |
 | 赋值/复合赋值/逻辑赋值（`??=`/`&&=`/`||=`/`**=` 等） | ✅ | |
 | typeof、delete、void、in、instanceof | ✅ | 自定义 `Symbol.hasInstance` 未支持 |
@@ -107,9 +107,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 479 + 宿主 15 个测试 |
-| JS（Node） | ✅ | 核心 479 + 宿主 15 个测试 |
-| Wasm（Node） | ✅ | 核心 479 + 宿主 15 个测试 |
+| JVM | ✅ | 核心 480 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 480 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 480 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

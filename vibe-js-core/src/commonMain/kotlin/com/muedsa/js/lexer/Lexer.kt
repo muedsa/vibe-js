@@ -1096,6 +1096,8 @@ class Lexer(private val input: String) {
         val parts = mutableListOf<TemplatePart>()
         val text = StringBuilder()
         val rawText = StringBuilder()
+        // 当前文本段的 cooked 是否有效；含非法/旧式八进制转义时 cooked=undefined
+        var cookedValid = true
 
         while (true) {
             if (pos >= input.length) {
@@ -1104,7 +1106,12 @@ class Lexer(private val input: String) {
             val c = peek()
             when {
                 c == '`' -> {
-                    parts.add(TemplatePart.Text(text.toString(), rawText.toString()))
+                    parts.add(
+                        TemplatePart.Text(
+                            if (cookedValid) text.toString() else null,
+                            rawText.toString(),
+                        )
+                    )
                     advance()
                     return Token(
                         type = TokenType.TEMPLATE,
@@ -1122,9 +1129,21 @@ class Lexer(private val input: String) {
                     val rawStart = pos
                     advance()
                     legacyOctalEscape = false
-                    readEscapeSequence(text)
-                    if (legacyOctalEscape) {
-                        throw lexerError("Octal escape sequences are not allowed in template literals", line, column, pos)
+                    try {
+                        readEscapeSequence(text)
+                        // 旧式八进制转义在模板中使 cooked 为 undefined（标签模板允许）
+                        if (legacyOctalEscape) cookedValid = false
+                    } catch (_: LexerException) {
+                        // 标签模板允许非法转义：cooked=undefined，raw 保留原始字符
+                        cookedValid = false
+                        if (pos >= input.length) {
+                            throw lexerError(
+                                "Unterminated template literal",
+                                startLine,
+                                startColumn,
+                                startOffset,
+                            )
+                        }
                     }
                     // TRV 中的行终止符规范化为 LF（CRLF/CR -> LF）
                     val rawSlice = input.substring(rawStart, pos)
@@ -1134,9 +1153,15 @@ class Lexer(private val input: String) {
                 }
 
                 c == '$' && peek(1) == '{' -> {
-                    parts.add(TemplatePart.Text(text.toString(), rawText.toString()))
+                    parts.add(
+                        TemplatePart.Text(
+                            if (cookedValid) text.toString() else null,
+                            rawText.toString(),
+                        )
+                    )
                     text.clear()
                     rawText.clear()
+                    cookedValid = true
                     advance() // '$'
                     advance() // '{'
                     val source = readTemplateExpressionSource()
