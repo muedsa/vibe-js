@@ -2334,6 +2334,7 @@ class Parser(
                 operator = token.value,
                 value = value,
                 range = SourceRange(left.range.start, value.range.end),
+                lhsParenthesized = left.range in parenthesizedRanges,
             )
         }
         if (patternSyntaxDepth == 0 && patternDefaultsSeen > defaultsBefore) {

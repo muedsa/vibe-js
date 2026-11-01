@@ -237,6 +237,8 @@ class AssignmentExpr(
     val operator: String,
     val value: Expression,
     override val range: SourceRange,
+    /** 目标在源码中被括号包裹（如 `(fn) = ...`），不参与 NamedEvaluation */
+    val lhsParenthesized: Boolean = false,
 ) : Expression()
 
 /**

@@ -3994,7 +3994,12 @@ class Interpreter(
                 val owner = findBindingOwner(target.name)
                 when {
                     operator == "=" -> {
-                        val value = evaluateNamed(expression.value, target.name)
+                        // 括号包裹的标识符目标不是语法上的 IdentifierRef，不推断函数名
+                        val value = if (expression.lhsParenthesized) {
+                            evaluate(expression.value)
+                        } else {
+                            evaluateNamed(expression.value, target.name)
+                        }
                         writeIdentifierReference(owner, target.name, value)
                         value
                     }
@@ -4310,18 +4315,19 @@ class Interpreter(
                 for (element in pattern.properties) {
                     when (element) {
                         is ObjectProperty -> {
-                            // 赋值模式下目标引用（含 this 检查）先于读取源属性
-                            val targetReference = if (kind == null) {
-                                preEvaluateMemberReference(element.value)
-                            } else {
-                                null
-                            }
+                            // 规范顺序：先求值源属性键（含 ToPropertyKey），
+                            // 再求值目标引用；目标键的 ToPropertyKey 延迟到 PutValue
                             val key = if (element.computed) {
                                 toPropertyKey(evaluate(element.key))
                             } else {
                                 PropertyKey.Str(propertyName(element.key))
                             }
                             usedKeys.add(key)
+                            val targetReference = if (kind == null) {
+                                preEvaluateMemberReference(element.value)
+                            } else {
+                                null
+                            }
                             bindPattern(
                                 element.value,
                                 getV(source, key),

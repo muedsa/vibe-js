@@ -334,6 +334,10 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("fn-apply-arraylike", "(function (a, b) { return a + b; }).apply(null, { 0: 1, 1: 2, length: 2 })"),
     DifferentialCase("fn-arguments-mapping", "(function (a) { arguments[0] = 9; return a; })(1)"),
     DifferentialCase(
+        "fn-name-parenthesized-target",
+        "(function () { var fn; (fn) = function () {}; return fn.name; })()"
+    ),
+    DifferentialCase(
         "fn-arguments-define-descriptor",
         "(function (a) { Object.defineProperty(arguments, '0', { configurable: false });" +
             " a = 2; var d = Object.getOwnPropertyDescriptor(arguments, '0');" +
