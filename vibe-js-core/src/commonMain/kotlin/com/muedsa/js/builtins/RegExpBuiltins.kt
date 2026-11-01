@@ -139,29 +139,62 @@ object RegExpBuiltins {
             JSNativeFunction(name = "get $name", length = 0, prototype = intrinsics.functionPrototype) { interpreter, thisValue, _ ->
                 when {
                     thisValue is JSRegExp -> read(thisValue)
-                    // 普通对象/RegExp.prototype 没有内部槽：按 ES2015 宽松语义返回 undefined
-                    thisValue is JSObject -> JSUndefined
+                    // RegExp.prototype 自身没有内部槽：读取返回 undefined
+                    thisValue === regexpPrototype -> JSUndefined
                     else -> interpreter.typeError(
-                        "RegExp.prototype.$name getter called on non-object"
+                        "RegExp.prototype.$name getter called on incompatible receiver"
                     )
                 }
             }
         fun strictFlagAccessor(name: String, read: (JSRegExp) -> JSValue): JSNativeFunction =
-            JSNativeFunction(name = "get $name", length = 0, prototype = intrinsics.functionPrototype) { interpreter, thisValue, _ ->
-                when (thisValue) {
-                    is JSRegExp -> read(thisValue)
-                    is JSObject -> interpreter.typeError(
-                        "RegExp.prototype.$name getter called on incompatible receiver"
-                    )
-                    else -> interpreter.typeError(
-                        "RegExp.prototype.$name getter called on non-object"
-                    )
+            flagAccessor(name, read)
+
+        // EscapeRegExpPattern：源文本中的 "/" 与行终止符需要转义，使 /source/flags 可重新解析；
+        // 已有反斜杠转义保持原样（不再二次转义其后的字符）
+        fun escapeRegExpPattern(pattern: String): String = buildString(pattern.length) {
+            var index = 0
+            while (index < pattern.length) {
+                val character = pattern[index]
+                when {
+                    character == '\\' -> {
+                        append(character)
+                        val next = pattern.getOrNull(index + 1)
+                        if (next != null) append(next)
+                        index += 2
+                        continue
+                    }
+
+                    character == '/' -> append("\\/")
+                    character == '\n' -> append("\\n")
+                    character == '\r' -> append("\\r")
+                    character == '\u2028' -> append("\\u2028")
+                    character == '\u2029' -> append("\\u2029")
+                    else -> append(character)
                 }
+                index++
             }
+        }
         regexpPrototype.defineAccessorProperty(
             key = PropertyKey.Str("source"),
-            get = flagAccessor("source") { regexp ->
-                JSString(if (regexp.pattern.isEmpty()) "(?:)" else regexp.pattern)
+            get = JSNativeFunction(
+                name = "get source",
+                length = 0,
+                prototype = intrinsics.functionPrototype,
+            ) { interpreter, thisValue, _ ->
+                when {
+                    thisValue is JSRegExp -> JSString(
+                        if (thisValue.pattern.isEmpty()) {
+                            "(?:)"
+                        } else {
+                            escapeRegExpPattern(thisValue.pattern)
+                        }
+                    )
+
+                    thisValue === regexpPrototype -> JSString("(?:)")
+                    else -> interpreter.typeError(
+                        "RegExp.prototype.source getter called on incompatible receiver"
+                    )
+                }
             },
             set = null,
             enumerable = false,

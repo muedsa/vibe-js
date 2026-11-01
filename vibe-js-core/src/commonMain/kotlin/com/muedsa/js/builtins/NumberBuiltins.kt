@@ -145,6 +145,10 @@ object NumberBuiltins {
                     ?.let { interpreter.toNumber(it).toInt() }
                 when {
                     precision == null -> JSString(NumberFormatting.toString(number))
+                    // 规范顺序：非有限值在范围检查之前返回 ToString(x)
+                    number.isNaN() || number.isInfinite() ->
+                        JSString(NumberFormatting.toString(number))
+
                     precision < 1 || precision > 100 ->
                         interpreter.rangeError("toPrecision() argument must be between 1 and 100")
 
@@ -313,9 +317,9 @@ object NumberBuiltins {
      */
     private fun toPrecision(number: Double, precision: Int): String {
         if (!number.isFinite()) return NumberFormatting.toString(number)
+        // 规范：±0 输出为正零格式（不含负号），p=1 时为 "0"
         if (number == 0.0) {
-            val sign = if (1.0 / number < 0) "-" else ""
-            return if (precision == 1) "0" else sign + "0." + "0".repeat(precision - 1)
+            return if (precision == 1) "0" else "0." + "0".repeat(precision - 1)
         }
 
         val negative = number < 0

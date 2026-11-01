@@ -25,6 +25,8 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("num-epsilon", "Number.EPSILON"),
     DifferentialCase("num-negative-zero-string", "(-0).toString()"),
     DifferentialCase("num-tofixed-zero", "(0).toFixed(2)"),
+    DifferentialCase("num-toprecision-infinity", "(Infinity).toPrecision(1000) + '|' + (-Infinity).toPrecision(1000) + '|' + NaN.toPrecision(2)"),
+    DifferentialCase("num-toprecision-negzero", "(-0).toPrecision(2) + '|' + (-0).toPrecision(1)"),
 
     // 字符串与 Unicode
     DifferentialCase("str-sharp-s-upper", "'ß'.toUpperCase()"),
@@ -208,6 +210,12 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("delete-with-object", "(function () { var o = { x: 1 }; with (o) { delete x; } return o.hasOwnProperty('x'); })()"),
 
     // RegExp v 标志、Unicode 属性与代理项码元语义
+    DifferentialCase("regexp-source-empty", "new RegExp('').source"),
+    DifferentialCase("regexp-source-prototype", "RegExp.prototype.source"),
+    DifferentialCase("regexp-source-escape", "JSON.stringify(new RegExp('a/b' + String.fromCharCode(10)).source)"),
+    DifferentialCase("regexp-source-escaped-slash", "JSON.stringify(new RegExp('\\/').source)"),
+    DifferentialCase("regexp-source-invalid", "(function () { try { Object.getOwnPropertyDescriptor(RegExp.prototype, 'source').get.call({}); return 'none'; } catch (e) { return e.name; } })()"),
+    DifferentialCase("regexp-flag-getters-prototype", "JSON.stringify([RegExp.prototype.global, RegExp.prototype.sticky, RegExp.prototype.unicode])"),
     DifferentialCase("regexp-v-intersection", "'abcdef'.match(/[[a-f]&&[^aeiou]]+/gv).join('')"),
     DifferentialCase("regexp-v-difference", "'abcdef'.replace(/[[a-f]--[aeiou]]/gv, '_')"),
     DifferentialCase("regexp-v-q", "'zab'.search(/[\\q{ab}]/v)"),

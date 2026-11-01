@@ -2881,4 +2881,36 @@ class RuntimeSemanticsRegressionTest {
         ), "splice-delete")
 
     }
+
+    @Test
+    fun `Number toPrecision 非有限值与负零格式化`() = runTest {
+        val runtime = TestRuntime()
+        // 规范顺序：非有限值在精度范围检查之前返回 ToString(x)
+        assertEquals("Infinity", runtime.evalString("(Infinity).toPrecision(1000)"))
+        assertEquals("-Infinity", runtime.evalString("(-Infinity).toPrecision(1000)"))
+        assertEquals("NaN", runtime.evalString("NaN.toPrecision(2)"))
+        // ±0 统一输出正零格式
+        assertEquals("0.0", runtime.evalString("(-0).toPrecision(2)"))
+        assertEquals("0", runtime.evalString("(-0).toPrecision(1)"))
+    }
+
+    @Test
+    fun `RegExp source 访问器的转义与接收者校验`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals("(?:)", runtime.evalString("new RegExp('').source"))
+        assertEquals("(?:)", runtime.evalString("RegExp.prototype.source"))
+        // EscapeRegExpPattern：斜杠与行终止符转义，已有反斜杠转义保持原样
+        assertEquals("a\\/b", runtime.evalString("new RegExp('a/b').source"))
+        assertEquals(
+            "a\\nb",
+            runtime.evalString("new RegExp('a' + String.fromCharCode(10) + 'b').source")
+        )
+        // 非 RegExp 接收者抛 TypeError；RegExp.prototype 上的标志访问器返回 undefined
+        assertEquals("TypeError", runtime.evalString(
+            "try { Object.getOwnPropertyDescriptor(RegExp.prototype, 'source').get.call({});" +
+                " 'none' } catch (e) { e.name }"
+        ))
+        assertEquals("undefined", runtime.evalString("typeof RegExp.prototype.global"))
+        assertEquals("undefined", runtime.evalString("typeof RegExp.prototype.sticky"))
+    }
 }
