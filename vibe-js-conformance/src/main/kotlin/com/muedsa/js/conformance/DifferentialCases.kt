@@ -1227,4 +1227,36 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     // Unicode 标识符与尾调用结果
     DifferentialCase("ident-astral-escape", "(function () { var \\u{1D49C} = 1; return \\u{1D49C}; })()"),
     DifferentialCase("tco-call-count", "(function () { var c = 0; function f(n) { 'use strict'; if (n === 0) { c++; return; } return f(n - 1); } f(1000); return c; })()"),
+    // String.normalize 与 Array.prototype.sort 的边界语义
+    DifferentialCase(
+        "misc-string-sort-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return ['\\u00E9'.normalize('NFD').length, " +
+            "'\\u212B'.normalize('NFC') === '\\u00C5', '\\uFB01'.normalize('NFKC'), " +
+            "'\\uAC00'.normalize('NFD').length].join(','); }); " +
+            "push(function () { return '\\uD800'.normalize('NFC').charCodeAt(0); }); " +
+            "push(function () { return ''.normalize(undefined) === ''; }); " +
+            "push(function () { var r = []; " +
+            "try { ''.normalize('XXX'); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "try { ''.normalize(null); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "r.push(String.prototype.normalize.call(5)); " +
+            "try { String.prototype.normalize.call(null); r.push('ok'); } catch (e) { r.push(e.name); } " +
+            "r.push(String.prototype.normalize.length); " +
+            "return r.join(','); }); " +
+            "push(function () { var log = []; " +
+            "''.normalize({ toString: function () { log.push('t'); return 'NFC'; } }); " +
+            "return log.join(','); }); " +
+            "push(function () { return [10, 1, 2].sort().join(','); }); " +
+            "push(function () { return JSON.stringify([3, undefined, 1, , 2].sort()); }); " +
+            "push(function () { return [3, 1, 2].sort(function () { return NaN; }).join(','); }); " +
+            "push(function () { var list = [{ k: 1, id: 'a' }, { k: 1, id: 'b' }, " +
+            "{ k: 0, id: 'c' }]; list.sort(function (x, y) { return x.k - y.k; }); " +
+            "return list.map(function (o) { return o.id; }).join(','); }); " +
+            "push(function () { var a = [3, , 1]; a.sort(); " +
+            "return Object.keys(a).join(',') + '|' + a.length; }); " +
+            "push(function () { var obj = { length: 3, 0: 3, 1: 1, 2: 2 }; " +
+            "Array.prototype.sort.call(obj); return obj[0] + ',' + obj[1] + ',' + obj[2]; }); " +
+            "return out.join('|'); })()"
+    ),
 )
