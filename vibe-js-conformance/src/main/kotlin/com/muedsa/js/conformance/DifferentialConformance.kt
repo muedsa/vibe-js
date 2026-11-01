@@ -257,7 +257,7 @@ private class DifferentialRunner {
         builder.appendLine("];")
         builder.appendLine(
             """
-            const syncContext = vm.createContext({});
+            const syncContext = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
             for (const [name, expression] of cases) {
               try {
                 // 与 Vibe 一致：在裸上下文执行 JSON.stringify((expression))

@@ -2349,6 +2349,15 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         """.trimIndent()
     ),
     DifferentialCase(
+        "microtask-state-set",
+        "(Promise.resolve().then(function () { globalThis.__microtaskState = 42; }), 'set')"
+    ),
+    DifferentialCase(
+        "microtask-state-read",
+        "(function () { var value = globalThis.__microtaskState; " +
+            "delete globalThis.__microtaskState; return value; })()"
+    ),
+    DifferentialCase(
         "harness-global-resolution",
         """
         (function () {
