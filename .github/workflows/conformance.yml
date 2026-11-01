@@ -31,7 +31,7 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run parser conformance
-      run: ./gradlew :vibe-js-conformance:parserConformance --console=plain
+      run: ./gradlew :vibe-js-conformance:parserConformance -Pstrict --console=plain
 
     - name: Publish summary
       if: always()
@@ -69,7 +69,7 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run Test262 ES5 subset
-      run: ./gradlew :vibe-js-conformance:test262Conformance --console=plain
+      run: ./gradlew :vibe-js-conformance:test262Conformance -Pstrict --console=plain
 
     - name: Publish summary
       if: always()
@@ -150,7 +150,7 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run library smoke and differential tests
-      run: ./gradlew :vibe-js-conformance:librarySmoke :vibe-js-conformance:differentialConformance --continue --console=plain
+      run: ./gradlew :vibe-js-conformance:librarySmoke :vibe-js-conformance:differentialConformance --continue -Pstrict --console=plain
 
     - name: Publish summaries
       if: always()

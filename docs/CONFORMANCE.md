@@ -259,7 +259,7 @@ Node 差分基线：**468 个用例**（UTF-16 码元字符串索引/切片/填�
 
 1. Test262 ES5 子集与解析一致性基线已收敛；特性子集（含 esid 核心语义用例）已全部通过（37329/37329，覆盖 ES2015 核心语义与已实现的 ES2016+ 语法/内建）。已实现特性均已纳入选择范围，剩余跳过项均为明确排除的 Generator/BigInt/Proxy/TypedArray/Temporal/模块等；进一步扩展需先实现这些排除项或扩大语料范围；
 2. 继续扩大真实库覆盖（已加入 semver/punycode/json5/papaparse/js-yaml/ramda/he/numeral/showdown/seedrandom/pluralize/highlight.js/tinycolor2/deepmerge/big-integer/rxjs/eventemitter3/mitt/immutable/redux/markdown-it/handlebars/ajv/esprima/acorn/astring/acorn-walk/crc-32/blueimp-md5/ua-parser/fraction/jsep/lunr/fuse/acorn-loose/complex/decimal-light/ohm/jsonata/qrcode/linkify/simple-statistics/compare-versions/moo/fecha/deep-diff/object-path/validate.js/date-and-time/mathjs/chevrotain/vue/preact/katex/moment-timezone/d3-format/d3-time/d3-time-format，后续补充更多 UMD 构建与用例）；
-3. 严格门禁已就绪：`-Pstrict` 在 parser / Test262 / 真实库 / 差分四个基线均通过（parser 的 Generator 项走显式允许列表）；接入 PR 触发需确认 CI 反馈成本后再启用。
+3. 严格门禁已就绪：`-Pstrict` 在 parser / Test262 ES5 / ES2015 / 真实库 / 差分基线均通过（parser 的 Generator 项走显式允许列表）；手动/每周 `Conformance` 工作流的各基线 Job 均已启用 `-Pstrict`，回归会使 Job 失败；接入 PR 触发需确认 CI 反馈成本后再启用。
 
 ## CI
 
@@ -268,4 +268,4 @@ Node 差分基线：**468 个用例**（UTF-16 码元字符串索引/切片/填�
 - `workflow_dispatch` 手动触发；
 - 每周一 02:00 UTC 定时运行；
 - 报告写入 Job Summary 并上传 artifact；
-- 目前不阻塞日常 PR；严格门禁已就绪（四个基线均可通过 `-Pstrict`），扩展到 PR 触发需先确认数万级语料的反馈成本。
+- 目前不阻塞日常 PR；手动/每周 `Conformance` 工作流已对 parser / Test262 / 真实库 / 差分启用 `-Pstrict`；扩展到 PR 触发需先确认数万级语料的反馈成本。
