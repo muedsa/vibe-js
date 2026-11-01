@@ -798,6 +798,65 @@ class BuiltinObjectDateRegExpTest {
     }
 
     @Test
+    fun `Date 本地 setter 与解析在负三时区下与 V8 一致`() = runTest {
+        val engine = Engine(DefaultHostEnvironment(timeZoneOffset = { -3L * 60 * 60 * 1000 }))
+        val script = """
+            function fmt(d) {
+                return d.getTime() + '/' + d.getFullYear() + '-' + (d.getMonth() + 1) + '-' +
+                    d.getDate() + ' ' + d.getHours() + ':' + d.getMinutes() + ':' +
+                    d.getSeconds() + '.' + d.getMilliseconds();
+            }
+            var out = [];
+            function run(label, fn) {
+                try { out.push(label + '=' + fmt(fn())); }
+                catch (e) { out.push(label + '=THROW:' + e.name); }
+            }
+            run('setHours', function () { var d = new Date(0); d.setHours(1, 2, 3, 4); return d; });
+            run('setHoursOverflow', function () { var d = new Date(0); d.setHours(25); return d; });
+            run('setDate', function () { var d = new Date(0); d.setDate(2); return d; });
+            run('setDateOverflow', function () { var d = new Date(0); d.setDate(32); return d; });
+            run('setMonth', function () { var d = new Date(0); d.setMonth(1, 29); return d; });
+            run('setMonthOverflow', function () { var d = new Date(0); d.setMonth(12, 1); return d; });
+            run('setFullYear', function () { var d = new Date(0); d.setFullYear(2000, 1, 29); return d; });
+            run('setFullYearOverflow', function () { var d = new Date(0); d.setFullYear(2000, 12, 32); return d; });
+            run('setMinutes', function () { var d = new Date(0); d.setMinutes(90, 30, 500); return d; });
+            run('setSeconds', function () { var d = new Date(0); d.setSeconds(90, 500); return d; });
+            run('setMilliseconds', function () { var d = new Date(0); d.setMilliseconds(1500); return d; });
+            run('setYear', function () { var d = new Date(0); d.setYear(99); return d; });
+            run('setYearZero', function () { var d = new Date(0); d.setYear(0); return d; });
+            run('setTime', function () { var d = new Date(0); d.setTime(123456789); return d; });
+            run('constructor', function () { return new Date(2020, 0, 1, 12, 30, 45, 678); });
+            run('constructorOverflow', function () { return new Date(2020, 12, 32, 25, 61, 61, 1001); });
+            run('parseLocal', function () { return new Date(Date.parse('2020-01-01T12:30:45.678')); });
+            run('parseDateOnly', function () { return new Date(Date.parse('2020-01-01')); });
+            run('roundtrip', function () { return new Date(Date.parse(new Date(0).toString())); });
+            out.join('\n');
+        """.trimIndent()
+        val expected = """
+            setHours=-71876996/1969-12-31 1:2:3.4
+            setHoursOverflow=14400000/1970-1-1 1:0:0.0
+            setDate=-2505600000/1969-12-2 21:0:0.0
+            setDateOverflow=86400000/1970-1-1 21:0:0.0
+            setMonth=-26352000000/1969-3-1 21:0:0.0
+            setMonthOverflow=86400000/1970-1-1 21:0:0.0
+            setFullYear=951868800000/2000-2-29 21:0:0.0
+            setFullYearOverflow=981072000000/2001-2-1 21:0:0.0
+            setMinutes=5430500/1969-12-31 22:30:30.500
+            setSeconds=90500/1969-12-31 21:1:30.500
+            setMilliseconds=1500/1969-12-31 21:0:1.500
+            setYear=946684800000/1999-12-31 21:0:0.0
+            setYearZero=-2177452800000/1900-12-31 21:0:0.0
+            setTime=123456789/1970-1-2 7:17:36.789
+            constructor=1577892645678/2020-1-1 12:30:45.678
+            constructorOverflow=1612242122001/2021-2-2 2:2:2.1
+            parseLocal=1577892645678/2020-1-1 12:30:45.678
+            parseDateOnly=1577836800000/2019-12-31 21:0:0.0
+            roundtrip=0/1969-12-31 21:0:0.0
+        """.trimIndent()
+        assertEquals(expected, (engine.run(script) as JSString).value)
+    }
+
+    @Test
     fun `Date 字段 setter 在 NaN 参数下仍完成其余参数转换`() = runTest {
         val runtime = TestRuntime()
         val prefix = "var log = []; function arg(n) { return { valueOf: function () { " +
