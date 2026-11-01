@@ -111,6 +111,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 ### 尚未支持（明确排除或后续阶段）
 
 - Generator（`function*` / `yield`）
+- 异步迭代 `for await...of` / AsyncIterator 原型
 - 模块系统（`import` / `export`）
 - `Proxy` / `Reflect`
 - BigInt、Intl、TypedArray/ArrayBuffer/DataView

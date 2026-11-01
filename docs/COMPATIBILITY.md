@@ -49,6 +49,7 @@
 | typeof、delete、void、in、instanceof | ✅ | 自定义 `Symbol.hasInstance` 未支持 |
 | 可选链 `?.` | ✅ | 含短路、this 保留与 delete |
 | Iterator helpers | ✅ | `Iterator.from`、map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find；内建迭代器独立原型与访问器 |
+| 异步迭代（`for await...of` / AsyncIterator 原型） | ❌ | 支持 `Symbol.asyncIterator` 与 `Array.fromAsync` 的消费，但 `for await` 语句与 AsyncIterator 原型未实现 |
 | 私有字段/方法/访问器 | ✅ | 品牌检查、不可扩展与重复初始化报错、直接 eval 可见性 |
 | Generator（`function*` / `yield`） | ❌ | 明确排除 |
 | import / export | ❌ | 明确排除（单脚本目标） |
