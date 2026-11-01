@@ -2385,4 +2385,36 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('|');
 })()""",
     ),
+
+    // Error/AggregateError：cause、toString 缺省规则、子类与 errors 可迭代
+    DifferentialCase(
+        "error-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { var e = new Error('m'); return e.name + ':' + e.message + ':' + e.toString() + ':' + (e.cause === undefined) + ':' + ('cause' in e); });
+  push(function () { var e = Error('m'); return (e instanceof Error) + ':' + e.message; });
+  push(function () { return new Error(123).message + ':' + new Error(undefined).message + ':' + new Error().message; });
+  push(function () { var e = new Error('m', { cause: 42 }); return e.cause + ':' + Object.getOwnPropertyDescriptor(e, 'cause').enumerable + ':' + e.toString(); });
+  push(function () { var e = new Error('m', 'x'); return 'cause' in e; });
+  push(function () { var e = new Error('m'); e.name = ''; return '[' + e.toString() + ']'; });
+  push(function () { var e = new Error('m'); e.message = ''; return '[' + e.toString() + ']'; });
+  push(function () { var e = new Error('m'); e.name = ''; e.message = ''; return '[' + e.toString() + ']'; });
+  push(function () { return Error.prototype.toString.call({ name: 'N', message: 'M' }); });
+  push(function () { return Error.prototype.toString.call({ name: 'N' }); });
+  push(function () { return Error.prototype.toString.call({ message: 'M' }); });
+  push(function () { return Error.prototype.toString.call({ name: 1, message: 2 }); });
+  push(function () { return Error.prototype.toString.call(1); });
+  push(function () { return typeof EvalError + ':' + typeof RangeError + ':' + typeof ReferenceError + ':' + typeof SyntaxError + ':' + typeof TypeError + ':' + typeof URIError; });
+  push(function () { return (new TypeError('t') instanceof Error) + ':' + (new TypeError('t') instanceof TypeError); });
+  push(function () { var e = new AggregateError([1, 2], 'agg'); return e.name + ':' + e.message + ':' + e.errors.join(',') + ':' + Array.isArray(e.errors) + ':' + (e instanceof Error); });
+  push(function () { var e = new AggregateError([]); return e.errors.length + ':' + e.message + ':' + e.name; });
+  push(function () { return new AggregateError(1); });
+  push(function () { var errors = { [Symbol.iterator]: function () { var i = 0; return { next: function () { return i < 2 ? { value: ++i, done: false } : { done: true }; } }; } }; return new AggregateError(errors, 'x').errors.join(','); });
+  push(function () { function MyError(message) { this.message = message; } MyError.prototype = Object.create(Error.prototype); MyError.prototype.constructor = MyError; MyError.prototype.name = 'MyError'; var e = new MyError('m'); return (e instanceof Error) + ':' + e.toString(); });
+  push(function () { return Object.prototype.toString.call(new Error('m')); });
+  push(function () { return String(new Error('m')) === 'Error: m'; });
+  return out.join('|');
+})()""",
+    ),
 )
