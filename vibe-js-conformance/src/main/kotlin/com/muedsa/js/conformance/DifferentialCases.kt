@@ -266,6 +266,19 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     ),
     DifferentialCase("fn-strict-callee", "(function () { 'use strict'; try { return arguments.callee; } catch (e) { return e.name; } })()"),
     DifferentialCase("eval-direct-value", "(function () { return eval('1 + 2'); })()"),
+    DifferentialCase(
+        "template-cache-site",
+        "(function () { var seen = []; function tag(t) { seen.push(t); }" +
+            " function f() { tag`a\${1}b`; } f(); f(); tag`a\${1}b`;" +
+            " return (seen[0] === seen[1]) + ':' + (seen[1] === seen[2]); })()"
+    ),
+    DifferentialCase(
+        "template-raw-frozen",
+        "(function () { var obj; function tag(t) { obj = t; }" +
+            " function f() { tag`a\${1}b`; } f();" +
+            " return [obj[0], obj.raw[0], Object.isFrozen(obj), Object.isFrozen(obj.raw)]" +
+            "   .join('|'); })()"
+    ),
     DifferentialCase("eval-strict-scope", "(function () { 'use strict'; eval('var x = 1;'); return typeof x; })()"),
     // 参数初始化阶段的 VariableEnvironment：eval 的 var 声明对函数体与参数闭包可见
     DifferentialCase(

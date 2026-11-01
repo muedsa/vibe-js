@@ -3020,6 +3020,24 @@ class Interpreter(
         return JSString(builder.toString())
     }
 
+    /** 创建并冻结标签模板对象（含 raw 数组）。 */
+    private fun createTemplateObject(expression: TaggedTemplate): JSArray {
+        val cooked = expression.quasis.map { JSString(it) as JSValue? }.toMutableList()
+        val raw = expression.rawQuasis.map { JSString(it) as JSValue? }.toMutableList()
+        val templateObject = JSArray(cooked, prototype = intrinsics.arrayPrototype)
+        val rawObject = JSArray(raw, prototype = intrinsics.arrayPrototype)
+        rawObject.freezeArray()
+        templateObject.defineDataProperty(
+            key = PropertyKey.Str("raw"),
+            value = rawObject,
+            writable = false,
+            enumerable = false,
+            configurable = false,
+        )
+        templateObject.freezeArray()
+        return templateObject
+    }
+
     /** 标签模板求值。 */
     private suspend fun evaluateTaggedTemplate(expression: TaggedTemplate, tail: Boolean = false): JSValue {
         // 先求值标签引用：成员访问形式保留接收者作为 this（obj.fn`...` 的 this 为 obj）
@@ -3060,19 +3078,13 @@ class Interpreter(
             else -> tagValue = evaluate(tagExpression)
         }
 
-        val cooked = expression.quasis.map { JSString(it) as JSValue? }.toMutableList()
-        val raw = expression.rawQuasis.map { JSString(it) as JSValue? }.toMutableList()
-        val templateObject = JSArray(cooked, prototype = intrinsics.arrayPrototype)
-        val rawObject = JSArray(raw, prototype = intrinsics.arrayPrototype)
-        rawObject.freezeArray()
-        templateObject.defineDataProperty(
-            key = PropertyKey.Str("raw"),
-            value = rawObject,
-            writable = false,
-            enumerable = false,
-            configurable = false,
-        )
-        templateObject.freezeArray()
+        // GetTemplateObject：同一 AST 站点重复求值复用同一冻结模板对象
+        val templateObject = intrinsics.templateCache
+            .firstOrNull { it.first === expression }
+            ?.second
+            ?: createTemplateObject(expression).also {
+                intrinsics.templateCache.add(expression to it)
+            }
 
         val arguments = ArrayList<JSValue>()
         arguments.add(templateObject)

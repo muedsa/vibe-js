@@ -3381,4 +3381,25 @@ class RuntimeSemanticsRegressionTest {
                 " seen.join(',') === 'a,c'"
         ))
     }
+
+    @Test
+    fun `标签模板对象按站点缓存并冻结`() = runTest {
+        val runtime = TestRuntime()
+        // 同一站点重复求值复用同一冻结对象；不同站点相互独立
+        assertEquals(true, runtime.evalBoolean(
+            "var seen = []; function tag(t) { seen.push(t); }" +
+                " function f() { tag`a\${1}b`; }" +
+                " f(); f(); tag`a\${1}b`;" +
+                " seen[0] === seen[1] && seen[1] !== seen[2] &&" +
+                " Object.isFrozen(seen[0]) && Object.isFrozen(seen[0].raw) &&" +
+                " seen[0][0] === 'a' && seen[0].raw[0] === 'a'"
+        ))
+        // 循环中的同一站点复用；不同函数中的同文本站点互相独立
+        assertEquals(true, runtime.evalBoolean(
+            "var objs = []; function tag2(t) { objs.push(t); }" +
+                " for (var i = 0; i < 2; i++) { tag2`x\${i}`; }" +
+                " function g() { tag2`x\${1}`; } g(); g();" +
+                " objs[0] === objs[1] && objs[2] === objs[3] && objs[1] !== objs[2]"
+        ))
+    }
 }
