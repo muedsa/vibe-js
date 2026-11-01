@@ -2096,4 +2096,74 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('|');
 })()""",
     ),
+
+    // Date.parse 的 ISO 字段组合模糊（越界月份/日期/时分秒/小数秒/时区）
+    DifferentialCase(
+        "date-parse-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 424242424;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function pad(value, width) {
+    var text = String(value);
+    while (text.length < width) text = '0' + text;
+    return text;
+  }
+  function yearText(year) {
+    if (year >= 0 && year <= 9999) return pad(year, 4);
+    return (year < 0 ? '-' : '+') + pad(Math.abs(year), 6);
+  }
+  for (var i = 0; i < 150; i++) {
+    var year = Math.floor(rnd() * 200000) - 100000;
+    var month = Math.floor(rnd() * 15);
+    var day = Math.floor(rnd() * 33);
+    var text = yearText(year) + '-' + pad(month, 2) + '-' + pad(day, 2);
+    if (rnd() < 0.7) {
+      var hour = Math.floor(rnd() * 26);
+      var minute = Math.floor(rnd() * 62);
+      var second = Math.floor(rnd() * 62);
+      text += 'T' + pad(hour, 2) + ':' + pad(minute, 2);
+      if (rnd() < 0.8) {
+        text += ':' + pad(second, 2);
+        if (rnd() < 0.4) {
+          var fractionLength = 1 + Math.floor(rnd() * 4);
+          var fraction = '';
+          for (var j = 0; j < fractionLength; j++) fraction += String(Math.floor(rnd() * 10));
+          text += '.' + fraction;
+        }
+      }
+      if (rnd() < 0.7) {
+        text += 'Z';
+      } else {
+        text += (rnd() < 0.5 ? '+' : '-') + pad(Math.floor(rnd() * 25), 2) + ':' + pad(Math.floor(rnd() * 61), 2);
+      }
+    }
+    out.push(text + '=' + String(Date.parse(text)));
+  }
+  return out.join(';');
+})()""",
+    ),
+
+    // Date.UTC 随机构造参数模糊（负数/小数/NaN/Infinity/缺省参数）
+    DifferentialCase(
+        "date-utc-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 753159852;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var specials = [NaN, Infinity, -Infinity, undefined];
+  for (var i = 0; i < 120; i++) {
+    var args = [];
+    var count = 1 + Math.floor(rnd() * 7);
+    for (var j = 0; j < count; j++) {
+      var kind = rnd();
+      if (kind < 0.6) args.push(Math.floor(rnd() * 4000) - 2000);
+      else if (kind < 0.8) args.push((rnd() * 2 - 1) * 1000.75);
+      else args.push(specials[Math.floor(rnd() * specials.length)]);
+    }
+    out.push(Date.UTC.apply(null, args) + '');
+  }
+  return out.join(';');
+})()""",
+    ),
 )
