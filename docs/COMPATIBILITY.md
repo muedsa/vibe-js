@@ -116,6 +116,7 @@
 ## 6. 已知差异
 
 - `Date` 默认 `HostEnvironment.utcOffsetMillis` 返回 0（UTC）；宿主可按时刻返回毫秒偏移以启用本地时间，内核不内置 DST 规则；`toString` 的时区后缀显示为 `UTC±HH:MM`；
+- `Date.parse`/`new Date(string)` 仅接受 ISO 8601（含扩展年份）与自身 `toString`/`toUTCString` 格式；V8 额外接受的实现自定义本地格式（如 `2020/01/01`、`Jan 1 2020`）会返回 NaN，属规范允许的实现差异；
 - `JSON.parse` 使用独立严格 JSON 语法，不再复用宽松的 JS Parser；
 - RegExp 使用 Kotlin Regex 主路径 + 纯 Kotlin 回退引擎；回退路径按 JS-only 构造精确启用（空字符类、`\0`/`\c`、前向反向引用、lookbehind、量词组捕获重置、码元级 `.` 等）；忽略大小写且模式含字母时统一走回退引擎（规范的 Canonicalize），Kotlin 路径只处理不涉及大小写折叠的模式；
 - `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；
