@@ -673,4 +673,59 @@ class BuiltinObjectDateRegExpTest {
             posNumber("new Date(2020, 0, 1).getTime() - (Date.UTC(2020, 0, 1) - 5.5 * 3600000)"),
         )
     }
+
+    @Test
+    fun `Date 的 setYear 在 NaN 参数下写入无效时间`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(
+            true,
+            runtime.evalBoolean("var d = new Date(0); isNaN(d.setYear(NaN)) && isNaN(d.getTime())"),
+        )
+        assertEquals(
+            true,
+            runtime.evalBoolean("var d = new Date(0); isNaN(d.setYear()) && isNaN(d.getTime())"),
+        )
+        assertEquals(
+            true,
+            runtime.evalBoolean("var d = new Date(NaN); isNaN(d.setYear(NaN)) && isNaN(d.getTime())"),
+        )
+        // 小数先截断，0..99 仍映射到 1900+ 年
+        assertEquals(
+            true,
+            runtime.evalBoolean("var d = new Date(0); d.setYear(70.9); d.getUTCFullYear() === 1970"),
+        )
+    }
+
+    @Test
+    fun `Date 字段 setter 在 NaN 参数下仍完成其余参数转换`() = runTest {
+        val runtime = TestRuntime()
+        val prefix = "var log = []; function arg(n) { return { valueOf: function () { " +
+            "log.push(n); return 1; } }; } "
+        assertEquals(
+            "day",
+            runtime.evalString(prefix + "new Date(0).setMonth(NaN, arg('day')); log.join(',')"),
+        )
+        assertEquals(
+            "m,d",
+            runtime.evalString(prefix + "new Date(0).setFullYear(NaN, arg('m'), arg('d')); log.join(',')"),
+        )
+        assertEquals(
+            "m,s,ms",
+            runtime.evalString(
+                prefix + "new Date(0).setHours(NaN, arg('m'), arg('s'), arg('ms')); log.join(',')"
+            ),
+        )
+        assertEquals(
+            "s,ms",
+            runtime.evalString(prefix + "new Date(0).setMinutes(NaN, arg('s'), arg('ms')); log.join(',')"),
+        )
+        assertEquals(
+            "ms",
+            runtime.evalString(prefix + "new Date(0).setSeconds(NaN, arg('ms')); log.join(',')"),
+        )
+        assertEquals(
+            "day",
+            runtime.evalString(prefix + "new Date(0).setUTCMonth(NaN, arg('day')); log.join(',')"),
+        )
+    }
 }

@@ -253,10 +253,11 @@ object DateBuiltins {
         }
 
         setter("setFullYear", length = 3, useZeroBase = true, local = true) { interpreter, args, base ->
+            // 规范要求先完成全部可选参数的 ToNumber，再统一判断结果
             val year = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (year.isNaN()) return@setter null
             val month = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.month.toDouble()
             val day = args.getOrNull(2)?.let { interpreter.toNumber(it) } ?: base.day.toDouble()
+            if (year.isNaN()) return@setter null
             DateMath.makeDate(
                 // setFullYear 不应用 0..99 -> 1900+ 的构造器映射
                 DateMath.makeDay(year, month, day),
@@ -270,9 +271,9 @@ object DateBuiltins {
         }
         setter("setUTCFullYear", length = 3, useZeroBase = true) { interpreter, args, base ->
             val year = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (year.isNaN()) return@setter null
             val month = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.month.toDouble()
             val day = args.getOrNull(2)?.let { interpreter.toNumber(it) } ?: base.day.toDouble()
+            if (year.isNaN()) return@setter null
             DateMath.makeDate(
                 // setFullYear 不应用 0..99 -> 1900+ 的构造器映射
                 DateMath.makeDay(year, month, day),
@@ -286,8 +287,8 @@ object DateBuiltins {
         }
         setter("setMonth", length = 2, local = true) { interpreter, args, base ->
             val month = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (month.isNaN()) return@setter null
             val day = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.day.toDouble()
+            if (month.isNaN()) return@setter null
             DateMath.makeDate(
                 DateMath.makeDay(base.year.toDouble(), month, day),
                 DateMath.makeTimeDouble(
@@ -300,8 +301,8 @@ object DateBuiltins {
         }
         setter("setUTCMonth", length = 2) { interpreter, args, base ->
             val month = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (month.isNaN()) return@setter null
             val day = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.day.toDouble()
+            if (month.isNaN()) return@setter null
             DateMath.makeDate(
                 DateMath.makeDay(base.year.toDouble(), month, day),
                 DateMath.makeTimeDouble(
@@ -340,11 +341,11 @@ object DateBuiltins {
         }
         setter("setHours", length = 4, local = true) { interpreter, args, base ->
             val hours = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (hours.isNaN()) return@setter null
             val minutes = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.minutes.toDouble()
             val seconds = args.getOrNull(2)?.let { interpreter.toNumber(it) } ?: base.seconds.toDouble()
             val milliseconds =
                 args.getOrNull(3)?.let { interpreter.toNumber(it) } ?: base.milliseconds.toDouble()
+            if (hours.isNaN()) return@setter null
             DateMath.makeDate(
                 DateMath.makeDay(base.year.toDouble(), base.month.toDouble(), base.day.toDouble()),
                 DateMath.makeTimeDouble(hours, minutes, seconds, milliseconds),
@@ -352,11 +353,11 @@ object DateBuiltins {
         }
         setter("setUTCHours", length = 4) { interpreter, args, base ->
             val hours = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (hours.isNaN()) return@setter null
             val minutes = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.minutes.toDouble()
             val seconds = args.getOrNull(2)?.let { interpreter.toNumber(it) } ?: base.seconds.toDouble()
             val milliseconds =
                 args.getOrNull(3)?.let { interpreter.toNumber(it) } ?: base.milliseconds.toDouble()
+            if (hours.isNaN()) return@setter null
             DateMath.makeDate(
                 DateMath.makeDay(base.year.toDouble(), base.month.toDouble(), base.day.toDouble()),
                 DateMath.makeTimeDouble(hours, minutes, seconds, milliseconds),
@@ -364,10 +365,10 @@ object DateBuiltins {
         }
         setter("setMinutes", length = 3, local = true) { interpreter, args, base ->
             val minutes = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (minutes.isNaN()) return@setter null
             val seconds = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.seconds.toDouble()
             val milliseconds =
                 args.getOrNull(2)?.let { interpreter.toNumber(it) } ?: base.milliseconds.toDouble()
+            if (minutes.isNaN()) return@setter null
             DateMath.makeDate(
                 DateMath.makeDay(base.year.toDouble(), base.month.toDouble(), base.day.toDouble()),
                 DateMath.makeTimeDouble(
@@ -380,10 +381,10 @@ object DateBuiltins {
         }
         setter("setUTCMinutes", length = 3) { interpreter, args, base ->
             val minutes = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (minutes.isNaN()) return@setter null
             val seconds = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.seconds.toDouble()
             val milliseconds =
                 args.getOrNull(2)?.let { interpreter.toNumber(it) } ?: base.milliseconds.toDouble()
+            if (minutes.isNaN()) return@setter null
             DateMath.makeDate(
                 DateMath.makeDay(base.year.toDouble(), base.month.toDouble(), base.day.toDouble()),
                 DateMath.makeTimeDouble(
@@ -396,9 +397,9 @@ object DateBuiltins {
         }
         setter("setSeconds", length = 2, local = true) { interpreter, args, base ->
             val seconds = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (seconds.isNaN()) return@setter null
             val milliseconds =
                 args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.milliseconds.toDouble()
+            if (seconds.isNaN()) return@setter null
             DateMath.makeDate(
                 DateMath.makeDay(base.year.toDouble(), base.month.toDouble(), base.day.toDouble()),
                 DateMath.makeTimeDouble(
@@ -411,9 +412,9 @@ object DateBuiltins {
         }
         setter("setUTCSeconds", length = 2) { interpreter, args, base ->
             val seconds = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            if (seconds.isNaN()) return@setter null
             val milliseconds =
                 args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: base.milliseconds.toDouble()
+            if (seconds.isNaN()) return@setter null
             DateMath.makeDate(
                 DateMath.makeDay(base.year.toDouble(), base.month.toDouble(), base.day.toDouble()),
                 DateMath.makeTimeDouble(
@@ -450,10 +451,12 @@ object DateBuiltins {
                 ),
             )
         }
-        // Annex B setYear：t 为 NaN 时以 +0 为基准；MakeFullYear 对 0..99 映射到 1900+
+        // Annex B setYear：t 为 NaN 时以 +0 为基准；参数为 NaN 时结果与内部时间均变为 NaN；
+        // MakeFullYear 对 0..99 映射到 1900+
         setter("setYear", length = 1, useZeroBase = true, local = true) { interpreter, args, base ->
             val yearNumber = interpreter.toNumber(args.getOrElse(0) { JSUndefined })
-            val integer = if (yearNumber.isNaN()) 0.0 else kotlin.math.truncate(yearNumber)
+            if (yearNumber.isNaN()) return@setter null
+            val integer = kotlin.math.truncate(yearNumber)
             val fullYear = if (integer >= 0.0 && integer <= 99.0) 1900.0 + integer else integer
             DateMath.makeDate(
                 DateMath.makeDay(fullYear, base.month.toDouble(), base.day.toDouble()),
