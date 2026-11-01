@@ -117,6 +117,22 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `正则非 m 模式美元锚点只在输入末尾匹配`() = runTest {
+        val runtime = TestRuntime()
+        // Java 的 $ 会匹配末尾换行之前；JS 非 m 模式只匹配输入末尾
+        assertEquals("1:1", runtime.evalString(
+            "var r = /$/g; var m = r.exec('\\n'); m.index + ':' + r.lastIndex"
+        ))
+        assertEquals(true, runtime.evalBoolean(
+            "/$/.test('a\\n') && !/a$/.test('a\\n') && /a$/m.test('a\\n')"
+        ))
+        // 字符类与转义中的 $ 是字面量，不是锚点
+        assertEquals(true, runtime.evalBoolean(
+            "/[$]/.test('$') && /\\$/.test('$') && !/\\$/.test('a')"
+        ))
+    }
+
+    @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[object RegExp]", runtime.evalString("Object.prototype.toString.call(/a/) "))

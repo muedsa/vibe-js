@@ -5294,6 +5294,30 @@ class Interpreter(
         return false
     }
 
+    /** 字符类外未转义的 `$`：Java 非 m 模式会在末尾换行前匹配，与 JS「仅输入末尾」不同。 */
+    private fun hasDollarAnchor(pattern: String): Boolean {
+        var index = 0
+        var inClass = false
+        while (index < pattern.length) {
+            when (pattern[index]) {
+                '\\' -> index += 2
+                '[' -> {
+                    inClass = true
+                    index++
+                }
+
+                ']' -> {
+                    inClass = false
+                    index++
+                }
+
+                '$' -> if (!inClass) return true else index++
+                else -> index++
+            }
+        }
+        return false
+    }
+
     /** 是否包含后向断言（变长语义由回退引擎实现）。 */
     private fun hasLookbehind(pattern: String): Boolean =
         pattern.contains("(?<=") || pattern.contains("(?<!")
@@ -5646,6 +5670,7 @@ class Interpreter(
         if (hasJsClassSyntax) return true
         if (hasLegacyOctalEscape(pattern)) return true
         if (hasHugeBraceQuantifier(pattern)) return true
+        if (hasDollarAnchor(pattern)) return true
         if (hasLookaheadBackReference(pattern)) return true
         if (hasForwardBackReference(pattern)) return true
         // Java 在量词组内保留上一轮捕获值，JS 要求每轮重置

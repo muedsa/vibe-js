@@ -2500,4 +2500,41 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // RegExp lastIndex 状态机模糊（g/y/u/s、零宽匹配、NaN/Infinity/负索引）
+    DifferentialCase(
+        "regexp-lastindex-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 161803398;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  var definitions = [
+    ['a', 'g'], ['a*', 'g'], ['', 'g'], ['^', 'g'], ['$', 'g'], ['.', 'g'],
+    ['ab', 'g'], ['a|b', 'g'], ['\\d*', 'g'], ['(?=a)', 'g'], ['\\b', 'g'],
+    ['a+?', 'g'], ['a', 'y'], ['a*', 'y'], ['', 'y'], ['ab', 'y'],
+    ['a', 'gy'], ['a', 'gu'], ['.', 'gs'], ['b', 'y']
+  ];
+  var inputs = ['', 'a', 'aa', 'ab', 'ba', 'a1a', '\n', '😀a'];
+  var lastIndexes = [0, 1, 2, 5, -1, NaN, Infinity, 2.5];
+  for (var i = 0; i < definitions.length; i++) {
+    for (var j = 0; j < inputs.length; j++) {
+      var re = new RegExp(definitions[i][0], definitions[i][1]);
+      var states = [];
+      for (var step = 0; step < 4; step++) {
+        re.lastIndex = lastIndexes[Math.floor(rnd() * lastIndexes.length)];
+        var before = re.lastIndex;
+        var match = re.exec(inputs[j]);
+        states.push(JSON.stringify([
+          before,
+          match ? match[0] : null,
+          match ? match.index : null,
+          re.lastIndex
+        ]));
+      }
+      out.push(states.join(','));
+    }
+  }
+  return out.join(';');
+})()""",
+    ),
 )
