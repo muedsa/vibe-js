@@ -1,5 +1,7 @@
 package com.muedsa.js.runtime.regex
 
+import com.muedsa.js.runtime.UnicodeCaseMapping
+
 /**
  * 纯 Kotlin 的 JS 正则回退引擎。
  *
@@ -1043,20 +1045,26 @@ class JsRegexEngine(
         data class Property(val set: UnicodePropertySet, val negated: Boolean) : ClassItem() {
             override fun matches(codePoint: Int, ignoreCase: Boolean, unicode: Boolean): Boolean {
                 if (containsEffective(codePoint)) return true
-                if (!ignoreCase || codePoint > 0xFFFF) return false
-                val character = codePoint.toChar()
-                val upper = character.uppercaseChar()
-                val lower = character.lowercaseChar()
-                if (unicode) {
-                    // 规范同时折叠输入与集合成员；只检查大小写映射的近似集合
-                    return containsEffective(UnicodeCaseFoldingData.simpleFold(codePoint)) ||
-                        containsEffective(upper.code) ||
-                        containsEffective(lower.code) ||
-                        containsEffective(upper.lowercaseChar().code)
+                if (!ignoreCase) return false
+                // 规范以简单大小写映射与折叠判断属性集合：同时检查正向变体与
+                // 能折叠到同一码点的反向源码点（如 ẞ 简单小写为 ß）
+                val upper = UnicodeCaseMapping.simpleUpperCase(codePoint)
+                val lower = UnicodeCaseMapping.simpleLowerCase(codePoint)
+                if (containsEffective(upper) || containsEffective(lower)) return true
+                if (!unicode) return false
+                val fold = UnicodeCaseFoldingData.simpleFold(codePoint)
+                val variants = intArrayOf(
+                    fold,
+                    UnicodeCaseFoldingData.simpleFold(upper),
+                    UnicodeCaseFoldingData.simpleFold(lower),
+                )
+                for (variant in variants) {
+                    if (containsEffective(variant)) return true
+                    for (source in UnicodeCaseMapping.simpleSources(variant)) {
+                        if (containsEffective(source)) return true
+                    }
                 }
-                return containsEffective(upper.code) ||
-                    containsEffective(lower.code) ||
-                    containsEffective(upper.lowercaseChar().code)
+                return false
             }
 
             private fun containsEffective(codePoint: Int): Boolean =

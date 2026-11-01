@@ -14,6 +14,8 @@ import com.muedsa.js.runtime.regex.UnicodePropertySet
  */
 internal object UnicodeCaseMapping {
 
+    private val EMPTY_CODE_POINTS = IntArray(0)
+
     /** Unicode Final_Sigma 所需的 Cased 属性（UCD 17.0.0）。 */
     private val cased: UnicodePropertySet by lazy {
         UnicodePropertyData.resolve("Cased")
@@ -29,6 +31,40 @@ internal object UnicodeCaseMapping {
     fun toUpperCase(text: String): String = convert(text, upper = true)
 
     fun toLowerCase(text: String): String = convert(text, upper = false)
+
+    /** 单码点简单大写映射（无映射时返回自身），供正则属性转义的大小写折叠使用。 */
+    fun simpleUpperCase(codePoint: Int): Int {
+        val mapped = lookupSimple(UnicodeCaseMappingData.UPPER_SIMPLE, codePoint)
+        return if (mapped >= 0) mapped else codePoint
+    }
+
+    /** 单码点简单小写映射（无映射时返回自身）。 */
+    fun simpleLowerCase(codePoint: Int): Int {
+        val mapped = lookupSimple(UnicodeCaseMappingData.LOWER_SIMPLE, codePoint)
+        return if (mapped >= 0) mapped else codePoint
+    }
+
+    /** 简单映射的反向索引：目标码点 → 映射到它的源码点（用于 \p{...} 折叠匹配）。 */
+    private val simplePreimages: Map<Int, IntArray> by lazy {
+        val result = HashMap<Int, MutableList<Int>>()
+        fun collect(table: IntArray) {
+            var index = 0
+            while (index + 1 < table.size) {
+                val source = table[index]
+                val target = table[index + 1]
+                if (source != target) {
+                    result.getOrPut(target) { ArrayList(2) }.add(source)
+                }
+                index += 2
+            }
+        }
+        collect(UnicodeCaseMappingData.UPPER_SIMPLE)
+        collect(UnicodeCaseMappingData.LOWER_SIMPLE)
+        result.mapValues { (_, sources) -> sources.toIntArray() }
+    }
+
+    /** 返回简单映射到 [codePoint] 的全部源码点。 */
+    fun simpleSources(codePoint: Int): IntArray = simplePreimages[codePoint] ?: EMPTY_CODE_POINTS
 
     private fun convert(text: String, upper: Boolean): String {
         if (text.isEmpty()) return text
@@ -147,8 +183,7 @@ internal object UnicodeCaseMapping {
     }
 
     /** 按 UTF-16 码元读取一个码点；孤立代理项按自身返回。 */
-    private fun codePointAt(text: String, index: Int): Int {
-        val high = text[index]
+    private fun codePointAt(text: String, index: Int): Int {        val high = text[index]
         if (high.isHighSurrogate() && index + 1 < text.length) {
             val low = text[index + 1]
             if (low.isLowSurrogate()) {

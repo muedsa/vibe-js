@@ -202,6 +202,16 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `正则属性转义在 i+u 下折叠大小写与 astral`() = runTest {
+        val runtime = TestRuntime()
+        assertEquals(true, runtime.evalBoolean(
+            "/\\p{Lu}/iu.test('ß') && /\\p{Ll}/iu.test('ẞ') && " +
+                "/\\p{Lu}/iu.test('𐐨') && /\\p{Ll}/iu.test('𐐀') && " +
+                "/\\P{Lu}/iu.test('𐐀') && !/\\p{Lu}/iu.test('😀')"
+        ))
+    }
+
+    @Test
     fun `正则与错误原型的类标签`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[object RegExp]", runtime.evalString("Object.prototype.toString.call(/a/) "))

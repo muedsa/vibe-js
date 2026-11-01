@@ -2741,4 +2741,26 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('|');
 })()""",
     ),
+
+    // \p{...} 在 i+u 下的大小写折叠（含 astral/ß/Kelvin 等）
+    DifferentialCase(
+        "regexp-property-casefold",
+        """(function () {
+  var patterns = [
+    new RegExp('\\p{Lu}', 'iu'), new RegExp('\\p{Ll}', 'iu'),
+    new RegExp('\\p{Lt}', 'iu'), new RegExp('\\P{Lu}', 'iu'),
+    new RegExp('\\p{Alphabetic}', 'iu'), new RegExp('\\p{Script=Greek}', 'iu'),
+    new RegExp('\\p{Script=Latin}', 'iu'), new RegExp('\\p{Lu}', 'u')
+  ];
+  var inputs = ['a', 'A', 'é', 'É', 'π', 'Π', 'ß', 'ẞ', 'K', 'k', 'K',
+    '𐐀', '𐐨', '𐐩', '😀', '1', '_'];
+  var out = [];
+  for (var i = 0; i < patterns.length; i++) {
+    var bits = '';
+    for (var j = 0; j < inputs.length; j++) bits += patterns[i].test(inputs[j]) ? '1' : '0';
+    out.push(bits);
+  }
+  return out.join(';');
+})()""",
+    ),
 )
