@@ -1842,10 +1842,21 @@ class JsRegexEngine(
                     'f' -> ClassItem.Single('\u000C'.code)
                     'v' -> ClassItem.Single('\u000B'.code)
                     '0' -> ClassItem.Single('\u0000'.code)
-                    'x' -> ClassItem.Single(readHex(2))
+                    'x' -> if (!unicode &&
+                        !(isHexDigitAt(position) && isHexDigitAt(position + 1))
+                    ) {
+                        // Annex B：非 u 模式非法 \x 按 IdentityEscape 'x'
+                        ClassItem.Single('x'.code)
+                    } else {
+                        ClassItem.Single(readHex(2))
+                    }
+
                     // u 模式下 \u{...} 产生完整码点；非 u 模式保持原有码元语义
                     'u' -> {
-                        if (!unicode) {
+                        if (!unicode && !hasUnicodeEscapeDigits()) {
+                            // Annex B：非 u 模式非法 \u 按 IdentityEscape 'u'
+                            ClassItem.Single('u'.code)
+                        } else if (!unicode) {
                             ClassItem.Single(readUnicode().toChar().code)
                         } else {
                             val braceForm = peek() == '{'
@@ -1916,6 +1927,21 @@ class JsRegexEngine(
             return ClassItem.Property(set, negated)
         }
 
+        private fun isHexDigitAt(index: Int): Boolean {
+            if (index !in pattern.indices) return false
+            val c = pattern[index]
+            return c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
+        }
+
+        /** 非 u 模式 \u 后是否紧跟 4 位十六进制（{...} 码点形式仅 u 模式有效）。 */
+        private fun hasUnicodeEscapeDigits(): Boolean {
+            if (position < pattern.length && peek() == '{') return false
+            for (offset in 0 until 4) {
+                if (!isHexDigitAt(position + offset)) return false
+            }
+            return true
+        }
+
         private fun parseEscape(): Node {
             position++ // '\'
             if (position >= pattern.length) {
@@ -1954,24 +1980,39 @@ class JsRegexEngine(
                 'f' -> Node.CharNode('\u000C')
                 'v' -> Node.CharNode('\u000B')
                 '0' -> Node.CharNode('\u0000')
-                'x' -> Node.CharNode(readHex(2).toChar())
-                'u' -> {
-                    val braceForm = peek() == '{'
-                    val codePoint = readUnicode()
-                    val combined = if (braceForm) null else readLowSurrogatePair(codePoint)
-                    if (combined != null) {
-                        // u 模式下相邻代理项转义表示一个完整码点，量词作用于整个码点
-                        Node.ClassNode(false, listOf(ClassItem.Single(combined)))
-                    } else if (codePoint <= 0xFFFF) {
-                        Node.CharNode(codePoint.toChar())
+                'x' -> {
+                    // Annex B：非 u 模式下 \x 后不足两位十六进制时按 IdentityEscape 'x'
+                    if (!unicode &&
+                        !(isHexDigitAt(position) && isHexDigitAt(position + 1))
+                    ) {
+                        Node.CharNode('x')
                     } else {
-                        val value = codePoint - 0x10000
-                        Node.SequenceNode(
-                            listOf(
-                                Node.CharNode(((value shr 10) + 0xD800).toChar()),
-                                Node.CharNode(((value and 0x3FF) + 0xDC00).toChar()),
+                        Node.CharNode(readHex(2).toChar())
+                    }
+                }
+
+                'u' -> {
+                    // Annex B：非 u 模式下非法 \u 序列按 IdentityEscape 'u'
+                    if (!unicode && !hasUnicodeEscapeDigits()) {
+                        Node.CharNode('u')
+                    } else {
+                        val braceForm = peek() == '{'
+                        val codePoint = readUnicode()
+                        val combined = if (braceForm) null else readLowSurrogatePair(codePoint)
+                        if (combined != null) {
+                            // u 模式下相邻代理项转义表示一个完整码点，量词作用于整个码点
+                            Node.ClassNode(false, listOf(ClassItem.Single(combined)))
+                        } else if (codePoint <= 0xFFFF) {
+                            Node.CharNode(codePoint.toChar())
+                        } else {
+                            val value = codePoint - 0x10000
+                            Node.SequenceNode(
+                                listOf(
+                                    Node.CharNode(((value shr 10) + 0xD800).toChar()),
+                                    Node.CharNode(((value and 0x3FF) + 0xDC00).toChar()),
+                                )
                             )
-                        )
+                        }
                     }
                 }
 

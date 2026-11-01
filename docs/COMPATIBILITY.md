@@ -44,7 +44,7 @@
 | 全局声明实例化 | ✅ | 顶层 let/const/class 不得遮蔽不可配置全局属性；跨脚本词法/var/function 冲突检查、CanDeclareGlobalFunction/Var、CreateGlobalFunctionBinding/CreateGlobalVarBinding 描述符与 eval 全局绑定可删除性均按规范 |
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
 | 模板字符串 / 标签模板 | ✅ | |
-| 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；source 按 EscapeRegExpPattern 转义、原型访问器接收者校验 |
+| 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；source 按 EscapeRegExpPattern 转义、原型访问器接收者校验；非 u 模式 Annex B IdentityEscape（\x/\u 缺位、\c 等） |
 | 赋值/复合赋值/逻辑赋值（`??=`/`&&=`/`||=`/`**=` 等） | ✅ | |
 | typeof、delete、void、in、instanceof | ✅ | 自定义 `Symbol.hasInstance` 未支持 |
 | 可选链 `?.` | ✅ | 含短路、this 保留与 delete |
@@ -65,7 +65,7 @@
 | Object.prototype | ✅ | hasOwnProperty、isPrototypeOf、propertyIsEnumerable、valueOf、toString、toLocaleString、`__proto__`、Annex B `__defineGetter__`/`__defineSetter__`/`__lookupGetter__`/`__lookupSetter__` |
 | Function | ✅ | call/apply/bind/toString（动态函数源码，其余 NativeFunction 形式）、动态 Function 构造器 |
 | Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；方法为泛型实现（ToObject/HasProperty/Get/Delete，遵循原型链与稀疏语义），array-like 支持 2^53-1 长度边界 |
-| String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表） |
+| String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表）；原型方法统一 RequireObjectCoercible，pad 默认空格、localeCompare 规范等价、replace/split 按规范求值顺序 |
 | Number | ✅ | 常量、toString(radix)（最短十进制表示，如 5e-324）、toFixed/toExponential/toPrecision（非有限值与负零格式化）、静态判断与解析 |
 | Boolean | ✅ | 构造器、toString、valueOf |
 | Math | ✅ | 常量与 ES5/ES2015 常用函数；sumPrecise 精确求和 |
@@ -103,9 +103,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 457 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 457 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 457 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 460 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 460 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 460 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

@@ -4837,9 +4837,14 @@ class Interpreter(
             if (kotlinRegex != null) {
                 KotlinJsRegex(kotlinRegex, namedAnalysis.nameCandidates)
             } else {
-                // 仅在 Kotlin Regex 明确不支持、且是已知 JS-only 构造时启用回退，
+                // 非 u/v 模式下 JS 允许 Annex B IdentityEscape（如 \x、\u 缺位）等
+                // Kotlin 不支持的构造；语法已由 JsRegexSyntax 按 JS 规则校验，
+                // 因此可直接交给回退引擎。u/v 模式仍要求已知 JS-only 构造才回退，
                 // 避免错误接受非法正则。
-                if (!hasLookaheadBackReference(pattern) && !requiresJsRegexEngine(pattern)) {
+                val unicodeMode = 'u' in flags || 'v' in flags
+                if (unicodeMode && !hasLookaheadBackReference(pattern) &&
+                    !requiresJsRegexEngine(pattern)
+                ) {
                     throw syntaxError("Invalid regular expression: /$pattern/$flags")
                 }
                 buildFallback()

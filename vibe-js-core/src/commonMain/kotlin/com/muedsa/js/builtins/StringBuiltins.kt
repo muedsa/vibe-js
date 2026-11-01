@@ -92,6 +92,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("charAt"),
             value = BuiltinHelpers.method(intrinsics, "charAt", 1) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.charAt")
                 val text = interpreter.toStringValue(thisValue)
                 val index = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
                 JSString(if (index in text.indices) text[index].toString() else "")
@@ -101,6 +102,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("charCodeAt"),
             value = BuiltinHelpers.method(intrinsics, "charCodeAt", 1) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.charCodeAt")
                 val text = interpreter.toStringValue(thisValue)
                 val index = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
                 if (index in text.indices) JSNumber(text[index].code.toDouble()) else JSNumber.NAN
@@ -168,6 +170,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("concat"),
             value = BuiltinHelpers.method(intrinsics, "concat", 1) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.concat")
                 val builder = StringBuilder(interpreter.toStringValue(thisValue))
                 for (argument in args) {
                     builder.append(interpreter.toStringValue(argument))
@@ -196,6 +199,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("indexOf"),
             value = BuiltinHelpers.method(intrinsics, "indexOf", 1) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.indexOf")
                 val text = interpreter.toStringValue(thisValue)
                 val search = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
                 val position = args.getOrNull(1)?.let { interpreter.toNumber(it).toInt() } ?: 0
@@ -206,6 +210,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("lastIndexOf"),
             value = BuiltinHelpers.method(intrinsics, "lastIndexOf", 1) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.lastIndexOf")
                 val text = interpreter.toStringValue(thisValue)
                 val search = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
                 val positionValue = args.getOrNull(1)?.let { interpreter.toNumber(it) } ?: Double.NaN
@@ -255,6 +260,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("slice"),
             value = BuiltinHelpers.method(intrinsics, "slice", 2) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.slice")
                 val text = interpreter.toStringValue(thisValue)
                 val length = text.length
                 var start = args.getOrNull(0)
@@ -277,6 +283,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("substring"),
             value = BuiltinHelpers.method(intrinsics, "substring", 2) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.substring")
                 val text = interpreter.toStringValue(thisValue)
                 val length = text.length
                 var start = args.getOrNull(0)
@@ -346,15 +353,21 @@ object StringBuiltins {
                     }
                 }
                 val text = interpreter.toStringValue(thisValue)
-                // 规范：limit 使用 ToUint32
+                // 规范顺序：先 ToUint32(limit)，再 ToString(separator)，
+                // 最后才检查 limit 是否为 0
                 val limit = args.getOrNull(1)
                     ?.takeUnless { it is JSUndefined }
                     ?.let { interpreter.toUint32(it) }
                     ?: 4294967295L
+                val separatorText = if (separatorValue == null || separatorValue is JSUndefined) {
+                    null
+                } else {
+                    interpreter.toStringValue(separatorValue)
+                }
 
                 if (limit == 0L) {
                     JSArray(prototype = intrinsics.arrayPrototype)
-                } else if (separatorValue == null || separatorValue is JSUndefined) {
+                } else if (separatorText == null) {
                     JSArray(mutableListOf<JSValue?>(JSString(text)), prototype = intrinsics.arrayPrototype)
                 } else if (separatorValue is JSRegExp) {
                     JSArray(
@@ -366,11 +379,10 @@ object StringBuiltins {
                         prototype = intrinsics.arrayPrototype,
                     )
                 } else {
-                    val separator = interpreter.toStringValue(separatorValue)
-                    val parts = if (separator.isEmpty()) {
+                    val parts = if (separatorText.isEmpty()) {
                         text.map { it.toString() }
                     } else {
-                        text.split(separator)
+                        text.split(separatorText)
                     }
                     val limited = parts.take(limit.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                     JSArray(
@@ -447,6 +459,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("toLowerCase"),
             value = BuiltinHelpers.method(intrinsics, "toLowerCase", 0) { interpreter, thisValue, _ ->
+                requireCoercible(interpreter, thisValue, "String.prototype.toLowerCase")
                 JSString(jsLowercase(interpreter.toStringValue(thisValue)))
             },
         )
@@ -454,6 +467,7 @@ object StringBuiltins {
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("toUpperCase"),
             value = BuiltinHelpers.method(intrinsics, "toUpperCase", 0) { interpreter, thisValue, _ ->
+                requireCoercible(interpreter, thisValue, "String.prototype.toUpperCase")
                 JSString(interpreter.toStringValue(thisValue).uppercase())
             },
         )
@@ -688,10 +702,17 @@ object StringBuiltins {
                     )
                 } else {
                     val search = interpreter.toStringValue(searchValue)
+                    // 规范顺序：非函数替换值先 ToString，再搜索字符串
+                    val functionalReplace = interpreter.isCallable(replacement)
+                    val replacementText = if (functionalReplace) {
+                        null
+                    } else {
+                        interpreter.toStringValue(replacement)
+                    }
                     val index = text.indexOf(search)
                     when {
                         index < 0 -> JSString(text)
-                        interpreter.isCallable(replacement) -> {
+                        functionalReplace -> {
                             val replacementValue = interpreter.callFunction(
                                 replacement,
                                 JSUndefined,
@@ -705,10 +726,11 @@ object StringBuiltins {
                         }
 
                         else -> {
-                            val replacementText = interpreter.toStringValue(replacement)
                             JSString(
                                 text.substring(0, index) +
-                                    expandStringReplacement(replacementText, search, index, text) +
+                                    expandStringReplacement(
+                                        replacementText!!, search, index, text,
+                                    ) +
                                     text.substring(index + search.length)
                             )
                         }
@@ -808,30 +830,38 @@ object StringBuiltins {
 
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("padStart"),
-            value = BuiltinHelpers.method(intrinsics, "padStart", 2) { interpreter, thisValue, args ->
+            value = BuiltinHelpers.method(intrinsics, "padStart", 1) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.padStart")
                 val text = interpreter.toStringValue(thisValue)
                 val targetLength = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
-                val padding = args.getOrNull(1)?.let { interpreter.toStringValue(it) } ?: " "
-                JSString(pad(text, targetLength, padding, start = true))
+                val fill = args.getOrNull(1)?.takeUnless { it is JSUndefined }
+                    ?.let { interpreter.toStringValue(it) } ?: " "
+                JSString(pad(text, targetLength, fill, start = true))
             },
         )
 
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("padEnd"),
-            value = BuiltinHelpers.method(intrinsics, "padEnd", 2) { interpreter, thisValue, args ->
+            value = BuiltinHelpers.method(intrinsics, "padEnd", 1) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.padEnd")
                 val text = interpreter.toStringValue(thisValue)
                 val targetLength = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
-                val padding = args.getOrNull(1)?.let { interpreter.toStringValue(it) } ?: " "
-                JSString(pad(text, targetLength, padding, start = false))
+                val fill = args.getOrNull(1)?.takeUnless { it is JSUndefined }
+                    ?.let { interpreter.toStringValue(it) } ?: " "
+                JSString(pad(text, targetLength, fill, start = false))
             },
         )
 
         stringPrototype.defineDataProperty(
             key = PropertyKey.Str("localeCompare"),
             value = BuiltinHelpers.method(intrinsics, "localeCompare", 1) { interpreter, thisValue, args ->
+                requireCoercible(interpreter, thisValue, "String.prototype.localeCompare")
                 val text = interpreter.toStringValue(thisValue)
                 val other = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
-                JSNumber(text.compareTo(other).toDouble())
+                // 规范要求规范等价字符串比较结果为 0：以 NFD 形式比较
+                val a = com.muedsa.js.runtime.UnicodeNormalizer.normalize(text, "NFD")
+                val b = com.muedsa.js.runtime.UnicodeNormalizer.normalize(other, "NFD")
+                JSNumber(a.compareTo(b).toDouble())
             },
         )
 
@@ -1031,6 +1061,13 @@ object StringBuiltins {
             result.removeAt(result.lastIndex)
         }
         return if (result.size > limit) ArrayList(result.take(limit)) else result
+    }
+
+    /** RequireObjectCoercible：null/undefined 接收者抛 TypeError（String 原型方法共用）。 */
+    private fun requireCoercible(interpreter: Interpreter, thisValue: JSValue, name: String) {
+        if (thisValue is JSNull || thisValue is JSUndefined) {
+            interpreter.typeError("$name called on null or undefined")
+        }
     }
 
     /** 取 String 原始值；包装对象返回其内部原始值，其他接收者抛 TypeError。 */

@@ -2974,4 +2974,79 @@ class RuntimeSemanticsRegressionTest {
         assertEquals("5e-324", runtime.evalString("[5e-324].join()"))
         assertEquals("0.30000000000000004", runtime.evalString("(0.1 + 0.2).toString()"))
     }
+
+    @Test
+    fun `String 原型方法要求 ObjectCoercible 与 pad 默认填充`() = runTest {
+        val runtime = TestRuntime()
+        // String.prototype 方法对 null/undefined 接收者抛 TypeError
+        assertEquals(true, runtime.evalBoolean(
+            "function throwsTypeError(fn) {" +
+                " try { fn.call(null); return false; } catch (e) { return e instanceof TypeError; }" +
+                " }" +
+                " throwsTypeError(String.prototype.charAt) &&" +
+                " throwsTypeError(String.prototype.charCodeAt) &&" +
+                " throwsTypeError(String.prototype.concat) &&" +
+                " throwsTypeError(String.prototype.indexOf) &&" +
+                " throwsTypeError(String.prototype.lastIndexOf) &&" +
+                " throwsTypeError(String.prototype.slice) &&" +
+                " throwsTypeError(String.prototype.substring) &&" +
+                " throwsTypeError(String.prototype.toLowerCase) &&" +
+                " throwsTypeError(String.prototype.toUpperCase) &&" +
+                " throwsTypeError(String.prototype.padStart) &&" +
+                " throwsTypeError(String.prototype.localeCompare)"
+        ))
+        // 省略 fillString 时使用空格；pad 系列 length 为 1
+        assertEquals(true, runtime.evalBoolean(
+            "'abc'.padStart(5) === '  abc' && 'abc'.padEnd(5) === 'abc  ' &&" +
+                " 'abc'.padStart(5, undefined) === '  abc' &&" +
+                " String.prototype.padStart.length === 1 &&" +
+                " String.prototype.padEnd.length === 1"
+        ))
+        // localeCompare 对规范等价字符串返回 0
+        assertEquals(true, runtime.evalBoolean(
+            "'o\\u0308'.localeCompare('\\u00F6') === 0 &&" +
+                " '\\u00E4\\u0323'.localeCompare('a\\u0323\\u0308') === 0"
+        ))
+    }
+
+    @Test
+    fun `String replace 与 split 的求值顺序`() = runTest {
+        val runtime = TestRuntime()
+        // 非函数替换值在搜索前 ToString（即使没有匹配）
+        assertEquals(1.0, runtime.evalNumber(
+            "var calls = 0;" +
+                " var replaceValue = { toString: function () { calls += 1; return 'b'; } };" +
+                " ''.replace('a', replaceValue); calls"
+        ))
+        // separator 的 ToString 在 limit 为 0 之前执行
+        assertEquals("ExpectedError", runtime.evalString(
+            "function ExpectedError() {}" +
+                " var separator = { toString: function () { throw new ExpectedError(); } };" +
+                " try { 'foo'.split(separator, 0); 'none' } catch (e) { e.constructor.name }"
+        ))
+        // ToUint32(limit) 先于 ToString(separator)
+        assertEquals("limit", runtime.evalString(
+            "var log = 'none';" +
+                " var limit = { valueOf: function () { log = 'limit'; throw new Error('limit'); } };" +
+                " var separator = { toString: function () { log = 'separator'; return ','; } };" +
+                " try { 'a'.split(separator, limit); } catch (e) { }" +
+                " log"
+        ))
+    }
+
+    @Test
+    fun `非 u 正则支持 Annex B IdentityEscape`() = runTest {
+        val runtime = TestRuntime()
+        // \x/\u 后缺位时按 IdentityEscape 匹配字面字符；合法转义保持原义
+        assertEquals(true, runtime.evalBoolean(
+            "/\\x/.test('x') && !/\\x/.test('y') &&" +
+                " /[\\x]/.test('x') && /\\u/.test('u') &&" +
+                " /\\xA0/.test('\\u00A0') &&" +
+                " 'x'.split(/\\x/).length === 2 &&" +
+                " 'x'.split(/\\x/)[0] === ''"
+        ))
+        // 非法结构仍按语法错误拒绝
+        assertFailsWith<JSException> { runtime.eval("new RegExp('(')") }
+        assertFailsWith<LexerException> { runtime.eval("/[/;") }
+    }
 }

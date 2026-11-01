@@ -49,6 +49,12 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("str-sigma-context", "'A\\u03A3B'.toLowerCase()"),
     DifferentialCase("str-codepoint-low-surrogate", "String.fromCodePoint(128512).charCodeAt(1)"),
     DifferentialCase("str-repeat-zero", "'a'.repeat(0).length"),
+    DifferentialCase("str-localecompare-canonical", "'o\u0308'.localeCompare('\u00F6') + ',' + '\u00E4\u0323'.localeCompare('a\u0323\u0308')"),
+    DifferentialCase("str-pad-default-fill", "['abc'.padStart(5), 'abc'.padEnd(5), 'abc'.padStart(5, undefined)].join('|')"),
+    DifferentialCase("str-null-this", "(function () { try { String.prototype.indexOf.call(null, 'a'); return 'none'; } catch (e) { return e.name; } })()"),
+    DifferentialCase("str-replace-tostring-before-search", "(function () { var calls = 0; var rv = { toString: function () { calls += 1; return 'b'; } }; ''.replace('a', rv); return calls; })()"),
+    DifferentialCase("str-split-limit-zero-separator", "(function () { function E() {} var s = { toString: function () { throw new E(); } }; try { 'foo'.split(s, 0); return 'none'; } catch (e) { return e.constructor.name; } })()"),
+    DifferentialCase("str-split-limit-before-separator", "(function () { var log = 'none'; var lim = { valueOf: function () { log = 'limit'; throw new Error('x'); } }; var sep = { toString: function () { log = 'separator'; return ','; } }; try { 'a'.split(sep, lim); } catch (e) { } return log; })()"),
 
     // 数组与稀疏语义
     DifferentialCase("arr-sort-lexicographic", "[10, 9, 1].sort().join(',')"),
@@ -216,6 +222,8 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("json-stringify-boxed-replacer", "(function () { var num = new Number(10); num.toString = function () { return 'toString'; }; return JSON.stringify({ 10: 1, toString: 2 }, [num]); })()"),
     DifferentialCase("json-parse-reviver-prototype", "(function () { Object.prototype.b = 3; var obj = JSON.parse('{\"a\":1,\"b\":2}', function (k, v) { if (k === 'a') { delete this.b; } return v; }); delete Object.prototype.b; return obj.a + '|' + obj.hasOwnProperty('b') + '|' + obj.b; })()"),
     DifferentialCase("json-parse-reviver-nonconfigurable", "(function () { var arr = JSON.parse('[1,2]', function (k, v) { if (k === '0') { Object.defineProperty(this, '1', { configurable: false }); } if (k === '1') return 22; return v; }); return arr.join(','); })()"),
+    DifferentialCase("regexp-nonunicode-x-identity", "[/\\x/.test('x'), /[\\x]/.test('x'), /\\u/.test('u'), /\\xA0/.test('\\u00A0')].join(',')"),
+    DifferentialCase("regexp-nonunicode-split-identity", "JSON.stringify('x'.split(/\\x/))"),
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
     DifferentialCase("regexp-source-prototype", "RegExp.prototype.source"),
     DifferentialCase("regexp-source-escape", "JSON.stringify(new RegExp('a/b' + String.fromCharCode(10)).source)"),
