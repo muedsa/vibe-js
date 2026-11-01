@@ -2114,6 +2114,78 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 
     // JSON 序列化随机值树与随机 UTF-16 码元转义（well-formed JSON.stringify）
     DifferentialCase(
+        "string-utf16-fuzz",
+        """
+        (function () {
+          var seed = 24681357;
+          function rnd(n) { seed = (seed * 48271) % 2147483647; return seed % n; }
+          var codeUnits = [0x61, 0x62, 0x20, 0x31, 0xE9, 0x3B1, 0xD83D, 0xDE00, 0xD800,
+            0xDC00, 0x301, 0x200D, 0x130, 0xDF, 0x212A];
+          var positions = [0, 1, 2, 3, 5, -1, -3, 10, NaN, undefined];
+          var methods = ['charAt', 'charCodeAt', 'codePointAt', 'slice', 'substring', 'substr',
+            'indexOf', 'lastIndexOf', 'includes', 'startsWith', 'endsWith', 'padStart',
+            'padEnd', 'repeat', 'concat', 'at', 'split'];
+          function randomString() {
+            var text = '';
+            var length = rnd(7);
+            for (var i = 0; i < length; i++) {
+              text += String.fromCharCode(codeUnits[rnd(codeUnits.length)]);
+            }
+            return text;
+          }
+          function units(text) {
+            var parts = [];
+            for (var i = 0; i < text.length; i++) {
+              parts.push(text.charCodeAt(i).toString(16));
+            }
+            return parts.join('.');
+          }
+          function snapshot(value) {
+            if (Array.isArray(value)) {
+              return 'a:' + value.map(units).join('~');
+            }
+            if (typeof value === 'string') { return 's:' + units(value); }
+            return typeof value + ':' + String(value);
+          }
+          var subs = ['', 'a', 'ab', ' ', String.fromCharCode(0xD83D, 0xDE00),
+            String.fromCharCode(0xD800), String.fromCharCode(0x301)];
+          var fills = ['', 'x', String.fromCharCode(0xD83D, 0xDE00), 'ab'];
+          var out = [];
+          for (var step = 0; step < 60; step++) {
+            var text = randomString();
+            var method = methods[rnd(methods.length)];
+            var args = [];
+            var pos = positions[rnd(positions.length)];
+            var sub = subs[rnd(subs.length)];
+            if (method === 'charAt' || method === 'charCodeAt' ||
+                method === 'codePointAt' || method === 'at') {
+              args = [pos];
+            } else if (method === 'slice' || method === 'substring' || method === 'substr') {
+              args = [pos, positions[rnd(positions.length)]];
+            } else if (method === 'indexOf' || method === 'lastIndexOf' ||
+                method === 'includes' || method === 'startsWith' || method === 'endsWith') {
+              args = [sub, pos];
+            } else if (method === 'padStart' || method === 'padEnd') {
+              args = [rnd(11), fills[rnd(fills.length)]];
+            } else if (method === 'repeat') {
+              args = [rnd(4)];
+            } else if (method === 'concat') {
+              args = [randomString()];
+            } else if (method === 'split') {
+              args = [sub];
+            }
+            try {
+              out.push(step + ':' + method + ':' + units(text) + ':' +
+                snapshot(text[method].apply(text, args)));
+            } catch (e) {
+              out.push(step + ':' + method + ':' + units(text) + ':THROW:' + e.name);
+            }
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "map-set-live-fuzz",
         """
         (function () {
