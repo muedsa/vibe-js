@@ -163,6 +163,25 @@ class HostModuleTest {
                     "s += String.fromCharCode(i); } return atob(btoa(s)) === s; })()"
             ) as JSBoolean).value
         )
+        // 宽松填充与尾部未使用比特：全部与 WHATWG/Node 行为一致
+        val validPairs = mapOf(
+            "AA==" to "\u0000",
+            "AAA=" to "\u0000\u0000",
+            "AAAA" to "\u0000\u0000\u0000",
+            "AAA" to "\u0000\u0000",
+            "AA" to "\u0000",
+            "AB" to "\u0000",
+            "+/" to "\u00FB",
+            "   " to "",
+        )
+        for ((encoded, decoded) in validPairs) {
+            assertEquals(decoded, (engine.run("atob('$encoded')") as JSString).value, encoded)
+        }
+        // 填充位置/长度/非 ASCII 空白/URL 安全字符均非法
+        for (encoded in listOf("=", "AA=A", "A===", "AA===", "AA==AA==", "YQ=", "\u00A0YQ==", "-_")) {
+            val failure = assertFailsWith<JSException> { engine.run("atob('$encoded')") }
+            assertEquals("InvalidCharacterError", (failure.value as JSError).errorName, encoded)
+        }
     }
 
     @Test
