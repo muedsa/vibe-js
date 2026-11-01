@@ -2326,6 +2326,32 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
         ),
     ),
     LibrarySpec(
+        name = "d3-color",
+        url = "https://unpkg.com/d3-color@3.1.0/dist/d3-color.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "hex and rgb",
+                assertion(
+                    "d3.color('steelblue').formatHex() === '#4682b4' && " +
+                        "d3.color('#abc').formatHex() === '#aabbcc' && " +
+                        "d3.rgb(255, 0, 0).formatRgb() === 'rgb(255, 0, 0)'"
+                ),
+            ),
+            SmokeCase(
+                "hsl and alpha",
+                assertion(
+                    "d3.hsl('red').toString() === 'rgb(255, 0, 0)' && " +
+                        "d3.color('rgba(0, 0, 0, 0.5)').formatRgb() === 'rgba(0, 0, 0, 0.5)'"
+                ),
+            ),
+            SmokeCase(
+                "invalid",
+                assertion("d3.color('nope') === null"),
+            ),
+        ),
+    ),
+    LibrarySpec(
         name = "d3-time",
         url = "https://unpkg.com/d3-time@3.1.0/dist/d3-time.min.js",
         globalName = "d3",
