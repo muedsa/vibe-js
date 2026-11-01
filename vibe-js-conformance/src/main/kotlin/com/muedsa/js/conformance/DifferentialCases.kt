@@ -2625,4 +2625,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // 字符类内 Annex B 转义（\B/\A/\Z/\G/\R/\h// 等）
+    DifferentialCase(
+        "regexp-class-escapes",
+        """(function () {
+  var patterns = [/[\B]/, /[\A]/, /[\Z]/, /[\G]/, /[\R]/, /[\h]/, /[\v]/, /[\b]/,
+    /[\cA]/, /[\x]/, /[\u]/, /[\e]/, /[\a]/];
+  var inputs = ['B', 'A', 'Z', 'G', 'R', 'h', 'e', 'a', '\u000B', '\t', '\b',
+    '\u0001', 'x', 'u', 'c'];
+  var out = [];
+  for (var i = 0; i < patterns.length; i++) {
+    var bits = '';
+    for (var j = 0; j < inputs.length; j++) bits += patterns[i].test(inputs[j]) ? '1' : '0';
+    out.push(bits);
+  }
+  return out.join(';');
+})()""",
+    ),
 )
