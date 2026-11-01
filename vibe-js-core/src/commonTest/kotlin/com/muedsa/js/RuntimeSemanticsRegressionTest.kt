@@ -3945,4 +3945,21 @@ class RuntimeSemanticsRegressionTest {
         )
         assertEquals(6.0, runtime.evalNumber("((x) => x * 2)(3)"))
     }
+
+    @Test
+    fun `Math hypot 按最大绝对值缩放避免溢出`() = runTest {
+        val runtime = TestRuntime()
+        // 经典 3-4-5 与 Infinity/NaN 优先级
+        assertEquals("5", runtime.evalString("String(Math.hypot(3, 4))"))
+        assertEquals("Infinity", runtime.evalString("String(Math.hypot(NaN, Infinity))"))
+        assertEquals("0", runtime.evalString("String(Math.hypot())"))
+        // 大数参数不能因中间平方溢出
+        assertEquals(
+            "1.4142135623730951e+308",
+            runtime.evalString("String(Math.hypot(1e308, 1e308))")
+        )
+        // 负数与符号零
+        assertEquals("13", runtime.evalString("String(Math.hypot(-5, 12))"))
+        assertEquals("Infinity", runtime.evalString("String(1 / Math.hypot(-0, -0))"))
+    }
 }

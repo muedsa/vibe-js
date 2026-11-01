@@ -150,7 +150,8 @@ object MathBuiltins {
             value = BuiltinHelpers.method(intrinsics, "hypot", 2) { interpreter, _, args ->
                 var hasNaN = false
                 var infinite = false
-                var sum = 0.0
+                var max = 0.0
+                val magnitudes = ArrayList<Double>(args.size)
                 for (argument in args) {
                     val value = interpreter.toNumber(argument)
                     // 任一参数为 ±Infinity 时结果恒为 Infinity，即使同时存在 NaN
@@ -162,13 +163,25 @@ object MathBuiltins {
                         hasNaN = true
                         continue
                     }
-                    sum += value * value
+                    val magnitude = abs(value)
+                    if (magnitude > max) max = magnitude
+                    magnitudes.add(magnitude)
                 }
-                when {
-                    infinite -> JSNumber(Double.POSITIVE_INFINITY)
-                    hasNaN -> JSNumber.NAN
-                    else -> JSNumber(sqrt(sum))
+                // 规范：先按最大绝对值缩放再求平方和，避免中间结果溢出
+                val result = when {
+                    infinite -> Double.POSITIVE_INFINITY
+                    hasNaN -> Double.NaN
+                    max == 0.0 -> 0.0
+                    else -> {
+                        var sum = 0.0
+                        for (magnitude in magnitudes) {
+                            val scaled = magnitude / max
+                            sum += scaled * scaled
+                        }
+                        max * sqrt(sum)
+                    }
                 }
+                JSNumber(result)
             },
         )
 

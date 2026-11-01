@@ -69,7 +69,7 @@
 | String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表）；原型方法统一 RequireObjectCoercible，pad 默认空格、localeCompare 规范等价、replace/split 按规范求值顺序 |
 | Number | ✅ | 常量、toString(radix)（10 进制为最短十进制表示如 5e-324；2-36 进制用精确二进制大整数展开并按最短往返规则选择有效数字，支持 0.1 的完整二进制展开、超过 2^63 的整数与次正规数）、toFixed/toExponential/toPrecision（非有限值先于范围检查、负零格式化；三者均按 Double 的精确十进制值舍入，含次正规数、进位、负值舍入为 0 的符号；toExponential 无参数时使用最短往返表示，toPrecision 按舍入后的指数选择指数/定点形式）、静态判断与解析（parseInt/parseFloat 与全局同一函数对象；parseInt 的 radix 按 ToInt32，parseFloat 只接受 ASCII 数字） |
 | Boolean | ✅ | 构造器、toString、valueOf |
-| Math | ✅ | 常量与 ES5/ES2015 常用函数；max/min 对全部参数执行 ToNumber；sumPrecise 精确求和 |
+| Math | ✅ | 常量与 ES5/ES2015 常用函数；max/min 对全部参数执行 ToNumber；hypot 按最大绝对值缩放避免中间溢出；sumPrecise 精确求和 |
 | JSON | ✅ | well-formed 字符串转义（孤立代理项）、parse（reviver 快照键/原型链 Get/CreateDataProperty 不变量与 context.source）、stringify（replacer/space 的包装对象转换、值位置按内部槽展开）、`rawJSON`/`isRawJSON`；字符串字面量允许 U+2028/U+2029（JSON 超集） |
 | Error | ✅ | Error/TypeError/RangeError/ReferenceError/SyntaxError/EvalError/URIError、SuppressedError（error/suppressed/可选 message）、`Error.isError`、Error.prototype.toString（name/message 缺省规则与不可强制转换接收者）、Error.prototype.stack 访问器 |
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile 与旧式八进制数字转义、超大 `{m,n}` 量词与零宽迭代/捕获回滚、u+i 基于 CaseFolding.txt 的简单折叠、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
@@ -107,9 +107,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 491 + 宿主 16 个测试 |
-| JS（Node） | ✅ | 核心 491 + 宿主 16 个测试 |
-| Wasm（Node） | ✅ | 核心 491 + 宿主 16 个测试 |
+| JVM | ✅ | 核心 492 + 宿主 16 个测试 |
+| JS（Node） | ✅ | 核心 492 + 宿主 16 个测试 |
+| Wasm（Node） | ✅ | 核心 492 + 宿主 16 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

@@ -503,6 +503,37 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("arr-of-length-setter", "(function () { var hits = 0; function P() { Object.defineProperty(this, 'length', { set: function () { hits++; } }); } Array.of.call(P, 1, 2); return hits; })()"),
     DifferentialCase("obj-entries-getter-deletes", "(function () { var o = { a: 'A', get b() { delete this.c; return 'B'; }, c: 'C' }; return JSON.stringify(Object.entries(o)); })()"),
     DifferentialCase("math-max-coerce-count", "(function () { var calls = 0; var n = { valueOf: function () { calls++; } }; Math.max(NaN, n); return calls; })()"),
+    // Math 精确语义矩阵：符号零、ToInt32/ToUint32、特殊 pow/hypot 与 fround
+    DifferentialCase(
+        "math-exact-matrix",
+        "(function () { var out = []; " +
+            "function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } } " +
+            "push(function () { return [Math.round(0.5), Math.round(-0.5), 1 / Math.round(-0.5), " +
+            "Math.round(2.5), Math.round(-2.5)].join(','); }); " +
+            "push(function () { return [1 / Math.sign(-0), Math.sign(0), Math.sign(-3), " +
+            "String(Math.sign(NaN))].join(','); }); " +
+            "push(function () { return [1 / Math.trunc(-0.9), Math.ceil(-0.5), " +
+            "1 / Math.ceil(-0.5), Math.floor(-0.5)].join(','); }); " +
+            "push(function () { return [Math.clz32(0), Math.clz32(1), Math.clz32(0xFFFFFFFF), " +
+            "Math.clz32(NaN), Math.clz32(2 ** 32), Math.clz32(1.9)].join(','); }); " +
+            "push(function () { return [Math.imul(0xFFFFFFFF, 5), Math.imul(2, 3), " +
+            "Math.imul(-2, 3), Math.imul(NaN, 3), Math.imul(0x7FFFFFFF, 0x7FFFFFFF)].join(','); }); " +
+            "push(function () { return [Math.fround(1.1), Math.fround(1e40), " +
+            "1 / Math.fround(-0), Math.fround(5e-324)].join(','); }); " +
+            "push(function () { return [1 / Math.max(-0, 0), 1 / Math.min(0, -0), " +
+            "String(Math.max(-0, -0)), String(Math.min(0, 0))].join(','); }); " +
+            "push(function () { return [Math.pow(-0, -3), Math.pow(-0, 2), Math.pow(NaN, 0), " +
+            "String(Math.pow(1, NaN)), String(Math.pow(-1, Infinity)), String(Math.pow(-1, 0.5))].join(','); }); " +
+            "push(function () { return [Math.pow(2, -1074), Math.pow(2, 1024), " +
+            "Math.pow(-8, 1 / 3)].join(','); }); " +
+            "push(function () { return [Math.hypot(3, 4), String(Math.hypot(NaN, Infinity)), " +
+            "Math.hypot(), Math.hypot(1e308, 1e308)].join(','); }); " +
+            "push(function () { return [1 / Math.abs(-0), 1 / Math.sqrt(-0), 1 / Math.expm1(-0), " +
+            "1 / Math.log1p(-0), Math.cbrt(-8), 1 / Math.cbrt(-0)].join(','); }); " +
+            "push(function () { return [1 / Math.atan2(-0, 1), Math.atan2(0, -1), " +
+            "1 / Math.sin(-0), 1 / Math.tan(-0)].join(','); }); " +
+            "return out.join('|'); })()"
+    ),
     DifferentialCase("num-parse-identity", "Number.parseInt === parseInt && Number.parseFloat === parseFloat"),
     DifferentialCase("arguments-unmapped-callee", "(function () { function f(a = 0) { return arguments; } return Object.getOwnPropertyDescriptor(f(), 'callee').get === Object.getOwnPropertyDescriptor(Function.prototype, 'caller').get; })()"),
     DifferentialCase("num-toexponential-nonfinite", "[(Infinity).toExponential(1000), NaN.toExponential(2)].join('|')"),
