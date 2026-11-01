@@ -2016,14 +2016,18 @@ class Parser(
             }
         } else {
             val defaultsBefore = patternDefaultsSeen
+            val targetStartToken = peek()
             val expression = withPatternSyntax { parseLeftHandSide() }
             if (expression is ArrayLiteral || expression is ObjectLiteral) {
                 validateAssignmentPattern(expression)
             } else if (expression !is Identifier && expression !is MemberExpr) {
                 throw error("Invalid left-hand side in for-in/of")
             }
-            // for-of 左值不允许裸 async（Lookahead 限制）
-            if (isOf && expression is Identifier && expression.name == "async") {
+            // for-of 左值不允许裸 async（Lookahead 限制）；
+            // 转义写法或括号包裹是不同 token 序列，允许作为普通标识符
+            if (isOf && expression is Identifier && expression.name == "async" &&
+                !targetStartToken.containsEscape && expression.range !in parenthesizedRanges
+            ) {
                 throw error("The left-hand side of a for-of loop may not be 'async'")
             }
             // 严格模式下 for-in/of 左值同样适用简单赋值目标限制
