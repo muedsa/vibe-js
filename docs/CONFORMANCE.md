@@ -178,7 +178,7 @@ Unicode 数据表（`\p{...}` 属性、属性字符串、标识符 ID_Start/ID_C
 
 合计：**70/70 用例通过，0 失败**。
 
-Node 差分基线：**207 个用例**（数字格式化/转换、字符串 Unicode、数组空洞与写方法、对象描述符/枚举、RegExp 捕获与 lastIndex、v 标志集合运算与属性字符串、Unicode 代理项码元语义、Date UTC 双精度/TimeClip/无效日期设置器、JSON reviver/replacer、Map/Set、函数 bind/arguments、Unicode 标识符、尾调用结果、eval 完成值与相等转换等）**全部一致**。
+Node 差分基线：**222 个用例**（数字格式化/转换、字符串 Unicode、数组空洞与写方法、对象描述符/枚举、RegExp 捕获与 lastIndex、v 标志集合运算与属性字符串、Unicode 代理项码元语义、Array 泛型方法的原型链/稀疏/数组型对象语义、Date UTC 双精度/TimeClip/无效日期设置器、JSON reviver/replacer、Map/Set、函数 bind/arguments、Unicode 标识符、尾调用结果、eval 完成值与相等转换等）**全部一致**。
 
 > 真实库结果说明：纯 Kotlin 回退正则引擎按 JS-only 构造精确启用（空字符类、`\0`/`\c`、字符类内 `\b`/嵌套 `[`、前向/ lookahead 反向引用、量词组捕获重置），Test262 基线保持 100% 通过。lodash 的加载问题最终定位为宽松相等 `null == object` 被错误地触发 ToPrimitive，修复后 8/8 通过。
 

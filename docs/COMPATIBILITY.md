@@ -64,7 +64,7 @@
 | Object | ✅ | 构造器；keys/values/entries/assign/create/getPrototypeOf/setPrototypeOf/getOwnPropertyDescriptor/getOwnPropertyNames/getOwnPropertySymbols/defineProperty/defineProperties/is/freeze/seal/preventExtensions/isFrozen/isSealed/isExtensible |
 | Object.prototype | ✅ | hasOwnProperty、isPrototypeOf、propertyIsEnumerable、valueOf、toString、toLocaleString、`__proto__`、Annex B `__defineGetter__`/`__defineSetter__`/`__lookupGetter__`/`__lookupSetter__` |
 | Function | ✅ | call/apply/bind/toString（动态函数源码，其余 NativeFunction 形式）、动态 Function 构造器 |
-| Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；array-like 支持 2^53-1 长度边界 |
+| Array | ✅ | 常用迭代/查找/增删/排序（稳定）、fill/copyWithin/at、entries/keys/values、toLocaleString、fromAsync；静态 isArray/of/from；方法为泛型实现（ToObject/HasProperty/Get/Delete，遵循原型链与稀疏语义），array-like 支持 2^53-1 长度边界 |
 | String | ✅ | 常用方法、toLocaleLowerCase/UpperCase、String.raw、fromCharCode/fromCodePoint；normalize 支持 NFC/NFD/NFKC/NFKD（Unicode 17.0.0 规范化表） |
 | Number | ✅ | 常量、toString(radix)、toFixed/toExponential/toPrecision、静态判断与解析 |
 | Boolean | ✅ | 构造器、toString、valueOf |
@@ -103,9 +103,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 452 + 宿主 14 个测试 |
-| JS（Node） | ✅ | 核心 452 + 宿主 14 个测试 |
-| Wasm（Node） | ✅ | 核心 452 + 宿主 14 个测试 |
+| JVM | ✅ | 核心 453 + 宿主 14 个测试 |
+| JS（Node） | ✅ | 核心 453 + 宿主 14 个测试 |
+| Wasm（Node） | ✅ | 核心 453 + 宿主 14 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

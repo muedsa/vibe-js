@@ -2827,4 +2827,58 @@ class RuntimeSemanticsRegressionTest {
                 " Date.parse('-271821-04-20T00:00:00.000Z') === -8640000000000000"
         ))
     }
+
+    @Test
+    fun `Array 泛型方法遵循原型链 稀疏与数组型对象语义`() = runTest {
+        val runtime = TestRuntime()
+        // pop 通过 Get 读取原型链元素，并删除自有属性
+        assertEquals(true, runtime.evalBoolean(
+            "Array.prototype[1] = 1; var x = [0]; x.length = 2;" +
+                " var popped = x.pop(); delete Array.prototype[1];" +
+                " popped === 1 && x.length === 1 && !x.hasOwnProperty('1')"
+        ), "pop-prototype")
+
+        // shift 使用 Get(0)，空洞搬移时保持空洞
+        assertEquals(true, runtime.evalBoolean(
+            "var a = [1, , 3]; var first = a.shift();" +
+                " first === 1 && a.length === 2 && !a.hasOwnProperty('0') && a[1] === 3"
+        ), "shift-holes")
+
+        // 不可写 length 的 pop 在写入 length 时抛 TypeError
+        assertEquals("TypeError", runtime.evalString(
+            "var b = [1]; Object.defineProperty(b, 'length', { writable: false });" +
+                " try { b.pop(); 'none' } catch (e) { e.name }"
+        ))
+        // fill/copyWithin 返回 ToObject(this)，且支持数组型对象
+        assertEquals(true, runtime.evalBoolean(
+            "var o = { length: 2 }; var filled = Array.prototype.fill.call(o, 7);" +
+                " var p = { 0: 1, 1: 2, length: 2 };" +
+                " var copied = Array.prototype.copyWithin.call(p, 0, 1);" +
+                " filled === o && o[0] === 7 && o[1] === 7 && copied === p && p[0] === 2"
+        ), "fill-copy-return")
+
+        // 基元 this 被包装为对象
+        assertEquals(true, runtime.evalBoolean(
+            "var boxed = Array.prototype.fill.call(true, 1);" +
+                " (boxed instanceof Boolean) && boxed.length === undefined"
+        ), "fill-primitive")
+
+        // find 对空洞也调用谓词；indexOf 在 length 为 0 时不读取 fromIndex
+        assertEquals(true, runtime.evalBoolean(
+            "var called = 0; [, , 'x'].find(function () { called++; });" +
+                " var probed = false;" +
+                " var arg = { valueOf: function () { probed = true; return 1; } };" +
+                " [].indexOf(1, arg); called === 3 && !probed"
+        ), "find-holes-indexof")
+
+        // splice 删除不可配置元素抛 TypeError；被删除元素可来自原型链
+        assertEquals(true, runtime.evalBoolean(
+            "var c = [1, 2]; Object.defineProperty(c, '1', { configurable: false });" +
+                " var threw = false; try { c.splice(1); } catch (e) { threw = e instanceof TypeError; }" +
+                " Array.prototype[1] = 'p'; var d = [0]; d.length = 2;" +
+                " var removed = d.splice(1); delete Array.prototype[1];" +
+                " threw && removed.length === 1 && removed[0] === 'p' && d.length === 1"
+        ), "splice-delete")
+
+    }
 }
