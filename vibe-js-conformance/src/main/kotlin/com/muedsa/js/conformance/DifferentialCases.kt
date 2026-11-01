@@ -1133,6 +1133,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("regexp-source-empty", "new RegExp('').source"),
     DifferentialCase("regexp-source-prototype", "RegExp.prototype.source"),
     DifferentialCase(
+        "str-case-astral-audit",
+        """
+        (function () {
+          var ranges = [[0x10400, 0x1044F], [0x10C80, 0x10CFF], [0x1E900, 0x1E95F]];
+          var out = [];
+          for (var r = 0; r < ranges.length; r++) {
+            for (var cp = ranges[r][0]; cp <= ranges[r][1]; cp++) {
+              var s = String.fromCodePoint(cp);
+              out.push(cp.toString(16) + ':' + s.toUpperCase() + ':' + s.toLowerCase());
+            }
+          }
+          return out.join(';');
+        })()
+        """.trimIndent()
+    ),
+    DifferentialCase(
         "array-methods-fuzz",
         """
         (function () {
