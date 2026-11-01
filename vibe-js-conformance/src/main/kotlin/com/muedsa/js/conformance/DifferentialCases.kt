@@ -2040,4 +2040,60 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "early-error-params-matrix",
         """(function () { var cases = ['([a]) => { let a; }', '({a}) => { let a; }', '!{ a({b}){ let b; } }', '!{ set a([b]){ let b; } }', '!{ a([b]){ let b; } }', 'try {} catch(a) { for(var a of 1); }']; var out = []; for (var i = 0; i < cases.length; i++) { try { eval(cases[i]); out.push('OK'); } catch (e) { out.push(e.name); } } return out.join('|'); })()""",
     ),
+
+    // 长随机十进制字符串的 Number/parseFloat 解析与舍入
+    DifferentialCase(
+        "num-decimal-fuzz",
+        """(function () {
+  var out = [];
+  var seed = 864209753;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function digits(count) {
+    var text = '';
+    for (var i = 0; i < count; i++) text += String.fromCharCode(48 + Math.floor(rnd() * 10));
+    return text;
+  }
+  for (var i = 0; i < 150; i++) {
+    var text = '';
+    if (rnd() < 0.3) text += '-';
+    text += digits(1 + Math.floor(rnd() * 20));
+    if (rnd() < 0.7) text += '.' + digits(1 + Math.floor(rnd() * 20));
+    if (rnd() < 0.5) {
+      text += (rnd() < 0.5 ? 'e' : 'E');
+      if (rnd() < 0.5) text += (rnd() < 0.5 ? '+' : '-');
+      text += digits(1 + Math.floor(rnd() * 4));
+    }
+    out.push(Number(text) + '|' + String(parseFloat(text)) + '|' + Number(text).toString());
+  }
+  return out.join(';');
+})()""",
+    ),
+
+    // Symbol 注册表、包装对象、属性键与 JSON/ToString 行为
+    DifferentialCase(
+        "symbol-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { var a = Symbol('x'); var b = Symbol('x'); return (a === b) + ':' + String(a) + ':' + a.description; });
+  push(function () { return typeof Symbol() + ':' + Symbol.keyFor(Symbol('k')); });
+  push(function () { var r = Symbol.for('k'); return (Symbol.for('k') === r) + ':' + Symbol.keyFor(r) + ':' + Symbol.keyFor(Symbol('k')); });
+  push(function () { return (Symbol.for(1) === Symbol.for('1')) + ':' + Symbol.for(1).description; });
+  push(function () { var s = Symbol('s'); var o = {}; o[s] = 1; o.x = 2; return o[s] + ':' + Object.keys(o).join(',') + ':' + Object.getOwnPropertySymbols(o).length; });
+  push(function () { var s = Symbol(); return String(s) + ':' + (s.description === undefined) + ':' + s.toString(); });
+  push(function () { return '' + Symbol('s'); });
+  push(function () { return new Symbol('s'); });
+  push(function () { return Object(Symbol('w')).valueOf() === Object.prototype.valueOf.call(Symbol('w')); });
+  push(function () { var w = Object(Symbol('w')); return typeof w + ':' + (w.valueOf() === w.valueOf()) + ':' + w.description; });
+  push(function () { return JSON.stringify({ a: Symbol('x') }) + ':' + JSON.stringify([Symbol('x')]); });
+  push(function () { return Object.prototype.toString.call(Symbol('t')); });
+  push(function () { return +Symbol('n'); });
+  push(function () { return Symbol.prototype.description.get.call({}); });
+  push(function () { var s = Symbol('k'); var o = {}; o[s] = 1; Object.defineProperty(o, s, { enumerable: false }); return Object.getOwnPropertySymbols(o).length + ':' + Object.keys(o).length; });
+  push(function () { return (Symbol.iterator === Symbol.iterator) + ':' + typeof Symbol.iterator + ':' + String(Symbol.asyncIterator).length; });
+  push(function () { var s = Symbol('d'); return Object.getOwnPropertyDescriptor(Object(s), 'description').value; });
+  push(function () { return String(Symbol.for('')); });
+  return out.join('|');
+})()""",
+    ),
 )
