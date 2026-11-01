@@ -2681,4 +2681,30 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join(';');
 })()""",
     ),
+
+    // ToPrimitive 提示顺序、抽象相等与关系比较的转换矩阵
+    DifferentialCase(
+        "coercion-matrix",
+        """(function () {
+  var out = [];
+  function push(fn) { try { out.push(String(fn())); } catch (e) { out.push('THROW:' + e.name); } }
+  push(function () { return [([] == false), ([] == ''), ([0] == false), ([''] == 0), ([null] == ''), ([undefined] == ''), ([] == 0)].join(','); });
+  push(function () { return [({} == '[object Object]'), (null == 0), (undefined == 0), (null == undefined), (null == false), (undefined == false)].join(','); });
+  push(function () { return [('0' == false), ('0' == 0), ('' == 0), ('  ' == 0), ('1' == true)].join(','); });
+  push(function () { var log = []; var o = { valueOf: function () { log.push('v'); return 1; }, toString: function () { log.push('s'); return 'x'; } }; var sum = o + ''; return sum + ':' + log.join(','); });
+  push(function () { var log = []; var o = { valueOf: function () { log.push('v'); return 1; }, toString: function () { log.push('s'); return 'x'; } }; var sum = '' + o; return sum + ':' + log.join(','); });
+  push(function () { var log = []; var o = { valueOf: function () { log.push('v'); return 1; }, toString: function () { log.push('s'); return 'x'; } }; var n = +o; return n + ':' + log.join(','); });
+  push(function () { var log = []; var o = { [Symbol.toPrimitive]: function (hint) { log.push(hint); return 7; }, valueOf: function () { log.push('v'); return 1; }, toString: function () { log.push('s'); return 'x'; } }; var a = o + 1; var b = String(o); var c = o < 8; var d = o == 7; return a + ':' + b + ':' + c + ':' + d + ':' + log.join(','); });
+  push(function () { var d = new Date(0); return (typeof (d + 1)) + ':' + (d < 1) + ':' + (d == 0); });
+  push(function () { var o = { [Symbol.toPrimitive]: function () { return {}; } }; return String(o); });
+  push(function () { var o = { valueOf: function () { throw new Error('v'); }, toString: function () { return 't'; } }; return String(o) + ':' + (o + ''); });
+  push(function () { return [('2' < '10'), (2 < '10'), ('a' < 1), (null < 1), (undefined < 1), (true < 2), (null >= 0)].join(','); });
+  push(function () { return [NaN == NaN, Object.is(NaN, NaN), +[], +[1], +[1, 2], +{}].join(','); });
+  push(function () { return [!([]), !(''), !!(0), !!('0')].join(','); });
+  push(function () { return [String([1, null, undefined, 3]), String([, , ]), String([]), String({})].join('|'); });
+  push(function () { var a = [1]; a.toString = function () { return 'A'; }; return (a == 'A') + ':' + (a == 1); });
+  push(function () { var log = []; var o = { valueOf: function () { log.push('v'); return {}; }, toString: function () { log.push('s'); return {}; } }; try { +o; return 'none'; } catch (e) { return e.name + ':' + log.join(','); } });
+  return out.join(';');
+})()""",
+    ),
 )
