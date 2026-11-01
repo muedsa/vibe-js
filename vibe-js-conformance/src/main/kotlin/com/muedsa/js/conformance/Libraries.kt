@@ -1225,6 +1225,35 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    LibrarySpec(
+        name = "crc-32",
+        url = "https://unpkg.com/crc-32@1.2.2/crc32.js",
+        globalName = "CRC32",
+        cases = listOf(
+            SmokeCase(
+                "version",
+                assertion("CRC32.version === '1.2.2'"),
+            ),
+            SmokeCase(
+                "utf8 strings",
+                assertion(
+                    "CRC32.str('') === 0 && CRC32.str('abc') === 891568578 && " +
+                        "CRC32.str('Hello') === -137262718 && CRC32.str('你好') === 1352841281 && " +
+                        "CRC32.str('😀a') === -1727826305"
+                ),
+            ),
+            SmokeCase(
+                "binary string and bytes",
+                assertion(
+                    "CRC32.bstr('ABC') === -1551695032 && CRC32.buf([65, 66, 67]) === -1551695032"
+                ),
+            ),
+            SmokeCase(
+                "incremental seed",
+                assertion("CRC32.str('bc', CRC32.str('a')) === 891568578"),
+            ),
+        ),
+    ),
 )
 
 
