@@ -17,8 +17,8 @@ import com.muedsa.js.runtime.value.PropertyKey
 /**
  * Date 构造器与 Date.prototype。
  *
- * 本地时间方法当前按 UTC 实现（common 代码无法获取时区信息），
- * 时区偏移固定为 0；时间源来自宿主注入的 Clock。
+ * 本地时间通过宿主 HostEnvironment.utcOffsetMillis 换算（默认 UTC）；
+ * 时间源来自宿主注入的 Clock。
  */
 object DateBuiltins {
 
