@@ -20,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlin.io.encoding.Base64
 
 /**
@@ -147,7 +148,9 @@ class HostModule(
             value = BuiltinHelpers.method(intrinsics, "clearTimeout", 1) { interpreter, _, args ->
                 val id = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() }
                 if (id != null) {
+                    // 浏览器语义：clearTimeout 与 clearInterval 可互相取消
                     timers.remove(id)?.cancel()
+                    intervals.remove(id)?.cancel()
                 }
                 JSUndefined
             },
@@ -171,12 +174,15 @@ class HostModule(
                 val job = eventLoop.scope.launch {
                     while (isActive) {
                         delay(delayMillis)
-                        try {
-                            interpreter.callFunction(callback, JSUndefined, extraArguments)
-                        } catch (error: JSException) {
-                            console.error(error.toString())
+                        // 解释器不是线程安全的：与 Engine.run / 其它定时任务串行执行
+                        eventLoop.runtimeMutex.withLock {
+                            try {
+                                interpreter.callFunction(callback, JSUndefined, extraArguments)
+                            } catch (error: JSException) {
+                                console.error(error.toString())
+                            }
+                            eventLoop.drainMicrotasks()
                         }
-                        eventLoop.drainMicrotasks()
                     }
                 }
                 intervals[id] = job
@@ -189,7 +195,9 @@ class HostModule(
             value = BuiltinHelpers.method(intrinsics, "clearInterval", 1) { interpreter, _, args ->
                 val id = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() }
                 if (id != null) {
+                    // 浏览器语义：clearInterval 与 clearTimeout 可互相取消
                     intervals.remove(id)?.cancel()
+                    timers.remove(id)?.cancel()
                 }
                 JSUndefined
             },

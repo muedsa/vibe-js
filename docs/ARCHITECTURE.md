@@ -124,7 +124,7 @@ engine.run("""
 
 - `HostModule` 提供 `window`/`self`、`console`、`setTimeout`/`clearTimeout`、
   `setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`；
-- 定时任务通过 `EventLoop` 的 `Scheduler` 执行，console 通过 `Console` 注入。
+- 定时任务通过 `EventLoop` 的 `Scheduler` 执行，console 通过 `Console` 注入；解释器与全局环境非线程安全，`Engine.run`、`EventLoop.schedule` 与 `setInterval` 回调共享 `EventLoop.runtimeMutex` 串行执行，`clearTimeout`/`clearInterval` 可互相取消。
 
 ### 8.2 自定义内建模块
 

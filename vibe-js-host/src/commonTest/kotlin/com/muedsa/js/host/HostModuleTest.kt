@@ -250,4 +250,27 @@ class HostModuleTest {
         withContext(Dispatchers.Default) { delay(40) }
         assertEquals(afterClear, (engine.run("ticks") as JSNumber).value)
     }
+
+    @Test
+    fun `clearInterval 可取消 setTimeout 且 clearTimeout 可取消 setInterval`() = runTest {
+        // QueueScheduler 保证 setTimeout 任务在断言前不会自动执行
+        val scheduler = QueueScheduler()
+        val engine = Engine(DefaultHostEnvironment(scheduler = scheduler))
+        engine.install(HostModule(engine.eventLoop, RecordingConsole()))
+        engine.run(
+            """
+            var timeoutRan = false;
+            var timeoutId = setTimeout(function () { timeoutRan = true; }, 0);
+            clearInterval(timeoutId);
+            """.trimIndent()
+        )
+        scheduler.runAll()
+        assertEquals(false, (engine.run("timeoutRan") as JSBoolean).value)
+
+        // setInterval 的首次 tick 至少延迟 1ms，可在同一脚本中立即用 clearTimeout 取消
+        engine.run("var ticks = 0; var intervalId = setInterval(function () { ticks += 1; }, 1);")
+        engine.run("clearTimeout(intervalId);")
+        withContext(Dispatchers.Default) { delay(30) }
+        assertEquals(0.0, (engine.run("ticks") as JSNumber).value)
+    }
 }

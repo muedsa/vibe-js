@@ -116,7 +116,7 @@
 - RegExp 使用 Kotlin Regex 主路径 + 纯 Kotlin 回退引擎；回退路径按 JS-only 构造精确启用（空字符类、`\0`/`\c`、前向反向引用、lookbehind、量词组捕获重置、码元级 `.` 等），Kotlin 路径对少数高级构造的 Unicode 折叠细节仍有差异；
 - `Math.cbrt` 等超越函数使用平台近似实现，完美立方体回退到精确整数根；
 - Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷），未实现未处理拒绝上报；
-- 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度。
+- 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消。
 
 ## 7. 测试对应
 

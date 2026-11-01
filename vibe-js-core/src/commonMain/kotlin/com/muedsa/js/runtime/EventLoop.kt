@@ -6,6 +6,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 微任务 / 宏任务事件循环。
@@ -22,6 +24,15 @@ class EventLoop(
 
     /** 微任务队列（FIFO）。 */
     private val microtasks: ArrayDeque<suspend () -> Unit> = ArrayDeque()
+
+    /**
+     * 运行时互斥锁：解释器、环境与微任务队列都不是线程安全的。
+     *
+     * 宿主通过 Engine.run 执行脚本、定时器回调在后台线程恢复执行时，
+     * 必须持有该锁串行化（Engine.run、EventLoop.schedule 与 HostModule 的
+     * setInterval 回调均使用此锁）。
+     */
+    val runtimeMutex: Mutex = Mutex()
 
     /** 排队一个微任务。 */
     fun enqueueMicrotask(task: suspend () -> Unit) {
@@ -59,7 +70,10 @@ class EventLoop(
     /** 排队一个宏任务（定时器）。 */
     fun schedule(delayMillis: Long, task: suspend () -> Unit): ScheduledTask =
         scheduler.schedule(delayMillis) {
-            task()
-            drainMicrotasks()
+            // 定时任务可能在任意线程恢复，与 Engine.run 串行执行
+            runtimeMutex.withLock {
+                task()
+                drainMicrotasks()
+            }
         }
 }

@@ -6,6 +6,7 @@ import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSValue
+import kotlinx.coroutines.sync.withLock
 
 /**
  * JavaScript 引擎门面。
@@ -69,22 +70,25 @@ class Engine(
     suspend fun run(source: String): JSValue {
         val tokens = Lexer(source).tokenize()
         val program = Parser(tokens).parseProgram()
-        try {
-            return interpreter.runProgram(program, context.globalEnvironment)
-        } catch (error: JSException) {
-            throw error
-        } catch (error: Throwable) {
-            // 宿主异常（除零、栈溢出、未实现等）统一包装为 JS 异常，
-            // 避免泄漏到调用方；后续阶段会进一步细分错误类型。
-            throw JSException(
-                JSError(
-                    errorName = "InternalError",
-                    messageText = error.message ?: error::class.simpleName ?: "Internal error",
+        // 解释器与全局环境不是线程安全的：与定时器回调等宿主任务串行执行
+        return eventLoop.runtimeMutex.withLock {
+            try {
+                interpreter.runProgram(program, context.globalEnvironment)
+            } catch (error: JSException) {
+                throw error
+            } catch (error: Throwable) {
+                // 宿主异常（除零、栈溢出、未实现等）统一包装为 JS 异常，
+                // 避免泄漏到调用方；后续阶段会进一步细分错误类型。
+                throw JSException(
+                    JSError(
+                        errorName = "InternalError",
+                        messageText = error.message ?: error::class.simpleName ?: "Internal error",
+                    )
                 )
-            )
-        } finally {
-            // 脚本结束后冲刷微任务（Promise.then 等）
-            eventLoop.drainMicrotasks()
+            } finally {
+                // 脚本结束后冲刷微任务（Promise.then 等）
+                eventLoop.drainMicrotasks()
+            }
         }
     }
 
