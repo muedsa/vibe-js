@@ -65,6 +65,22 @@ class HostModuleTest {
         }
     }
 
+    /** 记录调度延迟的测试调度器；任务按入队顺序手动执行。 */
+    private class DelayRecordingScheduler : Scheduler {
+        val delays = mutableListOf<Long>()
+        private val tasks = mutableListOf<suspend () -> Unit>()
+
+        override fun schedule(delayMillis: Long, block: suspend () -> Unit): ScheduledTask {
+            delays.add(delayMillis)
+            tasks.add(block)
+            return ScheduledTask { }
+        }
+
+        suspend fun runAll() {
+            while (tasks.isNotEmpty()) tasks.removeAt(0)()
+        }
+    }
+
     @Test
     fun `window 与 self 别名`() = runTest {
         val engine = Engine()
@@ -246,6 +262,48 @@ class HostModuleTest {
         assertEquals("p,m", (engine.run("log.join(',')") as JSString).value)
         scheduler.runAll()
         assertEquals("p,m,t", (engine.run("log.join(',')") as JSString).value)
+    }
+
+    @Test
+    fun `setTimeout 额外参数与延迟钳制及全局别名身份`() = runTest {
+        val scheduler = DelayRecordingScheduler()
+        val engine = Engine(DefaultHostEnvironment(scheduler = scheduler))
+        engine.install(HostModule(engine.eventLoop, RecordingConsole()))
+        assertEquals(
+            true,
+            (engine.run("window === self && window.window === window && self.self === self")
+                as JSBoolean).value
+        )
+        engine.run(
+            """
+            var out = [];
+            setTimeout(function (a, b) { out.push(a + b); }, 5, 1, 2);
+            setTimeout(function () { out.push('n'); }, -3);
+            """.trimIndent()
+        )
+        assertEquals(listOf(5L, 0L), scheduler.delays)
+        scheduler.runAll()
+        assertEquals("3,n", (engine.run("out.join(',')") as JSString).value)
+    }
+
+    @Test
+    fun `queueMicrotask 内再次入队先于定时器`() = runTest {
+        val scheduler = DelayRecordingScheduler()
+        val engine = Engine(DefaultHostEnvironment(scheduler = scheduler))
+        engine.install(HostModule(engine.eventLoop, RecordingConsole()))
+        engine.run(
+            """
+            var log = [];
+            setTimeout(function () { log.push('t'); }, 0);
+            queueMicrotask(function () {
+              log.push('a');
+              queueMicrotask(function () { log.push('b'); });
+            });
+            """.trimIndent()
+        )
+        assertEquals("a,b", (engine.run("log.join(',')") as JSString).value)
+        scheduler.runAll()
+        assertEquals("a,b,t", (engine.run("log.join(',')") as JSString).value)
     }
 
     @OptIn(ExperimentalTime::class)
