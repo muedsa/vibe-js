@@ -77,7 +77,7 @@ object MapBuiltins {
             key = PropertyKey.Str("size"),
             get = BuiltinHelpers.method(intrinsics, "get size", 0) { interpreter, thisValue, _ ->
                 com.muedsa.js.runtime.value.JSNumber(
-                    requireMap(interpreter, thisValue, "Map.prototype.size").entries.size.toDouble()
+                    requireMap(interpreter, thisValue, "Map.prototype.size").liveSize.toDouble()
                 )
             },
             set = null,
@@ -100,7 +100,7 @@ object MapBuiltins {
             value = BuiltinHelpers.method(intrinsics, "get", 1) { interpreter, thisValue, args ->
                 val map = requireMap(interpreter, thisValue, "Map.prototype.get")
                 val index = findEntryIndex(interpreter, map, args.getOrElse(0) { JSUndefined })
-                if (index < 0) JSUndefined else map.entries[index].second
+                if (index < 0) JSUndefined else map.entryAt(index)?.second ?: JSUndefined
             },
         )
         mapPrototype.defineDataProperty(
@@ -120,7 +120,7 @@ object MapBuiltins {
                 if (index < 0) {
                     JSBoolean.FALSE
                 } else {
-                    map.entries.removeAt(index)
+                    map.removeEntryAt(index)
                     JSBoolean.TRUE
                 }
             },
@@ -128,7 +128,7 @@ object MapBuiltins {
         mapPrototype.defineDataProperty(
             key = PropertyKey.Str("clear"),
             value = BuiltinHelpers.method(intrinsics, "clear", 0) { interpreter, thisValue, _ ->
-                requireMap(interpreter, thisValue, "Map.prototype.clear").entries.clear()
+                requireMap(interpreter, thisValue, "Map.prototype.clear").clearEntries()
                 JSUndefined
             },
         )
@@ -141,7 +141,7 @@ object MapBuiltins {
                 val value = args.getOrElse(1) { JSUndefined }
                 val index = findEntryIndex(interpreter, map, key)
                 if (index >= 0) {
-                    map.entries[index].second
+                    map.entryAt(index)?.second ?: JSUndefined
                 } else {
                     setEntry(interpreter, map, key, value)
                     value
@@ -161,7 +161,7 @@ object MapBuiltins {
                 }
                 val index = findEntryIndex(interpreter, map, key)
                 if (index >= 0) {
-                    map.entries[index].second
+                    map.entryAt(index)?.second ?: JSUndefined
                 } else {
                     val computed = interpreter.callFunction(callback, JSUndefined, listOf(key))
                     setEntry(interpreter, map, key, computed)
@@ -178,9 +178,18 @@ object MapBuiltins {
                     interpreter.typeError("Map.prototype.forEach requires a function")
                 }
                 val thisArg = args.getOrNull(1) ?: JSUndefined
-                val snapshot = map.entries.toList()
-                for ((key, value) in snapshot) {
-                    interpreter.callFunction(callback, thisArg, listOf(value, key, map))
+                // 实时遍历：新增条目追加可被访问，墓碑跳过；重删重加的键作为新记录访问
+                var index = 0
+                while (index < map.storageSize()) {
+                    val entry = map.entryAt(index)
+                    index++
+                    if (entry != null) {
+                        interpreter.callFunction(
+                            callback,
+                            thisArg,
+                            listOf(entry.second, entry.first, map),
+                        )
+                    }
                 }
                 JSUndefined
             },
@@ -194,9 +203,13 @@ object MapBuiltins {
                 val map = requireMap(interpreter, thisValue, "Map.prototype.$name")
                 var index = 0
                 IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.mapIteratorPrototype) { _, _, _ ->
-                    if (index >= map.entries.size) return@createIteratorWithNext null
-                    val entry = map.entries[index]
-                    index++
+                    // 实时遍历：跳过墓碑，迭代期间追加的条目会被访问
+                    var entry: Pair<JSValue, JSValue>? = null
+                    while (index < map.storageSize() && entry == null) {
+                        entry = map.entryAt(index)
+                        index++
+                    }
+                    entry ?: return@createIteratorWithNext null
                     val result = JSObject(prototype = intrinsics.objectPrototype)
                     result.defineDataProperty(
                         PropertyKey.Str("value"), valueFor(entry), true, true, true,
@@ -240,14 +253,14 @@ object MapBuiltins {
                         listOf(value, JSNumber(index)),
                     )
                     index += 1.0
-                    val existing = result.entries.firstOrNull {
+                    val existingIndex = result.findEntryIndex {
                         interpreter.conversions.sameValueZero(it.first, key)
                     }
-                    val group = existing?.second as? JSArray
+                    val group = result.entryAt(existingIndex)?.second as? JSArray
                     if (group == null) {
                         val created = JSArray(prototype = intrinsics.arrayPrototype)
                         created.setElement(0, value)
-                        result.entries.add(key to created)
+                        result.appendEntry(key, created)
                     } else {
                         group.setElement(group.lengthLong, value)
                     }
@@ -267,16 +280,16 @@ object MapBuiltins {
     }
 
     private fun findEntryIndex(interpreter: Interpreter, map: JSMap, key: JSValue): Int =
-        map.entries.indexOfFirst { interpreter.conversions.sameValueZero(it.first, key) }
+        map.findEntryIndex { interpreter.conversions.sameValueZero(it.first, key) }
 
     private fun setEntry(interpreter: Interpreter, map: JSMap, key: JSValue, value: JSValue) {
         // 规范：Map 中的 -0 键归一化为 +0
         val normalizedKey = if (key is JSNumber && key.value == 0.0) JSNumber.ZERO else key
         val index = findEntryIndex(interpreter, map, normalizedKey)
         if (index >= 0) {
-            map.entries[index] = normalizedKey to value
+            map.replaceEntry(index, normalizedKey, value)
         } else {
-            map.entries.add(normalizedKey to value)
+            map.appendEntry(normalizedKey, value)
         }
     }
 }

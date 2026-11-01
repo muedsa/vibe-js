@@ -3348,4 +3348,37 @@ class RuntimeSemanticsRegressionTest {
                 " })(1)"
         ))
     }
+
+    @Test
+    fun `Map 与 Set 的 forEach 和迭代器实时遍历新增与删除`() = runTest {
+        val runtime = TestRuntime()
+        // 遍历期间新增的值会被访问
+        assertEquals(true, runtime.evalBoolean(
+            "var s = new Set([1]); var seen = [];" +
+                " s.forEach(function (v) {" +
+                "   seen.push(v); if (v === 1) s.add(2); if (v === 2) s.add(3); });" +
+                " seen.join(',') === '1,2,3' && s.size === 3"
+        ))
+        // 删除未访问的值后不再回调；重删重加作为新记录再次访问
+        assertEquals(true, runtime.evalBoolean(
+            "var s = new Set([1, 2, 3]); var seen = [];" +
+                " s.forEach(function (v) { seen.push(v);" +
+                "   if (v === 1) { s.delete(2); s.add(2); } });" +
+                " seen.join(',') === '1,3,2'"
+        ))
+        // Map：删除未来键跳过，重加访问，size 实时
+        assertEquals(true, runtime.evalBoolean(
+            "var m = new Map([['a', 1], ['b', 2]]); var seen = [];" +
+                " m.forEach(function (v, k) { seen.push(k + v);" +
+                "   if (k === 'a') { m.delete('b'); m.set('b', 3); } });" +
+                " seen.join(',') === 'a1,b3' && m.size === 2"
+        ))
+        // 迭代器同样实时：删除未来条目跳过、新增条目被访问
+        assertEquals(true, runtime.evalBoolean(
+            "var m = new Map([['a', 1], ['b', 2]]); var it = m.entries(); var seen = [];" +
+                " seen.push(it.next().value[0]); m.delete('b'); m.set('c', 3);" +
+                " var n; while (!(n = it.next()).done) seen.push(n.value[0]);" +
+                " seen.join(',') === 'a,c'"
+        ))
+    }
 }

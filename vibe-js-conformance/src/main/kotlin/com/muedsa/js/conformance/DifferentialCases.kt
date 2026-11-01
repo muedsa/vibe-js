@@ -216,6 +216,35 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("weakmap-nonobject-key", "(function () { try { new WeakMap().set(1, 2); } catch (e) { return e.name; } })()"),
     DifferentialCase("map-entries", "JSON.stringify(Array.from(new Map([['a', 1]]).entries()))"),
     DifferentialCase("set-nan-dedupe", "new Set([NaN, NaN]).size"),
+    DifferentialCase(
+        "set-for-each-live-add",
+        "(function () { var s = new Set([1]); var seen = [];" +
+            " s.forEach(function (v) {" +
+            "   seen.push(v); if (v === 1) s.add(2); if (v === 2) s.add(3); });" +
+            " return seen.join(','); })()"
+    ),
+    DifferentialCase(
+        "set-for-each-delete-readd",
+        "(function () { var s = new Set([1, 2, 3]); var seen = [];" +
+            " s.forEach(function (v) {" +
+            "   seen.push(v); if (v === 1) { s.delete(2); s.add(2); } });" +
+            " return seen.join(','); })()"
+    ),
+    DifferentialCase(
+        "map-for-each-live",
+        "(function () { var m = new Map([['a', 1], ['b', 2]]); var seen = [];" +
+            " m.forEach(function (v, k) { seen.push(k + v);" +
+            "   if (k === 'a') { m.delete('b'); m.set('b', 3); } });" +
+            " return seen.join(',') + ':' + m.size; })()"
+    ),
+    DifferentialCase(
+        "map-iterator-live",
+        "(function () { var m = new Map([['a', 1], ['b', 2]]); var it = m.entries();" +
+            " var seen = []; seen.push(it.next().value[0]);" +
+            " m.delete('b'); m.set('c', 3);" +
+            " var n; while (!(n = it.next()).done) seen.push(n.value[0]);" +
+            " return seen.join(','); })()"
+    ),
 
     // 函数、eval 与控制流
     DifferentialCase("fn-bind-length", "(function (a, b) {}).bind(null, 1).length"),

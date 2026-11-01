@@ -75,7 +75,7 @@
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
 | Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、ISO 缺省字段与 0..99 年映射差异（构造器/UTC 映射，setFullYear 不映射）、常用 getter/setter（无效日期参数顺序、规范 length）、toString 本地格式/toUTCString 与负年份补零、toISOString/toJSON；本地时间按 UTC 处理 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
-| Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；Weak 版本不可迭代，支持非注册 Symbol 键 |
+| Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；forEach 与迭代器为实时语义（墓碑存储：遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代，支持非注册 Symbol 键 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
 | Promise | ✅ | then/catch/finally、resolve/reject/all/race/allSettled/any、allKeyed/allSettledKeyed、withResolvers/try、thenable 与循环检测 |
 | DisposableStack | ✅ | DisposableStack/AsyncDisposableStack、use/adopt/defer/move/dispose/disposeAsync、Symbol.dispose/asyncDispose 与 SuppressedError |
@@ -105,9 +105,9 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 468 + 宿主 15 个测试 |
-| JS（Node） | ✅ | 核心 468 + 宿主 15 个测试 |
-| Wasm（Node） | ✅ | 核心 468 + 宿主 15 个测试 |
+| JVM | ✅ | 核心 469 + 宿主 15 个测试 |
+| JS（Node） | ✅ | 核心 469 + 宿主 15 个测试 |
+| Wasm（Node） | ✅ | 核心 469 + 宿主 15 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest` |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
 

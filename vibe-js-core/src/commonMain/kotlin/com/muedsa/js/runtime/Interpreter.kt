@@ -582,8 +582,8 @@ class Interpreter(
                                 PropertyDescriptor.accessor(
                                     get = current.get,
                                     set = current.set,
-                                    enumerable = descriptor.enumerable ?: current.enumerable,
-                                    configurable = descriptor.configurable ?: current.configurable,
+                                    enumerable = descriptor.enumerable,
+                                    configurable = descriptor.configurable,
                                 ),
                             )
                         }

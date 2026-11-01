@@ -70,10 +70,10 @@ object WeakMapBuiltins {
                 if (!canBeHeldWeakly(key)) {
                     interpreter.typeError("Invalid value used as WeakMap key")
                 }
-                val index = map.entries.indexOfFirst {
+                val index = map.findEntryIndex {
                     interpreter.conversions.sameValueZero(it.first, key)
                 }
-                if (index >= 0) map.entries[index] = key to value else map.entries.add(key to value)
+                if (index >= 0) map.replaceEntry(index, key, value) else map.appendEntry(key, value)
                 map
             },
         )
@@ -82,10 +82,10 @@ object WeakMapBuiltins {
             value = BuiltinHelpers.method(intrinsics, "get", 1) { interpreter, thisValue, args ->
                 val map = thisValue as? JSWeakMap
                     ?: interpreter.typeError("WeakMap.prototype.get requires that 'this' be a WeakMap")
-                val index = map.entries.indexOfFirst {
+                val index = map.findEntryIndex {
                     interpreter.conversions.sameValueZero(it.first, args.getOrElse(0) { JSUndefined })
                 }
-                if (index < 0) JSUndefined else map.entries[index].second
+                if (index < 0) JSUndefined else map.entryAt(index)?.second ?: JSUndefined
             },
         )
         prototype.defineDataProperty(
@@ -94,9 +94,9 @@ object WeakMapBuiltins {
                 val map = thisValue as? JSWeakMap
                     ?: interpreter.typeError("WeakMap.prototype.has requires that 'this' be a WeakMap")
                 com.muedsa.js.runtime.value.JSBoolean.getJsBoolean(
-                    map.entries.any {
+                    map.findEntryIndex {
                         interpreter.conversions.sameValueZero(it.first, args.getOrElse(0) { JSUndefined })
-                    }
+                    } >= 0
                 )
             },
         )
@@ -105,13 +105,13 @@ object WeakMapBuiltins {
             value = BuiltinHelpers.method(intrinsics, "delete", 1) { interpreter, thisValue, args ->
                 val map = thisValue as? JSWeakMap
                     ?: interpreter.typeError("WeakMap.prototype.delete requires that 'this' be a WeakMap")
-                val index = map.entries.indexOfFirst {
+                val index = map.findEntryIndex {
                     interpreter.conversions.sameValueZero(it.first, args.getOrElse(0) { JSUndefined })
                 }
                 if (index < 0) {
                     com.muedsa.js.runtime.value.JSBoolean.FALSE
                 } else {
-                    map.entries.removeAt(index)
+                    map.removeEntryAt(index)
                     com.muedsa.js.runtime.value.JSBoolean.TRUE
                 }
             },
@@ -127,13 +127,13 @@ object WeakMapBuiltins {
                 if (!canBeHeldWeakly(key)) {
                     interpreter.typeError("Invalid value used as WeakMap key")
                 }
-                val index = map.entries.indexOfFirst {
+                val index = map.findEntryIndex {
                     interpreter.conversions.sameValueZero(it.first, key)
                 }
                 if (index >= 0) {
-                    map.entries[index].second
+                    map.entryAt(index)?.second ?: JSUndefined
                 } else {
-                    map.entries.add(key to value)
+                    map.appendEntry(key, value)
                     value
                 }
             },
@@ -156,21 +156,21 @@ object WeakMapBuiltins {
                 if (!interpreter.isCallable(callback)) {
                     interpreter.typeError("WeakMap.prototype.getOrInsertComputed requires a callable")
                 }
-                val index = map.entries.indexOfFirst {
+                val index = map.findEntryIndex {
                     interpreter.conversions.sameValueZero(it.first, key)
                 }
                 if (index >= 0) {
-                    map.entries[index].second
+                    map.entryAt(index)?.second ?: JSUndefined
                 } else {
                     val computed = interpreter.callFunction(callback, JSUndefined, listOf(key))
                     // 回调期间可能插入同键，按规范覆盖该值
-                    val updatedIndex = map.entries.indexOfFirst {
+                    val updatedIndex = map.findEntryIndex {
                         interpreter.conversions.sameValueZero(it.first, key)
                     }
                     if (updatedIndex >= 0) {
-                        map.entries[updatedIndex] = key to computed
+                        map.replaceEntry(updatedIndex, key, computed)
                     } else {
-                        map.entries.add(key to computed)
+                        map.appendEntry(key, computed)
                     }
                     computed
                 }
