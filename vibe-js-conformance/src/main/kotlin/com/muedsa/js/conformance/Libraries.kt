@@ -8,6 +8,8 @@ internal data class LibrarySpec(
     val url: String,
     val globalName: String,
     val cases: List<SmokeCase>,
+    /** 需要先在同一引擎中加载的依赖库（按 name 对应语料文件） */
+    val dependencies: List<String> = emptyList(),
 )
 
 internal data class SmokeCase(
@@ -1121,6 +1123,104 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
                 assertion(
                     "(function () { try { acorn.parse('var =', { ecmaVersion: 2020 }); " +
                         "return false; } catch (e) { return e.pos === 4 && e.loc.line === 1; } })()"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "astring",
+        url = "https://cdn.jsdelivr.net/npm/astring@1.8.6/dist/astring.min.js",
+        globalName = "astring",
+        // astring 只负责代码生成，借助 acorn 产出的 AST 验证真实链路
+        dependencies = listOf("acorn"),
+        cases = listOf(
+            SmokeCase(
+                "generate basic",
+                assertion(
+                    "astring.generate(acorn.parse('var x = 1;', { ecmaVersion: 2020 }))" +
+                        " === 'var x = 1;\\n'"
+                ),
+            ),
+            SmokeCase(
+                "generate function",
+                assertion(
+                    "astring.generate(acorn.parse('function f(a, b) { return a + b; }', " +
+                        "{ ecmaVersion: 2020 })) === " +
+                        "'function f(a, b) {\\n  return a + b;\\n}\\n'"
+                ),
+            ),
+            SmokeCase(
+                "generate round trip",
+                assertion(
+                    "(function () { " +
+                        "var code = astring.generate(acorn.parse('function f(a) { return a * 2; }', " +
+                        "{ ecmaVersion: 2020 })); " +
+                        "return astring.generate(acorn.parse(code, { ecmaVersion: 2020 })) === code; " +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "generate keeps parentheses",
+                assertion(
+                    "astring.generate(acorn.parse('var x = (1 + 2) * 3;', { ecmaVersion: 2020 }))" +
+                        " === 'var x = (1 + 2) * 3;\\n'"
+                ),
+            ),
+            SmokeCase(
+                "generate custom indent",
+                assertion(
+                    "astring.generate(acorn.parse('function f() { return 1; }', " +
+                        "{ ecmaVersion: 2020 }), { indent: '    ' }) === " +
+                        "'function f() {\\n    return 1;\\n}\\n'"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
+        name = "acorn-walk",
+        url = "https://cdn.jsdelivr.net/npm/acorn-walk@8.3.2/dist/walk.js",
+        globalName = "acorn.walk",
+        // walk 通过 globalThis.acorn.walk 挂载，必须先加载 acorn
+        dependencies = listOf("acorn"),
+        cases = listOf(
+            SmokeCase(
+                "full traversal",
+                assertion(
+                    "(function () { var types = []; " +
+                        "acorn.walk.full(acorn.parse('const f = function (a) { return a * 2; };', " +
+                        "{ ecmaVersion: 2020 }), function (node) { types.push(node.type); }); " +
+                        "return types.join(',') === 'Identifier,Identifier,Identifier,Literal," +
+                        "BinaryExpression,ReturnStatement,BlockStatement,FunctionExpression," +
+                        "VariableDeclarator,VariableDeclaration,Program'; })()"
+                ),
+            ),
+            SmokeCase(
+                "simple identifiers",
+                assertion(
+                    "(function () { var names = []; " +
+                        "acorn.walk.simple(acorn.parse('x + y * x;', { ecmaVersion: 2020 }), " +
+                        "{ Identifier: function (node) { names.push(node.name); } }); " +
+                        "return names.join(',') === 'x,y,x'; })()"
+                ),
+            ),
+            SmokeCase(
+                "ancestor chain",
+                assertion(
+                    "(function () { var chain = null; " +
+                        "acorn.walk.ancestor(acorn.parse('const f = function (a) { return a * 2; };', " +
+                        "{ ecmaVersion: 2020 }), " +
+                        "{ ReturnStatement: function (node, state, ancestors) { " +
+                        "chain = ancestors.map(function (a) { return a.type; }).join('>'); } }); " +
+                        "return chain === 'Program>VariableDeclaration>VariableDeclarator>" +
+                        "FunctionExpression>BlockStatement>ReturnStatement'; })()"
+                ),
+            ),
+            SmokeCase(
+                "find node at",
+                assertion(
+                    "(function () { var ast = acorn.parse('const f = function (a) { return a * 2; };', " +
+                        "{ ecmaVersion: 2020 }); var found = acorn.walk.findNodeAt(ast, 20, 21); " +
+                        "return found.node.type === 'Identifier' && found.node.name === 'a'; })()"
                 ),
             ),
         ),

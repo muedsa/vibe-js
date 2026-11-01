@@ -53,8 +53,25 @@ private class LibrarySmokeRunner(
                 continue
             }
             val source = file.readText().removePrefix("\uFEFF")
+            val dependencyFiles = spec.dependencies.map { File(libraryDir, "$it.js") }
+            val missingDependency = dependencyFiles.indexOfFirst { !it.isFile }
+            if (missingDependency >= 0) {
+                results.add(
+                    LibraryResult(
+                        spec.name,
+                        "skip",
+                        "缺少依赖库文件：${spec.dependencies[missingDependency]}",
+                        emptyList(),
+                    )
+                )
+                continue
+            }
             val engine = Engine()
             try {
+                // 依赖库（如 acorn）需要与目标库共享同一全局对象
+                for (dependencyFile in dependencyFiles) {
+                    engine.run(dependencyFile.readText().removePrefix("\uFEFF"))
+                }
                 engine.run(source)
                 val globalType = engine.run("typeof ${spec.globalName}") as? JSString
                 if (globalType?.value == "undefined") {
