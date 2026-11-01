@@ -2352,6 +2352,28 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
         ),
     ),
     LibrarySpec(
+        name = "d3-ease",
+        url = "https://unpkg.com/d3-ease@3.0.1/dist/d3-ease.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "linear and quad",
+                assertion("d3.easeLinear(0.5) === 0.5 && d3.easeQuadIn(0.5) === 0.25"),
+            ),
+            SmokeCase(
+                "cubic and bounce",
+                assertion("d3.easeCubicInOut(0.25) === 0.0625 && d3.easeBounceOut(0.5) === 0.765625"),
+            ),
+            SmokeCase(
+                "endpoints",
+                assertion(
+                    "d3.easeBounceOut(0) === 0 && d3.easeBounceOut(1) === 1 && " +
+                        "d3.easeBackOut(1) === 1 && d3.easeElasticOut(1) === 1"
+                ),
+            ),
+        ),
+    ),
+    LibrarySpec(
         name = "d3-time",
         url = "https://unpkg.com/d3-time@3.1.0/dist/d3-time.min.js",
         globalName = "d3",
