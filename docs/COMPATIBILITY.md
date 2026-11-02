@@ -135,11 +135,18 @@
 
 ## 7. 测试对应
 
+宿主取消属于 Kotlin 控制流：`Engine.run` 原样抛出 `CancellationException`，
+JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未执行的微任务丢弃。
+协作式检查不主动挂起，单线程 JS/Wasm 的纯计算超时、解析/单次内建调用的抢占，
+以及独立 async/定时器的生命周期尚不在保证范围内。详见
+[协作式取消](ARCHITECTURE.md#85-协作式取消)。
+
 | 测试文件 | 覆盖内容 |
 |---|---|
 | `LexerTest` / `ParserTest` | 词法、语法、错误位置、提升信息 |
 | `BasicExecutionTest` | 基础运算、作用域、闭包、控制流 |
 | `ConformanceTest` | 审查阶段 P0 问题回归 |
+| `RuntimeCancellationTest` / `RuntimeTimeoutTest`（JVM） | 协作式取消、异常透传、清理与复用；JVM 真实死循环超时 |
 | `PropertyAndPrototypeTest` | 属性描述符、原型链、访问器、call/apply/bind |
 | `StrictModeTest` | 严格/非严格模式差异 |
 | `BuiltinsTest` | 基础标准库 |

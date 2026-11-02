@@ -4,10 +4,13 @@ import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSPromise
 import com.muedsa.js.runtime.value.JSValue
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -57,6 +60,9 @@ class EventLoop(
         val reporter = rejectionHandledReporter ?: return
         try {
             reporter(promise.result)
+        } catch (error: CancellationException) {
+            // 宿主中止执行的控制信号必须继续传播，不能当作日志回调失败忽略。
+            throw error
         } catch (_: Throwable) {
             // 宿主回调异常不应破坏事件循环
         }
@@ -68,13 +74,28 @@ class EventLoop(
     }
 
     /**
+     * 宿主取消当前执行时放弃本轮剩余任务与拒绝通知。
+     *
+     * 由 Engine 在持有 runtimeMutex 时调用，不执行任何用户回调；已产生的
+     * Promise 状态和全局写入保持原样，这不是事务回滚或事件循环关闭。
+     */
+    internal fun discardPendingMicrotasks() {
+        microtasks.clear()
+        unhandledRejections.clear()
+    }
+
+    /**
      * 清空微任务队列。
      *
      * 微任务执行过程中可能继续入队，因此需要循环到队列为空。
      * 阶段 A 忽略未处理的 Promise 拒绝（后续阶段接入 unhandled rejection 处理）。
      */
     suspend fun drainMicrotasks() {
+        // 即使队列为空，也要观察脚本最后一次宿主调用发出的取消。
+        currentCoroutineContext().ensureActive()
         while (microtasks.isNotEmpty()) {
+            // 原生微任务可以不断重新入队而不经过 AST，需在此独立检查。
+            currentCoroutineContext().ensureActive()
             val task = microtasks.removeFirst()
             try {
                 task()
@@ -82,6 +103,7 @@ class EventLoop(
                 // 微任务中的异常在阶段 C 会进入 Promise 拒绝回调
             }
         }
+        currentCoroutineContext().ensureActive()
         reportUnhandledRejections()
     }
 
@@ -100,6 +122,8 @@ class EventLoop(
             if (reporter != null) {
                 try {
                     reporter(promise.result)
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (_: Throwable) {
                     // 宿主回调异常不应破坏事件循环
                 }

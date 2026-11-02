@@ -108,7 +108,10 @@ import com.muedsa.js.runtime.value.PrivateName
 import com.muedsa.js.runtime.value.PrivateSlot
 import com.muedsa.js.runtime.value.PropertyKey
 import com.muedsa.js.runtime.value.ThisBindingSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlin.math.pow
 
@@ -153,6 +156,23 @@ class Interpreter(
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
 
+    /**
+     * 语句、表达式和循环共用检查计数器，每 1024 个执行检查点观察一次取消。
+     *
+     * 避免为每个 AST 节点读取协程上下文；检查不挂起协程、不运行微任务，
+     * 因此不会改变 JS 的同步执行顺序。它只响应已经发出的取消，不提供时钟
+     * 或执行配额；单线程宿主仍须确保取消信号有机会被调度。
+     */
+    private var stepsUntilCancellationCheck = 1024
+
+    private suspend fun checkCancellation() {
+        if (--stepsUntilCancellationCheck == 0) {
+            // 先复位再检查：取消退出后同一个解释器仍可以执行后续脚本。
+            stepsUntilCancellationCheck = 1024
+            currentCoroutineContext().ensureActive()
+        }
+    }
+
     /** Annex B RegExp 遗留静态属性状态（input/lastMatch/...）。 */
     var legacyRegExpInput: String = ""
     var legacyRegExpLastMatch: String = ""
@@ -183,6 +203,8 @@ class Interpreter(
      * @param environment 全局词法环境
      */
     suspend fun runProgram(program: Program, environment: Environment): JSValue {
+        // 入口立即检查，避免短脚本或空脚本跳过周期性检查后仍创建全局绑定。
+        currentCoroutineContext().ensureActive()
         val previousFrame = frame
         frame = ExecutionContext(
             lexicalEnv = environment,
@@ -821,6 +843,7 @@ class Interpreter(
         var targetArgs = args
         var targetRange = callRange
         while (true) {
+            checkCancellation()
             try {
                 return callUserFunctionOnce(target, targetThis, targetArgs, targetRange)
             } catch (signal: TailCallSignal) {
@@ -925,6 +948,9 @@ class Interpreter(
             try {
                 val result = asyncInterpreter.executeUserFunction(function, thisValue, args)
                 PromiseSupport.resolve(this@Interpreter, promise, result)
+            } catch (error: CancellationException) {
+                // async 协程取消属于宿主控制流，不应变成 Promise 的 InternalError 拒绝。
+                throw error
             } catch (error: JSException) {
                 PromiseSupport.reject(this@Interpreter, promise, error.value)
             } catch (error: Throwable) {
@@ -1689,6 +1715,7 @@ class Interpreter(
     }
 
     private suspend fun executeStatement(statement: Statement): Completion {
+        checkCancellation()
         return when (statement) {
             is EmptyStatement -> Completion.Normal(JSUndefined, hasValue = false)
             is BlockStatement -> executeBlock(
@@ -2021,6 +2048,7 @@ class Interpreter(
         // V：最后一次正常完成的语句值（供 eval 完成值使用）
         var lastValue: JSValue = JSUndefined
         while (toBoolean(evaluate(statement.condition))) {
+            checkCancellation()
             when (val completion = executeStatement(statement.body)) {
                 is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                 is Completion.Return -> return completion
@@ -2044,6 +2072,7 @@ class Interpreter(
     private suspend fun executeDoWhile(statement: DoWhileStatement, labels: List<String> = emptyList()): Completion {
         var lastValue: JSValue = JSUndefined
         do {
+            checkCancellation()
             when (val completion = executeStatement(statement.body)) {
                 is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                 is Completion.Return -> return completion
@@ -2141,6 +2170,7 @@ class Interpreter(
 
             var lastValue: JSValue = JSUndefined
             while (true) {
+                checkCancellation()
                 val condition = statement.condition?.let { toBoolean(evaluate(it)) } ?: true
                 if (!condition) break
 
@@ -2230,6 +2260,7 @@ class Interpreter(
 
             var lastValue: JSValue = JSUndefined
             for (key in keys) {
+                checkCancellation()
                 val propertyKey = PropertyKey.Str(key)
                 if (!objectValue.hasProperty(propertyKey)) continue
 
@@ -2328,6 +2359,7 @@ class Interpreter(
 
             var lastValue: JSValue = JSUndefined
             while (true) {
+                checkCancellation()
                 // IteratorStep 的异常直接传播，不调用 return
                 val value = iteratorNext(records) ?: break
 
@@ -2701,6 +2733,7 @@ class Interpreter(
     // ================================================================
 
     private suspend fun evaluate(expression: Expression, tail: Boolean = false): JSValue {
+        checkCancellation()
         return when (expression) {
             is Identifier -> currentFrame.lexicalEnv.getBinding(expression.name)
                 ?: throw referenceError("${expression.name} is not defined")

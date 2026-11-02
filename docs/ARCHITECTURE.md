@@ -174,6 +174,40 @@ engine.install(MyModule())
 
 `DefaultHostEnvironment` 提供 `timeZoneOffset` / `unhandledRejectionHandler` / `rejectionHandledHandler` 构造参数，普通宿主无需实现整个接口。
 
+### 8.5 协作式取消
+
+`Engine.run(source)` 在解析前检查取消，`Engine.run(program)` 与
+`Interpreter.runProgram` 在执行入口立即检查取消。解释器的语句、表达式、
+循环迭代和尾调用共用计数器，每 1024 个检查点调用
+`currentCoroutineContext().ensureActive()`；这是检查间隔，不是执行步数配额。
+计数器在检查前复位，保证取消后再次执行仍有完整的检查能力。
+
+`EventLoop.drainMicrotasks` 在入口、每个微任务之前及拒绝通知之前检查取消，
+避免原生任务反复入队时绕过 AST 检查。`Engine.run` 对取消异常原样重抛，
+不包装为 `InternalError`，也不进入 JS 的 catch/finally 或 using 释放方法。
+Kotlin 的 finally 仍恢复调用帧、词法环境、释放作用域和运行时互斥锁。
+取消时丢弃队列中尚未执行的微任务与待上报拒绝，防止下一次运行继续执行
+本轮残留回调；已经生效的全局写入与 Promise 状态不会回滚，未完成 Promise
+可能继续保持 pending。普通 JS 异常仍按原有语义冲刷微任务。
+
+当前边界：
+
+- 检查不调用 yield、不推进 JS 微任务，保留同步代码和 async 首次 await 前的执行顺序。
+  纯计算超时要求取消能被独立调度；JVM 的验证使用 `Dispatchers.Default` 和真实
+  `withTimeout`。JS/Wasm 单线程、被占满的单线程调度器及测试虚拟时钟无法仅靠
+  此检查保证纯计算超时。
+- 词法/语法分析以及没有回到解释器检查点的单次内建操作（如正则匹配）和宿主调用
+  不可被这些检查抢占；宿主挂起函数应遵循 Kotlin 协程的取消契约。
+- async 函数仍由 EventLoop 的独立 scope 启动，不是 `Engine.run` 调用方的子协程。
+  它检查自身协程的取消，取消不会变成 Promise 的 `InternalError` 拒绝；
+  `Engine.run` 的超时尚不负责取消这些独立任务或宿主定时器。
+  任务归属、关闭与统一调度属于后续事件循环生命周期任务。
+- 全局环境不是事务。取消可能留下已经创建的词法绑定（包括未初始化绑定）与副作用；
+  “可复用”保证执行器内部状态和锁恢复，不保证重跑同名 `let/const` 声明一定成功。
+
+跨平台回归位于 `RuntimeCancellationTest`；真正的死循环超时位于 JVM 专用的
+`RuntimeTimeoutTest`，避免在单线程目标上阻塞整个测试进程。
+
 ## 9. 性能优化的预留点
 
 | 现状 | 后续替换方式 | 影响范围 |

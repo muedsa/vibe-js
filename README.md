@@ -51,6 +51,36 @@ engine.run("1 + 2 * 3") // 首次解析并缓存
 engine.run("1 + 2 * 3") // 复用 AST
 ```
 
+### 取消与超时
+
+`Engine.run` 支持协作式取消：解释器定期检查当前协程的取消状态，
+`CancellationException`（含超时）原样交还 Kotlin 调用方。
+在 JVM 上，可将纯计算脚本放到 `Dispatchers.Default`，让超时计时器独立发出取消：
+
+```kotlin
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+
+// 以下代码在协程中执行。
+val engine = Engine()
+try {
+    withContext(Dispatchers.Default) {
+        withTimeout(250) { engine.run("while (true) {}") }
+    }
+} catch (error: TimeoutCancellationException) {
+    println("脚本执行超时")
+}
+engine.run("1 + 2") // 取消后可复用同一 Engine
+```
+
+取消不是事务回滚：已完成的全局写入保留，剩余微任务丢弃；JS 的 `catch`、
+`finally` 和用户资源释放器不参与宿主取消处理。检查点不主动让出执行权，
+因此 JS/Wasm 单线程上，`withTimeout` 不能保证打断纯计算死循环。
+解析、单次耗时内建/宿主调用、独立 async 协程与定时器的生命周期边界见
+[架构说明](docs/ARCHITECTURE.md#85-协作式取消)。
+
 ### 安装宿主能力
 
 ```kotlin

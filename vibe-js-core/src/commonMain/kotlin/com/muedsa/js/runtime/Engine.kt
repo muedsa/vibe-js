@@ -7,6 +7,9 @@ import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSValue
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -96,6 +99,8 @@ class Engine(
      * 开启 [parseCacheSize] 时，相同源码会复用已解析的 AST。
      */
     suspend fun run(source: String): JSValue {
+        // 已取消的调用不应继续解析源码或改动 AST 缓存。
+        currentCoroutineContext().ensureActive()
         if (parseCacheSize == 0) return run(parse(source))
         val program = parseCacheMutex.withLock {
             val cached = parseCache.remove(source)
@@ -118,12 +123,32 @@ class Engine(
 
     /**
      * 执行预解析得到的脚本 AST。
+     *
+     * 协程取消原样传播给宿主，不转换为可被 JS catch 捕获的异常。取消时丢弃
+     * 尚未执行的微任务，释放运行时锁；已经完成的全局写入不会回滚。
      */
     suspend fun run(program: Program): JSValue {
+        currentCoroutineContext().ensureActive()
         // 解释器与全局环境不是线程安全的：与定时器回调等宿主任务串行执行
         return eventLoop.runtimeMutex.withLock {
             try {
-                interpreter.runProgram(program, context.globalEnvironment)
+                var cancelled = false
+                try {
+                    interpreter.runProgram(program, context.globalEnvironment)
+                } catch (error: CancellationException) {
+                    // 取消后不再执行用户微任务，防止清理阶段再次陷入脚本死循环，
+                    // 也避免微任务异常覆盖宿主抛出的原始取消对象。
+                    cancelled = true
+                    throw error
+                } finally {
+                    // 正常完成和 JS 抛错仍保持原有的微任务检查点语义。
+                    if (!cancelled) eventLoop.drainMicrotasks()
+                }
+            } catch (error: CancellationException) {
+                // 同时覆盖脚本执行和微任务冲刷阶段的取消；下一次 run 不应继续
+                // 消费本轮遗留的任务。定时器与独立 async 协程的生命周期另行管理。
+                eventLoop.discardPendingMicrotasks()
+                throw error
             } catch (error: JSException) {
                 throw error
             } catch (error: Throwable) {
@@ -135,9 +160,6 @@ class Engine(
                         messageText = error.message ?: error::class.simpleName ?: "Internal error",
                     )
                 )
-            } finally {
-                // 脚本结束后冲刷微任务（Promise.then 等）
-                eventLoop.drainMicrotasks()
             }
         }
     }
