@@ -148,6 +148,12 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 并保留同步前缀和微任务顺序；逻辑调用上限不等同于其他 JS 引擎的物理栈容量。
 计数范围与资源限制边界见[执行配额](ARCHITECTURE.md#86-执行配额)。
 
+`Error.prototype.stack` 输出创建或首次抛出时的函数名与 `file:line:column`，并保留 async
+创建调用链；Error 在 Promise 链中转发/重抛时不覆盖原快照。`Engine.parse/run` 的
+`sourceName` 与 `lineOffset` 参数指定脚本来源和显示行偏移，跨脚本函数使用各自定义来源。
+该格式属于实现定义诊断，不承诺与主流引擎完全一致；普通 Promise 回调不拼接完整 then 注册链，
+严格尾调用省略旧帧。详见[错误栈](ARCHITECTURE.md#87-错误栈)。
+
 | 测试文件 | 覆盖内容 |
 |---|---|
 | `LexerTest` / `ParserTest` | 词法、语法、错误位置、提升信息 |
@@ -171,6 +177,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
 | `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
+| `RuntimeErrorStackTest` | 错误创建与重抛位置、脚本来源和偏移、跨脚本调用、async/Promise 拒绝转发、资源释放、万层栈快照 |
 | `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、可选 catch 绑定、稳定排序、JSON 超集与 rawJSON/reviver source、属性枚举顺序、Annex B RegExp compile/escape/unescape、RegExp dotAll、Error.prototype.stack、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |

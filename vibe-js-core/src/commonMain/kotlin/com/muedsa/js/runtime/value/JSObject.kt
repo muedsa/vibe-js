@@ -1,5 +1,7 @@
 package com.muedsa.js.runtime.value
 
+import com.muedsa.js.runtime.exception.StackFrame
+
 /**
  * JavaScript 普通对象。
  *
@@ -32,6 +34,13 @@ open class JSObject(
 
     /** 是否具有 [[ErrorData]] 内部槽（供 Error.isError 判断）。 */
     var isErrorData: Boolean = false
+
+    /**
+     * ErrorData 对象的创建/首次抛出栈快照；不作为 JS 自有属性参与枚举或冻结。
+     * JSError、AggregateError、SuppressedError 共用，普通对象及原型继承不获得此槽。
+     */
+    var errorStack: List<StackFrame>? = null
+        internal set
 
     /** 是否具有 [[IsRawJSON]] 内部槽（供 JSON.isRawJSON/stringify 判断）。 */
     var isRawJson: Boolean = false

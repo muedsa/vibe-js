@@ -219,6 +219,9 @@ internal object DisposableStackBuiltins {
         suppressed: JSValue,
     ): JSException {
         val objectValue = JSObject(prototype = interpreter.intrinsics.suppressedErrorPrototype)
+        // 与显式 new SuppressedError 保持相同的错误标记和栈捕获行为。
+        objectValue.isErrorData = true
+        interpreter.captureErrorStack(objectValue)
         objectValue.defineDataProperty(
             key = PropertyKey.Str("error"),
             value = error,

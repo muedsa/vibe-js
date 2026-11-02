@@ -69,11 +69,13 @@ import com.muedsa.js.ast.WithStatement
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.lexer.LexerException
 import com.muedsa.js.lexer.SourceRange
+import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.StackFrame
+import com.muedsa.js.runtime.exception.StackFrameLink
 import com.muedsa.js.runtime.regex.JsRegex
 import com.muedsa.js.runtime.regex.JsRegexSyntax
 import com.muedsa.js.runtime.regex.JsRegexEngine
@@ -138,8 +140,18 @@ class Interpreter(
     /** 运行时内建原型集合。 */
     val intrinsics: Intrinsics get() = context.intrinsics
 
-    /** 调用栈（用于错误信息）。 */
-    private val callStack = mutableListOf<StackFrame>()
+    /** 不可变祖先链与当前执行位置；async 只共享冻结后的祖先，不共享可变解释器状态。 */
+    private var stackHead: StackFrameLink? = null
+    private var currentRange: SourceRange? = null
+    private val currentSourceInfo: SourceInfo get() = stackHead?.frame?.sourceInfo ?: SourceInfo()
+
+    /** 未转换的宿主异常在退栈前留下的位置，供 Engine / async 的包装边界使用。 */
+    internal var hostFailureStack: List<StackFrame>? = null
+        private set
+    private var hostFailure: Throwable? = null
+
+    /** 仅在调用指定的 Promise 拒绝函数期间传递原异常，不给原始 JS 值附加属性。 */
+    internal var pendingPromiseRejection: PendingPromiseRejection? = null
 
     /** 当前解释器的调用深度，不计全局帧；async 另继承创建时的逻辑祖先深度。 */
     private var callDepth = 0
@@ -214,13 +226,15 @@ class Interpreter(
         }
         // 入口立即检查，避免短脚本或空脚本跳过周期性检查后仍创建全局绑定。
         currentCoroutineContext().ensureActive()
+        hostFailureStack = null
+        hostFailure = null
         val previousFrame = frame
         val programFrame = ExecutionContext(
             lexicalEnv = environment,
             thisValue = context.globalObject,
             strict = program.strict,
         )
-        pushStackFrame("<global>", countsTowardsDepth = false)
+        pushStackFrame("<global>", program.range, countsTowardsDepth = false, sourceInfo = program.sourceInfo)
         frame = programFrame
         try {
             // GlobalDeclarationInstantiation：词法绑定先于 var/function 实例化，
@@ -235,6 +249,9 @@ class Interpreter(
                 is Completion.Break, is Completion.Continue ->
                     throw syntaxError("Illegal break/continue statement")
             }
+        } catch (error: Throwable) {
+            captureFailure(error)
+            throw error
         } finally {
             popStackFrame(countsTowardsDepth = false)
             frame = previousFrame
@@ -370,7 +387,7 @@ class Interpreter(
         )
         // 直接 eval 不经过 callFunction，也必须计入深度。先检查再切换执行帧，
         // 避免超限抛错发生在 try/finally 之外时破坏调用方的词法环境。
-        pushStackFrame("<eval>")
+        pushStackFrame("<eval>", program.range, sourceInfo = SourceInfo("<eval>"))
         frame = evalFrame
         return try {
             hoistDeclarations(
@@ -387,6 +404,9 @@ class Interpreter(
                 is Completion.Break, is Completion.Continue ->
                     throw syntaxError("Illegal break/continue statement in eval code")
             }
+        } catch (error: Throwable) {
+            captureFailure(error)
+            throw error
         } finally {
             popStackFrame()
             frame = previousFrame
@@ -443,7 +463,7 @@ class Interpreter(
             strict = evalStrict,
             variableEnv = varEnvironment,
         )
-        pushStackFrame("<eval>")
+        pushStackFrame("<eval>", program.range, sourceInfo = SourceInfo("<eval>"))
         frame = evalFrame
         return try {
             hoistDeclarations(
@@ -459,6 +479,9 @@ class Interpreter(
                 is Completion.Break, is Completion.Continue ->
                     throw syntaxError("Illegal break/continue statement in eval code")
             }
+        } catch (error: Throwable) {
+            captureFailure(error)
+            throw error
         } finally {
             popStackFrame()
             frame = previousFrame
@@ -763,6 +786,9 @@ class Interpreter(
                 pushStackFrame(callee.name, callRange)
                 try {
                     callee.function(this, thisValue, args).also { drainExecutionStack() }
+                } catch (error: Throwable) {
+                    captureFailure(error)
+                    throw error
                 } finally {
                     popStackFrame()
                 }
@@ -790,6 +816,9 @@ class Interpreter(
                     nativeConstructCall = true
                     try {
                         customConstruct(this, args)
+                    } catch (error: Throwable) {
+                        captureFailure(error)
+                        throw error
                     } finally {
                         nativeConstructCall = previousConstructCall
                         popStackFrame()
@@ -809,6 +838,9 @@ class Interpreter(
                         } else {
                             wrapPrimitive(result)
                         }
+                    } catch (error: Throwable) {
+                        captureFailure(error)
+                        throw error
                     } finally {
                         nativeConstructCall = previousConstructCall
                         popStackFrame()
@@ -874,7 +906,8 @@ class Interpreter(
                 target = signal.callee ?: throw signal
                 targetThis = signal.thisValue
                 targetArgs = signal.args
-                targetRange = signal.callRange
+                // 尾调用已移除旧帧，父帧仍应停在最初调用点，不能借用被省略函数的源码范围。
+                targetRange = null
             }
         }
     }
@@ -951,7 +984,7 @@ class Interpreter(
         }
 
         if (function.isAsync) {
-            return callAsyncFunction(function, effectiveThis, args)
+            return callAsyncFunction(function, effectiveThis, args, callRange)
         }
         return executeUserFunction(function, effectiveThis, args, callRange)
     }
@@ -963,6 +996,7 @@ class Interpreter(
         function: JSFunction,
         thisValue: JSValue,
         args: List<JSValue>,
+        callRange: SourceRange? = null,
     ): JSValue {
         val promise = JSPromise(intrinsics.promisePrototype)
         // 每次 async 调用使用独立解释器实例：
@@ -971,10 +1005,17 @@ class Interpreter(
         // 新解释器不能使同步递归的 async 函数绕过深度限制。保留逻辑祖先深度，
         // 不把多个并列挂起的 async 调用累加到主解释器的活动调用栈中。
         asyncInterpreter.inheritedCallDepth = inheritedCallDepth + callDepth
+        // 冻结创建点的调用方帧。只复制链首并标记异步边界，万层 async 递归仍是
+        // 线性内存；等待期间其他 run 改变主解释器的位置不会污染这条祖先链。
+        val parent = snapshotStackLink(callRange)
+        asyncInterpreter.stackHead = parent?.let {
+            StackFrameLink(it.frame.copy(isAsync = true), it.parent)
+        }
+        asyncInterpreter.currentRange = asyncInterpreter.stackHead?.frame?.range
         context.eventLoop.launchAsyncTask {
             try {
                 val result = asyncInterpreter.executeUserFunction(function, thisValue, args)
-                PromiseSupport.resolve(this@Interpreter, promise, result)
+                PromiseSupport.resolve(asyncInterpreter, promise, result)
             } catch (error: CancellationException) {
                 // async 协程取消属于宿主控制流，不应变成 Promise 的 InternalError 拒绝。
                 throw error
@@ -982,16 +1023,17 @@ class Interpreter(
                 // 交给事件循环的配额终止边界，不生成 Promise 的 InternalError 拒绝。
                 throw error
             } catch (error: JSException) {
-                PromiseSupport.reject(this@Interpreter, promise, error.value)
+                PromiseSupport.reject(asyncInterpreter, promise, error.value, error.stack)
             } catch (error: Throwable) {
                 PromiseSupport.reject(
-                    this@Interpreter,
+                    asyncInterpreter,
                     promise,
                     JSError(
                         "InternalError",
                         error.message ?: error::class.simpleName ?: "Internal error",
-                        intrinsics.objectPrototype,
+                        intrinsics.errorPrototype,
                     ),
+                    asyncInterpreter.hostFailureStack ?: asyncInterpreter.captureStack(),
                 )
             }
         }
@@ -1033,7 +1075,11 @@ class Interpreter(
             variableEnv = calleeEnv,
             inParameterInitialization = hasParameterExpressions,
         )
-        pushStackFrame(function.name.ifEmpty { "anonymous" }, callRange)
+        if (callRange != null) currentRange = callRange
+        pushStackFrame(
+            function.name.ifEmpty { "anonymous" }, function.body?.range ?: function.expressionBody?.range,
+            sourceInfo = function.sourceInfo,
+        )
         frame = functionFrame
         try {
             if (!function.isArrow) {
@@ -1092,6 +1138,9 @@ class Interpreter(
                 is Completion.Break, is Completion.Continue ->
                     throw syntaxError("Illegal break/continue statement")
             }
+        } catch (error: Throwable) {
+            captureFailure(error)
+            throw error
         } finally {
             popStackFrame()
             frame = previousFrame
@@ -1222,7 +1271,7 @@ class Interpreter(
             variableEnv = calleeEnv,
             inParameterInitialization = hasParameterExpressions,
         )
-        pushStackFrame(function.name.ifEmpty { "anonymous" })
+        pushStackFrame(function.name.ifEmpty { "anonymous" }, function.body?.range, sourceInfo = function.sourceInfo)
         frame = functionFrame
         val activeFrame = functionFrame
         try {
@@ -1281,6 +1330,9 @@ class Interpreter(
                 throw referenceError("Must call super constructor before returning from derived constructor")
             }
             return activeFrame.thisValue
+        } catch (error: Throwable) {
+            captureFailure(error)
+            throw error
         } finally {
             popStackFrame()
             frame = previousFrame
@@ -1315,6 +1367,7 @@ class Interpreter(
         superBase: JSObject? = null,
         functionPrototypeObject: JSObject? = null,
         sourceText: String? = null,
+        sourceInfo: SourceInfo = currentSourceInfo,
     ): JSFunction {
         // async 函数不是构造器，没有 own "prototype" 属性
         val prototypeObject = if (isArrow || isMethod || isAsync) {
@@ -1350,6 +1403,7 @@ class Interpreter(
             homeObject = homeObject,
             superConstructor = superConstructor,
             superBase = superBase,
+            sourceInfo = sourceInfo,
         )
         function.sourceText = sourceText
         // ES5 15.3.5.4：非严格普通函数的 caller/arguments 是值为 null 的自有数据属性；
@@ -1501,6 +1555,7 @@ class Interpreter(
             varDeclarations = function.varDeclarations,
             functionDeclarations = function.functionDeclarations,
             isAsync = function.isAsync,
+            sourceInfo = SourceInfo("<Function>"),
         )
         created.sourceText = sourceText
         return created
@@ -1525,6 +1580,7 @@ class Interpreter(
             varDeclarations = function.varDeclarations,
             functionDeclarations = function.functionDeclarations,
             isAsync = true,
+            sourceInfo = SourceInfo("<AsyncFunction>"),
         )
         created.sourceText = source.substring(1, source.length - 1)
         return created
@@ -1746,7 +1802,10 @@ class Interpreter(
         return Completion.Normal(lastValue, hasValue)
     }
 
-    private suspend fun executeStatement(statement: Statement): Completion {
+    private suspend fun executeStatement(statement: Statement): Completion =
+        withSourceRange(statement.range) { executeStatementInternal(statement) }
+
+    private suspend fun executeStatementInternal(statement: Statement): Completion {
         checkExecution()
         return when (statement) {
             is EmptyStatement -> Completion.Normal(JSUndefined, hasValue = false)
@@ -1822,10 +1881,14 @@ class Interpreter(
                 Completion.Return(value)
             }
 
-            is ThrowStatement -> throw JSException(
-                value = evaluate(statement.argument),
-                stack = callStack.toList(),
-            )
+            is ThrowStatement -> {
+                val value = evaluate(statement.argument)
+                // 已有 Error 保留创建位置；throw 普通值则由当前执行边界记录抛出点。
+                captureErrorStack(value)
+                throw JSException(value).also {
+                    if (it.stack.isEmpty()) it.attachStackIfAbsent(captureStack())
+                }
+            }
 
             is TryStatement -> executeTry(statement)
         }
@@ -2764,7 +2827,10 @@ class Interpreter(
     // 表达式求值
     // ================================================================
 
-    private suspend fun evaluate(expression: Expression, tail: Boolean = false): JSValue {
+    private suspend fun evaluate(expression: Expression, tail: Boolean = false): JSValue =
+        withSourceRange(expression.range) { evaluateInternal(expression, tail) }
+
+    private suspend fun evaluateInternal(expression: Expression, tail: Boolean): JSValue {
         checkExecution()
         return when (expression) {
             is Identifier -> currentFrame.lexicalEnv.getBinding(expression.name)
@@ -3743,6 +3809,9 @@ class Interpreter(
     /** 构造 SuppressedError 值（error 为新的主错误，suppressed 为先前累积错误）。 */
     private fun createSuppressedErrorValue(error: JSValue, suppressed: JSValue): JSValue {
         val objectValue = JSObject(prototype = intrinsics.suppressedErrorPrototype)
+        // 自动资源释放生成的错误同样具有 ErrorData 和首次创建位置。
+        objectValue.isErrorData = true
+        captureErrorStack(objectValue)
         objectValue.defineDataProperty(
             key = PropertyKey.Str("error"),
             value = error,
@@ -3803,7 +3872,10 @@ class Interpreter(
                     variableEnv = calleeEnv,
                     inParameterInitialization = hasParameterExpressions,
                 )
-                pushStackFrame(superConstructor.name.ifEmpty { "anonymous" })
+                pushStackFrame(
+                    superConstructor.name.ifEmpty { "anonymous" }, superConstructor.body?.range,
+                    sourceInfo = superConstructor.sourceInfo,
+                )
                 frame = activeFrame
                 try {
                     parameterEnv.createVarBinding("arguments", createArgumentsObject(args, superConstructor))
@@ -3852,6 +3924,9 @@ class Interpreter(
                         throw referenceError("Must call super constructor before returning from derived constructor")
                     }
                     activeFrame.thisValue
+                } catch (error: Throwable) {
+                    captureFailure(error)
+                    throw error
                 } finally {
                     popStackFrame()
                     frame = previousFrame
@@ -6060,6 +6135,7 @@ class Interpreter(
         name: String,
         range: SourceRange? = null,
         countsTowardsDepth: Boolean = true,
+        sourceInfo: SourceInfo = currentSourceInfo,
     ) {
         if (countsTowardsDepth) {
             val maxDepth = context.limits.maxCallDepth
@@ -6073,18 +6149,83 @@ class Interpreter(
             }
             callDepth++
         }
-        callStack.add(StackFrame(name, range))
+        val parent = snapshotStackLink()
+        val entryRange = range?.takeIf { it.start.line > 0 }
+            ?: currentRange?.takeIf { sourceInfo == currentSourceInfo }
+        stackHead = StackFrameLink(StackFrame(name, entryRange, sourceInfo), parent)
+        currentRange = entryRange
     }
 
     private fun popStackFrame(countsTowardsDepth: Boolean = true) {
-        if (callStack.isNotEmpty()) {
-            callStack.removeAt(callStack.lastIndex)
+        if (stackHead != null) {
+            stackHead = stackHead?.parent
+            currentRange = stackHead?.frame?.range
             if (countsTowardsDepth) callDepth--
+        }
+    }
+
+    /** 冻结当前执行位置；祖先帧不可变，async 可以安全共享而无需复制整条栈。 */
+    private fun snapshotStackLink(rangeOverride: SourceRange? = null): StackFrameLink? {
+        val head = stackHead ?: return null
+        val range = rangeOverride?.takeIf { it.start.line > 0 } ?: currentRange
+        return if (head.frame.range == range) head else StackFrameLink(head.frame.copy(range = range), head.parent)
+    }
+
+    /** 仅在捕获错误时展开帧链，按外层到内层保存；迭代遍历避免万层递归占用宿主栈。 */
+    internal fun captureStack(skipTopFrame: Boolean = false): List<StackFrame> {
+        var link = snapshotStackLink()
+        if (skipTopFrame) link = link?.parent
+        val frames = mutableListOf<StackFrame>()
+        while (link != null) {
+            frames.add(link.frame)
+            link = link.parent
+        }
+        frames.reverse()
+        return frames
+    }
+
+    /** Error 保存首次创建或抛出的位置；构造器调用时跳过其自身的原生帧。 */
+    internal fun captureErrorStack(value: JSValue, skipTopFrame: Boolean = false) {
+        if (value is JSObject && value.isErrorData && value.errorStack == null) {
+            val frames = captureStack(skipTopFrame)
+            if (frames.isNotEmpty()) value.errorStack = frames
+        }
+    }
+
+    /** 在退栈前补齐环境/宿主异常；取消、配额中止和尾调用信号不属于 JS 错误。 */
+    private fun captureFailure(error: Throwable) {
+        when (error) {
+            is CancellationException, is ExecutionLimitException, is TailCallSignal -> Unit
+            is JSException -> {
+                // 已有快照时不再次遍历，深递归退栈保持线性复杂度。
+                if (error.stack.isEmpty()) error.attachStackIfAbsent(captureStack())
+                normalizeErrorValue(error.value)
+            }
+            else -> if (hostFailure !== error) {
+                // finally 可能用新的宿主异常替换旧异常；两者不能共用旧错误的位置。
+                hostFailure = error
+                hostFailureStack = captureStack()
+            }
+        }
+    }
+
+    /** 子表达式完成后恢复父位置，错误则在恢复之前固定到最内层的有效源码范围。 */
+    private suspend inline fun <T> withSourceRange(range: SourceRange, block: () -> T): T {
+        val previousRange = currentRange
+        if (range.start.line > 0) currentRange = range
+        try {
+            return block()
+        } catch (error: Throwable) {
+            captureFailure(error)
+            throw error
+        } finally {
+            currentRange = previousRange
         }
     }
 
     /** 为内部构造的 JSError 补齐内建错误原型，保证 catch 后 constructor 身份正确。 */
     fun normalizeErrorValue(value: JSValue): JSValue {
+        captureErrorStack(value)
         if (value !is JSError) return value
         val current = value.prototype
         if (current != null && current !== intrinsics.errorPrototype) return value
@@ -6103,24 +6244,24 @@ class Interpreter(
     /** 抛出 TypeError。 */
     fun typeError(message: String): Nothing = throw JSException(
         value = JSError("TypeError", message, intrinsics.typeErrorPrototype),
-        stack = callStack.toList(),
+        stack = captureStack(),
     )
 
     /** 抛出 ReferenceError。 */
     fun referenceError(message: String): Nothing = throw JSException(
         value = JSError("ReferenceError", message, intrinsics.referenceErrorPrototype),
-        stack = callStack.toList(),
+        stack = captureStack(),
     )
 
     /** 抛出 SyntaxError。 */
     fun syntaxError(message: String): Nothing = throw JSException(
         value = JSError("SyntaxError", message, intrinsics.syntaxErrorPrototype),
-        stack = callStack.toList(),
+        stack = captureStack(),
     )
 
     /** 抛出 RangeError。 */
     fun rangeError(message: String): Nothing = throw JSException(
         value = JSError("RangeError", message, intrinsics.rangeErrorPrototype),
-        stack = callStack.toList(),
+        stack = captureStack(),
     )
 }

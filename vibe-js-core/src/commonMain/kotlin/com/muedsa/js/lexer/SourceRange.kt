@@ -1,6 +1,21 @@
 package com.muedsa.js.lexer
 
 /**
+ * 脚本来源信息，独立于源码内部的行列位置。
+ *
+ * [lineOffset] 是显示行号时增加的非负偏移，例如源码第 1 行对应宿主文件第 21 行
+ * 时设置为 20。AST 的 SourceRange 保留相对位置，便于预解析与源码切片复用。
+ */
+data class SourceInfo(
+    val name: String = "<anonymous>",
+    val lineOffset: Int = 0,
+) {
+    init {
+        require(lineOffset >= 0) { "lineOffset must be >= 0" }
+    }
+}
+
+/**
  * 源码中的位置（行、列、字符偏移）。
  *
  * 行号与列号均从 1 开始，offset 从 0 开始，便于与 IDE / 编辑器习惯保持一致。

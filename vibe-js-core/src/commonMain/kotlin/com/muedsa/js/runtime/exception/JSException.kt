@@ -9,31 +9,49 @@ import com.muedsa.js.runtime.value.PropertyKey
  * JavaScript 异常（对应 throw 语句或运行时错误）。
  *
  * @property value 被抛出的任意 JS 值
- * @property stack 抛出时的调用栈快照
+ * @property stack Error 创建或首次抛出时的调用栈快照，普通值使用抛出位置
  */
 class JSException(
     val value: JSValue,
-    val stack: List<StackFrame> = emptyList(),
+    stack: List<StackFrame> = (value as? JSObject)?.errorStack ?: emptyList(),
 ) : Exception(messageOf(value)) {
+
+    /**
+     * 首次捕获后保持不变；环境层没有解释器时，延迟到最近的执行边界补齐。
+     * Error 的内部快照已经冻结，跨万层 Promise 链传播时共享它，避免反复复制。
+     */
+    var stack: List<StackFrame> = if (stack === (value as? JSObject)?.errorStack) stack else stack.toList()
+        private set
+
+    init {
+        preserveErrorStack()
+    }
+
+    internal fun attachStackIfAbsent(frames: List<StackFrame>) {
+        if (stack.isEmpty()) stack = (value as? JSObject)?.errorStack ?: frames.toList()
+        preserveErrorStack()
+    }
+
+    private fun preserveErrorStack() {
+        if (value is JSObject && value.isErrorData && value.errorStack == null && stack.isNotEmpty()) {
+            value.errorStack = stack
+        }
+    }
 
     /** 生成可读的错误摘要，供宿主日志使用。 */
     private val summary: String
-        get() = buildString {
-            append(message ?: "JavaScript error")
-            if (stack.isNotEmpty()) {
-                append('\n')
-                stack.asReversed().forEach { frame ->
-                    append("    at ")
-                    append(frame.functionName)
-                    frame.range?.let { append(" (").append(it).append(')') }
-                    append('\n')
-                }
-            }
-        }
+        get() = formatErrorStack(message ?: "JavaScript error", stack)
 
     override fun toString(): String = summary
 
     companion object {
+        /** 内部快照已固定，可在 Promise 转发时共享，避免长拒绝链逐层复制同一份帧。 */
+        internal fun fromSnapshot(value: JSValue, frames: List<StackFrame>): JSException =
+            JSException(value).also {
+                if (it.stack.isEmpty()) it.stack = frames
+                it.preserveErrorStack()
+            }
+
         private fun messageOf(value: JSValue): String = try {
             when (value) {
                 // 普通对象默认 ToString 是 [object Object]，会吞掉抛出的错误详情；
@@ -46,18 +64,26 @@ class JSException(
         }
 
         private fun describeObject(value: JSObject): String {
-            val message = (value.getOwnDataValue(PropertyKey.MESSAGE) as? JSString)?.value
-                ?: return value.toPrimitiveString()
-            val name = findName(value)
-            return if (name == null) message else "$name: $message"
+            // ErrorData 的 message 可以缺省（包括 AggregateError/SuppressedError）。
+            // 宿主摘要不执行 JS getter，只读取数据属性，并与 stack 的空名称/空消息格式一致。
+            val message = findText(value, PropertyKey.MESSAGE)
+                ?: if (value.isErrorData) "" else return value.toPrimitiveString()
+            val name = findText(value, PropertyKey.NAME)
+                ?: if (value.isErrorData) "Error" else return message
+            return when {
+                name.isEmpty() -> message
+                message.isEmpty() -> name
+                else -> "$name: $message"
+            }
         }
 
-        /** 沿原型链查找 name（例如 Error 子类原型上的 "TypeError"）。 */
-        private fun findName(value: JSObject): String? {
+        /** 沿原型链查找数据属性；访问器不能被跳过后误读为原型上的旧值。 */
+        private fun findText(value: JSObject, key: PropertyKey): String? {
             var current: JSObject? = value
             while (current != null) {
-                val name = (current.getOwnDataValue(PropertyKey.NAME) as? JSString)?.value
-                if (name != null) return name
+                if (current.getOwnProperty(key) != null) {
+                    return (current.getOwnDataValue(key) as? JSString)?.value
+                }
                 current = current.prototype
             }
             return null

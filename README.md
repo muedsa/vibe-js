@@ -110,6 +110,29 @@ finally 继续执行；调用深度超限则抛可被 JS 捕获的
 不计解析或单次内建/宿主操作的内部工作量；它不是时间或内存配额。
 详见[执行配额与边界](docs/ARCHITECTURE.md#86-执行配额)。
 
+### 错误栈与脚本来源
+
+`Engine.run` 和 `Engine.parse` 支持脚本名与非负行偏移。`Error.prototype.stack`
+保存错误创建或首次抛出时的函数与源码位置；重抛、Promise 拒绝转发和延迟读取不会覆盖它：
+
+```kotlin
+val engine = Engine()
+val stack = engine.run(
+    "function fail() { return new Error('出错了'); }\nfail().stack;",
+    sourceName = "plugin.js",
+    lineOffset = 20, // 源码第 1 行显示为文件第 21 行
+)
+println(stack.toPrimitiveString())
+// Error: 出错了
+//     at fail (plugin.js:21:26)
+//     at <global> (plugin.js:22:1)
+```
+
+函数保留定义脚本，跨脚本调用时各帧显示各自来源。async 恢复后仍保留创建调用链，
+异步边界标为 `async`；Kotlin 捕获的 `JSException.stack` 提供结构化帧，
+`toString()` 使用相同的格式。默认脚本名为 `<anonymous>`，行列从 1 开始。
+详见[错误栈的捕获与边界](docs/ARCHITECTURE.md#87-错误栈)。
+
 ### 安装宿主能力
 
 ```kotlin

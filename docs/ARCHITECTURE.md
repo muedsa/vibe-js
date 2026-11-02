@@ -263,6 +263,53 @@ async、定时器和直接调用 `Interpreter` API 不具有独立步数预算�
 多种递归入口、尾调用、超限/取消后复用以及预算在异步拒绝处理期间耗尽的边界。
 此外验证 12,000 层普通递归、默认 16,384 层上限，以及内部栈分段下的 async/微任务顺序。
 
+### 8.7 错误栈
+
+`Engine.parse(source, sourceName, lineOffset)` 和 `Engine.run(source, sourceName, lineOffset)`
+将 `SourceInfo` 绑定到 Program。脚本名默认 `<anonymous>`，行偏移默认 0 且必须非负；
+AST 中的 `SourceRange` 保留相对行列，仅显示时叠加偏移，列号不变。显示行号用 Long 相加，
+避免较大偏移溢出。解析缓存键包含来源信息；`run(program)` 继续使用预解析时的来源。
+函数保存定义时的来源，所以在另一个脚本调用旧函数不会把定义位置误报为调用文件。
+
+解释器维护不可变祖先帧链及当前语句/表达式位置。进入函数时冻结父帧的调用点，
+子表达式结束时恢复父位置；异常必须在恢复位置和退栈前补齐快照。只有错误发生时
+才迭代展开为按外层到内层排列的 `List<StackFrame>`，不依赖平台物理栈。
+async 解释器共享冻结的祖先链，并将创建点标记为异步边界，避免万层调用逐层复制祖先。
+await 或宿主挂起恢复后，错误仍使用原调用链，不受之后的 `Engine.run` 影响。
+
+Error 及其子类（含 AggregateError、SuppressedError 与资源释放合成错误）在内部槽
+保存首次创建/抛出时的快照，不增加 JS 自有属性。`Error.prototype.stack` 按内层到外层输出：
+
+```text
+Error: 出错了
+    at worker (task.js:23:9)
+    at async start (entry.js:8:3)
+    at <global> (entry.js:12:1)
+```
+
+第一行读取当前 name/message，帧始终来自快照。重复 throw、冻结错误、修改 name/message、
+随后读取或覆写再删除 stack 都不改变内部快照；原有 stack getter/setter 与可枚举性保持不变。
+环境层生成的错误由最近执行边界补齐帧与原型。宿主故障转换为 InternalError 时也保留
+转换前的 JS 位置，取消和配额中止继续原样传播。
+
+Promise 拒绝保存 `JSException` 诊断与 reason，原生拒绝函数转发诊断时仍经过普通调用、
+深度/配额检查和 AlreadyResolved 守卫，不改变用户可见的 reason 或自定义 capability 参数。
+Error 对象跨 then/catch/await 保留其创建位置；原始值的直接 throw、async 拒绝及原生 Promise
+透明转发也保留抛出位置。用户回调重新 throw 原始值是新的抛出点。长拒绝链共享已有快照。
+
+诊断边界：
+
+- stack 是实现定义的诊断格式，不承诺与 V8/SpiderMonkey 逐字一致；严格模式尾调用省略旧帧。
+- eval 使用 `<eval>`，Function/AsyncFunction 使用 `<Function>` / `<AsyncFunction>`；
+  动态函数行号对应包含函数包装行的合成源码。没有有效范围的合成帧只显示函数名。
+- 普通 Promise 回调显示自身定义位置，不自动拼接完整 then 注册链；自定义 thenable/capability
+  若自行保存并重新拒绝原始值，只能从新的调用点记录诊断。原始值本身不携带 Error 内部槽。
+- 词法/解析错误仍沿用 LexerException/ParseException 的诊断协议，本次来源参数用于运行时栈。
+- 快照仅保存函数名、来源及源码范围，不保存 Interpreter、词法环境或完整源码。
+
+`RuntimeErrorStackTest` 覆盖创建/重抛、精确行列、缓存/预解析来源、跨脚本函数、构造器与访问器、
+eval/动态函数、async 恢复、Promise 转发、宿主错误、资源释放和 12,000 层同步/异步错误链。
+
 ## 9. 性能优化的预留点
 
 | 现状 | 后续替换方式 | 影响范围 |

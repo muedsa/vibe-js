@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.exception.formatErrorStack
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSError
@@ -100,6 +101,7 @@ object ErrorBuiltins {
             val messageArg = args.getOrElse(1) { JSUndefined }
             val objectValue = JSObject(prototype = aggregateErrorPrototype)
             objectValue.isErrorData = true
+            interpreter.captureErrorStack(objectValue, skipTopFrame = true)
             // 规范：仅在显式传入非 undefined 的 message 时创建自有属性
             if (messageArg !is JSUndefined) {
                 objectValue.defineDataProperty(
@@ -148,6 +150,7 @@ object ErrorBuiltins {
             val messageArg = args.getOrElse(2) { JSUndefined }
             val objectValue = JSObject(prototype = intrinsics.suppressedErrorPrototype)
             objectValue.isErrorData = true
+            interpreter.captureErrorStack(objectValue, skipTopFrame = true)
             if (messageArg !is JSUndefined) {
                 objectValue.defineDataProperty(
                     key = PropertyKey.MESSAGE,
@@ -215,7 +218,12 @@ object ErrorBuiltins {
                 if (!thisValue.isErrorData) return@method JSUndefined
                 val name = readStackText(interpreter, thisValue, PropertyKey.NAME, "Error")
                 val message = readStackText(interpreter, thisValue, PropertyKey.MESSAGE, "")
-                JSString(if (message.isEmpty()) name else "$name: $message")
+                val header = when {
+                    name.isEmpty() -> message
+                    message.isEmpty() -> name
+                    else -> "$name: $message"
+                }
+                JSString(formatErrorStack(header, thisValue.errorStack ?: emptyList()))
             },
             set = BuiltinHelpers.method(intrinsics, "set stack", 1) { interpreter, thisValue, args ->
                 if (thisValue !is JSObject) {
@@ -287,6 +295,7 @@ object ErrorBuiltins {
             val hasMessage = messageArg !is JSUndefined
             val message = if (hasMessage) interpreter.toStringValue(messageArg) else ""
             val error = JSError(name, message, prototype, defineMessage = hasMessage)
+            interpreter.captureErrorStack(error, skipTopFrame = true)
             // options.cause：存在该属性时复制到错误实例（不可枚举）
             val options = args.getOrNull(1)
             if (options != null && options !is JSUndefined) {

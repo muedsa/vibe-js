@@ -3,6 +3,7 @@ package com.muedsa.js.runtime
 import com.muedsa.js.ast.Program
 import com.muedsa.js.builtins.CoreBuiltins
 import com.muedsa.js.lexer.Lexer
+import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.exception.ExecutionLimitException
@@ -59,7 +60,8 @@ class Engine(
 
     /** 解析缓存及其互斥量：run(source) 可能被并发调用。 */
     private val parseCacheMutex = Mutex()
-    private val parseCache = LinkedHashMap<String, Program>()
+    private data class ParseCacheKey(val source: String, val sourceInfo: SourceInfo)
+    private val parseCache = LinkedHashMap<ParseCacheKey, Program>()
 
     init {
         require(parseCacheSize >= 0) { "parseCacheSize must be >= 0" }
@@ -90,30 +92,41 @@ class Engine(
      *
      * 解析阶段不接触全局环境，可在进入事件循环前完成；同一 AST 可多次执行，
      * 每次执行都会重新做全局声明实例化（与重复执行同一 Script 的语义一致）。
+     *
+     * @param sourceName 运行时错误栈中显示的脚本名，默认 <anonymous>。
+     * @param lineOffset 显示行号时增加的非负偏移；AST 行列仍相对于 source。
      */
-    fun parse(source: String): Program {
+    fun parse(source: String, sourceName: String = "<anonymous>", lineOffset: Int = 0): Program {
+        val sourceInfo = SourceInfo(sourceName, lineOffset)
         val tokens = Lexer(source).tokenize()
-        return Parser(tokens, source = source).parseProgram()
+        val parsed = Parser(tokens, source = source).parseProgram()
+        return Program(
+            parsed.body, parsed.strict, parsed.varDeclarations, parsed.functionDeclarations,
+            parsed.range, parsed.hasUsingDeclaration, sourceInfo,
+        )
     }
 
     /**
      * 执行一段脚本，返回最后一个表达式的值（通常是 undefined）。
      *
-     * 开启 [parseCacheSize] 时，相同源码会复用已解析的 AST。
+     * 开启 [parseCacheSize] 时，源码、脚本名和行偏移都相同才复用已解析的 AST。
+     * [sourceName] 与非负的 [lineOffset] 含义同 [parse]。
      */
-    suspend fun run(source: String): JSValue {
+    suspend fun run(source: String, sourceName: String = "<anonymous>", lineOffset: Int = 0): JSValue {
         // 已取消的调用不应继续解析源码或改动 AST 缓存。
         currentCoroutineContext().ensureActive()
-        if (parseCacheSize == 0) return run(parse(source))
+        if (parseCacheSize == 0) return run(parse(source, sourceName, lineOffset))
+        // 来源属于 AST 的诊断信息，必须纳入缓存键，避免同一源码串用另一个文件名。
+        val key = ParseCacheKey(source, SourceInfo(sourceName, lineOffset))
         val program = parseCacheMutex.withLock {
-            val cached = parseCache.remove(source)
+            val cached = parseCache.remove(key)
             if (cached != null) {
-                parseCache[source] = cached
+                parseCache[key] = cached
                 cached
             } else {
-                parse(source).also { compiled ->
+                parse(source, sourceName, lineOffset).also { compiled ->
                     if (!source.contains('`')) {
-                        parseCache[source] = compiled
+                        parseCache[key] = compiled
                         while (parseCache.size > parseCacheSize) {
                             parseCache.remove(parseCache.keys.first())
                         }
@@ -176,7 +189,9 @@ class Engine(
                         JSError(
                             errorName = "InternalError",
                             messageText = error.message ?: error::class.simpleName ?: "Internal error",
-                        )
+                            prototype = intrinsics.errorPrototype,
+                        ),
+                        stack = interpreter.hostFailureStack ?: emptyList(),
                     )
                 } finally {
                     // 包括取消、配额耗尽及 JS 抛错，均不能把旧预算带入下一次调用。

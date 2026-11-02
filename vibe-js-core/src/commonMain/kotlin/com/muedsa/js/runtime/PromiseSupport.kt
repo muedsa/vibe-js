@@ -1,6 +1,7 @@
 package com.muedsa.js.runtime
 
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.exception.StackFrame
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSObject
@@ -15,6 +16,9 @@ class PromiseCapability(
     var resolve: JSValue = JSUndefined,
     var reject: JSValue = JSUndefined,
 )
+
+/** 指定拒绝函数的一次调用携带的诊断；其他回调即使传入相同的 reason 也不会误用。 */
+internal class PendingPromiseRejection(val target: JSValue, val error: JSException)
 
 /**
  * Promise 的解析/拒绝与 then 链调度。
@@ -89,7 +93,7 @@ object PromiseSupport {
             val thenValue = try {
                 interpreter.getV(value, PropertyKey.Str("then"))
             } catch (error: JSException) {
-                reject(interpreter, promise, error.value)
+                reject(interpreter, promise, error.value, error.stack)
                 return
             }
             if (interpreter.isCallable(thenValue)) {
@@ -101,7 +105,7 @@ object PromiseSupport {
                         interpreter.callFunction(thenValue, value, listOf(resolveFunction, rejectFunction))
                     } catch (error: JSException) {
                         // 使用本次 job 的带守卫拒绝函数：then 已解析后的异常被忽略
-                        interpreter.callFunction(rejectFunction, JSUndefined, listOf(error.value))
+                        callReject(interpreter, rejectFunction, error)
                     }
                 }
                 return
@@ -121,13 +125,21 @@ object PromiseSupport {
     }
 
     /** 拒绝 Promise。 */
-    fun reject(interpreter: Interpreter, promise: JSPromise, reason: JSValue) {
+    fun reject(
+        interpreter: Interpreter,
+        promise: JSPromise,
+        reason: JSValue,
+        stack: List<StackFrame>? = null,
+    ) {
         if (promise.state != JSPromise.State.PENDING) return
+        // async 退出函数后已退栈，必须先保存异常原有位置，再补齐原型。
+        val error = JSException.fromSnapshot(reason, (reason as? JSObject)?.errorStack ?: stack ?: interpreter.captureStack())
         // 环境等内部路径构造的 JSError 可能没有内建原型，拒绝前补齐
         val normalized = interpreter.normalizeErrorValue(reason)
         promise.state = JSPromise.State.REJECTED
         promise.result = normalized
-        promise.deferred.completeExceptionally(JSException(normalized))
+        promise.rejection = error
+        promise.deferred.completeExceptionally(error)
         flushReactions(interpreter, promise)
         if (!promise.handled) {
             interpreter.context.eventLoop.trackUnhandledRejection(promise)
@@ -199,13 +211,18 @@ object PromiseSupport {
             val fulfilled = promise.state == JSPromise.State.FULFILLED
             val handler = if (fulfilled) reaction.onFulfilled else reaction.onRejected
             if (handler == null || handler is JSUndefined || !interpreter.isCallable(handler)) {
-                settleReaction(interpreter, reaction, fulfilled, promise.result)
+                settleReaction(interpreter, reaction, fulfilled, promise.result, promise.rejection)
             } else {
                 try {
-                    val value = interpreter.callFunction(handler, JSUndefined, listOf(promise.result))
+                    val error = promise.rejection
+                    val value = if (!fulfilled && error != null) {
+                        callReject(interpreter, handler, error)
+                    } else {
+                        interpreter.callFunction(handler, JSUndefined, listOf(promise.result))
+                    }
                     settleReaction(interpreter, reaction, true, value)
                 } catch (error: JSException) {
-                    settleReaction(interpreter, reaction, false, error.value)
+                    settleReaction(interpreter, reaction, false, error.value, error)
                 }
             }
         }
@@ -217,9 +234,14 @@ object PromiseSupport {
         reaction: JSPromise.Reaction,
         fulfilled: Boolean,
         value: JSValue,
+        error: JSException? = null,
     ) {
         val capability = reaction.capability
         if (capability != null) {
+            if (!fulfilled && error != null) {
+                callReject(interpreter, capability.reject, error)
+                return
+            }
             interpreter.callFunction(
                 if (fulfilled) capability.resolve else capability.reject,
                 JSUndefined,
@@ -231,7 +253,21 @@ object PromiseSupport {
         if (fulfilled) {
             resolve(interpreter, child, value)
         } else {
-            reject(interpreter, child, value)
+            reject(interpreter, child, value, error?.stack)
+        }
+    }
+
+    /**
+     * 保留正常 callFunction 的深度、配额和守卫语义，仅为原生拒绝函数补充诊断。
+     * 自定义 capability / 用户回调仍收到原来的单个 reason 参数。
+     */
+    internal suspend fun callReject(interpreter: Interpreter, target: JSValue, error: JSException): JSValue {
+        val previous = interpreter.pendingPromiseRejection
+        interpreter.pendingPromiseRejection = PendingPromiseRejection(target, error)
+        return try {
+            interpreter.callFunction(target, JSUndefined, listOf(error.value))
+        } finally {
+            interpreter.pendingPromiseRejection = previous
         }
     }
 
@@ -250,21 +286,25 @@ object PromiseSupport {
             name = "",
             length = 1,
             prototype = interpreter.intrinsics.functionPrototype,
-        ) { _, _, args ->
+        ) { inner, _, args ->
             if (!alreadyResolved[0]) {
                 alreadyResolved[0] = true
-                resolve(interpreter, promise, args.getOrElse(0) { JSUndefined })
+                resolve(inner, promise, args.getOrElse(0) { JSUndefined })
             }
             JSUndefined
         }
-        val rejectFunction = JSNativeFunction(
+        lateinit var rejectFunction: JSNativeFunction
+        rejectFunction = JSNativeFunction(
             name = "",
             length = 1,
             prototype = interpreter.intrinsics.functionPrototype,
-        ) { _, _, args ->
+        ) { inner, _, args ->
             if (!alreadyResolved[0]) {
                 alreadyResolved[0] = true
-                reject(interpreter, promise, args.getOrElse(0) { JSUndefined })
+                val reason = args.getOrElse(0) { JSUndefined }
+                val pending = inner.pendingPromiseRejection
+                val stack = pending?.takeIf { it.target === rejectFunction && it.error.value === reason }?.error?.stack
+                reject(inner, promise, reason, stack)
             }
             JSUndefined
         }

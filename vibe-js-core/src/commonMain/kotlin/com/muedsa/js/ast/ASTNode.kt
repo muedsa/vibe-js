@@ -1,6 +1,7 @@
 package com.muedsa.js.ast
 
 import com.muedsa.js.lexer.SourceRange
+import com.muedsa.js.lexer.SourceInfo
 
 /**
  * 抽象语法树（AST）节点基类。
@@ -38,4 +39,6 @@ class Program(
     override val range: SourceRange,
     /** 顶层语句是否直接包含 using 声明（决定执行期是否需要资源释放作用域）。 */
     val hasUsingDeclaration: Boolean = true,
+    /** 引擎预解析时绑定的脚本来源；Parser 直接调用默认使用匿名来源。 */
+    val sourceInfo: SourceInfo = SourceInfo(),
 ) : ASTNode()

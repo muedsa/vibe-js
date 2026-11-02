@@ -35,6 +35,9 @@ class JSPromise(
     var state: State = State.PENDING
     var result: JSValue = JSUndefined
 
+    /** 拒绝诊断与 reason 分开保存，使 throw 原始值也可经内部 Promise 转发保留位置。 */
+    internal var rejection: JSException? = null
+
     /** 是否已有 then/catch 订阅（有订阅则不属于未处理拒绝）。 */
     var handled: Boolean = false
 
@@ -54,7 +57,9 @@ class JSPromise(
         if (state != State.PENDING) return
         state = State.REJECTED
         result = reason
-        deferred.completeExceptionally(JSException(reason))
+        val error = JSException(reason)
+        rejection = error
+        deferred.completeExceptionally(error)
     }
 
     override fun toPrimitiveString(): String = "[object Promise]"

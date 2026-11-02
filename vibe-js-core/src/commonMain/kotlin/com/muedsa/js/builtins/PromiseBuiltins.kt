@@ -45,7 +45,7 @@ object PromiseBuiltins {
                 interpreter.callFunction(executor, JSUndefined, listOf(resolveFunction, rejectFunction))
             } catch (error: JSException) {
                 // 使用带 [[AlreadyResolved]] 守卫的拒绝函数：已解析后的异常被忽略
-                interpreter.callFunction(rejectFunction, JSUndefined, listOf(error.value))
+                PromiseSupport.callReject(interpreter, rejectFunction, error)
             }
             promise
         }
@@ -227,7 +227,7 @@ object PromiseBuiltins {
                 val resolveMethod = try {
                     interpreter.getV(thisValue, PropertyKey.Str("resolve"))
                 } catch (error: JSException) {
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                     return@method capability.promise
                 }
                 if (!interpreter.isCallable(resolveMethod)) {
@@ -284,7 +284,7 @@ object PromiseBuiltins {
                     }
                 } catch (error: JSException) {
                     // 迭代器已在 consumeIterator 中关闭；错误转为 capability 的拒绝
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                     return@method capability.promise
                 }
                 remaining--
@@ -297,7 +297,7 @@ object PromiseBuiltins {
                             JSArray(results.toMutableList(), prototype = intrinsics.arrayPrototype),
                         )
                     } catch (error: JSException) {
-                        rejectCapability(interpreter, capability, error.value)
+                        rejectCapability(interpreter, capability, error)
                     }
                 }
                 capability.promise
@@ -315,7 +315,7 @@ object PromiseBuiltins {
                 val resolveMethod = try {
                     interpreter.getV(thisValue, PropertyKey.Str("resolve"))
                 } catch (error: JSException) {
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                     return@method capability.promise
                 }
                 if (!interpreter.isCallable(resolveMethod)) {
@@ -344,7 +344,7 @@ object PromiseBuiltins {
                         )
                     }
                 } catch (error: JSException) {
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                 }
                 capability.promise
             },
@@ -425,7 +425,7 @@ object PromiseBuiltins {
                     }
                     resolveCapability(interpreter, capability, value)
                 } catch (error: JSException) {
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                 }
                 capability.promise
             },
@@ -441,7 +441,7 @@ object PromiseBuiltins {
                 val resolveMethod = try {
                     interpreter.getV(thisValue, PropertyKey.Str("resolve"))
                 } catch (error: JSException) {
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                     return@method capability.promise
                 }
                 if (!interpreter.isCallable(resolveMethod)) {
@@ -536,7 +536,7 @@ object PromiseBuiltins {
                         interpreter.callFunction(thenMethod, itemPromise, listOf(onFulfilled, onRejected))
                     }
                 } catch (error: JSException) {
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                     return@method capability.promise
                 }
                 remaining--
@@ -549,7 +549,7 @@ object PromiseBuiltins {
                             JSArray(results.toMutableList(), prototype = intrinsics.arrayPrototype),
                         )
                     } catch (error: JSException) {
-                        rejectCapability(interpreter, capability, error.value)
+                        rejectCapability(interpreter, capability, error)
                     }
                 }
                 capability.promise
@@ -566,7 +566,7 @@ object PromiseBuiltins {
                 val resolveMethod = try {
                     interpreter.getV(thisValue, PropertyKey.Str("resolve"))
                 } catch (error: JSException) {
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                     return@method capability.promise
                 }
                 if (!interpreter.isCallable(resolveMethod)) {
@@ -630,7 +630,7 @@ object PromiseBuiltins {
                         interpreter.callFunction(thenMethod, itemPromise, listOf(onFulfilled, onRejected))
                     }
                 } catch (error: JSException) {
-                    rejectCapability(interpreter, capability, error.value)
+                    rejectCapability(interpreter, capability, error)
                     return@method capability.promise
                 }
                 remaining--
@@ -638,7 +638,7 @@ object PromiseBuiltins {
                     try {
                         rejectWithAggregateError()
                     } catch (error: JSException) {
-                        rejectCapability(interpreter, capability, error.value)
+                        rejectCapability(interpreter, capability, error)
                     }
                 }
                 capability.promise
@@ -665,7 +665,7 @@ object PromiseBuiltins {
         val resolveMethod = try {
             interpreter.getV(thisValue, PropertyKey.Str("resolve"))
         } catch (error: JSException) {
-            rejectCapability(interpreter, capability, error.value)
+            rejectCapability(interpreter, capability, error)
             return capability.promise
         }
         if (!interpreter.isCallable(resolveMethod)) {
@@ -694,7 +694,7 @@ object PromiseBuiltins {
                 values.add(interpreter.getV(promises, key))
             }
         } catch (error: JSException) {
-            rejectCapability(interpreter, capability, error.value)
+            rejectCapability(interpreter, capability, error)
             return capability.promise
         }
 
@@ -796,7 +796,7 @@ object PromiseBuiltins {
                 interpreter.callFunction(thenMethod, itemPromise, listOf(onFulfilled, onRejected))
             }
         } catch (error: JSException) {
-            rejectCapability(interpreter, capability, error.value)
+            rejectCapability(interpreter, capability, error)
             return capability.promise
         }
         remaining--
@@ -808,7 +808,7 @@ object PromiseBuiltins {
                     createKeyedResult(intrinsics, keys, results),
                 )
             } catch (error: JSException) {
-                rejectCapability(interpreter, capability, error.value)
+                rejectCapability(interpreter, capability, error)
             }
         }
         return capability.promise
@@ -839,6 +839,11 @@ object PromiseBuiltins {
         value: JSValue,
     ) {
         interpreter.callFunction(capability.resolve, JSUndefined, listOf(value))
+    }
+
+    /** 捕获的异常连同原始抛出位置一起交给 capability，原始值也不丢失诊断。 */
+    private suspend fun rejectCapability(interpreter: Interpreter, capability: PromiseCapability, error: JSException) {
+        PromiseSupport.callReject(interpreter, capability.reject, error)
     }
 
     private suspend fun rejectCapability(
