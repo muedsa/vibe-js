@@ -12,8 +12,6 @@ import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyKey
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.launch
 
 /**
  * AsyncDisposableStack（显式资源管理的异步版本）。
@@ -158,7 +156,7 @@ internal object AsyncDisposableStackBuiltins {
             val promise = JSPromise(intrinsics.promisePrototype)
             val (resolveFunction, rejectFunction) =
                 PromiseSupport.createResolvingFunctions(interpreter, promise)
-            interpreter.context.eventLoop.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            interpreter.context.eventLoop.launchAsyncTask {
                 try {
                     val state = (thisValue as? JSObject)?.internalState as? AsyncDisposeState
                         ?: interpreter.typeError(

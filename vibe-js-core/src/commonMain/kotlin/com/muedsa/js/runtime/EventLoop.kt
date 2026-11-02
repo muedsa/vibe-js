@@ -1,18 +1,23 @@
 package com.muedsa.js.runtime
 
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.value.JSPromise
 import com.muedsa.js.runtime.value.JSValue
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.ContinuationInterceptor
 
 /**
  * 微任务 / 宏任务事件循环。
@@ -29,6 +34,38 @@ class EventLoop(
 
     /** 微任务队列（FIFO）。 */
     private val microtasks: ArrayDeque<suspend () -> Unit> = ArrayDeque()
+
+    /** 当前 Engine.run 的预算；仅在持有 runtimeMutex 的执行期间安装。 */
+    internal var executionBudget: ExecutionBudget? = null
+
+    /**
+     * 启动 async 运行时任务，保持同步执行到首次 await 的既有语义。
+     *
+     * 共享预算已经记录超限原因，由 Engine.run 的边界检查交给宿主；此处必须
+     * 包住整个任务（含 JS 异常转 Promise 拒绝的路径），避免配额刚好在 reject
+     * 调用时耗尽，逸出独立 launch 并被协程全局异常处理器再次上报。
+     */
+    internal suspend fun launchAsyncTask(block: suspend () -> Unit): Job {
+        val dispatcher = currentCoroutineContext()[ContinuationInterceptor] as? ExecutionTrampoline
+        val phase = AsyncStartPhase()
+        val task = scope.launch(
+            context = if (dispatcher == null) phase else dispatcher + phase,
+            start = CoroutineStart.UNDISPATCHED,
+        ) {
+            try {
+                block()
+            } catch (_: ExecutionLimitException) {
+                // Engine.run / drainMicrotasks 会观察到共享预算中的同一个失败。
+            } finally {
+                phase.ready.complete(Unit)
+            }
+        }
+        phase.signalExternalSuspension()
+        // 深层 async 的内部 yield 不能使调用方提前拿到 Promise；真正的宿主
+        // 挂起或 JS await 已发出 ready，此处立即返回，与原有时序相同。
+        internalExecutionSuspension { phase.ready.await() }
+        return task
+    }
 
     /**
      * 运行时互斥锁：解释器、环境与微任务队列都不是线程安全的。
@@ -63,6 +100,8 @@ class EventLoop(
         } catch (error: CancellationException) {
             // 宿主中止执行的控制信号必须继续传播，不能当作日志回调失败忽略。
             throw error
+        } catch (error: ExecutionLimitException) {
+            throw error
         } catch (_: Throwable) {
             // 宿主回调异常不应破坏事件循环
         }
@@ -88,23 +127,29 @@ class EventLoop(
      * 清空微任务队列。
      *
      * 微任务执行过程中可能继续入队，因此需要循环到队列为空。
-     * 阶段 A 忽略未处理的 Promise 拒绝（后续阶段接入 unhandled rejection 处理）。
+     * 取消或配额耗尽直接退出，不能把宿主控制异常当作普通 JS 回调错误忽略。
      */
     suspend fun drainMicrotasks() {
         // 即使队列为空，也要观察脚本最后一次宿主调用发出的取消。
         currentCoroutineContext().ensureActive()
+        executionBudget?.ensureAvailable()
         while (microtasks.isNotEmpty()) {
             // 原生微任务可以不断重新入队而不经过 AST，需在此独立检查。
             currentCoroutineContext().ensureActive()
+            executionBudget?.step()
             val task = microtasks.removeFirst()
             try {
                 task()
             } catch (_: JSException) {
                 // 微任务中的异常在阶段 C 会进入 Promise 拒绝回调
             }
+            // 内部栈分段不是 JS await，必须完成当前回调的同步工作再取下一个微任务。
+            drainExecutionStack()
+            executionBudget?.ensureAvailable()
         }
         currentCoroutineContext().ensureActive()
         reportUnhandledRejections()
+        executionBudget?.ensureAvailable()
     }
 
     /** 微任务清空后上报仍未订阅的拒绝；已订阅或已上报的跳过。 */
@@ -123,6 +168,8 @@ class EventLoop(
                 try {
                     reporter(promise.result)
                 } catch (error: CancellationException) {
+                    throw error
+                } catch (error: ExecutionLimitException) {
                     throw error
                 } catch (_: Throwable) {
                     // 宿主回调异常不应破坏事件循环

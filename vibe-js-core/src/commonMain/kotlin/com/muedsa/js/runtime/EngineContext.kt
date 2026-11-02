@@ -12,6 +12,7 @@ class EngineContext(
     val registry: BuiltinRegistry,
     val eventLoop: EventLoop,
     val host: HostEnvironment,
+    val limits: EngineLimits = EngineLimits(),
 ) {
     /**
      * 全局词法环境。

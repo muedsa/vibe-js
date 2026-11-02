@@ -81,6 +81,35 @@ engine.run("1 + 2") // 取消后可复用同一 Engine
 解析、单次耗时内建/宿主调用、独立 async 协程与定时器的生命周期边界见
 [架构说明](docs/ARCHITECTURE.md#85-协作式取消)。
 
+### 执行配额
+
+通过 `EngineLimits` 设置每次执行的步数上限和逻辑调用深度：
+
+```kotlin
+import com.muedsa.js.runtime.EngineLimits
+import com.muedsa.js.runtime.exception.ExecutionLimitException
+
+val engine = Engine(limits = EngineLimits(maxSteps = 100_000, maxCallDepth = 16_384))
+try {
+    engine.run("for (;;) {}")
+} catch (error: ExecutionLimitException) {
+    println("执行步数超过 ${error.maxSteps}")
+}
+engine.run("1 + 2") // 每次 run 使用新预算
+```
+
+`maxSteps` 默认 `null`（不限步数），`maxCallDepth` 默认 **16,384**，也可设为 `null`
+关闭深度限制；非空值必须大于零。步数耗尽抛 Kotlin `ExecutionLimitException`，JS 无法捕获或通过
+finally 继续执行；调用深度超限则抛可被 JS 捕获的
+`RangeError: Maximum call stack size exceeded`。严格模式尾调用不累计深度。
+解释器通过内部协程恢复队列分段执行深层调用，减少 Kotlin 物理栈的累积。
+不同 JS 引擎的栈上限由实现及运行环境决定，16,384 是本库的默认逻辑调用上限。
+
+步数检查不依赖计时器，因此也能在 JS/Wasm 单线程上终止脚本死循环。
+计数覆盖本次 `run` 中的脚本、本轮微任务及其执行期间的 async 工作，
+不计解析或单次内建/宿主操作的内部工作量；它不是时间或内存配额。
+详见[执行配额与边界](docs/ARCHITECTURE.md#86-执行配额)。
+
 ### 安装宿主能力
 
 ```kotlin

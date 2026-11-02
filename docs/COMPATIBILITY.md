@@ -141,12 +141,20 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 以及独立 async/定时器的生命周期尚不在保证范围内。详见
 [协作式取消](ARCHITECTURE.md#85-协作式取消)。
 
+执行配额通过 `EngineLimits` 配置：步数默认不限，调用深度默认 16,384（可设为 null 关闭）；深度计入原生调用、
+构造器和 eval，不含全局帧。步数超限抛宿主 `ExecutionLimitException`，
+调用深度超限抛可捕获的 JS `RangeError`。async 继承创建时的逻辑深度，
+严格尾调用不累计深度。内部协程恢复队列减少深层调用对 Kotlin 物理栈的占用，
+并保留同步前缀和微任务顺序；逻辑调用上限不等同于其他 JS 引擎的物理栈容量。
+计数范围与资源限制边界见[执行配额](ARCHITECTURE.md#86-执行配额)。
+
 | 测试文件 | 覆盖内容 |
 |---|---|
 | `LexerTest` / `ParserTest` | 词法、语法、错误位置、提升信息 |
 | `BasicExecutionTest` | 基础运算、作用域、闭包、控制流 |
 | `ConformanceTest` | 审查阶段 P0 问题回归 |
 | `RuntimeCancellationTest` / `RuntimeTimeoutTest`（JVM） | 协作式取消、异常透传、清理与复用；JVM 真实死循环超时 |
+| `RuntimeLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用 |
 | `PropertyAndPrototypeTest` | 属性描述符、原型链、访问器、call/apply/bind |
 | `StrictModeTest` | 严格/非严格模式差异 |
 | `BuiltinsTest` | 基础标准库 |

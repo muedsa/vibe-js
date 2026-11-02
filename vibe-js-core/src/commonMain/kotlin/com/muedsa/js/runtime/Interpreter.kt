@@ -72,6 +72,7 @@ import com.muedsa.js.lexer.SourceRange
 import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.StackFrame
 import com.muedsa.js.runtime.regex.JsRegex
 import com.muedsa.js.runtime.regex.JsRegexSyntax
@@ -109,11 +110,10 @@ import com.muedsa.js.runtime.value.PrivateSlot
 import com.muedsa.js.runtime.value.PropertyKey
 import com.muedsa.js.runtime.value.ThisBindingSource
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
 import kotlin.math.pow
+import kotlin.coroutines.ContinuationInterceptor
 
 /**
  * AST 解释器（Executor 的第一实现）。
@@ -141,6 +141,10 @@ class Interpreter(
     /** 调用栈（用于错误信息）。 */
     private val callStack = mutableListOf<StackFrame>()
 
+    /** 当前解释器的调用深度，不计全局帧；async 另继承创建时的逻辑祖先深度。 */
+    private var callDepth = 0
+    private var inheritedCallDepth = 0
+
     /** NamedEvaluation 的名称提示栈：匿名 class 求值前压入，供静态字段/块读取类名。 */
     private val classNameHints = ArrayList<String>()
 
@@ -165,12 +169,14 @@ class Interpreter(
      */
     private var stepsUntilCancellationCheck = 1024
 
-    private suspend fun checkCancellation() {
+    private suspend fun checkExecution() {
         if (--stepsUntilCancellationCheck == 0) {
             // 先复位再检查：取消退出后同一个解释器仍可以执行后续脚本。
             stepsUntilCancellationCheck = 1024
             currentCoroutineContext().ensureActive()
         }
+        // 配额需要逐检查点计数，不能按取消检查的间隔批量扣除，否则小预算会失效。
+        context.eventLoop.executionBudget?.step()
     }
 
     /** Annex B RegExp 遗留静态属性状态（input/lastMatch/...）。 */
@@ -203,15 +209,19 @@ class Interpreter(
      * @param environment 全局词法环境
      */
     suspend fun runProgram(program: Program, environment: Environment): JSValue {
+        if (currentCoroutineContext()[ContinuationInterceptor] !is ExecutionTrampoline) {
+            return withExecutionTrampoline { runProgram(program, environment) }
+        }
         // 入口立即检查，避免短脚本或空脚本跳过周期性检查后仍创建全局绑定。
         currentCoroutineContext().ensureActive()
         val previousFrame = frame
-        frame = ExecutionContext(
+        val programFrame = ExecutionContext(
             lexicalEnv = environment,
             thisValue = context.globalObject,
             strict = program.strict,
         )
-        pushStackFrame("<global>")
+        pushStackFrame("<global>", countsTowardsDepth = false)
+        frame = programFrame
         try {
             // GlobalDeclarationInstantiation：词法绑定先于 var/function 实例化，
             // 冲突与可定义性检查失败时不创建任何 var/function 绑定
@@ -226,7 +236,7 @@ class Interpreter(
                     throw syntaxError("Illegal break/continue statement")
             }
         } finally {
-            popStackFrame()
+            popStackFrame(countsTowardsDepth = false)
             frame = previousFrame
         }
     }
@@ -348,7 +358,7 @@ class Interpreter(
             caller.variableEnv ?: caller.lexicalEnv.findVarScope()
         }
         val executionEnvironment = if (evalStrict) varEnvironment else lexicalEnvironment
-        frame = ExecutionContext(
+        val evalFrame = ExecutionContext(
             lexicalEnv = executionEnvironment,
             thisValue = caller.thisValue,
             strict = evalStrict,
@@ -358,6 +368,10 @@ class Interpreter(
             // 嵌套 eval 仍处于外层函数的参数初始化阶段
             inParameterInitialization = caller.inParameterInitialization,
         )
+        // 直接 eval 不经过 callFunction，也必须计入深度。先检查再切换执行帧，
+        // 避免超限抛错发生在 try/finally 之外时破坏调用方的词法环境。
+        pushStackFrame("<eval>")
+        frame = evalFrame
         return try {
             hoistDeclarations(
                 varEnvironment,
@@ -374,6 +388,7 @@ class Interpreter(
                     throw syntaxError("Illegal break/continue statement in eval code")
             }
         } finally {
+            popStackFrame()
             frame = previousFrame
         }
     }
@@ -422,13 +437,14 @@ class Interpreter(
             context.globalEnvironment.findVarScope()
         }
         val executionEnvironment = if (evalStrict) varEnvironment else lexicalEnvironment
-        frame = ExecutionContext(
+        val evalFrame = ExecutionContext(
             lexicalEnv = executionEnvironment,
             thisValue = context.globalObject,
             strict = evalStrict,
             variableEnv = varEnvironment,
         )
         pushStackFrame("<eval>")
+        frame = evalFrame
         return try {
             hoistDeclarations(
                 varEnvironment,
@@ -737,12 +753,16 @@ class Interpreter(
         args: List<JSValue>,
         callRange: SourceRange? = null,
     ): JSValue {
+        if (callDepth == 0 && currentCoroutineContext()[ContinuationInterceptor] !is ExecutionTrampoline) {
+            return withExecutionTrampoline { callFunction(callee, thisValue, args, callRange) }
+        }
+        checkExecution()
         return when (callee) {
             is JSFunction -> callUserFunction(callee, thisValue, args, callRange)
             is JSNativeFunction -> {
                 pushStackFrame(callee.name, callRange)
                 try {
-                    callee.function(this, thisValue, args)
+                    callee.function(this, thisValue, args).also { drainExecutionStack() }
                 } finally {
                     popStackFrame()
                 }
@@ -756,6 +776,10 @@ class Interpreter(
      * 构造实例（new）。
      */
     suspend fun construct(constructor: JSValue, args: List<JSValue>): JSValue {
+        if (callDepth == 0 && currentCoroutineContext()[ContinuationInterceptor] !is ExecutionTrampoline) {
+            return withExecutionTrampoline { construct(constructor, args) }
+        }
+        checkExecution()
         return when (constructor) {
             is JSFunction -> constructUserFunction(constructor, args)
             is JSNativeFunction -> {
@@ -843,7 +867,7 @@ class Interpreter(
         var targetArgs = args
         var targetRange = callRange
         while (true) {
-            checkCancellation()
+            checkExecution()
             try {
                 return callUserFunctionOnce(target, targetThis, targetArgs, targetRange)
             } catch (signal: TailCallSignal) {
@@ -935,7 +959,7 @@ class Interpreter(
     /**
      * 调用 async 函数：立即返回 Promise，函数体在事件循环中执行。
      */
-    private fun callAsyncFunction(
+    private suspend fun callAsyncFunction(
         function: JSFunction,
         thisValue: JSValue,
         args: List<JSValue>,
@@ -944,12 +968,18 @@ class Interpreter(
         // 每次 async 调用使用独立解释器实例：
         // 协程挂起期间主解释器的 frame 会被外层脚本覆盖，独立实例可避免恢复时上下文错乱。
         val asyncInterpreter = Interpreter(context)
-        context.eventLoop.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        // 新解释器不能使同步递归的 async 函数绕过深度限制。保留逻辑祖先深度，
+        // 不把多个并列挂起的 async 调用累加到主解释器的活动调用栈中。
+        asyncInterpreter.inheritedCallDepth = inheritedCallDepth + callDepth
+        context.eventLoop.launchAsyncTask {
             try {
                 val result = asyncInterpreter.executeUserFunction(function, thisValue, args)
                 PromiseSupport.resolve(this@Interpreter, promise, result)
             } catch (error: CancellationException) {
                 // async 协程取消属于宿主控制流，不应变成 Promise 的 InternalError 拒绝。
+                throw error
+            } catch (error: ExecutionLimitException) {
+                // 交给事件循环的配额终止边界，不生成 Promise 的 InternalError 拒绝。
                 throw error
             } catch (error: JSException) {
                 PromiseSupport.reject(this@Interpreter, promise, error.value)
@@ -992,7 +1022,7 @@ class Interpreter(
             varEnv = calleeEnv
         }
         val previousFrame = frame
-        frame = ExecutionContext(
+        val functionFrame = ExecutionContext(
             parameterEnv,
             thisValue,
             function.strict,
@@ -1004,6 +1034,7 @@ class Interpreter(
             inParameterInitialization = hasParameterExpressions,
         )
         pushStackFrame(function.name.ifEmpty { "anonymous" }, callRange)
+        frame = functionFrame
         try {
             if (!function.isArrow) {
                 // 规范 9.2.10：形参名重复时不建立 arguments 映射
@@ -1180,7 +1211,7 @@ class Interpreter(
             varEnv = calleeEnv
         }
         val previousFrame = frame
-        frame = ExecutionContext(
+        val functionFrame = ExecutionContext(
             parameterEnv,
             instance,
             function.strict,
@@ -1192,7 +1223,8 @@ class Interpreter(
             inParameterInitialization = hasParameterExpressions,
         )
         pushStackFrame(function.name.ifEmpty { "anonymous" })
-        val activeFrame = frame!!
+        frame = functionFrame
+        val activeFrame = functionFrame
         try {
             parameterEnv.createVarBinding("arguments", createArgumentsObject(args, function))
             bindParameters(function, args, parameterEnv)
@@ -1715,7 +1747,7 @@ class Interpreter(
     }
 
     private suspend fun executeStatement(statement: Statement): Completion {
-        checkCancellation()
+        checkExecution()
         return when (statement) {
             is EmptyStatement -> Completion.Normal(JSUndefined, hasValue = false)
             is BlockStatement -> executeBlock(
@@ -2048,7 +2080,7 @@ class Interpreter(
         // V：最后一次正常完成的语句值（供 eval 完成值使用）
         var lastValue: JSValue = JSUndefined
         while (toBoolean(evaluate(statement.condition))) {
-            checkCancellation()
+            checkExecution()
             when (val completion = executeStatement(statement.body)) {
                 is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                 is Completion.Return -> return completion
@@ -2072,7 +2104,7 @@ class Interpreter(
     private suspend fun executeDoWhile(statement: DoWhileStatement, labels: List<String> = emptyList()): Completion {
         var lastValue: JSValue = JSUndefined
         do {
-            checkCancellation()
+            checkExecution()
             when (val completion = executeStatement(statement.body)) {
                 is Completion.Normal -> if (completion.hasValue) lastValue = completion.value
                 is Completion.Return -> return completion
@@ -2170,7 +2202,7 @@ class Interpreter(
 
             var lastValue: JSValue = JSUndefined
             while (true) {
-                checkCancellation()
+                checkExecution()
                 val condition = statement.condition?.let { toBoolean(evaluate(it)) } ?: true
                 if (!condition) break
 
@@ -2260,7 +2292,7 @@ class Interpreter(
 
             var lastValue: JSValue = JSUndefined
             for (key in keys) {
-                checkCancellation()
+                checkExecution()
                 val propertyKey = PropertyKey.Str(key)
                 if (!objectValue.hasProperty(propertyKey)) continue
 
@@ -2359,7 +2391,7 @@ class Interpreter(
 
             var lastValue: JSValue = JSUndefined
             while (true) {
-                checkCancellation()
+                checkExecution()
                 // IteratorStep 的异常直接传播，不调用 return
                 val value = iteratorNext(records) ?: break
 
@@ -2733,7 +2765,7 @@ class Interpreter(
     // ================================================================
 
     private suspend fun evaluate(expression: Expression, tail: Boolean = false): JSValue {
-        checkCancellation()
+        checkExecution()
         return when (expression) {
             is Identifier -> currentFrame.lexicalEnv.getBinding(expression.name)
                 ?: throw referenceError("${expression.name} is not defined")
@@ -3771,8 +3803,8 @@ class Interpreter(
                     variableEnv = calleeEnv,
                     inParameterInitialization = hasParameterExpressions,
                 )
-                frame = activeFrame
                 pushStackFrame(superConstructor.name.ifEmpty { "anonymous" })
+                frame = activeFrame
                 try {
                     parameterEnv.createVarBinding("arguments", createArgumentsObject(args, superConstructor))
                     bindParameters(superConstructor, args, parameterEnv)
@@ -6018,13 +6050,36 @@ class Interpreter(
         typeOf(value)
     }
 
-    private fun pushStackFrame(name: String, range: SourceRange? = null) {
+    /**
+     * 在修改调用帧之前检查深度；超限是可被 JS 捕获的 RangeError。
+     *
+     * 尾调用在旧帧 finally 出栈后才压入新帧，因此不会累计深度。全局脚本帧
+     * 只用于错误栈展示；普通调用、构造器、访问器、原生函数和 eval 均参与限制。
+     */
+    private suspend fun pushStackFrame(
+        name: String,
+        range: SourceRange? = null,
+        countsTowardsDepth: Boolean = true,
+    ) {
+        if (countsTowardsDepth) {
+            val maxDepth = context.limits.maxCallDepth
+            if (maxDepth != null && callDepth >= maxDepth - inheritedCallDepth) {
+                rangeError("Maximum call stack size exceeded")
+            }
+            // 每 8 层把 Kotlin 调用栈退回内部恢复循环；逻辑帧仍保留，JS 看不到
+            // 此挂起，也不会在此运行 Promise 微任务。小分段兼顾 Native 的栈容量。
+            if ((inheritedCallDepth + callDepth) > 0 && (inheritedCallDepth + callDepth) % 8 == 0) {
+                yieldExecutionStack()
+            }
+            callDepth++
+        }
         callStack.add(StackFrame(name, range))
     }
 
-    private fun popStackFrame() {
+    private fun popStackFrame(countsTowardsDepth: Boolean = true) {
         if (callStack.isNotEmpty()) {
             callStack.removeAt(callStack.lastIndex)
+            if (countsTowardsDepth) callDepth--
         }
     }
 

@@ -15,8 +15,6 @@ import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyDescriptor
 import com.muedsa.js.runtime.value.PropertyKey
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.launch
 import kotlin.math.floor
 
 /**
@@ -1439,7 +1437,7 @@ object ArrayBuiltins {
         val promise = JSPromise(interpreter.intrinsics.promisePrototype)
         val (resolveFunction, rejectFunction) =
             PromiseSupport.createResolvingFunctions(interpreter, promise)
-        interpreter.context.eventLoop.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        interpreter.context.eventLoop.launchAsyncTask {
             try {
                 val result = performArrayFromAsync(
                     interpreter = interpreter,
