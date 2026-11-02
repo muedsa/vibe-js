@@ -39,6 +39,28 @@ fun main(args: Array<String>) {
     }
 }
 
+/** GitHub 步骤摘要中单个结果单元格的最大字符数，防止异常大的序列化结果撑爆摘要。 */
+private const val MARKDOWN_CELL_LIMIT = 160
+
+/** GitHub 步骤摘要中最多展示的不一致用例数，完整明细保留在报告产物中。 */
+private const val MAX_MARKDOWN_MISMATCHES = 50
+
+/**
+ * 把结果值压缩为适合 Markdown 表格的单行单元格。
+ *
+ * 先裁剪再转义竖线，避免裁剪位置落在转义序列中间；
+ * 换行替换为空格，保证每条用例只占表格一行。
+ */
+private fun markdownCell(value: String): String {
+    val singleLine = value.replace('\r', ' ').replace('\n', ' ')
+    val truncated = if (singleLine.length > MARKDOWN_CELL_LIMIT) {
+        singleLine.take(MARKDOWN_CELL_LIMIT) + "…"
+    } else {
+        singleLine
+    }
+    return truncated.replace("|", "\\|")
+}
+
 internal data class DifferentialCase(
     val name: String,
     val expression: String,
@@ -63,6 +85,7 @@ private data class DifferentialReport(
     val mismatches: Int get() = results.count { !it.matches }
 
     fun writeMarkdown(file: File) {
+        val mismatched = results.filter { !it.matches }
         file.writeText(
             buildString {
                 appendLine("# Node 差分基线")
@@ -71,13 +94,33 @@ private data class DifferentialReport(
                 appendLine("- Node：${if (nodeUnavailable) "不可用" else nodeVersion}")
                 appendLine("- 用例：${results.size}，不一致：$mismatches，耗时：${elapsedMillis}ms")
                 appendLine()
-                appendLine("| 用例 | Vibe JS | Node |")
-                appendLine("|---|---|---|")
-                for (result in results) {
-                    appendLine(
-                        "| ${result.name} | ${result.vibeValue.replace("|", "\\|")} | " +
-                            "${result.nodeValue.replace("|", "\\|")} |"
-                    )
+                when {
+                    nodeUnavailable -> appendLine("Node 不可用，未执行差分。")
+                    results.isEmpty() -> appendLine("差分用例为空。")
+                    mismatched.isEmpty() -> appendLine("全部用例与 Node 结果一致。")
+                    else -> {
+                        // 步骤摘要只展示不一致项并限制长度，避免异常大的结果把摘要撑爆；
+                        // 完整逐用例结果仍写入 differential-summary.json。
+                        appendLine("| 用例 | Vibe JS | Node |")
+                        appendLine("|---|---|---|")
+                        for (result in mismatched.take(MAX_MARKDOWN_MISMATCHES)) {
+                            appendLine(
+                                "| ${markdownCell(result.name)} | ${markdownCell(result.vibeValue)} | " +
+                                    "${markdownCell(result.nodeValue)} |"
+                            )
+                        }
+                        if (mismatched.size > MAX_MARKDOWN_MISMATCHES) {
+                            appendLine()
+                            appendLine(
+                                "仅展示前 $MAX_MARKDOWN_MISMATCHES 条，" +
+                                    "其余见 differential-mismatches.txt。"
+                            )
+                        }
+                    }
+                }
+                if (results.isNotEmpty()) {
+                    appendLine()
+                    appendLine("完整逐用例结果见 differential-summary.json。")
                 }
             }
         )

@@ -139,7 +139,7 @@ jobs:
         distribution: 'temurin'
 
     - name: Setup Node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: '24'
 
@@ -152,14 +152,21 @@ jobs:
     - name: Run library smoke and differential tests
       run: ./gradlew :vibe-js-conformance:librarySmoke :vibe-js-conformance:differentialConformance --continue -Pstrict --console=plain
 
-    - name: Publish summaries
+    - name: Publish library summary
       if: always()
       run: |
-        for file in libraries-summary.md differential-summary.md; do
-          if [ -f "vibe-js-conformance/build/reports/conformance/$file" ]; then
-            cat "vibe-js-conformance/build/reports/conformance/$file" >> "$GITHUB_STEP_SUMMARY"
-          fi
-        done
+        summary="vibe-js-conformance/build/reports/conformance/libraries-summary.md"
+        if [ -f "$summary" ]; then
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Publish differential summary
+      if: always()
+      run: |
+        summary="vibe-js-conformance/build/reports/conformance/differential-summary.md"
+        if [ -f "$summary" ]; then
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+        fi
 
     - name: Upload reports
       if: always()
