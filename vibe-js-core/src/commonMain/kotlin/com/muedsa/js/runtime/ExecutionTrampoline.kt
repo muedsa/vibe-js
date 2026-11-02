@@ -9,42 +9,54 @@ import kotlinx.coroutines.yield
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.CoroutineContext
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
- * 当前线程内的协程恢复队列，用于把深层 JS 调用的 Kotlin 栈转移到协程状态机。
+ * 串行协程恢复队列，用于把深层 JS 调用的 Kotlin 栈转移到协程状态机。
  *
  * 每隔一段调用深度，解释器显式 yield；恢复动作只入此内部队列，待当前 Kotlin
- * 调用栈退回调度循环后继续。这里不调度 JS 微任务、不切换线程、不使用平台 API。
+ * 调用栈退回调度循环后继续。跨线程的恢复先原子入队，同一时刻仅一个线程消费；
+ * 队列本身不切换到指定线程、不使用平台 API，空闲时由 EventLoop 建立微任务检查点。
  * 因而可配置较高的 JS 逻辑调用深度，而不要求宿主提供同样深的物理调用栈。
  */
-internal class ExecutionTrampoline : CoroutineDispatcher() {
+@OptIn(ExperimentalAtomicApi::class)
+internal class ExecutionTrampoline(private val onIdle: (() -> Unit)? = null) : CoroutineDispatcher() {
     private class ResumeTask(
         val context: CoroutineContext,
         val block: Runnable,
         val drainWaiter: Boolean = context[AsyncStartPhase]?.draining == true,
     )
 
-    private val queue = ArrayDeque<ResumeTask>()
-    private var running = false
+    private val internalQueue = RuntimeQueue<ResumeTask>()
+    private val externalQueue = RuntimeQueue<ResumeTask>()
+    private val waiters = RuntimeQueue<ResumeTask>()
+    private val running = AtomicBoolean(false)
 
     /** 等待队列清空的调用方不算待执行工作，避免两个等待者互相让出形成活锁。 */
-    val hasPendingWork: Boolean get() = queue.any { !it.drainWaiter }
+    val hasPendingWork: Boolean get() = internalQueue.size > 0 || externalQueue.size > 0
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
-        val phase = context[AsyncStartPhase]
-        if (running && phase != null && phase.internalSuspensions == 0) {
-            // 真正的 await 恢复继续采用原有的同步恢复时序：例如 drainMicrotasks
-            // 完成 deferred 时，async 代码必须立即运行到下一个 await。
-            resume(ResumeTask(context, block))
-            return
+        val task = ResumeTask(context, block)
+        when {
+            task.drainWaiter -> waiters.addLast(task)
+            (context[AsyncStartPhase]?.internalSuspensions ?: 0) > 0 -> internalQueue.addLast(task)
+            else -> externalQueue.addLast(task)
         }
-        queue.addLast(ResumeTask(context, block))
-        if (running) return
-        running = true
-        try {
-            while (queue.isNotEmpty()) resume(queue.removeFirst())
-        } finally {
-            running = false
+        if (!running.compareAndSet(false, true)) return
+        while (true) {
+            // 内部分段优先完成当前同步工作；等待者最后恢复，不能阻止实际工作出队。
+            val next = internalQueue.removeFirstOrNull() ?: externalQueue.removeFirstOrNull()
+                ?: waiters.removeFirstOrNull()
+            if (next != null) {
+                resume(next)
+                continue
+            }
+            onIdle?.invoke()
+            if (hasPendingWork || waiters.size > 0) continue
+            running.store(false)
+            // 发布空闲状态与生产者入队可能交错，重新争取执行权避免丢失唤醒。
+            if (!(hasPendingWork || waiters.size > 0) || !running.compareAndSet(false, true)) return
         }
     }
 

@@ -17,11 +17,6 @@ import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyKey
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.withLock
 
 /** Base64 标准字母表（WHATWG forgiving-base64）。 */
 private const val BASE64_ALPHABET =
@@ -53,7 +48,7 @@ class HostModule(
 
     private var nextTimerId: Int = 1
     private val timers: MutableMap<Int, ScheduledTask> = mutableMapOf()
-    private val intervals: MutableMap<Int, Job> = mutableMapOf()
+    private val intervals: MutableMap<Int, ScheduledTask> = mutableMapOf()
 
     /** performance 时间原点（宿主时钟毫秒）；首次访问时确定。 */
     private var performanceOriginMillis: Double? = null
@@ -226,11 +221,10 @@ class HostModule(
                 val task = eventLoop.schedule(delayMillis) {
                     timers.remove(id)
                     try {
-                        interpreter.callFunction(callback, JSUndefined, extraArguments)
+                        interpreter.forkForCallback().callFunction(callback, JSUndefined, extraArguments)
                     } catch (error: JSException) {
                         console.error(error.toString())
                     }
-                    eventLoop.drainMicrotasks()
                 }
                 timers[id] = task
                 JSNumber(id.toDouble())
@@ -266,18 +260,12 @@ class HostModule(
                     emptyList()
                 }
                 val id = nextTimerId++
-                val job = eventLoop.scope.launch {
-                    while (isActive) {
-                        delay(delayMillis)
-                        // 解释器不是线程安全的：与 Engine.run / 其它定时任务串行执行
-                        eventLoop.runtimeMutex.withLock {
-                            try {
-                                interpreter.callFunction(callback, JSUndefined, extraArguments)
-                            } catch (error: JSException) {
-                                console.error(error.toString())
-                            }
-                            eventLoop.drainMicrotasks()
-                        }
+                // 周期任务与一次性定时器共用核心调度和关闭协议，每次调用使用独立帧。
+                val job = eventLoop.scheduleInterval(delayMillis) {
+                    try {
+                        interpreter.forkForCallback().callFunction(callback, JSUndefined, extraArguments)
+                    } catch (error: JSException) {
+                        console.error(error.toString())
                     }
                 }
                 intervals[id] = job
@@ -307,7 +295,7 @@ class HostModule(
                 }
                 eventLoop.enqueueMicrotask {
                     try {
-                        interpreter.callFunction(callback, JSUndefined, emptyList())
+                        interpreter.forkForCallback().callFunction(callback, JSUndefined, emptyList())
                     } catch (error: JSException) {
                         // 与定时器一致：回调异常记录后继续执行后续微任务
                         console.error(error.toString())

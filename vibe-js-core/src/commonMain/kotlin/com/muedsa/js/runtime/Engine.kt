@@ -115,6 +115,7 @@ class Engine(
     suspend fun run(source: String, sourceName: String = "<anonymous>", lineOffset: Int = 0): JSValue {
         // 已取消的调用不应继续解析源码或改动 AST 缓存。
         currentCoroutineContext().ensureActive()
+        eventLoop.ensureOpen()
         if (parseCacheSize == 0) return run(parse(source, sourceName, lineOffset))
         // 来源属于 AST 的诊断信息，必须纳入缓存键，避免同一源码串用另一个文件名。
         val key = ParseCacheKey(source, SourceInfo(sourceName, lineOffset))
@@ -146,60 +147,61 @@ class Engine(
     suspend fun run(program: Program): JSValue {
         currentCoroutineContext().ensureActive()
         // 解释器与全局环境不是线程安全的：与定时器回调等宿主任务串行执行
-        return withExecutionTrampoline {
-            eventLoop.runtimeMutex.withLock {
-                // 预算在取得锁后建立，覆盖主脚本与本轮微任务；其他 run 不共享计数。
-                val previousBudget = eventLoop.executionBudget
-                val budget = ExecutionBudget(limits.maxSteps)
-                eventLoop.executionBudget = budget
+        return eventLoop.runTask {
+            // 预算在取得锁后建立，覆盖主脚本与本轮微任务；其他 run 不共享计数。
+            val previousBudget = eventLoop.executionBudget
+            val budget = ExecutionBudget(limits.maxSteps)
+            eventLoop.executionBudget = budget
+            try {
+                var aborted = false
                 try {
-                    var aborted = false
-                    try {
-                        interpreter.runProgram(program, context.globalEnvironment).also {
-                            // async 协程可能已耗尽共享预算但没有通过同步调用栈抛出异常。
-                            budget.ensureAvailable()
-                        }
-                    } catch (error: CancellationException) {
-                        // 取消后不再执行用户微任务，防止清理阶段再次陷入脚本死循环，
-                        // 也避免微任务异常覆盖宿主抛出的原始取消对象。
-                        aborted = true
-                        throw error
-                    } catch (error: ExecutionLimitException) {
-                        // 步数耗尽与取消一样直接中止，不再运行用户清理代码。
-                        aborted = true
-                        throw error
-                    } finally {
-                        // 正常完成和 JS 抛错仍保持原有的微任务检查点语义。
-                        if (!aborted) eventLoop.drainMicrotasks()
+                    interpreter.runProgram(program, context.globalEnvironment).also {
+                        // async 协程可能已耗尽共享预算但没有通过同步调用栈抛出异常。
+                        budget.ensureAvailable()
                     }
                 } catch (error: CancellationException) {
-                    // 同时覆盖脚本执行和微任务冲刷阶段的取消；下一次 run 不应继续
-                    // 消费本轮遗留的任务。定时器与独立 async 协程的生命周期另行管理。
-                    eventLoop.discardPendingMicrotasks()
+                    // 取消后不再执行用户微任务，防止清理阶段再次陷入脚本死循环，
+                    // 也避免微任务异常覆盖宿主抛出的原始取消对象。
+                    aborted = true
                     throw error
                 } catch (error: ExecutionLimitException) {
-                    eventLoop.discardPendingMicrotasks()
+                    // 步数耗尽与取消一样直接中止，不再运行用户清理代码。
+                    aborted = true
                     throw error
-                } catch (error: JSException) {
-                    throw error
-                } catch (error: Throwable) {
-                    // 宿主异常（除零、栈溢出、未实现等）统一包装为 JS 异常，
-                    // 避免泄漏到调用方；后续阶段会进一步细分错误类型。
-                    throw JSException(
-                        JSError(
-                            errorName = "InternalError",
-                            messageText = error.message ?: error::class.simpleName ?: "Internal error",
-                            prototype = intrinsics.errorPrototype,
-                        ),
-                        stack = interpreter.hostFailureStack ?: emptyList(),
-                    )
                 } finally {
-                    // 包括取消、配额耗尽及 JS 抛错，均不能把旧预算带入下一次调用。
-                    eventLoop.executionBudget = previousBudget
+                    // 正常完成和 JS 抛错仍保持原有的微任务检查点语义。
+                    if (!aborted) eventLoop.drainMicrotasks()
                 }
+            } catch (error: CancellationException) {
+                // 同时覆盖脚本执行和微任务冲刷阶段的取消；下一次 run 不应继续
+                // 消费本轮遗留的任务。定时器与独立 async 协程的生命周期另行管理。
+                eventLoop.discardPendingMicrotasks()
+                throw error
+            } catch (error: ExecutionLimitException) {
+                eventLoop.discardPendingMicrotasks()
+                throw error
+            } catch (error: JSException) {
+                throw error
+            } catch (error: Throwable) {
+                // 宿主异常（除零、栈溢出、未实现等）统一包装为 JS 异常，
+                // 避免泄漏到调用方；后续阶段会进一步细分错误类型。
+                throw JSException(
+                    JSError(
+                        errorName = "InternalError",
+                        messageText = error.message ?: error::class.simpleName ?: "Internal error",
+                        prototype = intrinsics.errorPrototype,
+                    ),
+                    stack = interpreter.hostFailureStack ?: emptyList(),
+                )
+            } finally {
+                // 包括取消、配额耗尽及 JS 抛错，均不能把旧预算带入下一次调用。
+                eventLoop.executionBudget = previousBudget
             }
         }
     }
+
+    /** 关闭本引擎的事件循环并等待其运行时任务完成清理。 */
+    suspend fun close() { eventLoop.close() }
 
     /**
      * 安装一个内建模块（宿主模块或第三方扩展）。

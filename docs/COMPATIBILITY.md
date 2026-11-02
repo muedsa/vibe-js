@@ -127,7 +127,7 @@
 - `RegExp` v 模式 `\q{...}` 字符串在 i 下按规范对每个码点做简单折叠；V8 仅折叠 ASCII，非 ASCII（ß、Kelvin、Deseret）结果不同，差分仅比较 ASCII 串；
 - `String` 大小写转换使用仓库内置 Unicode 17.0.0 UCD 表（UnicodeData 简单映射 + SpecialCasing 无条件完整映射 + Final_Sigma），JVM/JS/Wasm 行为一致；V8（Unicode 16）尚缺 A7CE/A7CF、A7D2/A7D3、A7D4/A7D5 三组 Unicode 17 新增配对，BMP 差分审计跳过这些码点，单元测试固定 17.0.0 行为；
 - Promise 的微任务调度使用内置 EventLoop（脚本结束后冲刷）；未处理拒绝在每轮微任务清空后通过 `HostEnvironment.reportUnhandledRejection` 上报（默认无行为，已订阅或已上报的拒绝不会重复上报）；已上报的拒绝随后被订阅时通过 `reportRejectionHandled` 通知一次；
-- 宿主模块不绑定 DOM/Web API；`setInterval` 基于协程调度，定时器回调与 `Engine.run` 通过运行时互斥锁串行执行（解释器非线程安全），`clearTimeout`/`clearInterval` 可互相取消；`async` 函数体在独立解释器实例上以 `Dispatchers.Unconfined` 恢复执行，不持有 `runtimeMutex`，当前模型面向单线程事件循环，宿主不应在多线程并发调用执行入口；
+- 宿主模块不绑定 DOM/Web API；timeout/interval 共用 Scheduler，`clearTimeout`/`clearInterval` 可互相取消。Engine.run、定时器、async 恢复与微任务共用串行恢复队列，支持多线程提交执行入口；直接访问 Interpreter/全局对象仍须通过 EventLoop.runTask，详见[并发契约](ARCHITECTURE.md#88-事件循环生命周期与并发契约)；
 - 参数初始化阶段的直接 eval 若声明与参数环境同名绑定（包括隐式 `arguments`），按规范与 Test262 期望抛 `SyntaxError`；Node/V8 对隐式 `arguments` 允许该声明，该分支不纳入差分用例；
 - `++super[key]` 按规范在 ToPropertyKey 之前读取 GetSuperBase（Test262 期望）；Node/V8 在键转换后读取原型，二者结果不同，该分支不纳入差分用例；
 - 严格模式下对 RHS 求值前已不可解析的标识符赋值（如 `x = (globalThis.x = 1)`），按规范/Test262 抛 `ReferenceError`；Node/V8 会重新解析并成功写入，该分支不纳入差分用例；
@@ -137,8 +137,8 @@
 
 宿主取消属于 Kotlin 控制流：`Engine.run` 原样抛出 `CancellationException`，
 JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未执行的微任务丢弃。
-协作式检查不主动挂起，单线程 JS/Wasm 的纯计算超时、解析/单次内建调用的抢占，
-以及独立 async/定时器的生命周期尚不在保证范围内。详见
+协作式检查不主动让出宿主线程，单线程 JS/Wasm 的纯计算超时、解析/单次内建调用的抢占
+仍不在保证范围内。独立 async/定时器由 Engine.close 统一取消并等待，单次 run 超时不关闭整个引擎。详见
 [协作式取消](ARCHITECTURE.md#85-协作式取消)。
 
 执行配额通过 `EngineLimits` 配置：步数默认不限，调用深度默认 16,384（可设为 null 关闭）；深度计入原生调用、
@@ -177,6 +177,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
 | `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
+| `EventLoopLifecycleTest` / `EventLoopConcurrencyTest` / `HostEventLoopLifecycleTest` | 关闭、任务快照、空闲等待、在途取消、跨线程串行化、宿主定时器生命周期 |
 | `RuntimeErrorStackTest` | 错误创建与重抛位置、脚本来源和偏移、跨脚本调用、async/Promise 拒绝转发、资源释放、万层栈快照 |
 | `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、可选 catch 绑定、稳定排序、JSON 超集与 rawJSON/reviver source、属性枚举顺序、Annex B RegExp compile/escape/unescape、RegExp dotAll、Error.prototype.stack、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |

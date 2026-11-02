@@ -1438,6 +1438,8 @@ object ArrayBuiltins {
         val (resolveFunction, rejectFunction) =
             PromiseSupport.createResolvingFunctions(interpreter, promise)
         interpreter.context.eventLoop.launchAsyncTask {
+            // 异步内建不复用调用方的可变帧；创建位置仍按共享帧链保留。
+            val interpreter = interpreter.forkForAsync()
             try {
                 val result = performArrayFromAsync(
                     interpreter = interpreter,

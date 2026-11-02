@@ -140,6 +140,17 @@ class Interpreter(
     /** 运行时内建原型集合。 */
     val intrinsics: Intrinsics get() = context.intrinsics
 
+    /** 延迟执行的宿主回调共享全局状态，但不得复用仍挂起的词法帧和调用栈。 */
+    fun forkForCallback(): Interpreter = Interpreter(context)
+
+    /** 异步内建与 async 函数共用冻结的创建链，避免挂起后复用调用方解释器状态。 */
+    internal fun forkForAsync(callRange: SourceRange? = null): Interpreter = Interpreter(context).also { child ->
+        child.inheritedCallDepth = inheritedCallDepth + callDepth
+        val parent = snapshotStackLink(callRange)
+        child.stackHead = parent?.let { StackFrameLink(it.frame.copy(isAsync = true), it.parent) }
+        child.currentRange = child.stackHead?.frame?.range
+    }
+
     /** 不可变祖先链与当前执行位置；async 只共享冻结后的祖先，不共享可变解释器状态。 */
     private var stackHead: StackFrameLink? = null
     private var currentRange: SourceRange? = null
@@ -1001,17 +1012,11 @@ class Interpreter(
         val promise = JSPromise(intrinsics.promisePrototype)
         // 每次 async 调用使用独立解释器实例：
         // 协程挂起期间主解释器的 frame 会被外层脚本覆盖，独立实例可避免恢复时上下文错乱。
-        val asyncInterpreter = Interpreter(context)
+        val asyncInterpreter = forkForAsync(callRange)
         // 新解释器不能使同步递归的 async 函数绕过深度限制。保留逻辑祖先深度，
         // 不把多个并列挂起的 async 调用累加到主解释器的活动调用栈中。
-        asyncInterpreter.inheritedCallDepth = inheritedCallDepth + callDepth
         // 冻结创建点的调用方帧。只复制链首并标记异步边界，万层 async 递归仍是
         // 线性内存；等待期间其他 run 改变主解释器的位置不会污染这条祖先链。
-        val parent = snapshotStackLink(callRange)
-        asyncInterpreter.stackHead = parent?.let {
-            StackFrameLink(it.frame.copy(isAsync = true), it.parent)
-        }
-        asyncInterpreter.currentRange = asyncInterpreter.stackHead?.frame?.range
         context.eventLoop.launchAsyncTask {
             try {
                 val result = asyncInterpreter.executeUserFunction(function, thisValue, args)

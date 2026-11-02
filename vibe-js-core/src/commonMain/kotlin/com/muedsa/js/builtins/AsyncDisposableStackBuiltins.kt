@@ -157,6 +157,8 @@ internal object AsyncDisposableStackBuiltins {
             val (resolveFunction, rejectFunction) =
                 PromiseSupport.createResolvingFunctions(interpreter, promise)
             interpreter.context.eventLoop.launchAsyncTask {
+                // 异步内建不复用调用方的可变帧；创建位置仍按共享帧链保留。
+                val interpreter = interpreter.forkForAsync()
                 try {
                     val state = (thisValue as? JSObject)?.internalState as? AsyncDisposeState
                         ?: interpreter.typeError(

@@ -101,6 +101,8 @@ object PromiseSupport {
                 // 规范 NewPromiseResolveThenableJob：then 的调用在微任务中进行，
                 // 保证 await thenable 与 Promise 链的交错顺序
                 interpreter.context.eventLoop.enqueueMicrotask {
+                    // 反应回调可能在原解释器挂起时执行，独立调用帧避免相互覆盖。
+                    val interpreter = interpreter.forkForCallback()
                     try {
                         interpreter.callFunction(thenValue, value, listOf(resolveFunction, rejectFunction))
                     } catch (error: JSException) {
@@ -208,6 +210,8 @@ object PromiseSupport {
         reaction: JSPromise.Reaction,
     ) {
         interpreter.context.eventLoop.enqueueMicrotask {
+            // 反应回调可能在原解释器挂起时执行，独立调用帧避免相互覆盖。
+            val interpreter = interpreter.forkForCallback()
             val fulfilled = promise.state == JSPromise.State.FULFILLED
             val handler = if (fulfilled) reaction.onFulfilled else reaction.onRejected
             if (handler == null || handler is JSUndefined || !interpreter.isCallable(handler)) {

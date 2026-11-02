@@ -50,7 +50,7 @@ Lexer ──► Parser ──► AST (Program)
 | `Intrinsics` | 每个引擎实例一份的原型集合（Object.prototype、Function.prototype 等） |
 | `BuiltinRegistry` | 全局变量/内部对象注册；通过 `BuiltinModule` 安装扩展 |
 | `HostEnvironment` | 宿主抽象：Console / Clock / Scheduler |
-| `EventLoop` | 微任务队列 + 宏任务调度；scope 运行 async 函数体 |
+| `EventLoop` | 微任务队列、宏任务调度、串行恢复与任务关闭；自有 scope 运行 async 函数体 |
 | `JSPromise` / `PromiseSupport` | Promise 状态机、解析/拒绝、then 链与 async/await 基础 |
 | `JSMap` / `JSSet` | Map/Set 存储；配合迭代器协议 |
 | `ClassMember` | class 方法/访问器/构造器描述，由解释器创建原型与静态方法 |
@@ -125,7 +125,7 @@ engine.run("""
 - `HostModule` 提供 `window`/`self`、`console`（含 time/timeEnd）、`setTimeout`/`clearTimeout`、
   `setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`、
   `performance.now()`/`performance.timeOrigin`；
-- 定时任务通过 `EventLoop` 的 `Scheduler` 执行，console 通过 `Console` 注入；解释器与全局环境非线程安全，`Engine.run`、`EventLoop.schedule` 与 `setInterval` 回调共享 `EventLoop.runtimeMutex` 串行执行，`clearTimeout`/`clearInterval` 可互相取消。
+- timeout 与 interval 都通过 `EventLoop` 的 `Scheduler` 执行，console 通过 `Console` 注入；执行入口和所有 async 恢复复用共享恢复队列，完整宿主入口再由运行时锁互斥。`clearTimeout`/`clearInterval` 可互相取消。
 
 ### 8.2 自定义内建模块
 
@@ -202,7 +202,7 @@ Kotlin 的 finally 仍恢复调用帧、词法环境、释放作用域和运行�
 - async 函数仍由 EventLoop 的独立 scope 启动，不是 `Engine.run` 调用方的子协程。
   它检查自身协程的取消，取消不会变成 Promise 的 `InternalError` 拒绝；
   `Engine.run` 的超时尚不负责取消这些独立任务或宿主定时器。
-  任务归属、关闭与统一调度属于后续事件循环生命周期任务。
+  这些任务由事件循环统一拥有；`Engine.close()` / `EventLoop.close()` 负责取消并等待退出，见下文生命周期契约。
 - 全局环境不是事务。取消可能留下已经创建的词法绑定（包括未初始化绑定）与副作用；
   “可复用”保证执行器内部状态和锁恢复，不保证重跑同名 `let/const` 声明一定成功。
 
@@ -241,12 +241,12 @@ Promise 拒绝或协程未捕获异常。宿主异常不取消调用方 Job，�
 深度错误采用普通 JS RangeError 语义，允许 catch/finally 正常执行，调用方环境保留。
 严格模式尾调用先退出旧帧再进入新帧，因此不累计深度。
 
-**宿主栈分段。** `ExecutionTrampoline` 是当前线程内的协程恢复队列，每 8 层逻辑
+**宿主栈分段。** `ExecutionTrampoline` 是共享的串行协程恢复队列，每 8 层逻辑
 调用把 Kotlin 栈退回队列循环，保留堆上的协程状态与 JS 调用帧；不调用平台 API，
-不切换线程，不执行额外的 JS 微任务。async 启动时区分内部挂起与真正的宿主挂起/await，
+队列不主动切换到指定线程；内部挂起优先完成同步工作。async 启动时区分内部挂起与真正的宿主挂起/await，
 调用方在同步前缀完成前不会提前取得 Promise；微任务或宿主回调返回前也会完成其触发的
-内部恢复段，避免后续 JS 代码越过尚未执行完的同步工作。恢复队列遵循引擎既有的
-串行执行契约，不是多线程调度器或事件循环生命周期管理器。
+内部恢复段，避免后续 JS 代码越过尚未执行完的同步工作。跨线程恢复先原子入队，
+同一时刻只允许一个线程消费；队列空闲时由事件循环建立必要的微任务检查点。
 
 async 解释器继承创建时的逻辑祖先深度，防止同步 async 递归通过新实例绕过限制；
 这个逻辑深度在 await 后保留。因此很长的 async 递归链也可能触发深度错误，即使
@@ -309,6 +309,62 @@ Error 对象跨 then/catch/await 保留其创建位置；原始值的直接 thro
 
 `RuntimeErrorStackTest` 覆盖创建/重抛、精确行列、缓存/预解析来源、跨脚本函数、构造器与访问器、
 eval/动态函数、async 恢复、Promise 转发、宿主错误、资源释放和 12,000 层同步/异步错误链。
+
+### 8.8 事件循环生命周期与并发契约
+
+`Engine.close()` 委托给 `EventLoop.close()`，两者均为 suspend 方法。关闭先停止接收新任务，
+取消尚未触发的定时器、事件循环自有协程以及在途/排队的宿主执行入口，再等待清理结束。
+正常返回后没有在途运行时代码或待执行微任务；重复关闭安全。调用方传入的父 scope 和
+调用 `Engine.run` 的宿主父 Job 不会被整体取消。关闭后执行、排队与空闲等待抛
+`EventLoopClosedException`（CancellationException 子类），不会变成 JS 错误或 Promise 拒绝。
+解析是纯操作，`Engine.parse` 仍可使用。已经产生的全局写入和 Promise 结果不会回滚，
+被中止的 async 所对应的 Promise 可能保持 pending。
+
+关闭采用协作式取消：可以停止带检查点的 JS 死循环，也能取消挂起的宿主调用；不抢占
+阻塞且不响应取消的宿主代码。非取消清理会延长等待。关闭等待本身可被宿主取消，
+此时循环仍保持关闭状态，可再次调用 close 等待剩余清理。当前运行时任务内部调用
+close/runUntilIdle 或重入同一循环的 runTask 会立即抛 IllegalStateException，避免自等待死锁。
+
+`eventLoop.pendingTasks` 返回 `PendingTasks` 瞬时快照：
+
+| 字段 | 含义 |
+|---|---|
+| `microtasks` | 尚未执行的微任务 |
+| `timers` | 尚未开始执行的定时器；interval 表示下一次 tick |
+| `asyncTasks` | 自有 scope 中未完成的协程，包括挂起的 async 和自动微任务检查点 |
+| `executions` | 在途宿主入口，包括等待执行锁的 Engine.run / 定时器回调 |
+| `rejectionNotifications` | 待确认并报告的 Promise 拒绝 |
+| `total` / `isIdle` | 分类计数总和 / 是否全部为空 |
+
+快照用于观测，不替代访问全局对象的同步边界；并发变化时各分类不保证来自同一个原子时刻。
+`runUntilIdle()` 推进微任务并等待上述任务全部结束，包括未来定时器和仍在等待宿主的 async。
+它不跳过真实时间，不主动触发自定义 Scheduler，也不自动取消 interval；宿主应按需要
+使用 withTimeout，测试中则推进自己的调度器。取消这个等待不会关闭事件循环。
+返回只表示该时刻空闲，不阻止其他线程随后提交新任务。
+
+**串行化分两层。** Engine.run、EventLoop.runTask 和定时器回调的完整调用由 runtimeMutex
+互斥，挂起时仍保留入口所有权；所有同步执行段、async 恢复和微任务还经过同一个
+ExecutionTrampoline，禁止两个线程同时修改 JS 运行时。底层 RuntimeQueue 使用 Kotlin
+通用标准库原子引用和不可变链，实现并发入队与摊销常数复杂度的 FIFO，不使用平台 API。
+
+async 同步前缀仍执行到首次真实挂起；内部栈分段优先完成同步工作。已就绪的 async
+在微任务/宿主调用检查点恢复，宿主异步返回后也会自动推进其微任务，无需额外 run 空脚本。
+串行化不代表固定线程亲和性，宿主回调可能在完成等待的线程执行。需要 UI/特定线程的
+宿主实现应自行切换上下文。异步函数、异步内建和延迟回调使用独立解释器帧，
+共享全局环境与不可变来源链，防止恢复时覆盖尚未返回的词法环境。
+
+**宿主扩展边界。** 并发执行应使用 Engine.run，低层操作使用 `eventLoop.runTask { ... }`；
+仅获取旧的 runtimeMutex 或直接使用 Interpreter/globalObject/registry 不提供完整并发保证。
+install 和全局初始化应在启动并发任务前完成。不得通过外部 scope/UNDISPATCHED 绕过执行入口。
+独立定时器或 run 之外恢复的 async 仍没有独立步数预算，原有配额边界不变。
+
+setInterval 现在复用 Scheduler，在本次回调及微任务完成后安排下一次；tick 不重叠，
+取消当前 interval 不截断正在执行的回调。关闭或取消后，迟到的调度唤醒会被忽略。
+自定义 Scheduler 仍需兑现取消协议以释放自身资源；事件循环不会取消宿主共享的整个调度器。
+
+回归覆盖 `EventLoopLifecycleTest`、`HostEventLoopLifecycleTest` 及 JVM 的
+`EventLoopConcurrencyTest`，包括关闭等待清理、在途 run/定时器取消、迟到唤醒、空闲等待、
+词法帧恢复、多线程竞争与关闭纯计算死循环；既有万层递归和微任务顺序回归保持生效。
 
 ## 9. 性能优化的预留点
 

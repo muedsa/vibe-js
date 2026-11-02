@@ -133,6 +133,31 @@ println(stack.toPrimitiveString())
 `toString()` 使用相同的格式。默认脚本名为 `<anonymous>`，行列从 1 开始。
 详见[错误栈的捕获与边界](docs/ARCHITECTURE.md#87-错误栈)。
 
+### 事件循环生命周期
+
+使用完引擎后调用 `close()`，取消定时器和 async 协程，并等待在途脚本/回调完成清理：
+
+```kotlin
+import com.muedsa.js.host.HostModule
+import kotlinx.coroutines.withTimeout
+
+val engine = Engine()
+engine.install(HostModule(engine.eventLoop, engine.host.console))
+try {
+    engine.run("setTimeout(() => console.log('完成'), 10);")
+    println(engine.eventLoop.pendingTasks) // 分类计数，提供 total / isIdle
+    withTimeout(1_000) { engine.eventLoop.runUntilIdle() }
+} finally {
+    engine.close() // suspend；也可直接调用 engine.eventLoop.close()
+}
+```
+
+`runUntilIdle()` 包含未来定时器和等待中的 async；未清除的 interval 会使它持续等待。
+取消等待不会关闭引擎。关闭可重复调用，关闭后的新任务抛 `EventLoopClosedException`；
+阻塞宿主代码仍须自行响应取消。Engine.run、定时器与 async 恢复共享串行执行队列，
+可以从多个线程提交，但不保证固定线程亲和性。低层全局操作需通过 `eventLoop.runTask`。
+详见[生命周期与并发契约](docs/ARCHITECTURE.md#88-事件循环生命周期与并发契约)。
+
 ### 安装宿主能力
 
 ```kotlin
@@ -217,7 +242,7 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 - `Executor`：执行器接口，当前实现是 AST 解释器，后续可替换为编译执行器而不改语义；
 - `BuiltinModule`：内建模块注册接口；标准库（`CoreBuiltins`）与宿主模块（`HostModule`）都通过它安装；
 - `HostEnvironment`：宿主能力抽象（Console / Scheduler / Clock），并可注入 Date 时区偏移与 Promise 拒绝生命周期回调；
-- `EventLoop`：微任务队列 + 宏任务调度，支撑 Promise 与定时器；
+- `EventLoop`：微任务/定时器调度、串行恢复、任务快照、空闲等待和关闭；
 - `PropertyDescriptor` + `JSObject`：属性描述符与原型链模型。
 
 详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，兼容性矩阵见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)，解析一致性基线见 [docs/CONFORMANCE.md](docs/CONFORMANCE.md)。
