@@ -130,9 +130,11 @@ object SetBuiltins {
                 }
                 val thisArg = args.getOrNull(1) ?: JSUndefined
                 // 实时遍历：新增值追加可被访问，墓碑跳过；重删重加的值作为新记录访问
-                var index = 0
-                while (index < set.storageSize()) {
-                    val value = set.valueAt(index)
+                var index = set.iterationStartIndex
+                while (index < set.iterationEndIndex) {
+                    // 嵌套回调也可 clear；每次恢复都依据最新逻辑起点跳过旧区间。
+                    index = maxOf(index, set.iterationStartIndex)
+                    val value = set.valueAtIterationIndex(index)
                     index++
                     if (value != null) {
                         interpreter.callFunction(callback, thisArg, listOf(value, value, set))
@@ -148,12 +150,13 @@ object SetBuiltins {
         ): JSValue {
             val method = BuiltinHelpers.method(intrinsics, name, 0) { interpreter, thisValue, _ ->
                 val set = requireSet(interpreter, thisValue, "Set.prototype.$name")
-                var index = 0
+                var index = set.iterationStartIndex
                 IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.setIteratorPrototype) { _, _, _ ->
                     // 实时遍历：跳过墓碑，迭代期间追加的值会被访问
+                    index = maxOf(index, set.iterationStartIndex)
                     var element: JSValue? = null
-                    while (index < set.storageSize() && element == null) {
-                        element = set.valueAt(index)
+                    while (index < set.iterationEndIndex && element == null) {
+                        element = set.valueAtIterationIndex(index)
                         index++
                     }
                     element ?: return@createIteratorWithNext null

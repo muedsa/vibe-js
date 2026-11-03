@@ -179,9 +179,11 @@ object MapBuiltins {
                 }
                 val thisArg = args.getOrNull(1) ?: JSUndefined
                 // 实时遍历：新增条目追加可被访问，墓碑跳过；重删重加的键作为新记录访问
-                var index = 0
-                while (index < map.storageSize()) {
-                    val entry = map.entryAt(index)
+                var index = map.iterationStartIndex
+                while (index < map.iterationEndIndex) {
+                    // 回调可能清空并重新填充集合；跳过已被物理回收的旧逻辑区间。
+                    index = maxOf(index, map.iterationStartIndex)
+                    val entry = map.entryAtIterationIndex(index)
                     index++
                     if (entry != null) {
                         interpreter.callFunction(
@@ -201,12 +203,13 @@ object MapBuiltins {
         ) {
             val method = BuiltinHelpers.method(intrinsics, name, 0) { interpreter, thisValue, _ ->
                 val map = requireMap(interpreter, thisValue, "Map.prototype.$name")
-                var index = 0
+                var index = map.iterationStartIndex
                 IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.mapIteratorPrototype) { _, _, _ ->
                     // 实时遍历：跳过墓碑，迭代期间追加的条目会被访问
+                    index = maxOf(index, map.iterationStartIndex)
                     var entry: Pair<JSValue, JSValue>? = null
-                    while (index < map.storageSize() && entry == null) {
-                        entry = map.entryAt(index)
+                    while (index < map.iterationEndIndex && entry == null) {
+                        entry = map.entryAtIterationIndex(index)
                         index++
                     }
                     entry ?: return@createIteratorWithNext null

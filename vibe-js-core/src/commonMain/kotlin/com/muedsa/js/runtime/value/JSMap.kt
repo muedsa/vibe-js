@@ -14,6 +14,22 @@ open class JSMap(
     /** 插入顺序存储；null 表示已删除的墓碑。 */
     private val storage: MutableList<Pair<JSValue, JSValue>?> = mutableListOf()
 
+    /**
+     * 当前物理存储起点对应的逻辑槽位。clear 清除全部槽位及引用，但向前推进起点，
+     * 已有迭代器可跳过被清空的区间，继续访问随后追加的条目，无需登记存活游标。
+     */
+    internal var iterationStartIndex: Long = 0L
+        private set
+
+    /** 实时迭代的逻辑终点；新增条目会延长，clear 不会让旧游标越过新条目。 */
+    internal val iterationEndIndex: Long get() = iterationStartIndex + storage.size
+
+    /** 按逻辑槽位读取；调用方先将游标推进至当前起点，再读取剩余条目。 */
+    internal fun entryAtIterationIndex(index: Long): Pair<JSValue, JSValue>? {
+        val offset = index - iterationStartIndex
+        return if (offset >= 0 && offset < storage.size) storage[offset.toInt()] else null
+    }
+
     /** 当前有效条目数（不含墓碑）。 */
     val liveSize: Int
         get() = storage.count { it != null }
@@ -50,8 +66,9 @@ open class JSMap(
     /** 当前有效条目的快照（保持插入顺序）。 */
     fun liveEntries(): List<Pair<JSValue, JSValue>> = storage.filterNotNull()
 
-    /** 清空全部条目与墓碑。 */
+    /** 清除全部条目引用与墓碑；逻辑位置继续前进以保留进行中的遍历。 */
     fun clearEntries() {
+        iterationStartIndex = iterationEndIndex
         storage.clear()
     }
 }

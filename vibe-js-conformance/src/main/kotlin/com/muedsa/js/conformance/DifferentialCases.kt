@@ -6,6 +6,75 @@ package com.muedsa.js.conformance
  * 每个 expression 必须返回可 JSON 序列化的值；抛错时比较错误名称。
  */
 internal val extraDifferentialCases: List<DifferentialCase> = listOf(
+    // clear 可在 next 或嵌套回调之间发生，专门验证存活游标与永久完成状态。
+    DifferentialCase(
+        "collection-clear-live-iterators",
+        """(function () {
+  var out = [];
+  [Map, Set].forEach(function (C) {
+    ['keys', 'values', 'entries'].forEach(function (method) {
+      var c = C === Map ? new Map([[1,10],[2,20]]) : new Set([1,2]);
+      var it = c[method]();
+      it.next();
+      c.clear();
+      if (C === Map) { c.set(3,30); c.set(4,40); }
+      else { c.add(3); c.add(4); }
+      out.push(Array.from(it));
+    });
+  });
+  return JSON.stringify(out);
+})()""",
+    ),
+    DifferentialCase(
+        "collection-clear-repeated-and-completed",
+        """(function () {
+  return JSON.stringify([Map, Set].map(function (C) {
+    var c = C === Map ? new Map([[1,1],[2,2]]) : new Set([1,2]);
+    function add(v) { if (C === Map) c.set(v,v); else c.add(v); }
+    var before = c.keys(), partial = c.keys();
+    partial.next();
+    c.clear(); add(3); c.clear(); add(3); c.delete(3); add(4);
+    var a = Array.from(before), b = Array.from(partial);
+    c.clear(); add(5);
+    return [a,b,before.next().done,partial.next().done];
+  }));
+})()""",
+    ),
+    DifferentialCase(
+        "collection-clear-nested-foreach",
+        """(function () {
+  return JSON.stringify([Map, Set].map(function (C) {
+    var c = C === Map ? new Map([[1,1],[2,2]]) : new Set([1,2]), seen = [];
+    function add(v) { if (C === Map) c.set(v,v); else c.add(v); }
+    c.forEach(function (value, key) {
+      seen.push('o' + key);
+      if (key === 1) {
+        c.clear(); add(3); add(4);
+        c.forEach(function (inner, innerKey) {
+          seen.push('i' + innerKey);
+          if (innerKey === 3) { c.clear(); add(5); add(6); }
+        });
+      }
+    });
+    return seen.join(',');
+  }));
+})()""",
+    ),
+    DifferentialCase(
+        "collection-clear-without-repopulation",
+        """(function () {
+  return JSON.stringify([Map, Set].map(function (C) {
+    var c = C === Map ? new Map([[1,1],[2,2]]) : new Set([1,2]);
+    var it = c.keys(); it.next(); c.clear();
+    var ended = it.next().done;
+    if (C === Map) c.set(3,3); else c.add(3);
+    var visits = 0;
+    c.forEach(function () { visits++; c.clear(); });
+    if (C === Map) c.set(4,4); else c.add(4);
+    return [ended,it.next().done,visits];
+  }));
+})()""",
+    ),
     // 数字与格式化
     DifferentialCase("num-tofixed-float", "(1.005).toFixed(2)"),
     DifferentialCase("num-large-tofixed", "(1e21).toFixed(2)"),

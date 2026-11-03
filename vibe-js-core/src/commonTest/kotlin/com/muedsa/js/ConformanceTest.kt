@@ -13,6 +13,115 @@ import kotlin.test.assertTrue
 class ConformanceTest {
 
     @Test
+    fun `Map与Set各类迭代器在清空后继续读取新增项`() = runTest {
+        val runtime = TestRuntime()
+        // 同一场景覆盖 Map 与 Set，结果同时由 Node 差分验证。
+        assertEquals(
+            "[[3,4],[30,40],[[3,30],[4,40]],[3,4],[3,4],[[3,3],[4,4]]]",
+            runtime.evalString(
+                """
+                (function () {
+                  var out = [];
+                  [Map, Set].forEach(function (C) {
+                    ['keys', 'values', 'entries'].forEach(function (method) {
+                      var c = C === Map ? new Map([[1,10],[2,20]]) : new Set([1,2]);
+                      var it = c[method]();
+                      it.next();
+                      c.clear();
+                      if (C === Map) { c.set(3,30); c.set(4,40); }
+                      else { c.add(3); c.add(4); }
+                      out.push(Array.from(it));
+                    });
+                  });
+                  return JSON.stringify(out);
+                })()
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
+    fun `集合反复清空及删除重加保持游标且已结束迭代器不会复活`() = runTest {
+        val runtime = TestRuntime()
+        // 同一场景覆盖 Map 与 Set，结果同时由 Node 差分验证。
+        assertEquals(
+            "[[[4],[4],true,true],[[4],[4],true,true]]",
+            runtime.evalString(
+                """
+                (function () {
+                  return JSON.stringify([Map, Set].map(function (C) {
+                    var c = C === Map ? new Map([[1,1],[2,2]]) : new Set([1,2]);
+                    function add(v) { if (C === Map) c.set(v,v); else c.add(v); }
+                    var before = c.keys(), partial = c.keys();
+                    partial.next();
+                    c.clear(); add(3); c.clear(); add(3); c.delete(3); add(4);
+                    var a = Array.from(before), b = Array.from(partial);
+                    c.clear(); add(5);
+                    return [a,b,before.next().done,partial.next().done];
+                  }));
+                })()
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
+    fun `嵌套forEach清空集合后内外层分别继续访问新元素`() = runTest {
+        val runtime = TestRuntime()
+        // 同一场景覆盖 Map 与 Set，结果同时由 Node 差分验证。
+        assertEquals(
+            "[\"o1,i3,i5,i6,o5,o6\",\"o1,i3,i5,i6,o5,o6\"]",
+            runtime.evalString(
+                """
+                (function () {
+                  return JSON.stringify([Map, Set].map(function (C) {
+                    var c = C === Map ? new Map([[1,1],[2,2]]) : new Set([1,2]), seen = [];
+                    function add(v) { if (C === Map) c.set(v,v); else c.add(v); }
+                    c.forEach(function (value, key) {
+                      seen.push('o' + key);
+                      if (key === 1) {
+                        c.clear(); add(3); add(4);
+                        c.forEach(function (inner, innerKey) {
+                          seen.push('i' + innerKey);
+                          if (innerKey === 3) { c.clear(); add(5); add(6); }
+                        });
+                      }
+                    });
+                    return seen.join(',');
+                  }));
+                })()
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
+    fun `清空后没有新增项的遍历正常结束且后续新增不恢复已结束迭代器`() = runTest {
+        val runtime = TestRuntime()
+        // 同一场景覆盖 Map 与 Set，结果同时由 Node 差分验证。
+        assertEquals(
+            "[[true,true,1],[true,true,1]]",
+            runtime.evalString(
+                """
+                (function () {
+                  return JSON.stringify([Map, Set].map(function (C) {
+                    var c = C === Map ? new Map([[1,1],[2,2]]) : new Set([1,2]);
+                    var it = c.keys(); it.next(); c.clear();
+                    var ended = it.next().done;
+                    if (C === Map) c.set(3,3); else c.add(3);
+                    var visits = 0;
+                    c.forEach(function () { visits++; c.clear(); });
+                    if (C === Map) c.set(4,4); else c.add(4);
+                    return [ended,it.next().done,visits];
+                  }));
+                })()
+                """.trimIndent(),
+            ),
+        )
+    }
+
+
+    @Test
     fun `全局 this 与 globalThis`() = runTest {
         val runtime = TestRuntime()
         assertEquals(true, runtime.evalBoolean("this === globalThis"))

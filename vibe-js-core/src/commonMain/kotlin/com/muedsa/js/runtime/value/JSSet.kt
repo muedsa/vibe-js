@@ -14,6 +14,22 @@ open class JSSet(
     /** 插入顺序存储；null 表示已删除的墓碑。 */
     private val storage: MutableList<JSValue?> = mutableListOf()
 
+    /**
+     * 当前存储起点对应的逻辑槽位。clear 推进起点并清除旧槽位及引用，旧游标
+     * 只需跳过已清空区间即可继续遍历新值，避免为了兼容迭代永久保留墓碑。
+     */
+    internal var iterationStartIndex: Long = 0L
+        private set
+
+    /** 实时迭代的逻辑终点，随新增值增长。 */
+    internal val iterationEndIndex: Long get() = iterationStartIndex + storage.size
+
+    /** 按逻辑槽位读取；物理下标与查找/删除接口仍使用原有的 Int 索引。 */
+    internal fun valueAtIterationIndex(index: Long): JSValue? {
+        val offset = index - iterationStartIndex
+        return if (offset >= 0 && offset < storage.size) storage[offset.toInt()] else null
+    }
+
     /** 当前有效值数量（不含墓碑）。 */
     val liveSize: Int
         get() = storage.count { it != null }
@@ -52,8 +68,9 @@ open class JSSet(
     /** 当前有效值的快照（保持插入顺序）。 */
     fun liveValues(): List<JSValue> = storage.filterNotNull()
 
-    /** 清空全部值与墓碑。 */
+    /** 清除全部值引用与墓碑，同时保留进行中遍历所使用的逻辑位置。 */
     fun clearValues() {
+        iterationStartIndex = iterationEndIndex
         storage.clear()
     }
 }
