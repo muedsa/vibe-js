@@ -6,6 +6,58 @@ package com.muedsa.js.conformance
  * 每个 expression 必须返回可 JSON 序列化的值；抛错时比较错误名称。
  */
 internal val extraDifferentialCases: List<DifferentialCase> = listOf(
+    // 固定上限治理：低成本验证规范长度、实际十万边界、求值顺序及正常关闭。
+    DifferentialCase(
+        "array-from-full-tolength",
+        """(function () {
+  var lengths = [99999,100000,100001,NaN,-1,-0.5,3.8,Infinity,2147483648,4294967295,4294967296,9007199254740992];
+  return JSON.stringify(lengths.map(function (length) {
+    try { Array.from.call(function (n) { throw n; }, {length:length}); }
+    catch (received) { return received; }
+  }));
+})()""",
+    ),
+    DifferentialCase(
+        "array-from-length-access-order",
+        """(function () {
+  var log = [], source = {};
+  Object.defineProperty(source, Symbol.iterator, {get:function(){log.push('iterator');}});
+  Object.defineProperty(source, 'length', {get:function(){
+    log.push('length'); return {valueOf:function(){log.push('valueOf');return 100001;}};
+  }});
+  Object.defineProperty(source, '0', {get:function(){log.push('element');}});
+  try { Array.from.call(function(n){log.push('construct:'+n);throw 'stop';}, source); }
+  catch(e) { log.push(e); }
+  return JSON.stringify(log);
+})()""",
+    ),
+    DifferentialCase(
+        "array-from-tail-after-100000",
+        """(function () {
+  var a = Array.from({length:100001,100000:'tail'});
+  var read = false, error = '';
+  try { Array.from({length:4294967296,get 0(){read=true;}}); }
+  catch(e) {error=e.name;}
+  return JSON.stringify([a.length,a[100000],0 in a,error,read]);
+})()""",
+    ),
+    DifferentialCase(
+        "finite-native-iteration-and-close",
+        """(function () {
+  function iterator(){var n=0;return {next:function(){return n<3?{done:false,value:++n}:{done:true};}};}
+  var source={}; source[Symbol.iterator]=iterator;
+  function regexp(){var r=/x/g,n=0;r.exec=function(){return n<3?{0:'x',index:n++,length:1}:null;};return r;}
+  var calls=0,closed=0,message='', failing={};
+  failing[Symbol.iterator]=function(){return {
+    next:function(){return {done:false,value:++calls};},
+    return:function(){closed++;return {};}
+  };};
+  try {Array.from(failing,function(v,k){if(k===1)throw new Error('fail');return v;});}
+  catch(e){message=e.message;}
+  return JSON.stringify([Array.from(source),[...source],Array.from(new Set().union({size:3,has:function(){return false;},keys:iterator})),
+    regexp()[Symbol.match]('xxx'),regexp()[Symbol.replace]('xxx','y'),[message,calls,closed]]);
+})()""",
+    ),
     // clear 可在 next 或嵌套回调之间发生，专门验证存活游标与永久完成状态。
     DifferentialCase(
         "collection-clear-live-iterators",

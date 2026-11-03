@@ -96,6 +96,26 @@ class Conversions(private val interpreter: Interpreter) {
     }
 
     /**
+     * 已完成 ToNumber 后的 ToIntegerOrInfinity：NaN/零归零，有限值向零截断。
+     * 接收 Double 可避免调用方在检查 NaN 后重复触发用户 valueOf 的副作用。
+     */
+    internal fun toIntegerOrInfinity(number: Double): Double = when {
+        number.isNaN() || number == 0.0 -> 0.0
+        number.isInfinite() -> number
+        else -> kotlin.math.truncate(number)
+    }
+
+    /** ToLength：仅执行一次数值转换，将长度限制在规范的 0..2^53-1。 */
+    internal suspend fun toLength(value: JSValue): Long {
+        val integer = toIntegerOrInfinity(toNumber(value))
+        return when {
+            integer <= 0.0 -> 0L
+            integer >= 9007199254740991.0 -> 9007199254740991L
+            else -> integer.toLong()
+        }
+    }
+
+    /**
      * ToString。
      */
     suspend fun toString(value: JSValue): String = when (value) {

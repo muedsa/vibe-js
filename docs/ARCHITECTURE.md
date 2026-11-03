@@ -229,6 +229,12 @@ Kotlin 的 finally 仍恢复调用帧、词法环境、释放作用域和运行�
 这是运行时检查点数量，不是 ECMAScript 指令数，具体脚本所需步数可能随实现优化变化。
 取消仍每 1024 个解释器检查点检查一次，配额则逐点扣除，低于 1024 的预算同样有效。
 
+`Array.from`、迭代值收集、全局正则 match/replace 与 Set-like 迭代消费也在每轮
+使用同一检查点，代替旧的十万长度/百万迭代 guard。未设 maxSteps 时按输入的实际
+终止条件执行，不静默截断结果；需要有界执行时由宿主设置预算。普通数组长度仍遵循
+2^32-1，array-like 长度使用 ToLength 的 2^53-1，Kotlin List 的 Int 表示上限明确抛
+RangeError。JSArray 的同步宿主诊断输出保留截断并标注省略，不属于 JS 的 ToString。
+
 主脚本、本轮冲刷的微任务和它们执行期间的 async 工作共享预算，不因创建新解释器、
 Promise 链或 await 而重置。超限后预算保存同一个异常，async 启动边界停止当前任务，
 `Engine.run` / 微任务边界向宿主重新抛出该异常，避免被包装为 `InternalError`、

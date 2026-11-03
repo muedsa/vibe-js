@@ -7,6 +7,7 @@ import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNumber
+import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import kotlinx.coroutines.CancellationException
@@ -25,6 +26,49 @@ import kotlin.test.assertTrue
 
 /** 执行配额是宿主契约；所有用例在 commonTest 中验证 JVM、JS、Wasm 与 Native。 */
 class RuntimeLimitsTest {
+
+    @Test
+    fun `内建数组与迭代正则循环使用宿主预算而不返回被截断的结果`() = runTest {
+        val sources = listOf(
+            "Array.from({length:1000001})",
+            "[...{[Symbol.iterator]:function(){return {next:function(){return {done:false,value:1};},return:function(){closed=true;return {};}};}}]",
+            "var re=/x/g;re.exec=function(){return {0:'x',index:0,length:1};};re[Symbol.match]('x')",
+            "var re=/x/g;re.exec=function(){return {0:'x',index:0,length:1};};re[Symbol.replace]('x','y')",
+            "new Set().union({size:Infinity,has:function(){return false;},keys:function(){return {next:function(){return {done:false,value:1};},return:function(){closed=true;return {};}};}})",
+        )
+        for (source in sources) {
+            val engine = Engine(limits = EngineLimits(maxSteps = 300))
+            try {
+                assertEquals(300L, assertFailsWith<ExecutionLimitException> {
+                    engine.run("var caught=false,finalized=false,closed=false;try{$source;}catch(e){caught=true;}finally{finalized=true;}")
+                }.maxSteps)
+                // 宿主中止不执行 JS catch/finally/return 释放器；之后使用新的 run 预算。
+                assertEquals("false:false:false", assertIs<JSString>(engine.run(
+                    "caught+':'+finalized+':'+closed",
+                )).value)
+                assertEquals(42.0, assertIs<JSNumber>(engine.run("42")).value)
+            } finally {
+                engine.close()
+            }
+        }
+    }
+
+    @Test
+    fun `原型循环检测依据对象身份并处理宿主创建的已有环`() = runTest {
+        val engine = Engine()
+        try {
+            val target = JSObject()
+            val first = JSObject()
+            val second = JSObject(first)
+            assertTrue(engine.interpreter.setPrototypeOf(target, second))
+            assertEquals(false, engine.interpreter.setPrototypeOf(first, target))
+            // 宿主直接修改低层 prototype 可制造已有环；检测不能依赖百万次循环猜测。
+            first.prototype = second
+            assertEquals(false, engine.interpreter.setPrototypeOf(JSObject(), first))
+        } finally {
+            engine.close()
+        }
+    }
 
     @Test
     fun `配额配置拒绝零和负数并允许不限制步数`() {

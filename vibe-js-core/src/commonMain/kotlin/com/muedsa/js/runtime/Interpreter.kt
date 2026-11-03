@@ -192,7 +192,8 @@ class Interpreter(
      */
     private var stepsUntilCancellationCheck = 1024
 
-    private suspend fun checkExecution() {
+    /** 内建长循环也使用同一检查点，统一消费预算并保持协作式取消语义。 */
+    internal suspend fun checkExecution() {
         if (--stepsUntilCancellationCheck == 0) {
             // 先复位再检查：取消退出后同一个解释器仍可以执行后续脚本。
             stepsUntilCancellationCheck = 1024
@@ -518,11 +519,13 @@ class Interpreter(
     fun setPrototypeOf(objectValue: JSObject, newPrototype: JSObject?): Boolean {
         if (objectValue.prototype === newPrototype) return true
         var cursor: JSObject? = newPrototype
-        var guard = 0
+        var fast: JSObject? = newPrototype
         while (cursor != null) {
             if (cursor === objectValue) return false
             cursor = cursor.prototype
-            if (++guard > 1_000_000) return false
+            // 宿主低层写入也可能构造已有环；快慢指针检测实际环，不误拒绝较长的合法链。
+            fast = fast?.prototype?.prototype
+            if (cursor != null && cursor === fast) return false
         }
         objectValue.prototype = newPrototype
         return true
@@ -4757,10 +4760,11 @@ class Interpreter(
         val record = getIterator(value)
         val results = ArrayList<JSValue>()
         try {
-            var guard = 0
-            while (guard < 1_000_000) {
-                guard++
+            while (true) {
+                checkExecution()
                 val next = iteratorNext(record) ?: break
+                // List 采用 Int 索引；到达容器表示上限时必须明确失败，不能返回部分结果。
+                if (results.size == Int.MAX_VALUE) rangeError("Too many iterator values")
                 results.add(next)
             }
         } catch (error: JSException) {

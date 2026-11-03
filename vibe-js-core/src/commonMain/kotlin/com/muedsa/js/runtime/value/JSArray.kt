@@ -321,7 +321,8 @@ open class JSArray(
 
     override fun toPrimitiveString(): String {
         val builder = StringBuilder()
-        // 超大稀疏数组拼接会产生数十亿分隔符，这里限制实际遍历范围
+        // 此同步入口只供宿主诊断，JS 类型转换走 Conversions 与 Array.prototype。
+        // 超大稀疏数组可能产生数十亿分隔符，保留诊断上限但必须显式标注省略。
         val limit = if (arrayLength > 1_000_000L) 1_000_000L else arrayLength
         for (index in 0 until limit) {
             if (index > 0) builder.append(',')
@@ -330,6 +331,7 @@ open class JSArray(
                 builder.append(element.toPrimitiveString())
             }
         }
+        if (limit < arrayLength) builder.append(",… (${arrayLength - limit} more items)")
         return builder.toString()
     }
 

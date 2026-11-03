@@ -3,10 +3,11 @@ package com.muedsa.js.runtime
 import com.muedsa.js.runtime.exception.ExecutionLimitException
 
 /**
- * 引擎的执行配额。解析阶段与单次内建/宿主操作的内部工作量不计入步数。
+ * 引擎的执行配额。解析阶段和未接入检查点的内建/宿主内部工作量不计入步数。
  *
  * @property maxSteps 每次 Engine.run 的最大执行检查点数；null 表示不限制。
  * 语句、表达式、循环迭代、调用和微任务都消耗步数，并非 ECMAScript 指令计数。
+ * Array.from、迭代值收集、全局正则 match/replace、Set-like 消费也逐轮检查。
  * @property maxCallDepth 最大逻辑调用深度，默认 16384；null 显式关闭限制。
  * 包括原生函数、构造器与 eval，
  * 不包括全局脚本帧。async 继承创建时的逻辑深度，严格模式尾调用复用深度。

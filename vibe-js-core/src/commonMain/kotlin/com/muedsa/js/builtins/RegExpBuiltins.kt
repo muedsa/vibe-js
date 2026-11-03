@@ -375,12 +375,13 @@ object RegExpBuiltins {
                 val fullUnicode = flags.contains('u')
                 interpreter.putV(regexp, PropertyKey.Str("lastIndex"), JSNumber.ZERO, strict = true)
                 val result = JSArray(prototype = intrinsics.arrayPrototype)
-                var count = 0
-                var guard = 0
-                while (guard++ < 1_000_000) {
+                var count = 0L
+                while (true) {
+                    // 自定义 exec 可以永不返回 null；使用宿主预算中止，不能固定截断结果。
+                    interpreter.checkExecution()
                     val execResult = regExpExec(interpreter, regexp, input)
                     if (execResult is JSNull) {
-                        return@method if (count == 0) JSNull else result
+                        break
                     }
                     if (execResult !is JSObject) {
                         interpreter.typeError("RegExp exec result is not an object")
@@ -388,7 +389,7 @@ object RegExpBuiltins {
                     val matched = interpreter.toStringValue(
                         interpreter.getV(execResult, PropertyKey.Str("0"))
                     )
-                    createDataPropertyOrThrow(interpreter, result, count.toLong(), JSString(matched))
+                    createDataPropertyOrThrow(interpreter, result, count, JSString(matched))
                     count++
                     if (matched.isEmpty()) {
                         val thisIndex = toLengthValue(
@@ -404,7 +405,7 @@ object RegExpBuiltins {
                         )
                     }
                 }
-                interpreter.typeError("RegExp match iteration did not terminate")
+                if (count == 0L) JSNull else result
             },
         )
 
@@ -473,12 +474,16 @@ object RegExpBuiltins {
                     val result = regExpExec(interpreter, regexp, input)
                     if (result is JSObject) results.add(result)
                 } else {
-                    var guard = 0
-                    while (guard++ < 1_000_000) {
+                    while (true) {
+                        interpreter.checkExecution()
                         val result = regExpExec(interpreter, regexp, input)
                         if (result is JSNull) break
                         if (result !is JSObject) {
                             interpreter.typeError("RegExp exec result is not an object")
+                        }
+                        // 收集列表受 Kotlin Int 索引约束，到达表示上限必须明确失败。
+                        if (results.size == Int.MAX_VALUE) {
+                            interpreter.rangeError("Too many RegExp replacement results")
                         }
                         results.add(result)
                         val matched = interpreter.toStringValue(
@@ -1015,10 +1020,7 @@ object RegExpBuiltins {
 
     /** ToLength：限制到 2^53-1。 */
     private suspend fun toLengthValue(interpreter: Interpreter, value: JSValue): Long {
-        val number = interpreter.toNumber(value)
-        if (number.isNaN() || number <= 0.0) return 0L
-        if (number >= 9007199254740991.0) return 9007199254740991L
-        return kotlin.math.floor(number).toLong()
+        return interpreter.conversions.toLength(value)
     }
 
     /** ToIntegerOrInfinity：向零截断。 */

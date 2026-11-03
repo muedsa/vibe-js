@@ -8,9 +8,100 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * 针对审查阶段发现的 P0 问题进行回归验证。
+ * 针对审查阶段发现的问题进行规范导向的回归验证。
  */
 class ConformanceTest {
+
+    @Test
+    fun `Array from按规范转换大长度且不在十万处截断构造参数`() = runTest {
+        val runtime = TestRuntime()
+        // 极大长度通过抛出构造参数验证，只有十万边界样本实际创建数组。
+        assertEquals(
+            "[99999,100000,100001,0,0,0,3,9007199254740991,2147483648,4294967295,4294967296,9007199254740991]",
+            runtime.evalString(
+                """
+                (function () {
+                  var lengths = [99999,100000,100001,NaN,-1,-0.5,3.8,Infinity,2147483648,4294967295,4294967296,9007199254740992];
+                  return JSON.stringify(lengths.map(function (length) {
+                    try { Array.from.call(function (n) { throw n; }, {length:length}); }
+                    catch (received) { return received; }
+                  }));
+                })()
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
+    fun `Array from读取迭代方法及长度后才构造且长度只转换一次`() = runTest {
+        val runtime = TestRuntime()
+        // 构造器主动终止，验证读取顺序及转换次数，同时确认尚未访问元素。
+        assertEquals(
+            "[\"iterator\",\"length\",\"valueOf\",\"construct:100001\",\"stop\"]",
+            runtime.evalString(
+                """
+                (function () {
+                  var log = [], source = {};
+                  Object.defineProperty(source, Symbol.iterator, {get:function(){log.push('iterator');}});
+                  Object.defineProperty(source, 'length', {get:function(){
+                    log.push('length'); return {valueOf:function(){log.push('valueOf');return 100001;}};
+                  }});
+                  Object.defineProperty(source, '0', {get:function(){log.push('element');}});
+                  try { Array.from.call(function(n){log.push('construct:'+n);throw 'stop';}, source); }
+                  catch(e) { log.push(e); }
+                  return JSON.stringify(log);
+                })()
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
+    fun `Array from保留十万之后的元素并保持数组与自定义构造器边界`() = runTest {
+        val runtime = TestRuntime()
+        // 实际验证旧截断位置之后的尾元素；非法数组长度应在元素读取之前失败。
+        assertEquals(
+            "[100001,\"tail\",true,\"RangeError\",false]",
+            runtime.evalString(
+                """
+                (function () {
+                  var a = Array.from({length:100001,100000:'tail'});
+                  var read = false, error = '';
+                  try { Array.from({length:4294967296,get 0(){read=true;}}); }
+                  catch(e) {error=e.name;}
+                  return JSON.stringify([a.length,a[100000],0 in a,error,read]);
+                })()
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
+    fun `移除固定上限后有限迭代正则及映射异常关闭仍保持规范结果`() = runTest {
+        val runtime = TestRuntime()
+        // 有限输入保留完整结果；映射函数抛出的 JS 异常仍按规范关闭迭代器。
+        assertEquals(
+            "[[1,2,3],[1,2,3],[1,2,3],[\"x\",\"x\",\"x\"],\"yyy\",[\"fail\",2,1]]",
+            runtime.evalString(
+                """
+                (function () {
+                  function iterator(){var n=0;return {next:function(){return n<3?{done:false,value:++n}:{done:true};}};}
+                  var source={}; source[Symbol.iterator]=iterator;
+                  function regexp(){var r=/x/g,n=0;r.exec=function(){return n<3?{0:'x',index:n++,length:1}:null;};return r;}
+                  var calls=0,closed=0,message='', failing={};
+                  failing[Symbol.iterator]=function(){return {
+                    next:function(){return {done:false,value:++calls};},
+                    return:function(){closed++;return {};}
+                  };};
+                  try {Array.from(failing,function(v,k){if(k===1)throw new Error('fail');return v;});}
+                  catch(e){message=e.message;}
+                  return JSON.stringify([Array.from(source),[...source],Array.from(new Set().union({size:3,has:function(){return false;},keys:iterator})),
+                    regexp()[Symbol.match]('xxx'),regexp()[Symbol.replace]('xxx','y'),[message,calls,closed]]);
+                })()
+                """.trimIndent(),
+            ),
+        )
+    }
 
     @Test
     fun `Map与Set各类迭代器在清空后继续读取新增项`() = runTest {

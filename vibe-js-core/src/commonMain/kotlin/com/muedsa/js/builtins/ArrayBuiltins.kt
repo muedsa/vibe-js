@@ -25,9 +25,6 @@ import kotlin.math.floor
  */
 object ArrayBuiltins {
 
-    /** array-like 快照上限，避免 length=Infinity/超大对象造成无界分配。 */
-    private const val MAX_ARRAY_LIKE_LENGTH = 100_000
-
     /** Number.MAX_SAFE_INTEGER：concat 结果长度上限。 */
     private const val MAX_SAFE_INTEGER = 9007199254740991L
 
@@ -1346,7 +1343,7 @@ object ArrayBuiltins {
                 }
                 val iterable = interpreter.isIterable(source)
 
-                suspend fun applyMap(item: JSValue, index: Int): JSValue =
+                suspend fun applyMap(item: JSValue, index: Long): JSValue =
                     if (mapFn != null) {
                         interpreter.callFunction(
                             mapFn,
@@ -1358,7 +1355,7 @@ object ArrayBuiltins {
                     }
 
                 val array: JSObject
-                var index = 0
+                var index = 0L
                 if (iterable) {
                     // 迭代路径：GetMethod 之后再构造结果对象
                     array = if (interpreter.isConstructor(thisValue)) {
@@ -1368,36 +1365,35 @@ object ArrayBuiltins {
                         JSArray(prototype = arrayPrototype)
                     }
                     interpreter.consumeIterator(source) { item ->
+                        interpreter.checkExecution()
+                        if (index >= MAX_SAFE_INTEGER) {
+                            interpreter.typeError("Array.from result exceeds the maximum safe length")
+                        }
                         createDataPropertyOrThrow(
-                            interpreter, array, index.toLong(), applyMap(item, index),
+                            interpreter, array, index, applyMap(item, index),
                         )
                         index++
                     }
                 } else {
                     // array-like：先读取 length，再按长度构造结果对象
                     val objectValue = interpreter.toObject(source)
-                    val lengthNumber = interpreter.toNumber(
-                        interpreter.getV(objectValue, PropertyKey.LENGTH)
-                    )
-                    val length = when {
-                        lengthNumber.isNaN() || lengthNumber <= 0.0 -> 0
-                        lengthNumber >= MAX_ARRAY_LIKE_LENGTH -> MAX_ARRAY_LIKE_LENGTH
-                        else -> floor(lengthNumber).toInt()
-                    }
+                    val length = lengthOf(interpreter, objectValue)
                     array = if (interpreter.isConstructor(thisValue)) {
                         interpreter.construct(thisValue, listOf(JSNumber(length.toDouble())))
                             as? JSObject
                             ?: interpreter.typeError("Array.from constructor did not return an object")
                     } else {
-                        createArrayWithLength(interpreter, length.toLong())
+                        createArrayWithLength(interpreter, length)
                     }
                     for (sourceIndex in 0 until length) {
+                        // 纯数据属性不会进入 JS 回调，必须在内建循环中直接检查配额与取消。
+                        interpreter.checkExecution()
                         val item = interpreter.getV(
                             objectValue,
                             PropertyKey.Str(sourceIndex.toString()),
                         )
                         createDataPropertyOrThrow(
-                            interpreter, array, sourceIndex.toLong(), applyMap(item, sourceIndex),
+                            interpreter, array, sourceIndex, applyMap(item, sourceIndex),
                         )
                         index++
                     }
@@ -1542,13 +1538,7 @@ object ArrayBuiltins {
         }
 
         // array-like 路径：LengthOfArrayLike 先于构造
-        val lengthValue = interpreter.getV(objectItems, PropertyKey.LENGTH)
-        val lengthNumber = interpreter.toNumber(lengthValue)
-        val length = when {
-            lengthNumber.isNaN() || lengthNumber <= 0.0 -> 0L
-            lengthNumber >= MAX_SAFE_INTEGER.toDouble() -> MAX_SAFE_INTEGER
-            else -> floor(lengthNumber).toLong()
-        }
+        val length = lengthOf(interpreter, objectItems)
         val array: JSObject = if (interpreter.isConstructor(constructor)) {
             interpreter.construct(constructor, listOf(JSNumber(length.toDouble()))) as? JSObject
                 ?: interpreter.typeError("Array.fromAsync constructor did not return an object")
@@ -1647,10 +1637,7 @@ object ArrayBuiltins {
 
     /** 按规范以 ToLength(Get(O, "length")) 读取长度；Infinity 饱和到 2^53-1。 */
     private suspend fun lengthOf(interpreter: Interpreter, objectValue: JSObject): Long {
-        val number = interpreter.toNumber(interpreter.getV(objectValue, PropertyKey.LENGTH))
-        if (number.isNaN() || number <= 0.0) return 0L
-        if (number >= MAX_SAFE_INTEGER.toDouble()) return MAX_SAFE_INTEGER
-        return floor(number).toLong()
+        return interpreter.conversions.toLength(interpreter.getV(objectValue, PropertyKey.LENGTH))
     }
 
     /** HasProperty → Get；属性不存在（含空洞）返回 null。 */

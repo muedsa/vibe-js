@@ -391,8 +391,9 @@ object SetBuiltins {
         if (!interpreter.isCallable(next)) {
             interpreter.typeError("Set-like iterator has no next method")
         }
-        var guard = 0
-        while (guard++ < 1_000_000) {
+        while (true) {
+            // 有限大输入不得被误判为未终止；无限迭代由统一配额与取消负责中止。
+            interpreter.checkExecution()
             val step = interpreter.callFunction(next, iterator, emptyList())
             if (step !is JSObject) {
                 interpreter.typeError("Iterator result is not an object")
@@ -414,7 +415,6 @@ object SetBuiltins {
                 return
             }
         }
-        interpreter.typeError("Set-like iteration did not terminate")
     }
 
     private fun containsValue(interpreter: Interpreter, set: JSSet, value: JSValue): Boolean =
