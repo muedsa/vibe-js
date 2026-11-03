@@ -513,8 +513,10 @@ class AsyncSemanticsTest {
         engine.run("Promise.reject('a').catch(function () {});")
         assertEquals(0, rejected.size)
         engine.run(
-            "var p = Promise.reject('b');" +
-                "Promise.resolve().then(function () { p.catch(function () {}); });"
+            """
+                var p = Promise.reject('b');
+                Promise.resolve().then(function () { p.catch(function () {}); });
+            """.trimIndent()
         )
         assertEquals(0, rejected.size)
     }

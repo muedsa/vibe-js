@@ -40,8 +40,10 @@ class EventLoopConcurrencyTest {
                     JSUndefined
                 })
                 try {
-                    engine.run("var count = 0; async function work(i) { waitHost(i); touch(); count++; } " +
-                        "for (var i = 0; i < 30; i++) work(i);")
+                    engine.run("""
+                        var count = 0; async function work(i) { waitHost(i); touch(); count++; }
+                        for (var i = 0; i < 30; i++) work(i);
+                    """.trimIndent())
                     val scripts = List(20) { async { engine.run("touch(); count++;") } }
                     repeat(20) {
                         engine.eventLoop.schedule(0) {

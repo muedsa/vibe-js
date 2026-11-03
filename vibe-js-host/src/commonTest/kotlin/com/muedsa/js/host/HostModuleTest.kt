@@ -132,8 +132,10 @@ class HostModuleTest {
         val engine = Engine()
         engine.install(HostModule(engine.eventLoop, output))
         engine.run(
-            "var done = false; queueMicrotask(function () { throw new Error('boom'); }); " +
-                "queueMicrotask(function () { done = true; });"
+            """
+                var done = false; queueMicrotask(function () { throw new Error('boom'); });
+                queueMicrotask(function () { done = true; });
+            """.trimIndent()
         )
         assertEquals(true, (engine.run("done") as JSBoolean).value)
         assertTrue(output.logs.last().startsWith("ERROR:Error: boom"))
@@ -172,8 +174,10 @@ class HostModuleTest {
         assertEquals(
             true,
             (engine.run(
-                "(function () { var s = ''; for (var i = 0; i < 256; i++) { " +
-                    "s += String.fromCharCode(i); } return atob(btoa(s)) === s; })()"
+                """
+                    (function () { var s = ''; for (var i = 0; i < 256; i++) {
+                            s += String.fromCharCode(i); } return atob(btoa(s)) === s; })()
+                """.trimIndent()
             ) as JSBoolean).value
         )
         // 宽松填充与尾部未使用比特：全部与 WHATWG/Node 行为一致
@@ -232,8 +236,10 @@ class HostModuleTest {
         assertEquals(
             true,
             (engine.run(
-                "window.setTimeout === setTimeout && window.clearTimeout === clearTimeout && " +
-                    "self.setInterval === setInterval && window.console === console"
+                """
+                    window.setTimeout === setTimeout && window.clearTimeout === clearTimeout &&
+                    self.setInterval === setInterval && window.console === console
+                """.trimIndent()
             ) as JSBoolean).value
         )
         assertEquals(
@@ -441,8 +447,10 @@ class HostModuleTest {
         val engine = Engine()
         engine.install(HostModule(engine.eventLoop, RecordingConsole()))
         engine.run(
-            "var ticks = 0; var id = setInterval(function () { ticks += 1; " +
-                "if (ticks === 2) clearInterval(id); }, 1);"
+            """
+                var ticks = 0; var id = setInterval(function () { ticks += 1;
+                    if (ticks === 2) clearInterval(id); }, 1);
+            """.trimIndent()
         )
         withContext(Dispatchers.Default) {
             withTimeout(5_000) {

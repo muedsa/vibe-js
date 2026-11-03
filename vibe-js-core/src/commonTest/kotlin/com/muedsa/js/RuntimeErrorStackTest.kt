@@ -114,9 +114,11 @@ class RuntimeErrorStackTest {
     @Test
     fun `构造器父构造器和访问器使用定义脚本位置`() = runTest {
         val engine = Engine()
-        engine.run("class Base { constructor() { throw new Error('base'); } }\n" +
-            "class Child extends Base { constructor() { super(); } }\n" +
-            "var object = { get value() { throw new Error('getter'); } };", "types.js")
+        engine.run("""
+            class Base { constructor() { throw new Error('base'); } }
+            class Child extends Base { constructor() { super(); } }
+            var object = { get value() { throw new Error('getter'); } };
+        """.trimIndent(), "types.js")
         val constructorError = assertFailsWith<JSException> { engine.run("new Child()", "new.js") }
         assertEquals(listOf("<global>", "Child", "Base"), constructorError.stack.map { it.functionName })
         assertEquals(listOf("new.js", "types.js", "types.js"), constructorError.stack.map { it.sourceInfo.name })
@@ -278,15 +280,16 @@ class RuntimeErrorStackTest {
     fun `动态async函数和异步释放错误保留自身来源`() = runTest {
         val engine = Engine()
         val dynamic = assertIs<JSPromise>(engine.run(
-            "var AsyncFunction = (async function() {}).constructor; " +
-                "AsyncFunction('await 0; throw new Error(\"dynamic\");')();", "factory.js",
+            """
+                var AsyncFunction = (async function() {}).constructor; AsyncFunction('await 0; throw new Error("dynamic");')();
+            """.trimIndent(), "factory.js",
         ))
         val dynamicError = assertFailsWith<JSException> { dynamic.awaitResult() }
         assertEquals("<AsyncFunction>", dynamicError.stack.last().sourceInfo.name)
         val dispose = assertIs<JSPromise>(engine.run(
-            "var stack = new AsyncDisposableStack(); " +
-                "stack.defer(async function first() { throw 1; }); " +
-                "stack.defer(async function second() { throw 2; }); stack.disposeAsync();", "async-dispose.js",
+            """
+                var stack = new AsyncDisposableStack(); stack.defer(async function first() { throw 1; }); stack.defer(async function second() { throw 2; }); stack.disposeAsync();
+            """.trimIndent(), "async-dispose.js",
         ))
         val disposeError = assertFailsWith<JSException> { dispose.awaitResult() }
         assertTrue(stackText(engine, disposeError.value).startsWith("SuppressedError\n"))

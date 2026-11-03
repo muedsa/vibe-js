@@ -88,8 +88,10 @@ class BuiltinObjectDateRegExpTest {
         assertEquals(
             true,
             runtime.evalBoolean(
-                "var o = {}; Object.defineProperty(o, 'x', { get: function () { return 1; } }); " +
-                    "typeof Object.getOwnPropertyDescriptor(o, 'x').set === 'undefined'"
+                """
+                    var o = {}; Object.defineProperty(o, 'x', { get: function () { return 1; } });
+                    typeof Object.getOwnPropertyDescriptor(o, 'x').set === 'undefined'
+                """.trimIndent()
             )
         )
     }
@@ -620,9 +622,11 @@ class BuiltinObjectDateRegExpTest {
         assertEquals(
             true,
             (engine.run(
-                "var d = new Date(NaN); d.setFullYear(2020); " +
-                    "d.getFullYear() === 2020 && d.getMonth() === 0 && " +
-                    "d.getDate() === 1 && d.getHours() === 0"
+                """
+                    var d = new Date(NaN); d.setFullYear(2020);
+                    d.getFullYear() === 2020 && d.getMonth() === 0 &&
+                    d.getDate() === 1 && d.getHours() === 0
+                """.trimIndent()
             ) as JSBoolean).value,
         )
     }
@@ -790,9 +794,11 @@ class BuiltinObjectDateRegExpTest {
         assertEquals(
             true,
             (engine.run(
-                "var d = new Date(0); d.setYear(-1); d.getUTCFullYear() === -1 && " +
-                    "d.getUTCMonth() === 0 && d.getUTCDate() === 1 && " +
-                    "d.getUTCHours() === 0 && d.getUTCMinutes() === 0"
+                """
+                    var d = new Date(0); d.setYear(-1); d.getUTCFullYear() === -1 &&
+                    d.getUTCMonth() === 0 && d.getUTCDate() === 1 &&
+                    d.getUTCHours() === 0 && d.getUTCMinutes() === 0
+                """.trimIndent()
             ) as JSBoolean).value,
         )
     }
@@ -859,33 +865,83 @@ class BuiltinObjectDateRegExpTest {
     @Test
     fun `Date 字段 setter 在 NaN 参数下仍完成其余参数转换`() = runTest {
         val runtime = TestRuntime()
-        val prefix = "var log = []; function arg(n) { return { valueOf: function () { " +
-            "log.push(n); return 1; } }; } "
         assertEquals(
             "day",
-            runtime.evalString(prefix + "new Date(0).setMonth(NaN, arg('day')); log.join(',')"),
+            runtime.evalString(
+                """
+                var log = [];
+                function arg(n) {
+                    return { valueOf: function () { log.push(n); return 1; } };
+                }
+                new Date(0).setMonth(NaN, arg('day'));
+                log.join(',');
+                """.trimIndent(),
+            ),
         )
         assertEquals(
             "m,d",
-            runtime.evalString(prefix + "new Date(0).setFullYear(NaN, arg('m'), arg('d')); log.join(',')"),
+            runtime.evalString(
+                """
+                var log = [];
+                function arg(n) {
+                    return { valueOf: function () { log.push(n); return 1; } };
+                }
+                new Date(0).setFullYear(NaN, arg('m'), arg('d'));
+                log.join(',');
+                """.trimIndent(),
+            ),
         )
         assertEquals(
             "m,s,ms",
             runtime.evalString(
-                prefix + "new Date(0).setHours(NaN, arg('m'), arg('s'), arg('ms')); log.join(',')"
+                """
+                var log = [];
+                function arg(n) {
+                    return { valueOf: function () { log.push(n); return 1; } };
+                }
+                new Date(0).setHours(NaN, arg('m'), arg('s'), arg('ms'));
+                log.join(',');
+                """.trimIndent(),
             ),
         )
         assertEquals(
             "s,ms",
-            runtime.evalString(prefix + "new Date(0).setMinutes(NaN, arg('s'), arg('ms')); log.join(',')"),
+            runtime.evalString(
+                """
+                var log = [];
+                function arg(n) {
+                    return { valueOf: function () { log.push(n); return 1; } };
+                }
+                new Date(0).setMinutes(NaN, arg('s'), arg('ms'));
+                log.join(',');
+                """.trimIndent(),
+            ),
         )
         assertEquals(
             "ms",
-            runtime.evalString(prefix + "new Date(0).setSeconds(NaN, arg('ms')); log.join(',')"),
+            runtime.evalString(
+                """
+                var log = [];
+                function arg(n) {
+                    return { valueOf: function () { log.push(n); return 1; } };
+                }
+                new Date(0).setSeconds(NaN, arg('ms'));
+                log.join(',');
+                """.trimIndent(),
+            ),
         )
         assertEquals(
             "day",
-            runtime.evalString(prefix + "new Date(0).setUTCMonth(NaN, arg('day')); log.join(',')"),
+            runtime.evalString(
+                """
+                var log = [];
+                function arg(n) {
+                    return { valueOf: function () { log.push(n); return 1; } };
+                }
+                new Date(0).setUTCMonth(NaN, arg('day'));
+                log.join(',');
+                """.trimIndent(),
+            ),
         )
     }
 }

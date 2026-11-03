@@ -32,9 +32,11 @@ class HostEventLoopLifecycleTest {
         val scheduler = ManualScheduler()
         val engine = Engine(DefaultHostEnvironment(scheduler = scheduler))
         engine.install(HostModule(engine.eventLoop))
-        engine.run("var order = ''; var id = setInterval(function() { " +
-            "order += 'tick'; clearInterval(id); order += ':done'; " +
-            "Promise.resolve().then(() => { order += ':micro'; }); }, 7);")
+        engine.run("""
+            var order = ''; var id = setInterval(function() {
+                order += 'tick'; clearInterval(id); order += ':done';
+                Promise.resolve().then(() => { order += ':micro'; }); }, 7);
+        """.trimIndent())
         assertEquals(listOf(7L), scheduler.delays)
         scheduler.fireNext()
         engine.eventLoop.runUntilIdle()

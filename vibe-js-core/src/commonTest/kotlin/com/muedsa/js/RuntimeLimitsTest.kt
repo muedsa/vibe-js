@@ -148,8 +148,10 @@ class RuntimeLimitsTest {
         )).value)
         // 清理后普通函数、using 和隐式全局赋值继续正常工作。
         assertEquals(42.0, assertIs<JSNumber>(engine.run(
-            "{ using fresh = { [Symbol.dispose]: function () { kept++; } }; } " +
-                "function ok() { return 42; } reusable = ok(); reusable;"
+            """
+                { using fresh = { [Symbol.dispose]: function () { kept++; } }; }
+                function ok() { return 42; } reusable = ok(); reusable;
+            """.trimIndent()
         )).value)
         val error = assertFailsWith<JSException> { engine.run("missingAfterLimit") }
         assertEquals(listOf("<global>"), error.stack.map { it.functionName })
