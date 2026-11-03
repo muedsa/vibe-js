@@ -6,6 +6,82 @@ package com.muedsa.js.conformance
  * 每个 expression 必须返回可 JSON 序列化的值；抛错时比较错误名称。
  */
 internal val extraDifferentialCases: List<DifferentialCase> = listOf(
+    // Set-like 的 size 先数值转换再取整，覆盖共享辅助函数的七个调用方与 IteratorClose。
+    DifferentialCase(
+        "set-like-size-numeric-boundaries",
+        """(function () {
+  var methods = ['union','intersection','difference','symmetricDifference','isSubsetOf','isSupersetOf','isDisjointFrom'];
+  return JSON.stringify([-0.5,-0,0.5,1.5,-1,NaN,Infinity,-Infinity].map(function (size) {
+    return methods.map(function (method) {
+      var other = {size:size,has:function(v){return v===1;},keys:function(){return [1].values();}};
+      try {
+        var result = new Set([1])[method](other);
+        return result instanceof Set ? Array.from(result).join(',') : String(result);
+      } catch(e) {return e.name;}
+    }).join('|');
+  }));
+})()""",
+    ),
+    DifferentialCase(
+        "set-like-size-access-order",
+        """(function () {
+  var methods = ['union','intersection','difference','symmetricDifference','isSubsetOf','isSupersetOf','isDisjointFrom'];
+  return JSON.stringify(methods.map(function (method) {
+    var log = [], other = {};
+    Object.defineProperty(other,'size',{get:function(){
+      log.push('size');return {valueOf:function(){log.push('valueOf');return -0.5;}};
+    }});
+    Object.defineProperty(other,'has',{get:function(){log.push('has');return function(){return false;};}});
+    Object.defineProperty(other,'keys',{get:function(){log.push('keys');return function(){return [].values();};}});
+    new Set()[method](other);
+    return log.join(',');
+  }));
+})()""",
+    ),
+    DifferentialCase(
+        "set-like-invalid-size-short-circuit",
+        """(function () {
+  var methods = ['union','intersection','difference','symmetricDifference','isSubsetOf','isSupersetOf','isDisjointFrom'];
+  return JSON.stringify([NaN,-1,-1.5,-Infinity,'throw'].map(function (size) {
+    return methods.map(function (method) {
+      var log = [], other = {};
+      Object.defineProperty(other,'size',{get:function(){
+        log.push('size');return {valueOf:function(){
+          log.push('valueOf');if(size==='throw')throw new SyntaxError('size');return size;
+        }};
+      }});
+      Object.defineProperty(other,'has',{get:function(){log.push('has');return function(){return false;};}});
+      Object.defineProperty(other,'keys',{get:function(){log.push('keys');return function(){return [].values();};}});
+      try {new Set()[method](other);} catch(e) {log.push(e.name);}
+      return log.join(',');
+    });
+  }));
+})()""",
+    ),
+    DifferentialCase(
+        "set-like-truncated-size-iterator-close",
+        """(function () {
+  function run(method,size,value,mode) {
+    var log=[], n=0, other={size:size,has:function(){throw new Error('unexpected has');},keys:function(){
+      log.push('keys:'+String(this===other));
+      return {
+        next:function(){log.push('next');return n++===0?{value:value,done:false}:{done:true};},
+        return:function(){log.push('return');if(mode==='throw')throw new Error('close');return mode==='primitive'?1:{};}
+      };
+    }};
+    var result;
+    try {result=new Set([1])[method](other);} catch(e){result=e.name;}
+    return [result,log.join(',')];
+  }
+  return JSON.stringify([
+    run('isSupersetOf',1.5,2,'object'),
+    run('isDisjointFrom',-0.5,1,'object'),
+    run('isSupersetOf',1.5,1,'object'),
+    run('isSupersetOf',1.5,2,'primitive'),
+    run('isSupersetOf',1.5,2,'throw')
+  ]);
+})()""",
+    ),
     // 固定上限治理：低成本验证规范长度、实际十万边界、求值顺序及正常关闭。
     DifferentialCase(
         "array-from-full-tolength",

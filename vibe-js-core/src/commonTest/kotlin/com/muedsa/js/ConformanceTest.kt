@@ -13,6 +13,145 @@ import kotlin.test.assertTrue
 class ConformanceTest {
 
     @Test
+    fun `Set七个新方法统一处理负小数负零分数NaN及无穷size`() = runTest {
+        val runtime = TestRuntime()
+        // 声明的 size 可与 keys 数量不同；固定键集合使数值转换与大小分支的差异可观察。
+        val expected = """["1|1|||false|true|false","1|1|||false|true|false","1|1|||false|true|false","1|1|||true|true|false","RangeError|RangeError|RangeError|RangeError|RangeError|RangeError|RangeError","TypeError|TypeError|TypeError|TypeError|TypeError|TypeError|TypeError","1|1|||true|false|false","RangeError|RangeError|RangeError|RangeError|RangeError|RangeError|RangeError"]"""
+        try {
+            assertEquals(
+                expected,
+                runtime.evalString(
+                    """
+                    (function () {
+                      var methods = ['union','intersection','difference','symmetricDifference','isSubsetOf','isSupersetOf','isDisjointFrom'];
+                      return JSON.stringify([-0.5,-0,0.5,1.5,-1,NaN,Infinity,-Infinity].map(function (size) {
+                        return methods.map(function (method) {
+                          var other = {size:size,has:function(v){return v===1;},keys:function(){return [1].values();}};
+                          try {
+                            var result = new Set([1])[method](other);
+                            return result instanceof Set ? Array.from(result).join(',') : String(result);
+                          } catch(e) {return e.name;}
+                        }).join('|');
+                      }));
+                    })()
+                    """.trimIndent(),
+                ),
+            )
+        } finally {
+            runtime.engine.close()
+        }
+    }
+
+    @Test
+    fun `Set七个新方法只转换一次size并保持后续方法读取顺序`() = runTest {
+        val runtime = TestRuntime()
+        // getter 的日志只记录属性读取，不混入算法分支调用；valueOf 必须只执行一次。
+        val expected = List(7) { "\"size,valueOf,has,keys\"" }.joinToString(prefix = "[", postfix = "]", separator = ",")
+        try {
+            assertEquals(
+                expected,
+                runtime.evalString(
+                    """
+                    (function () {
+                      var methods = ['union','intersection','difference','symmetricDifference','isSubsetOf','isSupersetOf','isDisjointFrom'];
+                      return JSON.stringify(methods.map(function (method) {
+                        var log = [], other = {};
+                        Object.defineProperty(other,'size',{get:function(){
+                          log.push('size');return {valueOf:function(){log.push('valueOf');return -0.5;}};
+                        }});
+                        Object.defineProperty(other,'has',{get:function(){log.push('has');return function(){return false;};}});
+                        Object.defineProperty(other,'keys',{get:function(){log.push('keys');return function(){return [].values();};}});
+                        new Set()[method](other);
+                        return log.join(',');
+                      }));
+                    })()
+                    """.trimIndent(),
+                ),
+            )
+        } finally {
+            runtime.engine.close()
+        }
+    }
+
+    @Test
+    fun `Set非法size在读取has与keys之前失败且保留转换异常`() = runTest {
+        val runtime = TestRuntime()
+        // NaN、负整数与负无穷必须提前失败；数值转换自身抛错时也不能继续读取方法。
+        val expected = listOf("TypeError", "RangeError", "RangeError", "RangeError", "SyntaxError")
+            .joinToString(prefix = "[", postfix = "]", separator = ",") { error ->
+                List(7) { "\"size,valueOf,$error\"" }
+                    .joinToString(prefix = "[", postfix = "]", separator = ",")
+            }
+        try {
+            assertEquals(
+                expected,
+                runtime.evalString(
+                    """
+                    (function () {
+                      var methods = ['union','intersection','difference','symmetricDifference','isSubsetOf','isSupersetOf','isDisjointFrom'];
+                      return JSON.stringify([NaN,-1,-1.5,-Infinity,'throw'].map(function (size) {
+                        return methods.map(function (method) {
+                          var log = [], other = {};
+                          Object.defineProperty(other,'size',{get:function(){
+                            log.push('size');return {valueOf:function(){
+                              log.push('valueOf');if(size==='throw')throw new SyntaxError('size');return size;
+                            }};
+                          }});
+                          Object.defineProperty(other,'has',{get:function(){log.push('has');return function(){return false;};}});
+                          Object.defineProperty(other,'keys',{get:function(){log.push('keys');return function(){return [].values();};}});
+                          try {new Set()[method](other);} catch(e) {log.push(e.name);}
+                          return log.join(',');
+                        });
+                      }));
+                    })()
+                    """.trimIndent(),
+                ),
+            )
+        } finally {
+            runtime.engine.close()
+        }
+    }
+
+    @Test
+    fun `Set小数size参与分支后提前结束仍关闭迭代器并传播关闭错误`() = runTest {
+        val runtime = TestRuntime()
+        // 1.5 截断为 1 后必须进入 keys 分支；正常耗尽不调用 return，提前结束则校验关闭结果。
+        val expected = """[[false,"keys:true,next,return"],[false,"keys:true,next,return"],[true,"keys:true,next,next"],["TypeError","keys:true,next,return"],["Error","keys:true,next,return"]]"""
+        try {
+            assertEquals(
+                expected,
+                runtime.evalString(
+                    """
+                    (function () {
+                      function run(method,size,value,mode) {
+                        var log=[], n=0, other={size:size,has:function(){throw new Error('unexpected has');},keys:function(){
+                          log.push('keys:'+String(this===other));
+                          return {
+                            next:function(){log.push('next');return n++===0?{value:value,done:false}:{done:true};},
+                            return:function(){log.push('return');if(mode==='throw')throw new Error('close');return mode==='primitive'?1:{};}
+                          };
+                        }};
+                        var result;
+                        try {result=new Set([1])[method](other);} catch(e){result=e.name;}
+                        return [result,log.join(',')];
+                      }
+                      return JSON.stringify([
+                        run('isSupersetOf',1.5,2,'object'),
+                        run('isDisjointFrom',-0.5,1,'object'),
+                        run('isSupersetOf',1.5,1,'object'),
+                        run('isSupersetOf',1.5,2,'primitive'),
+                        run('isSupersetOf',1.5,2,'throw')
+                      ]);
+                    })()
+                    """.trimIndent(),
+                ),
+            )
+        } finally {
+            runtime.engine.close()
+        }
+    }
+
+    @Test
     fun `Array from按规范转换大长度且不在十万处截断构造参数`() = runTest {
         val runtime = TestRuntime()
         // 极大长度通过抛出构造参数验证，只有十万边界样本实际创建数组。

@@ -354,7 +354,10 @@ object SetBuiltins {
         if (number.isNaN()) {
             interpreter.typeError("Set-like size is NaN")
         }
-        if (number < 0.0) {
+        // GetSetRecord 在 NaN 校验后先向零取整，再判断负数；-0.5 应作为零接受。
+        // 复用已经转换的数值，避免再次触发 valueOf，且后续大小分支必须使用整数结果。
+        val size = interpreter.conversions.toIntegerOrInfinity(number)
+        if (size < 0.0) {
             interpreter.rangeError("Set-like size must not be negative")
         }
         val has = interpreter.getV(value, PropertyKey.Str("has"))
@@ -365,7 +368,7 @@ object SetBuiltins {
         if (!interpreter.isCallable(keys)) {
             interpreter.typeError("Set-like keys is not callable")
         }
-        return SetRecord(value, number, has, keys)
+        return SetRecord(value, size, has, keys)
     }
 
     /** 调用 set-like 的 has(value)。 */
