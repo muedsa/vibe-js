@@ -3,6 +3,7 @@ package com.muedsa.js.host
 import com.muedsa.js.runtime.Console
 import com.muedsa.js.runtime.DefaultHostEnvironment
 import com.muedsa.js.runtime.Engine
+import com.muedsa.js.runtime.MonotonicClock
 import com.muedsa.js.runtime.ScheduledTask
 import com.muedsa.js.runtime.Scheduler
 import com.muedsa.js.runtime.exception.JSException
@@ -358,16 +359,21 @@ class HostModuleTest {
 
     @OptIn(ExperimentalTime::class)
     @Test
-    fun `console time 使用注入时钟并处理重复与缺失标签`() = runTest {
-        var nowMillis = 1_000L
-        val clock = object : Clock {
-            override fun now(): Instant = Instant.fromEpochMilliseconds(nowMillis)
+    fun `console time 使用单调时钟并处理重复与缺失标签`() = runTest {
+        var wallMillis = 1_000L
+        val wallClock = object : Clock {
+            override fun now(): Instant = Instant.fromEpochMilliseconds(wallMillis)
         }
+        var monotonicMillis = 10_000.0
         val output = RecordingConsole()
-        val engine = Engine(DefaultHostEnvironment(clock = clock))
+        val engine = Engine(
+            DefaultHostEnvironment(clock = wallClock, monotonicClock = MonotonicClock { monotonicMillis })
+        )
         engine.install(HostModule(engine.eventLoop, output))
         engine.run("console.time('t')")
-        nowMillis += 250
+        // 墙钟回拨不应产生负值或错误差值
+        wallMillis -= 5_000
+        monotonicMillis += 250
         engine.run("console.timeEnd('t')")
         assertEquals("t: 250ms", output.logs.last())
         engine.run("console.timeEnd('missing')")
@@ -375,24 +381,38 @@ class HostModuleTest {
         engine.run("console.time('dup')")
         engine.run("console.time('dup')")
         assertTrue(output.logs.last().contains("already exists"))
-        nowMillis += 10
+        monotonicMillis += 10
         engine.run("console.timeEnd('dup')")
         assertEquals("dup: 10ms", output.logs.last())
     }
 
     @OptIn(ExperimentalTime::class)
     @Test
-    fun `performance 使用注入时钟并固定时间原点`() = runTest {
-        var nowMillis = 1_000_000L
-        val clock = object : Clock {
-            override fun now(): Instant = Instant.fromEpochMilliseconds(nowMillis)
+    fun `performance 使用单调时钟并在安装时固定时间原点`() = runTest {
+        var wallMillis = 1_000_000L
+        val wallClock = object : Clock {
+            override fun now(): Instant = Instant.fromEpochMilliseconds(wallMillis)
         }
-        val engine = Engine(DefaultHostEnvironment(clock = clock))
+        var monotonicMillis = 5_000.0
+        val monotonicClock = MonotonicClock { monotonicMillis }
+        val engine = Engine(
+            DefaultHostEnvironment(clock = wallClock, monotonicClock = monotonicClock)
+        )
         engine.install(HostModule(engine.eventLoop, RecordingConsole()))
-        assertEquals(0.0, (engine.run("performance.now()") as JSNumber).value)
-        assertEquals(1_000_000.0, (engine.run("performance.timeOrigin") as JSNumber).value)
-        nowMillis += 250
+
+        // 安装后墙钟回拨、单调时钟前进：now() 只跟随单调时钟，不受回拨影响
+        wallMillis -= 500
+        monotonicMillis += 250
         assertEquals(250.0, (engine.run("performance.now()") as JSNumber).value)
+
+        // timeOrigin 是安装时的墙钟值，之后的墙钟变化不改变它
+        assertEquals(1_000_000.0, (engine.run("performance.timeOrigin") as JSNumber).value)
+        wallMillis += 1_000
+        assertEquals(1_000_000.0, (engine.run("performance.timeOrigin") as JSNumber).value)
+
+        // 单调时钟继续前进，now() 单调递增
+        monotonicMillis += 750
+        assertEquals(1_000.0, (engine.run("performance.now()") as JSNumber).value)
         assertEquals(
             "[object Performance]",
             (engine.run("Object.prototype.toString.call(performance)") as JSString).value,

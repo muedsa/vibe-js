@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalTime::class)
+
 package com.muedsa.js.host
 
 import com.muedsa.js.builtins.BuiltinHelpers
@@ -17,6 +19,9 @@ import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyKey
+import kotlin.math.floor
+import kotlin.math.round
+import kotlin.time.ExperimentalTime
 
 /** Base64 标准字母表（WHATWG forgiving-base64）。 */
 private const val BASE64_ALPHABET =
@@ -50,11 +55,8 @@ class HostModule(
     private val timers: MutableMap<Int, ScheduledTask> = mutableMapOf()
     private val intervals: MutableMap<Int, ScheduledTask> = mutableMapOf()
 
-    /** performance 时间原点（宿主时钟毫秒）；首次访问时确定。 */
-    private var performanceOriginMillis: Double? = null
-
-    /** console.time 的标签起始时刻（宿主时钟毫秒）。 */
-    private val consoleTimers: MutableMap<String, Long> = mutableMapOf()
+    /** console.time 的标签起始时刻（单调时钟毫秒）。 */
+    private val consoleTimers: MutableMap<String, Double> = mutableMapOf()
 
     override fun install(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
@@ -102,7 +104,7 @@ class HostModule(
         method("warn", 1) { console.log(it) }
         method("error", 1) { console.error(it) }
 
-        // console.time/timeEnd：使用宿主时钟，输出格式由宿主定义
+        // console.time/timeEnd：使用单调时钟，墙钟回拨不会产生负值或错误差值
         consoleObject.defineDataProperty(
             key = PropertyKey.Str("time"),
             value = BuiltinHelpers.method(intrinsics, "console.time", 0) { interpreter, _, args ->
@@ -110,7 +112,7 @@ class HostModule(
                 if (consoleTimers.containsKey(label)) {
                     console.log("Warning: Timer '$label' already exists")
                 } else {
-                    consoleTimers[label] = interpreter.currentTimeMillis().toLong()
+                    consoleTimers[label] = registry.host.monotonicClock.nowMillis()
                 }
                 JSUndefined
             },
@@ -126,8 +128,8 @@ class HostModule(
                 if (started == null) {
                     console.log("Warning: Timer '$label' does not exist")
                 } else {
-                    val elapsed = interpreter.currentTimeMillis().toLong() - started
-                    console.log("$label: ${elapsed}ms")
+                    val elapsed = registry.host.monotonicClock.nowMillis() - started
+                    console.log("$label: ${formatElapsedMillis(elapsed)}ms")
                 }
                 JSUndefined
             },
@@ -153,22 +155,24 @@ class HostModule(
         )
     }
 
-    /** performance.now 的时间原点；首次访问使用当前时钟值。 */
-    private fun performanceOrigin(interpreter: Interpreter): Double {
-        val existing = performanceOriginMillis
-        if (existing != null) return existing
-        val current = interpreter.currentTimeMillis()
-        performanceOriginMillis = current
-        return current
+    /** 将毫秒差值格式化为最多 3 位小数，整数不带小数点。 */
+    private fun formatElapsedMillis(millis: Double): String {
+        val rounded = round(millis * 1000.0) / 1000.0
+        return if (rounded == floor(rounded)) rounded.toLong().toString() else rounded.toString()
     }
 
     private fun installPerformance(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
+        // 时间原点在模块安装时确定，而不是首次访问：
+        // - timeOrigin 取墙钟（规范要求是 Unix 纪元毫秒）
+        // - now() 取单调时钟差值，墙钟回拨或调整不影响
+        val timeOriginMillis = registry.host.clock.now().toEpochMilliseconds().toDouble()
+        val monotonicOriginMillis = registry.host.monotonicClock.nowMillis()
         val performanceObject = JSObject(prototype = intrinsics.objectPrototype)
         performanceObject.defineDataProperty(
             key = PropertyKey.Str("now"),
-            value = BuiltinHelpers.method(intrinsics, "performance.now", 0) { interpreter, _, _ ->
-                JSNumber(interpreter.currentTimeMillis() - performanceOrigin(interpreter))
+            value = BuiltinHelpers.method(intrinsics, "performance.now", 0) { _, _, _ ->
+                JSNumber(registry.host.monotonicClock.nowMillis() - monotonicOriginMillis)
             },
             writable = true,
             enumerable = true,
@@ -176,8 +180,8 @@ class HostModule(
         )
         performanceObject.defineAccessorProperty(
             key = PropertyKey.Str("timeOrigin"),
-            get = BuiltinHelpers.method(intrinsics, "get timeOrigin", 0) { interpreter, _, _ ->
-                JSNumber(performanceOrigin(interpreter))
+            get = BuiltinHelpers.method(intrinsics, "get timeOrigin", 0) { _, _, _ ->
+                JSNumber(timeOriginMillis)
             },
             set = null,
             enumerable = true,

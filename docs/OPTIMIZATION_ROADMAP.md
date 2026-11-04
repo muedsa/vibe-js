@@ -20,7 +20,7 @@
 | **暂缓** | L4 · 模块系统与宿主生态 | 暂不做 | "`import`/`export` 为保留字并直接报错；无 CLI、URL、TextEncoder 等" |
 | **暂缓** | B2 · 实测驱动的性能优化 | 暂不做 | "未做 profiler 分析，不承诺任何性能改进" |
 | **暂缓（未排期）** | L3 · ArrayBuffer/TypedArray/BigInt | 暂不做（本次未点名，按"不在在办范围"处理） | "无二进制数据与 BigInt 运行时；`BigInt` 字面量仅语法识别，求值抛 TypeError" |
-| **在办** | H1、A1 | 见第 3 节 | 本路线剩余的全部交付内容 |
+| **在办** | A1（可选） | 见第 3 节 | 本路线剩余的全部交付内容 |
 
 ### 0.1 搁置/暂缓的后果（必须一起接受）
 
@@ -80,7 +80,7 @@
 
 ## 2. 已完成项与不可破坏的契约
 
-### 2.1 已完成任务（C1–C3、T1、T2、M1、B1、D1）
+### 2.1 已完成任务（C1–C3、T1、T2、M1、B1、H1、D1）
 
 | 任务 | 提交 | 实施内容 | 后续不能破坏的行为 |
 |---|---|---|---|
@@ -92,7 +92,8 @@
 | T2 · 报告可审计 | `0e9c4a1` | 三份报告写入运行元数据（引擎/语料 commit、工具链、配置）；选择与跳过判定抽为 `Test262Selection` 纯函数，区分"筛选期排除"与"选中后跳过"；shim 单列；跳过明细落盘；CI 增加 PR 快速子集 | 筛选与跳过必须分开统计；文本筛选的每条跳过都要可追溯；报告 JSON 字段不得随意改名 |
 | D1 · 文档纠偏 | `88e4d8f` | 兼容性矩阵、架构文档、一致性文档、README、Unicode 生成脚本与 15 处代码注释统一为当前实现；搁置项改写为"不是后续阶段" | 文档不得再使用"阶段 A/后续阶段/预留"描述已实现能力；搁置项必须显式标注 |
 | M1 · 集合索引与墓碑回收 | `5a6904f` | `JSMap`/`JSSet` 改为插入顺序数组 + SameValueZero 索引 + O(1) 计数；无活跃迭代器时压缩墓碑；内建改用键 API | 实时迭代语义（C1）不变；迭代期间不得压缩；`size` 必须保持 O(1) |
-| B1 · 可解释成本的基准 | 本次改动 | 基准扩为 56 个条目、六组（生命周期/解析缓存/吞吐/对象环境/异步/标准库/集合）；teardown 关闭引擎；统一 2×300ms 预热；新增 `benchmarkEnvironment` 与 `-PbenchmarkFilter` | 基准必须能一条命令复现；环境信息与原始 JSON 一同归档；不用单次百分比做门禁 |
+| B1 · 可解释成本的基准 | `6b38b99` | 基准扩为 56 个条目、六组（生命周期/解析缓存/吞吐/对象环境/异步/标准库/集合）；teardown 关闭引擎；统一 2×300ms 预热；新增 `benchmarkEnvironment` 与 `-PbenchmarkFilter` | 基准必须能一条命令复现；环境信息与原始 JSON 一同归档；不用单次百分比做门禁 |
+| H1 · 宿主计时与使用契约 | 本次改动 | 新增可注入 `MonotonicClock`；`performance.timeOrigin` 安装时固定、`now()` 与 `console.time` 改用单调时钟；`BuiltinRegistry` 暴露 `host` | `Date` 继续用墙钟；墙钟回拨不得影响 `performance.now()` 与 `console.time` 差值 |
 
 回归位置：[ConformanceTest.kt:165-343](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ConformanceTest.kt#L165-L343)（长度边界、Set size 转换、clear 实时迭代）与 [DifferentialCases.kt:139-207](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialCases.kt#L139-L207)（Node 差分）；T1 的回归位于 [RunSupportTest.kt](../vibe-js-conformance/src/test/kotlin/com/muedsa/js/conformance/RunSupportTest.kt)。
 
@@ -178,13 +179,19 @@
 **已知边界。** 迭代器会阻止压缩（与主流引擎一致：迭代器持有底层表）；创建后既不耗尽也不丢弃的迭代器会让该集合保留墓碑。
 
 
-### 3.4 H1 · 宿主计时与使用契约（P2，1–3 人日）
+### 3.4 H1 · 宿主计时与使用契约（已完成 2026-11-04）
 
-**现状（部分完成）。** `HostEnvironment.clock` 已可注入（[HostEnvironment.kt:78](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/HostEnvironment.kt#L78)），但宿主时间全部取自墙钟：`Interpreter.currentTimeMillis()` 读 `host.clock`，`performance.now`/`timeOrigin` 与 `console.time` 都用它（[HostModule.kt:157-171](../vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/HostModule.kt#L157-L171)、`:113/:129`）。`timeOrigin` 首次访问才创建，现有测试还把"首个 `now()` 恒为 0"固化了（[HostModuleTest.kt:392](../vibe-js-host/src/commonTest/kotlin/com/muedsa/js/host/HostModuleTest.kt#L392)）。
+**实施说明。**
 
-**目标。** 引入可注入的单调时间源（`TimeSource.Monotonic` 或宿主提供的 monotonic 毫秒），`performance.now`/`timeOrigin`/`console.time` 改用单调时钟；明确 `timeOrigin` 的建立时点（模块创建时而非首次访问）；补时钟回拨、精度、首次访问跨 tick 的约定测试。
+- 新增 `MonotonicClock`（`fun interface`，返回毫秒 Double）与默认实现 `SystemMonotonicClock`（基于 `TimeSource.Monotonic`，微秒精度换算毫秒），作为 `HostEnvironment` 的默认属性——已有宿主实现无需改动。
+- `BuiltinRegistry` 增加 `host` 字段，宿主模块在 `install` 时即可读取宿主能力，无需把 `HostEnvironment` 塞进每个模块的构造函数。
+- `performance.timeOrigin` 在**模块安装时**取墙钟（Unix 纪元毫秒）并固定；`performance.now()` 改为"单调时钟当前值 − 安装时单调值"，墙钟回拨不影响。
+- `console.time/timeEnd` 改用单调时钟，差值按最多 3 位小数格式化（整数不带小数点）。
+- 测试改为注入可控墙钟 + 可控单调时钟，覆盖：墙钟回拨时 `now()` 仍前进、`timeOrigin` 在安装后不再变化、`console.time` 差值不受墙钟影响。
 
-**范围。** 4–5 个文件、几十行，非重构。难度低-中，主要成本是跨平台单调语义确认与改写既有断言。
+**范围。** 4 个文件（`HostEnvironment`、`BuiltinRegistry`、`Engine`、`HostModule`）+ 测试，几十行，非重构。
+
+**验证。** 宿主模块 25 个测试通过（JVM/JS/Wasm/Native）；core 606 通过。
 
 ### 3.5 B1 · 建立能解释成本的基准（已完成 2026-11-04）
 
@@ -246,10 +253,9 @@
 
 | 批次 | 任务 | 粗估 | 主要产物 | 完成标准 |
 |---|---|---|---|---|
-| **1 · 计时契约** | H1 | **1–3 人日** | 单调计时、`timeOrigin` 建立时点 | 计时单调性有测试 |
-| **2 · 收尾（可选）** | A1 低风险部分（诊断适配层、`IteratorBuiltins` 拆分） | **5–10 人日** | 诊断适配层 | 诊断信息可定位 |
+| **1 · 收尾（可选）** | A1 低风险部分（诊断适配层、`IteratorBuiltins` 拆分） | **5–10 人日** | 诊断适配层 | 诊断信息可定位 |
 
-**在办范围合计约 1–13 人日**（A1 为可选项）。C1–C3、T1、T2、M1、B1、D1 已完成（见 2.1）。
+**剩余范围只有 A1（可选，5–10 人日）**。C1–C3、T1、T2、M1、B1、H1、D1 已完成（见 2.1）。
 
 ## 5. 搁置与暂缓项的现状记录
 
@@ -325,3 +331,4 @@
 | 2026-11-04 | D1 完成：兼容性矩阵、架构文档、一致性文档、README、Unicode 生成脚本与 15 处代码注释统一为当前实现；搁置项改为"无限期搁置/暂缓/不在范围"；core JVM 测试 596 通过 |
 | 2026-11-04 | M1 完成：Map/Set 改为索引存储与 O(1) 计数，墓碑在无迭代器时压缩；新增 10 个存储测试与集合基准（单键操作 4–19ns 且与规模无关）；ES2015 子集耗时从 134s 降到 89s |
 | 2026-11-04 | B1 完成：基准扩为 56 个条目、六组，teardown 关闭引擎，统一 2×300ms 预热（全量 10m34s → 约 1.5 分钟），新增环境记录任务与单组过滤；ARCHITECTURE 参考值同步为本次复测 |
+| 2026-11-04 | H1 完成：新增可注入 MonotonicClock，performance.timeOrigin 在模块安装时固定、now() 与 console.time 改用单调时钟，墙钟回拨不影响差值；宿主 25 个测试在 JVM/JS/Wasm/Native 通过 |

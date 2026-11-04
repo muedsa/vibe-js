@@ -47,7 +47,7 @@ class Engine(
     val intrinsics = Intrinsics(globalObject)
 
     /** 内建注册表。 */
-    val registry = BuiltinRegistry(intrinsics)
+    val registry = BuiltinRegistry(intrinsics, host)
 
     /** 事件循环。 */
     val eventLoop = EventLoop(host.scheduler)

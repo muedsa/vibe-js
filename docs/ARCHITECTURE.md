@@ -49,7 +49,7 @@ Lexer ──► Parser ──► AST (Program)
 | `PropertyKey` | 字符串键与 Symbol 键（Symbol 已实现） |
 | `Intrinsics` | 每个引擎实例一份的原型集合（Object.prototype、Function.prototype 等） |
 | `BuiltinRegistry` | 全局变量/内部对象注册；通过 `BuiltinModule` 安装扩展 |
-| `HostEnvironment` | 宿主抽象：Console / Clock / Scheduler |
+| `HostEnvironment` | 宿主抽象：Console / Clock（墙钟）/ MonotonicClock（单调）/ Scheduler |
 | `EventLoop` | 微任务队列、宏任务调度、串行恢复与任务关闭；自有 scope 运行 async 函数体 |
 | `JSPromise` / `PromiseSupport` | Promise 状态机、解析/拒绝、then 链与 async/await 基础 |
 | `JSMap` / `JSSet` | 集合存储：插入顺序数组 + SameValueZero 索引（get/set/has/delete 均摊 O(1)、size O(1)）；删除留墓碑，无活跃迭代器时压缩，配合实时迭代协议 |
@@ -125,6 +125,8 @@ engine.run("""
 - `HostModule` 提供 `window`/`self`、`console`（含 time/timeEnd）、`setTimeout`/`clearTimeout`、
   `setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`、
   `performance.now()`/`performance.timeOrigin`；
+- 时间原点在模块安装时确定（`timeOrigin` 取墙钟、`now()` 取单调时钟差值）；`performance.now()` 与
+  `console.time` 都走 `HostEnvironment.monotonicClock`，墙钟回拨不会产生负值或错误差值，`Date` 仍使用墙钟；
 - timeout 与 interval 都通过 `EventLoop` 的 `Scheduler` 执行，console 通过 `Console` 注入；执行入口和所有 async 恢复复用共享恢复队列，完整宿主入口再由运行时锁互斥。`clearTimeout`/`clearInterval` 可互相取消。
 
 ### 8.2 自定义内建模块
@@ -166,9 +168,10 @@ engine.install(MyModule())
 
 ### 8.4 自定义宿主能力
 
-实现 `HostEnvironment`（Console / Clock / Scheduler）并传给 `Engine` 构造函数，
+实现 `HostEnvironment`（Console / Clock / MonotonicClock / Scheduler）并传给 `Engine` 构造函数，
 即可接管输出、时间与定时任务。另可覆写：
 
+- `monotonicClock`：`performance.now()` 与 `console.time` 的差值基准（默认 `SystemMonotonicClock`，基于 `TimeSource.Monotonic`）；
 - `utcOffsetMillis(epochMillis)`：Date 本地时间使用的时区偏移（毫秒，东为正；默认 UTC）；
 - `reportUnhandledRejection(reason)` / `reportRejectionHandled(reason)`：Promise 未处理拒绝与补挂处理的宿主通知（默认忽略）。
 

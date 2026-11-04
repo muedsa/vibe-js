@@ -20,7 +20,11 @@ interface BuiltinModule {
  * - [defineIntrinsic]：注册供内建之间互相引用的内部对象
  *   （例如 Object.prototype、Array.prototype）。
  */
-class BuiltinRegistry(val intrinsics: Intrinsics) {
+class BuiltinRegistry(
+    val intrinsics: Intrinsics,
+    /** 宿主环境：模块安装时可读取墙钟、单调时钟、控制台等宿主能力。 */
+    val host: HostEnvironment,
+) {
 
     private val intrinsicValues: MutableMap<String, JSValue> = LinkedHashMap()
 

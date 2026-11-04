@@ -9,6 +9,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
+import kotlin.time.TimeSource
 
 /**
  * 控制台输出抽象。
@@ -18,6 +19,30 @@ import kotlin.time.ExperimentalTime
 interface Console {
     fun log(message: String)
     fun error(message: String)
+}
+
+/**
+ * 单调时钟抽象。
+ *
+ * 只保证同一来源的读数**单调不减**，起点任意；用于 `performance.now()`、
+ * `console.time/timeEnd` 这类只关心差值的场景。系统时间（[HostEnvironment.clock]）
+ * 可能被用户或 NTP 回拨，不能用于测量耗时。
+ */
+fun interface MonotonicClock {
+    /** 当前单调时间（毫秒，可含小数）。 */
+    fun nowMillis(): Double
+}
+
+/**
+ * 默认单调时钟：基于 [TimeSource.Monotonic]，起点为首次访问时刻。
+ *
+ * 取微秒精度再换算为毫秒，保证 `performance.now()` 具备亚毫秒分辨率。
+ */
+object SystemMonotonicClock : MonotonicClock {
+
+    private val origin = TimeSource.Monotonic.markNow()
+
+    override fun nowMillis(): Double = origin.elapsedNow().inWholeMicroseconds / 1000.0
 }
 
 /** 默认控制台：输出到标准输出。 */
@@ -68,16 +93,28 @@ class CoroutineScheduler(
 }
 
 /**
- * 宿主环境：控制台、时钟、调度器。
+ * 宿主环境：控制台、墙钟、单调时钟、调度器。
  *
  * 核心运行时只依赖这些抽象；浏览器特性（window/console/timer 等对象）
  * 由独立的宿主模块通过 BuiltinModule 注册。
+ *
+ * 两种时钟的分工：`Date`/`Date.now()` 用 [clock]（可能回拨），
+ * `performance.now()` 与 `console.time` 用 [monotonicClock]（只增不减）。
  */
 @OptIn(ExperimentalTime::class)
 interface HostEnvironment {
     val console: Console
     val clock: Clock
     val scheduler: Scheduler
+
+    /**
+     * 单调时钟：`performance.now()` 与 `console.time` 的差值基准。
+     *
+     * 默认使用 [SystemMonotonicClock]；宿主可注入自己的实现（例如测试中的可控时钟）。
+     * 默认实现保证已有宿主实现无需改动即可编译。
+     */
+    val monotonicClock: MonotonicClock
+        get() = SystemMonotonicClock
 
     /** 微任务清空后仍未处理的 Promise 拒绝；默认忽略。 */
     fun reportUnhandledRejection(reason: JSValue) {}
@@ -98,6 +135,7 @@ class DefaultHostEnvironment(
     private val timeZoneOffset: (Long) -> Long = { 0L },
     private val unhandledRejectionHandler: ((JSValue) -> Unit)? = null,
     private val rejectionHandledHandler: ((JSValue) -> Unit)? = null,
+    override val monotonicClock: MonotonicClock = SystemMonotonicClock,
 ) : HostEnvironment {
 
     override fun utcOffsetMillis(epochMillis: Long): Long = timeZoneOffset(epochMillis)
