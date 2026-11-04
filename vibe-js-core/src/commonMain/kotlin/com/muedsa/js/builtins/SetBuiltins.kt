@@ -83,7 +83,8 @@ object SetBuiltins {
             key = PropertyKey.Str("add"),
             value = BuiltinHelpers.method(intrinsics, "add", 1) { interpreter, thisValue, args ->
                 val set = requireSet(interpreter, thisValue, "Set.prototype.add")
-                addValue(interpreter, set, args.getOrElse(0) { JSUndefined })
+                // -0 归一化为 +0 由 JSSet.addValue 统一处理
+                set.addValue(args.getOrElse(0) { JSUndefined })
                 set
             },
         )
@@ -91,26 +92,14 @@ object SetBuiltins {
             key = PropertyKey.Str("has"),
             value = BuiltinHelpers.method(intrinsics, "has", 1) { interpreter, thisValue, args ->
                 val set = requireSet(interpreter, thisValue, "Set.prototype.has")
-                JSBoolean.getJsBoolean(
-                    set.findValueIndex {
-                        interpreter.conversions.sameValueZero(it, args.getOrElse(0) { JSUndefined })
-                    } >= 0
-                )
+                JSBoolean.getJsBoolean(set.containsValue(args.getOrElse(0) { JSUndefined }))
             },
         )
         setPrototype.defineDataProperty(
             key = PropertyKey.Str("delete"),
             value = BuiltinHelpers.method(intrinsics, "delete", 1) { interpreter, thisValue, args ->
                 val set = requireSet(interpreter, thisValue, "Set.prototype.delete")
-                val index = set.findValueIndex {
-                    interpreter.conversions.sameValueZero(it, args.getOrElse(0) { JSUndefined })
-                }
-                if (index < 0) {
-                    JSBoolean.FALSE
-                } else {
-                    set.removeValueAt(index)
-                    JSBoolean.TRUE
-                }
+                JSBoolean.getJsBoolean(set.deleteValue(args.getOrElse(0) { JSUndefined }))
             },
         )
         setPrototype.defineDataProperty(
@@ -129,16 +118,22 @@ object SetBuiltins {
                     interpreter.typeError("Set.prototype.forEach requires a function")
                 }
                 val thisArg = args.getOrNull(1) ?: JSUndefined
-                // 实时遍历：新增值追加可被访问，墓碑跳过；重删重加的值作为新记录访问
-                var index = set.iterationStartIndex
-                while (index < set.iterationEndIndex) {
-                    // 嵌套回调也可 clear；每次恢复都依据最新逻辑起点跳过旧区间。
-                    index = maxOf(index, set.iterationStartIndex)
-                    val value = set.valueAtIterationIndex(index)
-                    index++
-                    if (value != null) {
-                        interpreter.callFunction(callback, thisArg, listOf(value, value, set))
+                // 实时遍历：新增值追加可被访问，墓碑跳过；重删重加的值作为新记录访问。
+                // 遍历期间禁止压缩存储，否则物理下标重排会让游标读到错误的值。
+                set.beginIteration()
+                try {
+                    var index = set.iterationStartIndex
+                    while (index < set.iterationEndIndex) {
+                        // 嵌套回调也可 clear；每次恢复都依据最新逻辑起点跳过旧区间。
+                        index = maxOf(index, set.iterationStartIndex)
+                        val value = set.valueAtIterationIndex(index)
+                        index++
+                        if (value != null) {
+                            interpreter.callFunction(callback, thisArg, listOf(value, value, set))
+                        }
                     }
+                } finally {
+                    set.endIteration()
                 }
                 JSUndefined
             },
@@ -151,7 +146,20 @@ object SetBuiltins {
             val method = BuiltinHelpers.method(intrinsics, name, 0) { interpreter, thisValue, _ ->
                 val set = requireSet(interpreter, thisValue, "Set.prototype.$name")
                 var index = set.iterationStartIndex
+                // 迭代器在首次 next 时才登记；耗尽时注销并触发墓碑回收
+                var started = false
+                var finished = false
+                fun finish() {
+                    if (!finished) {
+                        finished = true
+                        set.endIteration()
+                    }
+                }
                 IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.setIteratorPrototype) { _, _, _ ->
+                    if (!started) {
+                        started = true
+                        set.beginIteration()
+                    }
                     // 实时遍历：跳过墓碑，迭代期间追加的值会被访问
                     index = maxOf(index, set.iterationStartIndex)
                     var element: JSValue? = null
@@ -159,7 +167,10 @@ object SetBuiltins {
                         element = set.valueAtIterationIndex(index)
                         index++
                     }
-                    element ?: return@createIteratorWithNext null
+                    if (element == null) {
+                        finish()
+                        return@createIteratorWithNext null
+                    }
                     val result = JSObject(prototype = intrinsics.objectPrototype)
                     result.defineDataProperty(
                         PropertyKey.Str("value"), valueFor(element), true, true, true,
@@ -192,9 +203,9 @@ object SetBuiltins {
                 val set = requireSet(interpreter, thisValue, "Set.prototype.union")
                 val record = getSetRecord(interpreter, args.getOrElse(0) { JSUndefined })
                 val result = createResultSet(interpreter)
-                for (value in set.liveValues()) result.appendValue(value)
+                for (value in set.liveValues()) result.addValue(value)
                 iterateSetRecord(interpreter, record) { value ->
-                    addValue(interpreter, result, value)
+                    result.addValue(value)
                     true
                 }
                 result
@@ -210,14 +221,14 @@ object SetBuiltins {
                     // 接收者更小：按接收者顺序过滤
                     for (value in set.liveValues()) {
                         if (hasInSetLike(interpreter, record, value)) {
-                            result.appendValue(value)
+                            result.addValue(value)
                         }
                     }
                 } else {
                     // 接收者更大：按参数 keys 顺序取交集
                     iterateSetRecord(interpreter, record) { value ->
-                        if (containsValue(interpreter, set, value)) {
-                            addValue(interpreter, result, value)
+                        if (set.containsValue(value)) {
+                            result.addValue(value)
                         }
                         true
                     }
@@ -235,12 +246,12 @@ object SetBuiltins {
                     // 接收者更小：按接收者顺序用 has 过滤
                     for (value in set.liveValues()) {
                         if (!hasInSetLike(interpreter, record, value)) {
-                            result.appendValue(value)
+                            result.addValue(value)
                         }
                     }
                 } else {
                     // 接收者更大：从副本中删除参数 keys 命中的值
-                    for (value in set.liveValues()) result.appendValue(value)
+                    for (value in set.liveValues()) result.addValue(value)
                     iterateSetRecord(interpreter, record) { value ->
                         result.removeValuesMatching {
                             interpreter.conversions.sameValueZero(it, value)
@@ -257,15 +268,15 @@ object SetBuiltins {
                 val set = requireSet(interpreter, thisValue, "Set.prototype.symmetricDifference")
                 val record = getSetRecord(interpreter, args.getOrElse(0) { JSUndefined })
                 val result = createResultSet(interpreter)
-                for (value in set.liveValues()) result.appendValue(value)
+                for (value in set.liveValues()) result.addValue(value)
                 iterateSetRecord(interpreter, record) { value ->
-                    if (containsValue(interpreter, set, value)) {
+                    if (set.containsValue(value)) {
                         // 两边共有：从结果中移除
                         result.removeValuesMatching {
                             interpreter.conversions.sameValueZero(it, value)
                         }
                     } else {
-                        addValue(interpreter, result, value)
+                        result.addValue(value)
                     }
                     true
                 }
@@ -298,7 +309,7 @@ object SetBuiltins {
                 }
                 var result = true
                 iterateSetRecord(interpreter, record) { value ->
-                    if (!containsValue(interpreter, set, value)) {
+                    if (!set.containsValue(value)) {
                         result = false
                         false
                     } else {
@@ -323,7 +334,7 @@ object SetBuiltins {
                 }
                 var result = true
                 iterateSetRecord(interpreter, record) { value ->
-                    if (containsValue(interpreter, set, value)) {
+                    if (set.containsValue(value)) {
                         result = false
                         false
                     } else {
@@ -420,9 +431,6 @@ object SetBuiltins {
         }
     }
 
-    private fun containsValue(interpreter: Interpreter, set: JSSet, value: JSValue): Boolean =
-        set.findValueIndex { interpreter.conversions.sameValueZero(it, value) } >= 0
-
     private fun createResultSet(interpreter: Interpreter): JSSet =
         JSSet(prototype = interpreter.intrinsics.setPrototype)
 
@@ -431,13 +439,5 @@ object SetBuiltins {
             interpreter.typeError("$name requires that 'this' be a Set")
         }
         return thisValue as? JSSet ?: interpreter.typeError("$name requires that 'this' be a Set")
-    }
-
-    private fun addValue(interpreter: Interpreter, set: JSSet, value: JSValue) {
-        // 规范：Set 中的 -0 归一化为 +0
-        val normalized = if (value is JSNumber && value.value == 0.0) JSNumber.ZERO else value
-        if (set.findValueIndex { interpreter.conversions.sameValueZero(it, normalized) } < 0) {
-            set.appendValue(normalized)
-        }
     }
 }

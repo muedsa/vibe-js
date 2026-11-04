@@ -59,9 +59,7 @@ object WeakSetBuiltins {
                 if (!WeakMapBuiltins.canBeHeldWeakly(value)) {
                     interpreter.typeError("Invalid value used in WeakSet")
                 }
-                if (set.findValueIndex { interpreter.conversions.sameValueZero(it, value) } < 0) {
-                    set.appendValue(value)
-                }
+                set.addValue(value)
                 set
             },
         )
@@ -70,11 +68,7 @@ object WeakSetBuiltins {
             value = BuiltinHelpers.method(intrinsics, "has", 1) { interpreter, thisValue, args ->
                 val set = thisValue as? JSWeakSet
                     ?: interpreter.typeError("WeakSet.prototype.has requires that 'this' be a WeakSet")
-                JSBoolean.getJsBoolean(
-                    set.findValueIndex {
-                        interpreter.conversions.sameValueZero(it, args.getOrElse(0) { JSUndefined })
-                    } >= 0
-                )
+                JSBoolean.getJsBoolean(set.containsValue(args.getOrElse(0) { JSUndefined }))
             },
         )
         prototype.defineDataProperty(
@@ -82,15 +76,7 @@ object WeakSetBuiltins {
             value = BuiltinHelpers.method(intrinsics, "delete", 1) { interpreter, thisValue, args ->
                 val set = thisValue as? JSWeakSet
                     ?: interpreter.typeError("WeakSet.prototype.delete requires that 'this' be a WeakSet")
-                val index = set.findValueIndex {
-                    interpreter.conversions.sameValueZero(it, args.getOrElse(0) { JSUndefined })
-                }
-                if (index < 0) {
-                    JSBoolean.FALSE
-                } else {
-                    set.removeValueAt(index)
-                    JSBoolean.TRUE
-                }
+                JSBoolean.getJsBoolean(set.deleteValue(args.getOrElse(0) { JSUndefined }))
             },
         )
 

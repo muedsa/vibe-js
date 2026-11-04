@@ -101,4 +101,10 @@ benchmark {
     targets {
         register("jvmBenchmark")
     }
+    configurations {
+        named("main") {
+            // 允许 -PbenchmarkFilter=CollectionBenchmark 只跑某个基准类，避免全量基准耗时过长
+            project.findProperty("benchmarkFilter")?.let { include(it.toString()) }
+        }
+    }
 }

@@ -20,7 +20,7 @@
 | **暂缓** | L4 · 模块系统与宿主生态 | 暂不做 | "`import`/`export` 为保留字并直接报错；无 CLI、URL、TextEncoder 等" |
 | **暂缓** | B2 · 实测驱动的性能优化 | 暂不做 | "未做 profiler 分析，不承诺任何性能改进" |
 | **暂缓（未排期）** | L3 · ArrayBuffer/TypedArray/BigInt | 暂不做（本次未点名，按"不在在办范围"处理） | "无二进制数据与 BigInt 运行时；`BigInt` 字面量仅语法识别，求值抛 TypeError" |
-| **在办** | M1、H1、B1、A1 | 见第 3 节 | 本路线剩余的全部交付内容 |
+| **在办** | H1、B1、A1 | 见第 3 节 | 本路线剩余的全部交付内容 |
 
 ### 0.1 搁置/暂缓的后果（必须一起接受）
 
@@ -80,7 +80,7 @@
 
 ## 2. 已完成项与不可破坏的契约
 
-### 2.1 已完成任务（C1–C3、T1、T2、D1）
+### 2.1 已完成任务（C1–C3、T1、T2、M1、D1）
 
 | 任务 | 提交 | 实施内容 | 后续不能破坏的行为 |
 |---|---|---|---|
@@ -90,7 +90,8 @@
 
 | T1 · 运行器生命周期与失败隔离 | `1f71e5b` | 三个运行器统一走 `RunSupport`：每用例独立引擎并在 `finally` 关闭（`NonCancellable` + 5 秒清理时限）、默认 60 秒协作式超时、失败分类、Node 输出重定向与超时强制终止、Test262 有界工作队列 | 用例超时/清理失败不得被记成普通断言失败；宿主取消必须原样传播；严格模式的零用例/缺少 Node/缺失库规则不变 |
 | T2 · 报告可审计 | `0e9c4a1` | 三份报告写入运行元数据（引擎/语料 commit、工具链、配置）；选择与跳过判定抽为 `Test262Selection` 纯函数，区分"筛选期排除"与"选中后跳过"；shim 单列；跳过明细落盘；CI 增加 PR 快速子集 | 筛选与跳过必须分开统计；文本筛选的每条跳过都要可追溯；报告 JSON 字段不得随意改名 |
-| D1 · 文档纠偏 | 本次改动 | 兼容性矩阵、架构文档、一致性文档、README、Unicode 生成脚本与 15 处代码注释统一为当前实现；搁置项改写为"不是后续阶段" | 文档不得再使用"阶段 A/后续阶段/预留"描述已实现能力；搁置项必须显式标注 |
+| D1 · 文档纠偏 | `88e4d8f` | 兼容性矩阵、架构文档、一致性文档、README、Unicode 生成脚本与 15 处代码注释统一为当前实现；搁置项改写为"不是后续阶段" | 文档不得再使用"阶段 A/后续阶段/预留"描述已实现能力；搁置项必须显式标注 |
+| M1 · 集合索引与墓碑回收 | 本次改动 | `JSMap`/`JSSet` 改为插入顺序数组 + SameValueZero 索引 + O(1) 计数；无活跃迭代器时压缩墓碑；内建改用键 API | 实时迭代语义（C1）不变；迭代期间不得压缩；`size` 必须保持 O(1) |
 
 回归位置：[ConformanceTest.kt:165-343](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ConformanceTest.kt#L165-L343)（长度边界、Set size 转换、clear 实时迭代）与 [DifferentialCases.kt:139-207](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialCases.kt#L139-L207)（Node 差分）；T1 的回归位于 [RunSupportTest.kt](../vibe-js-conformance/src/test/kotlin/com/muedsa/js/conformance/RunSupportTest.kt)。
 
@@ -147,25 +148,34 @@
 **已知边界。** 真实库语料没有 `.corpus-commit` 标记，`corpusCommit` 记为未知；非 git 检出且无 `GITHUB_SHA` 时引擎 commit 为 `unknown`。
 
 
-### 3.3 M1 · Map/Set 查找复杂度与墓碑回收（P1，5–10 人日）
+### 3.3 M1 · Map/Set 查找复杂度与墓碑回收（已完成 2026-11-04）
 
-**现状（未开始，C1 只修了语义）。**
+**实施说明。** 存储层重写为"插入顺序数组 + SameValueZero 索引 + O(1) 计数"：
 
-- 存储是插入顺序列表，查找为线性扫描：[JSMap.kt:59-64](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSMap.kt#L59-L64)、[JSSet.kt:61-66](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSSet.kt#L61-L66)。
-- `liveSize` 每次 `count { it != null }`，即 O(n)：[JSMap.kt:34-35](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSMap.kt#L34-L35)。`size` 与 C3 涉及的 7 个 Set 关系方法每轮都要读它（[SetBuiltins.kt:209](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/SetBuiltins.kt#L209) 等 5 处）。
-- `delete` 只把槽位置 null，**不缩短存储列表**：反复增删会让槽位无限增长（内存与扫描成本同时累积）。
-- `clear` 通过推进 `iterationStartIndex` 保留实时游标，这条语义必须保留。
+- 新增 [CollectionKey.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/CollectionKey.kt)：按 SameValueZero 哈希与比较（对象/Symbol 按引用，`NaN` 相等，`-0`/`+0` 同键），并提供 `normalizeCollectionKey` 统一 `-0 → +0`，保证 `getOrInsertComputed` 回调收到规范化后的键。
+- [JSMap.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSMap.kt) / [JSSet.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSSet.kt)：`liveSize` 改为维护计数（`size` O(1)）；get/set/has/delete 走索引；删除留墓碑；无活跃迭代器时按"墓碑 > 64 且多于有效条目"压缩，全部删除时直接清空。
+- 迭代器与 `forEach` 在开始/结束时登记，迭代期间禁止压缩以保持 C1 实时游标；迭代器在首次 `next()` 才登记，避免"只创建不消费"长期阻止回收。
+- 内建改用键 API：Map/Set/WeakMap/WeakSet 不再接触物理下标，`Map.groupBy`、`getOrInsert`/`getOrInsertComputed` 同步调整。
+- 新增 [CollectionStorageTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/CollectionStorageTest.kt)（10 例）与 [CollectionBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/CollectionBenchmark.kt)。
 
-**目标（按此顺序，每步独立可验收）。**
+**原始问题（已修复）。** 列表线性扫描、`liveSize` 每次 O(n) 计数、删除只置 null 不缩表；Set 的 7 个关系方法每轮都读 O(n) 的 size。
 
-1. 维护 O(1) 的有效计数，替换 `liveSize` 的 `count`。
-2. 建立 SameValueZero 键索引：对象按身份、`NaN` 相等、`-0`/`+0` 同键；不能直接依赖 Kotlin `Map` 的默认相等性。
-3. 墓碑压缩或分代回收，且不破坏 C1 的实时游标（压缩会改变物理下标，必须与逻辑游标解耦）。
-4. WeakMap/WeakSet 直接继承这两个类（[JSWeakMap.kt:4](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSWeakMap.kt#L4)、[JSWeakSet.kt:4](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSWeakSet.kt#L4)），改动会同时影响它们，回归必须覆盖。
+**基准结果**（JDK 17，单线程，3 × 300ms，1k / 10k / 100k）：
 
-**范围。** `JSMap`/`JSSet` 150–300 行 + Map/Set/WeakMap/WeakSet 内建 100–300 行，共 5–6 个文件。属于**局部重写存储层**，不是全局重构。
+| 基准 | 1k | 10k | 100k | 结论 |
+|---|---:|---:|---:|---|
+| `mapGetSingle` | 9.9 ns | 8.4 ns | 6.2 ns | 单次 get 与规模无关（O(1)） |
+| `mapHasSingle` | 6.1 ns | 5.4 ns | 3.7 ns | 单次 has 与规模无关 |
+| `mapSetSingle` | 19.2 ns | 19.4 ns | 16.7 ns | 单次 set 与规模无关 |
+| `setHasSingle` / `setAddSingle` | 6.2 / 6.3 ns | 5.1 / 5.9 ns | 3.7 / 3.7 ns | 同上 |
+| `mapSizeRead`（N 次 size） | 19.5 ns | 164 ns | 1586 ns | 每次读取约 0.02 ns，O(1) |
+| `mapDeleteInsertBatch`（N 删 + N 插） | 130 µs | 816 µs | 10.1 ms | 均摊 130 / 82 / 101 ns/元素 |
+| `mapIterateBatch` | 7.3 µs | 64 µs | 652 µs | 每元素约 7 ns，线性（预期） |
 
-**验收。** 与 C1 共用实时迭代回归；1k/10k/100k 规模的 get/set/has/delete/size 基准（并入 B1 集合组）记录时间与槽位；`size` 为 O(1) 可被基准证明。
+**验证结果。** core 606（596 + 10）、ES5 15,244/15,244、ES2015 37,329/37,329（耗时从 134s 降到 89s）、差分 492/492、真实库 309/309。
+
+**已知边界。** 迭代器会阻止压缩（与主流引擎一致：迭代器持有底层表）；创建后既不耗尽也不丢弃的迭代器会让该集合保留墓碑。
+
 
 ### 3.4 H1 · 宿主计时与使用契约（P2，1–3 人日）
 
@@ -217,10 +227,10 @@
 
 | 批次 | 任务 | 粗估 | 主要产物 | 完成标准 |
 |---|---|---|---|---|
-| **1 · 集合与度量** | M1、B1（集合组 + 引擎生命周期组）、H1 | **10–21 人日** | 集合索引与回收、性能基线、单调计时 | 实时迭代语义不回归；有规模基准数据；计时单调性有测试 |
-| **2 · 收尾（可选）** | B1 其余分组、A1 低风险部分 | **6–14 人日** | 完整基准分组、诊断适配层 | 一条命令重现基准；诊断信息可定位 |
+| **1 · 度量与计时** | B1（集合组已完成，补其余分组）、H1 | **5–11 人日** | 完整基准分组、单调计时 | 一条命令重现基准；计时单调性有测试 |
+| **2 · 收尾（可选）** | B1 其余分组、A1 低风险部分 | **6–14 人日** | 诊断适配层 | 诊断信息可定位 |
 
-**在办范围合计约 16–35 人日**：核心批次 1 约 10–21 人日，批次 2（6–14 人日）为可选项。C1–C3、T1、T2、D1 已完成（见 2.1）。
+**在办范围合计约 11–25 人日**。C1–C3、T1、T2、M1、D1 已完成（见 2.1）。
 
 ## 5. 搁置与暂缓项的现状记录
 
@@ -290,3 +300,4 @@
 | 2026-11-04 | T1 完成：新增 `RunSupport.kt`（用例超时、失败分类、受控关闭、Node 进程超时），三个运行器全部接入；新增 10 个 conformance 单元测试；ES5 15,244、ES2015 37,329、差分 492、真实库 309 全部通过 |
 | 2026-11-04 | T2 完成：三份报告写入运行元数据（引擎/语料 commit、工具链、配置）；选择与跳过判定抽为 `Test262Selection` 并区分筛选排除与选中后跳过；shim 单列、跳过明细落盘；新增 16 个单元测试；CI 增加 PR 快速子集 |
 | 2026-11-04 | D1 完成：兼容性矩阵、架构文档、一致性文档、README、Unicode 生成脚本与 15 处代码注释统一为当前实现；搁置项改为"无限期搁置/暂缓/不在范围"；core JVM 测试 596 通过 |
+| 2026-11-04 | M1 完成：Map/Set 改为索引存储与 O(1) 计数，墓碑在无迭代器时压缩；新增 10 个存储测试与集合基准（单键操作 4–19ns 且与规模无关）；ES2015 子集耗时从 134s 降到 89s |

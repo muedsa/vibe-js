@@ -52,7 +52,7 @@ Lexer ──► Parser ──► AST (Program)
 | `HostEnvironment` | 宿主抽象：Console / Clock / Scheduler |
 | `EventLoop` | 微任务队列、宏任务调度、串行恢复与任务关闭；自有 scope 运行 async 函数体 |
 | `JSPromise` / `PromiseSupport` | Promise 状态机、解析/拒绝、then 链与 async/await 基础 |
-| `JSMap` / `JSSet` | Map/Set 存储；配合迭代器协议 |
+| `JSMap` / `JSSet` | 集合存储：插入顺序数组 + SameValueZero 索引（get/set/has/delete 均摊 O(1)、size O(1)）；删除留墓碑，无活跃迭代器时压缩，配合实时迭代协议 |
 | `ClassMember` | class 方法/访问器/构造器描述，由解释器创建原型与静态方法 |
 
 ## 4. 执行流程
