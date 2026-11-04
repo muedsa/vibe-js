@@ -15,12 +15,9 @@ import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyKey
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
@@ -59,6 +56,8 @@ fun main(args: Array<String>) {
     }
     // 可选：把无 features 的 esid 用例也纳入 ES2015 子集（用于扩展分析，默认关闭）
     val includeEsid = args.contains("--include-esid")
+    // 用例超时/清理时限/步数配额，均可通过命令行覆盖
+    val settings = RunnerSettings.fromArgs(args)
 
     if (!File(corpusDir, "test").isDirectory || !File(corpusDir, "harness").isDirectory) {
         System.err.println(
@@ -68,7 +67,9 @@ fun main(args: Array<String>) {
         exitProcess(3)
     }
 
-    val report = runBlocking { Test262Runner(corpusDir, limit, jobs, filter, suite, includeEsid).run() }
+    val report = runBlocking {
+        Test262Runner(corpusDir, limit, jobs, filter, suite, includeEsid, settings).run()
+    }
     reportDir.mkdirs()
     report.writeMarkdown(File(reportDir, "test262-summary.md"))
     report.writeJson(File(reportDir, "test262-summary.json"))
@@ -94,9 +95,13 @@ private class Test262Runner(
     private val filter: String? = null,
     private val suite: String = "es5",
     private val includeEsid: Boolean = false,
+    private val settings: RunnerSettings = RunnerSettings(),
 ) {
 
     private val harnessDir = File(corpusDir, "harness")
+
+    /** 用例执行器：统一负责引擎创建、超时、分类与关闭。 */
+    private val runtime = CaseRuntime(settings)
 
     /** 仅用于测试断言的最小 Reflect 垫片（核心库明确不提供 Reflect）。 */
     private val REFLECT_SHIM = """
@@ -153,21 +158,28 @@ private class Test262Runner(
         }
         val parallelism = (jobs ?: Runtime.getRuntime().availableProcessors())
             .coerceIn(1, 16)
-        val semaphore = Semaphore(parallelism)
         val completed = AtomicInteger()
 
-        val outcomes = selected.map { test ->
-            async(Dispatchers.Default) {
-                semaphore.withPermit {
-                    val outcome = runOne(test)
-                    val finished = completed.incrementAndGet()
-                    if (finished % 500 == 0) {
-                        println("已执行 $finished/${selected.size} 个测试文件...")
+        // 有界工作队列：只创建 parallelism 个 worker 协程，由它们按索引领取任务。
+        // 旧实现会为全部选中用例（两万以上）一次性创建协程，内存与调度开销都随语料线性增长。
+        val outcomes = arrayOfNulls<TestOutcome>(selected.size)
+        val nextIndex = AtomicInteger(0)
+        coroutineScope {
+            repeat(parallelism) {
+                launch(Dispatchers.Default) {
+                    while (true) {
+                        val index = nextIndex.getAndIncrement()
+                        if (index >= selected.size) return@launch
+                        outcomes[index] = runOne(selected[index])
+                        val finished = completed.incrementAndGet()
+                        if (finished % 500 == 0) {
+                            println("已执行 $finished/${selected.size} 个测试文件...")
+                        }
                     }
-                    outcome
                 }
             }
-        }.awaitAll()
+        }
+        val ordered = outcomes.map { checkNotNull(it) { "用例结果缺失" } }
 
         var passedRuns = 0
         var failedRuns = 0
@@ -175,10 +187,11 @@ private class Test262Runner(
         var executedRuns = 0
         var skippedTests = 0
         val skipReasons = LinkedHashMap<String, Int>()
+        val failureKinds = LinkedHashMap<String, Int>()
         val failures = mutableListOf<RunRecord>()
         val allResults = mutableListOf<RunRecord>()
 
-        for (outcome in outcomes) {
+        for (outcome in ordered) {
             when (outcome) {
                 is TestOutcome.Skipped -> {
                     skippedTests++
@@ -196,6 +209,9 @@ private class Test262Runner(
                         }
                         if (result.status != Status.PASS) {
                             failures.add(result)
+                            // 分类计数：区分断言失败、超时、清理失败等，便于判断是引擎缺陷还是运行器失控
+                            val label = result.kind?.label ?: "未分类"
+                            failureKinds[label] = (failureKinds[label] ?: 0) + 1
                         }
                     }
                 }
@@ -213,6 +229,7 @@ private class Test262Runner(
             crashedRuns = crashedRuns,
             skippedTests = skippedTests,
             skipReasons = skipReasons,
+            failureKinds = failureKinds,
             failures = failures.sortedWith(
                 compareBy({ it.path }, { it.variant })
             ),
@@ -231,6 +248,7 @@ private class Test262Runner(
                 path = test.relativePath,
                 variant = variant.name,
                 status = result.status,
+                kind = result.kind,
                 message = result.message ?: "",
                 elapsedMillis = result.elapsedMillis,
             )
@@ -482,7 +500,45 @@ private class Test262Runner(
             }
         }
 
-        val engine = Engine()
+        // 用例在独立引擎中执行；创建、超时、分类与关闭统一交给 CaseRuntime。
+        // 这样"用例超时"和"引擎清理失败"不会再被混进普通断言失败。
+        val run = runtime.withEngine { engine ->
+            executeInEngine(engine, test, source, includes, startedAt)
+        }
+        val result = when (val outcome = run.outcome) {
+            is CaseOutcome.Success -> outcome.value
+            is CaseOutcome.Failure -> crash(
+                message = "${outcome.kind.label}：${outcome.message}",
+                startedAt = startedAt,
+                kind = outcome.kind,
+            )
+        }
+        // 清理失败单独升级为 CRASH：引擎没能在时限内释放本身是运行器缺陷，
+        // 但原始结果保留在消息里，便于区分"用例通过但清理失败"。
+        return run.cleanupFailure?.let { cleanup ->
+            crash(
+                message = "清理失败：$cleanup；原结果=${result.status}" +
+                    (result.message?.takeIf { it.isNotEmpty() }?.let { "：$it" } ?: ""),
+                startedAt = startedAt,
+                kind = FailureKind.CLEANUP,
+            )
+        } ?: result
+    }
+
+    /**
+     * 在已创建的引擎中执行单个用例。
+     *
+     * 只判定 JS 语义层面的结果（断言、负数用例、异步 `$DONE`）；
+     * 步数耗尽、超时、宿主取消与内部异常一律向上抛出，由 [CaseRuntime] 分类。
+     */
+    private suspend fun executeInEngine(
+        engine: Engine,
+        test: TestFile,
+        source: String,
+        includes: List<String>,
+        startedAt: Long,
+    ): ExecutionResult {
+        val negativePhase = test.metadata.negativePhase
         // 属性转义语料的 buildString 由宿主实现，避免在解释器中逐码点构造字符串
         registerBuildString(engine)
         // $262.evalScript 宿主钩子：在同一 realm 中执行新 Script（GlobalDeclarationInstantiation 生效）
@@ -554,12 +610,11 @@ private class Test262Runner(
                 fail(if (filter != null) error.toString() else error.value.describe(), startedAt)
             }
         } catch (error: ParseException) {
-            fail("SyntaxError: ${error.describe()}", startedAt)
+            fail("SyntaxError: ${error.describe()}", startedAt, FailureKind.PARSE)
         } catch (error: LexerException) {
-            fail("SyntaxError: ${error.describe()}", startedAt)
-        } catch (error: Throwable) {
-            crash(error.describe(), startedAt)
+            fail("SyntaxError: ${error.describe()}", startedAt, FailureKind.PARSE)
         }
+        // 其余异常（步数耗尽/取消/内部错误）不再在这里吞掉，交给 CaseRuntime 分类。
     }
 
     /** 以同一 realm 的新 Script 执行 evalScript 源码。 */
@@ -678,13 +733,21 @@ private class Test262Runner(
     }
 
     private fun pass(startedAt: Long): ExecutionResult =
-        ExecutionResult(Status.PASS, null, elapsedMillis(startedAt))
+        ExecutionResult(Status.PASS, null, null, elapsedMillis(startedAt))
 
-    private fun fail(message: String, startedAt: Long): ExecutionResult =
-        ExecutionResult(Status.FAIL, message, elapsedMillis(startedAt))
+    private fun fail(
+        message: String,
+        startedAt: Long,
+        kind: FailureKind = FailureKind.ASSERTION,
+    ): ExecutionResult =
+        ExecutionResult(Status.FAIL, kind, message, elapsedMillis(startedAt))
 
-    private fun crash(message: String, startedAt: Long): ExecutionResult =
-        ExecutionResult(Status.CRASH, message, elapsedMillis(startedAt))
+    private fun crash(
+        message: String,
+        startedAt: Long,
+        kind: FailureKind = FailureKind.INTERNAL,
+    ): ExecutionResult =
+        ExecutionResult(Status.CRASH, kind, message, elapsedMillis(startedAt))
 
     private fun elapsedMillis(startedAt: Long): Long =
         (System.nanoTime() - startedAt) / 1_000_000
@@ -840,6 +903,8 @@ private enum class Status {
 
 private data class ExecutionResult(
     val status: Status,
+    /** 失败分类；PASS 时为 null。 */
+    val kind: FailureKind?,
     val message: String?,
     val elapsedMillis: Long,
 )
@@ -848,6 +913,7 @@ private data class RunRecord(
     val path: String,
     val variant: String,
     val status: Status,
+    val kind: FailureKind?,
     val message: String,
     val elapsedMillis: Long,
 )
@@ -868,6 +934,8 @@ private data class Test262Report(
     val crashedRuns: Int,
     val skippedTests: Int,
     val skipReasons: Map<String, Int>,
+    /** 失败分类计数（断言失败/超时/步数耗尽/清理失败…），用于区分引擎缺陷与运行器失控。 */
+    val failureKinds: Map<String, Int>,
     val failures: List<RunRecord>,
     val slowest: List<RunRecord>,
     val elapsedMillis: Long,
@@ -907,6 +975,16 @@ private data class Test262Report(
                     }
                     appendLine()
                 }
+                if (failureKinds.isNotEmpty()) {
+                    appendLine("## 失败分类")
+                    appendLine()
+                    appendLine("| 分类 | 数量 |")
+                    appendLine("|---|---:|")
+                    for ((kind, count) in failureKinds.entries.sortedByDescending { it.value }) {
+                        appendLine("| ${kind.replace("|", "\\|")} | $count |")
+                    }
+                    appendLine()
+                }
                 if (slowest.isNotEmpty()) {
                     appendLine("## 最慢用例")
                     appendLine()
@@ -943,12 +1021,20 @@ private data class Test262Report(
                     appendLine(if (index < reasons.lastIndex) "," else "")
                 }
                 appendLine("  },")
+                appendLine("  \"failureKinds\": {")
+                val kinds = failureKinds.entries.sortedByDescending { it.value }
+                kinds.forEachIndexed { index, entry ->
+                    append("    \"${jsonEscape(entry.key)}\": ${entry.value}")
+                    appendLine(if (index < kinds.lastIndex) "," else "")
+                }
+                appendLine("  },")
                 appendLine("  \"failureSamples\": [")
                 failures.take(200).forEachIndexed { index, failure ->
                     append(
                         "    {\"path\": \"${jsonEscape(failure.path)}\", " +
                             "\"variant\": \"${jsonEscape(failure.variant)}\", " +
                             "\"status\": \"${failure.status.name}\", " +
+                            "\"kind\": ${failure.kind?.let { "\"${jsonEscape(it.label)}\"" } ?: "null"}, " +
                             "\"message\": \"${jsonEscape(failure.message)}\"}"
                     )
                     appendLine(if (index < minOf(failures.size, 200) - 1) "," else "")
@@ -968,7 +1054,8 @@ private data class Test262Report(
                     val message = failure.message
                         .replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
                         .trim()
-                    appendLine("${failure.path}\t${failure.variant}\t${failure.status}\t$message")
+                    appendLine("${failure.path}\t${failure.variant}\t${failure.status}\t" +
+                        "${failure.kind?.label ?: "-"}\t$message")
                 }
             }
         )
@@ -981,6 +1068,9 @@ private data class Test262Report(
         println("  耗时: ${elapsedMillis}ms")
         if (skipReasons.isNotEmpty()) {
             println("  跳过原因: " + skipReasons.entries.joinToString { "${it.key}=${it.value}" })
+        }
+        if (failureKinds.isNotEmpty()) {
+            println("  失败分类: " + failureKinds.entries.joinToString { "${it.key}=${it.value}" })
         }
     }
 }

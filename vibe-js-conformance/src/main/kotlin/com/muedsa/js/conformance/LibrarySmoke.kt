@@ -3,13 +3,11 @@ package com.muedsa.js.conformance
 import com.muedsa.js.lexer.LexerException
 import com.muedsa.js.parser.ParseException
 import com.muedsa.js.runtime.Engine
+import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.JSException
-import com.muedsa.js.runtime.value.JSError
-import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSString
-import com.muedsa.js.runtime.value.JSValue
-import com.muedsa.js.runtime.value.PropertyKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.time.Instant
@@ -24,8 +22,10 @@ fun main(args: Array<String>) {
     val libraryDir = File(args.getOrElse(0) { "corpus/libraries" })
     val reportDir = File(args.getOrElse(1) { "build/reports/conformance" })
     val strict = args.contains("--strict")
+    // 用例超时/清理时限/步数配额，均可通过命令行覆盖
+    val settings = RunnerSettings.fromArgs(args)
 
-    val report = runBlocking { LibrarySmokeRunner(libraryDir).run() }
+    val report = runBlocking { LibrarySmokeRunner(libraryDir, settings).run() }
     reportDir.mkdirs()
     report.writeMarkdown(File(reportDir, "libraries-summary.md"))
     report.writeJson(File(reportDir, "libraries-summary.json"))
@@ -46,7 +46,11 @@ fun main(args: Array<String>) {
 
 private class LibrarySmokeRunner(
     private val libraryDir: File,
+    private val settings: RunnerSettings = RunnerSettings(),
 ) {
+
+    /** 用例执行器：负责引擎创建、超时、分类与关闭。 */
+    private val runtime = CaseRuntime(settings)
 
     suspend fun run(): LibraryReport {
         val startedAt = System.nanoTime()
@@ -57,7 +61,6 @@ private class LibrarySmokeRunner(
                 results.add(LibraryResult(spec.name, "skip", "缺少库文件", emptyList()))
                 continue
             }
-            val source = file.readText().removePrefix("\uFEFF")
             val dependencyFiles = spec.dependencies.map { File(libraryDir, "$it.js") }
             val missingDependency = dependencyFiles.indexOfFirst { !it.isFile }
             if (missingDependency >= 0) {
@@ -71,86 +74,102 @@ private class LibrarySmokeRunner(
                 )
                 continue
             }
-            val engine = Engine()
-            try {
-                // 依赖库（如 acorn）需要与目标库共享同一全局对象
-                for (dependencyFile in dependencyFiles) {
-                    engine.run(dependencyFile.readText().removePrefix("\uFEFF"))
-                }
-                engine.run(source)
-                val globalType = engine.run("typeof ${spec.globalName}") as? JSString
-                if (globalType?.value == "undefined") {
-                    results.add(LibraryResult(spec.name, "load-fail", "全局变量 ${spec.globalName} 未定义", emptyList()))
-                    continue
-                }
-            } catch (error: JSException) {
-                results.add(
-                    LibraryResult(
-                        spec.name,
-                        "load-fail",
-                        "加载失败：$error",
-                        emptyList(),
-                    )
+            val source = file.readText().removePrefix("\uFEFF")
+            // 每个库独立引擎，并在 finally 中关闭：加载失败或超时都不会泄漏事件循环
+            val run = runtime.withEngine { engine ->
+                runLibrary(engine, spec, source, dependencyFiles)
+            }
+            val result = when (val outcome = run.outcome) {
+                is CaseOutcome.Success -> outcome.value
+                is CaseOutcome.Failure -> LibraryResult(
+                    spec.name,
+                    "crash",
+                    "${outcome.kind.label}：${outcome.message}",
+                    emptyList(),
                 )
-                continue
-            } catch (error: ParseException) {
-                results.add(
-                    LibraryResult(spec.name, "load-fail", "解析失败：${error.message}", emptyList())
-                )
-                continue
-            } catch (error: LexerException) {
-                results.add(
-                    LibraryResult(spec.name, "load-fail", "词法失败：${error.message}", emptyList())
-                )
-                continue
-            } catch (error: Throwable) {
-                results.add(
+            }
+            // 清理失败单独标记：即使库本身通过，未能释放引擎也是运行器缺陷
+            results.add(
+                run.cleanupFailure?.let { cleanup ->
                     LibraryResult(
                         spec.name,
                         "crash",
-                        "加载崩溃：${error.describeThrowable()}",
+                        "清理失败：$cleanup；原状态=${result.status}",
                         emptyList(),
                     )
-                )
-                continue
-            }
-
-            val caseResults = mutableListOf<CaseResult>()
-            for (case in spec.cases) {
-                caseResults.add(
-                    try {
-                        if (case.async) {
-                            // 异步用例：先清理结果变量，再执行脚本；Engine.run 会在结束时冲刷微任务
-                            engine.run("globalThis.__libResult = undefined;")
-                            engine.run(case.source)
-                            val result = engine.run("globalThis.__libResult")
-                            if (result is JSBoolean && result.value) {
-                                CaseResult(case.name, "pass", null)
-                            } else {
-                                CaseResult(case.name, "fail", "异步结果不为 true：$result")
-                            }
-                        } else {
-                            engine.run(case.source)
-                            CaseResult(case.name, "pass", null)
-                        }
-                    } catch (error: JSException) {
-                        CaseResult(case.name, "fail", error.toString())
-                    } catch (error: ParseException) {
-                        CaseResult(case.name, "fail", "解析失败：${error.message}")
-                    } catch (error: LexerException) {
-                        CaseResult(case.name, "fail", "词法失败：${error.message}")
-                    } catch (error: Throwable) {
-                        CaseResult(case.name, "crash", error.describeThrowable())
-                    }
-                )
-            }
-            results.add(LibraryResult(spec.name, "loaded", null, caseResults))
+                } ?: result
+            )
         }
         return LibraryReport(
             generatedAt = Instant.now().toString(),
             results = results,
             elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000,
         )
+    }
+
+    /** 在独立引擎中加载 UMD 构建并执行全部断言。 */
+    private suspend fun runLibrary(
+        engine: Engine,
+        spec: LibrarySpec,
+        source: String,
+        dependencyFiles: List<File>,
+    ): LibraryResult {
+        try {
+            // 依赖库（如 acorn）需要与目标库共享同一全局对象
+            for (dependencyFile in dependencyFiles) {
+                engine.run(dependencyFile.readText().removePrefix("\uFEFF"))
+            }
+            engine.run(source)
+            val globalType = engine.run("typeof ${spec.globalName}") as? JSString
+            if (globalType?.value == "undefined") {
+                return LibraryResult(spec.name, "load-fail", "全局变量 ${spec.globalName} 未定义", emptyList())
+            }
+        } catch (error: JSException) {
+            return LibraryResult(spec.name, "load-fail", "加载失败：$error", emptyList())
+        } catch (error: ParseException) {
+            return LibraryResult(spec.name, "load-fail", "解析失败：${error.message}", emptyList())
+        } catch (error: LexerException) {
+            return LibraryResult(spec.name, "load-fail", "词法失败：${error.message}", emptyList())
+        }
+
+        val caseResults = mutableListOf<CaseResult>()
+        for (case in spec.cases) {
+            caseResults.add(runCase(engine, case))
+        }
+        return LibraryResult(spec.name, "loaded", null, caseResults)
+    }
+
+    /** 执行单条断言；JS 层失败记 fail，资源/内部异常记 crash。 */
+    private suspend fun runCase(engine: Engine, case: SmokeCase): CaseResult {
+        return try {
+            if (case.async) {
+                // 异步用例：先清理结果变量，再执行脚本；Engine.run 会在结束时冲刷微任务
+                engine.run("globalThis.__libResult = undefined;")
+                engine.run(case.source)
+                val result = engine.run("globalThis.__libResult")
+                if (result is JSBoolean && result.value) {
+                    CaseResult(case.name, "pass", null)
+                } else {
+                    CaseResult(case.name, "fail", "异步结果不为 true：$result")
+                }
+            } else {
+                engine.run(case.source)
+                CaseResult(case.name, "pass", null)
+            }
+        } catch (error: CancellationException) {
+            // 宿主取消/引擎关闭不能被记成用例失败
+            throw error
+        } catch (error: ExecutionLimitException) {
+            CaseResult(case.name, "crash", "${FailureKind.STEP_LIMIT.label}：${error.message}")
+        } catch (error: JSException) {
+            CaseResult(case.name, "fail", error.toString())
+        } catch (error: ParseException) {
+            CaseResult(case.name, "fail", "解析失败：${error.message}")
+        } catch (error: LexerException) {
+            CaseResult(case.name, "fail", "词法失败：${error.message}")
+        } catch (error: Throwable) {
+            CaseResult(case.name, "crash", error.reportLine())
+        }
     }
 }
 
@@ -271,26 +290,6 @@ private data class LibraryReport(
         }
         println("  通过 $passed，失败 $failed，崩溃 $crashed，跳过 $skipped，耗时 ${elapsedMillis}ms")
     }
-}
-
-private fun JSValue.describeValue(): String {
-    if (this is JSError) {
-        return if (messageText.isEmpty()) errorName else "$errorName: $messageText"
-    }
-    if (this is JSObject) {
-        val name = (getOwnDataValue(PropertyKey.Str("name")) as? JSString)?.value
-        val message = (getOwnDataValue(PropertyKey.Str("message")) as? JSString)?.value
-        if (name != null || message != null) {
-            return listOfNotNull(name, message).joinToString(": ")
-        }
-    }
-    return toString()
-}
-
-private fun Throwable.describeThrowable(): String {
-    val firstLine = message?.lineSequence()?.firstOrNull()?.trim()
-    val type = this::class.simpleName ?: "Throwable"
-    return if (firstLine.isNullOrEmpty()) type else "$type: $firstLine"
 }
 
 private fun jsonEscape(text: String): String {

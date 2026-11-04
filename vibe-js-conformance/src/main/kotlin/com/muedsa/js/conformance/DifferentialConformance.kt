@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.time.Instant
@@ -17,14 +18,20 @@ import kotlin.system.exitProcess
 fun main(args: Array<String>) {
     val reportDir = File(args.getOrElse(0) { "build/reports/conformance" })
     val strict = args.contains("--strict")
+    val settings = RunnerSettings.fromArgs(args)
 
-    val report = runBlocking { DifferentialRunner().run() }
+    val report = runBlocking { DifferentialRunner(settings).run() }
     reportDir.mkdirs()
     report.writeMarkdown(File(reportDir, "differential-summary.md"))
     report.writeJson(File(reportDir, "differential-summary.json"))
     report.writeMismatches(File(reportDir, "differential-mismatches.txt"))
     report.printSummary()
 
+    if (report.cleanupErrors.isNotEmpty()) {
+        // 引擎没能在时限内释放属于运行器缺陷，与用例不一致分开报告
+        println("存在引擎清理失败，判定为运行器缺陷")
+        exitProcess(2)
+    }
     if (report.nodeUnavailable) {
         println("未找到 Node，差分测试已跳过")
         if (strict) exitProcess(1)
@@ -79,6 +86,10 @@ private data class DifferentialReport(
     val generatedAt: String,
     val nodeVersion: String,
     val nodeUnavailable: Boolean,
+    /** Node 不可用或超时的具体原因；正常时为 null。 */
+    val nodeError: String? = null,
+    /** 引擎清理失败记录；非空表示运行器未能按时释放引擎。 */
+    val cleanupErrors: List<String> = emptyList(),
     val results: List<DifferentialResult>,
     val elapsedMillis: Long,
 ) {
@@ -92,6 +103,15 @@ private data class DifferentialReport(
                 appendLine()
                 appendLine("- 生成时间：$generatedAt")
                 appendLine("- Node：${if (nodeUnavailable) "不可用" else nodeVersion}")
+                if (nodeError != null) {
+                    appendLine("- Node 故障：${nodeError.replace('\n', ' ')}")
+                }
+                if (cleanupErrors.isNotEmpty()) {
+                    appendLine("- 引擎清理失败：${cleanupErrors.size} 条")
+                    for (error in cleanupErrors.take(20)) {
+                        appendLine("  - ${error.replace('\n', ' ')}")
+                    }
+                }
                 appendLine("- 用例：${results.size}，不一致：$mismatches，耗时：${elapsedMillis}ms")
                 appendLine()
                 when {
@@ -133,6 +153,13 @@ private data class DifferentialReport(
                 appendLine("  \"generatedAt\": \"${jsonEscape(generatedAt)}\",")
                 appendLine("  \"nodeVersion\": \"${jsonEscape(nodeVersion)}\",")
                 appendLine("  \"nodeUnavailable\": $nodeUnavailable,")
+                appendLine("  \"nodeError\": ${nodeError?.let { "\"${jsonEscape(it)}\"" } ?: "null"},")
+                appendLine("  \"cleanupErrors\": [")
+                cleanupErrors.forEachIndexed { index, error ->
+                    append("    \"${jsonEscape(error)}\"")
+                    appendLine(if (index < cleanupErrors.lastIndex) "," else "")
+                }
+                appendLine("  ],")
                 appendLine("  \"mismatches\": $mismatches,")
                 appendLine("  \"elapsedMillis\": $elapsedMillis,")
                 appendLine("  \"results\": [")
@@ -166,6 +193,12 @@ private data class DifferentialReport(
     fun printSummary() {
         println("Node 差分基线")
         println("  Node: ${if (nodeUnavailable) "不可用" else nodeVersion}")
+        if (nodeError != null) {
+            println("  Node 故障: $nodeError")
+        }
+        if (cleanupErrors.isNotEmpty()) {
+            println("  引擎清理失败: ${cleanupErrors.size} 条")
+        }
         println("  用例 ${results.size}，不一致 $mismatches，耗时 ${elapsedMillis}ms")
         for (result in results.filter { !it.matches }.take(10)) {
             println("  ✗ ${result.name}: vibe=${result.vibeValue}, node=${result.nodeValue}")
@@ -173,7 +206,10 @@ private data class DifferentialReport(
     }
 }
 
-private class DifferentialRunner {
+private class DifferentialRunner(private val settings: RunnerSettings) {
+
+    /** 用例执行器：负责引擎创建、超时、分类与关闭。 */
+    private val runtime = CaseRuntime(settings)
 
     suspend fun run(): DifferentialReport {
         val startedAt = System.nanoTime()
@@ -185,30 +221,62 @@ private class DifferentialRunner {
             "duplicate differential case names: ${duplicateNames.joinToString()}"
         }
         val vibeResults = mutableListOf<Triple<String, String, String>>()
-        val engine = Engine()
-        for (case in cases) {
-            vibeResults.add(
-                Triple(case.name, case.expression, evaluateInVibe(engine, case.expression))
-            )
+        val cleanupErrors = mutableListOf<String>()
+        // 同步用例共享同一引擎：部分用例刻意依赖前一个用例留下的全局状态
+        //（例如 microtask-state-set 设置、microtask-state-read 读取并删除），
+        // 因此不能按用例重建。超时只取消当前 run，引擎随后仍可复用；
+        // 若超时后引擎可能残留任务，则重建引擎避免后续用例被阻塞。
+        var engine = Engine(limits = settings.limits)
+        try {
+            for (case in cases) {
+                when (val outcome = runtime.runUnderTimeout { evaluateSync(engine, case.expression) }) {
+                    is CaseOutcome.Success ->
+                        vibeResults.add(Triple(case.name, case.expression, outcome.value))
+
+                    is CaseOutcome.Failure -> {
+                        vibeResults.add(
+                            Triple(case.name, case.expression, "${outcome.kind.name}:${outcome.message}")
+                        )
+                        if (outcome.kind == FailureKind.TIMEOUT) {
+                            runtime.closeEngine(engine)?.let { cleanupErrors.add("${case.name}：$it") }
+                            engine = Engine(limits = settings.limits)
+                        }
+                    }
+                }
+            }
+        } finally {
+            runtime.closeEngine(engine)?.let { cleanupErrors.add("共享引擎：$it") }
         }
         for (case in asyncDifferentialCases) {
             val display = case.source.replace('\n', ' ').replace('\t', ' ')
-            vibeResults.add(Triple(case.name, display, evaluateAsyncInVibe(case.source)))
+            vibeResults.add(Triple(case.name, display, evaluateAsyncInVibe(case, cleanupErrors)))
         }
 
+        var nodeError: String? = null
         val node = try {
-            val version = runNode(listOf("--version")).trim()
+            val version = runNodeProcess(listOf("--version"), settings.nodeTimeoutMillis).trim()
             val script = File.createTempFile("vibe-diff-", ".js")
-            script.writeText(buildNodeScript(cases, asyncDifferentialCases))
-            val output = runNode(listOf(script.absolutePath))
-            script.delete()
-            version to output.lineSequence()
-                .filter { it.isNotBlank() }
-                .associate { line ->
-                    val tab = line.indexOf('\t')
-                    if (tab < 0) line to "" else line.substring(0, tab) to line.substring(tab + 1)
-                }
+            try {
+                script.writeText(buildNodeScript(cases, asyncDifferentialCases))
+                val output = runNodeProcess(listOf(script.absolutePath), settings.nodeTimeoutMillis)
+                version to output.lineSequence()
+                    .filter { it.isNotBlank() }
+                    .associate { line ->
+                        val tab = line.indexOf('\t')
+                        if (tab < 0) line to "" else line.substring(0, tab) to line.substring(tab + 1)
+                    }
+            } finally {
+                // 成功、失败与超时都要删除临时脚本，避免异常路径泄漏
+                script.delete()
+            }
+        } catch (error: CancellationException) {
+            // 宿主取消不是 Node 故障，原样传播
+            throw error
+        } catch (error: NodeTimeoutException) {
+            nodeError = "${FailureKind.NODE_TIMEOUT.label}：${error.message}"
+            null
         } catch (error: Throwable) {
+            nodeError = error.reportLine()
             null
         }
 
@@ -217,6 +285,8 @@ private class DifferentialRunner {
                 generatedAt = Instant.now().toString(),
                 nodeVersion = "",
                 nodeUnavailable = true,
+                nodeError = nodeError,
+                cleanupErrors = cleanupErrors,
                 results = emptyList(),
                 elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000,
             )
@@ -235,12 +305,18 @@ private class DifferentialRunner {
             generatedAt = Instant.now().toString(),
             nodeVersion = version,
             nodeUnavailable = false,
+            cleanupErrors = cleanupErrors,
             results = results,
             elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000,
         )
     }
 
-    private suspend fun evaluateInVibe(engine: Engine, expression: String): String {
+    /**
+     * 同步用例：在共享引擎中求值并序列化。
+     *
+     * JS 抛错保留原有的 `THROW:` 前缀，以便与 Node 侧结果直接比较。
+     */
+    private suspend fun evaluateSync(engine: Engine, expression: String): String {
         return try {
             when (val value = engine.run("JSON.stringify(($expression))")) {
                 is JSUndefined -> "undefined"
@@ -249,28 +325,33 @@ private class DifferentialRunner {
             }
         } catch (error: JSException) {
             "THROW:${thrownName(error.value)}"
-        } catch (error: Throwable) {
-            "CRASH:${error::class.simpleName}"
         }
     }
 
     /**
      * 异步用例：脚本执行（含微任务冲刷）后读取 `globalThis.__diffResult`。
-     * 每个用例使用独立 Engine，避免全局状态相互影响。
+     * 每个用例使用独立 Engine，避免全局状态相互影响；清理失败记入 [cleanupErrors]。
      */
-    private suspend fun evaluateAsyncInVibe(source: String): String {
-        val engine = Engine()
-        return try {
-            engine.run(source)
-            when (val value = engine.run("JSON.stringify(globalThis.__diffResult)")) {
-                is JSUndefined -> "undefined"
-                is JSString -> value.value
-                else -> value.toString()
+    private suspend fun evaluateAsyncInVibe(
+        case: AsyncDifferentialCase,
+        cleanupErrors: MutableList<String>,
+    ): String {
+        val run = runtime.withEngine { engine ->
+            try {
+                engine.run(case.source)
+                when (val value = engine.run("JSON.stringify(globalThis.__diffResult)")) {
+                    is JSUndefined -> "undefined"
+                    is JSString -> value.value
+                    else -> value.toString()
+                }
+            } catch (error: JSException) {
+                "THROW:${thrownName(error.value)}"
             }
-        } catch (error: JSException) {
-            "THROW:${thrownName(error.value)}"
-        } catch (error: Throwable) {
-            "CRASH:${error::class.simpleName}"
+        }
+        run.cleanupFailure?.let { cleanupErrors.add("${case.name}：$it") }
+        return when (val outcome = run.outcome) {
+            is CaseOutcome.Success -> outcome.value
+            is CaseOutcome.Failure -> "${outcome.kind.name}:${outcome.message}"
         }
     }
 
@@ -363,16 +444,6 @@ private class DifferentialRunner {
         }
         builder.append('"')
         return builder.toString()
-    }
-
-    private fun runNode(arguments: List<String>): String {
-        val process = ProcessBuilder(listOf("node") + arguments)
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader().readText()
-        val finished = process.waitFor()
-        check(finished == 0) { "node exited with $finished: $output" }
-        return output
     }
 }
 

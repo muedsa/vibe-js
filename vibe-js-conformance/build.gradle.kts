@@ -12,6 +12,26 @@ kotlin {
 dependencies {
     implementation(project(":vibe-js-core"))
     implementation(libs.kotlinx.coroutines.core)
+    // 运行器自身的测试：分类、超时与关闭行为需要独立于语料验证
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
+}
+
+/**
+ * 给运行器任务追加通用参数：用例超时、清理时限、Node 超时与步数配额。
+ *
+ * 均可用 -P 覆盖，例如 `-PcaseTimeoutMs=10000 -PmaxSteps=1000000`；
+ * 不传时由运行器使用自身默认值。
+ */
+fun JavaExec.applyRunnerSettings() {
+    listOf(
+        "caseTimeoutMs" to "--case-timeout-ms",
+        "cleanupTimeoutMs" to "--cleanup-timeout-ms",
+        "nodeTimeoutMs" to "--node-timeout-ms",
+        "maxSteps" to "--max-steps",
+    ).forEach { (property, argument) ->
+        project.findProperty(property)?.let { args(argument, it.toString()) }
+    }
 }
 
 /** 固定的 test262-parser-tests 版本，保证基线可复现。 */
@@ -106,6 +126,7 @@ val test262Conformance by tasks.registering(JavaExec::class) {
     if (project.hasProperty("test262Filter")) {
         args("--filter", project.property("test262Filter").toString())
     }
+    applyRunnerSettings()
     if (project.hasProperty("strict")) {
         args("--strict")
     }
@@ -143,6 +164,7 @@ val test262Es2015Conformance by tasks.registering(JavaExec::class) {
     if (project.hasProperty("test262Filter")) {
         args("--filter", project.property("test262Filter").toString())
     }
+    applyRunnerSettings()
     if (project.hasProperty("strict")) {
         args("--strict")
     }
@@ -175,6 +197,7 @@ val librarySmoke by tasks.registering(JavaExec::class) {
         libraryCorpusDir.asFile.absolutePath,
         conformanceReportDir.get().asFile.absolutePath,
     )
+    applyRunnerSettings()
     if (project.hasProperty("strict")) {
         args("--strict")
     }
@@ -193,6 +216,7 @@ val differentialConformance by tasks.registering(JavaExec::class) {
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.muedsa.js.conformance.DifferentialConformanceKt")
     args(conformanceReportDir.get().asFile.absolutePath)
+    applyRunnerSettings()
     if (project.hasProperty("strict")) {
         args("--strict")
     }
