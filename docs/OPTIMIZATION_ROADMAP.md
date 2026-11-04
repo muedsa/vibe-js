@@ -20,7 +20,7 @@
 | **暂缓** | L4 · 模块系统与宿主生态 | 暂不做 | "`import`/`export` 为保留字并直接报错；无 CLI、URL、TextEncoder 等" |
 | **暂缓** | B2 · 实测驱动的性能优化 | 暂不做 | "未做 profiler 分析，不承诺任何性能改进" |
 | **暂缓（未排期）** | L3 · ArrayBuffer/TypedArray/BigInt | 暂不做（本次未点名，按"不在在办范围"处理） | "无二进制数据与 BigInt 运行时；`BigInt` 字面量仅语法识别，求值抛 TypeError" |
-| **在办** | A1（可选） | 见第 3 节 | 本路线剩余的全部交付内容 |
+| **在办** | 无 | — | 路线内任务已全部完成 |
 
 ### 0.1 搁置/暂缓的后果（必须一起接受）
 
@@ -80,7 +80,7 @@
 
 ## 2. 已完成项与不可破坏的契约
 
-### 2.1 已完成任务（C1–C3、T1、T2、M1、B1、H1、D1）
+### 2.1 已完成任务（C1–C3、T1、T2、M1、B1、H1、A1、D1）
 
 | 任务 | 提交 | 实施内容 | 后续不能破坏的行为 |
 |---|---|---|---|
@@ -93,7 +93,8 @@
 | D1 · 文档纠偏 | `88e4d8f` | 兼容性矩阵、架构文档、一致性文档、README、Unicode 生成脚本与 15 处代码注释统一为当前实现；搁置项改写为"不是后续阶段" | 文档不得再使用"阶段 A/后续阶段/预留"描述已实现能力；搁置项必须显式标注 |
 | M1 · 集合索引与墓碑回收 | `5a6904f` | `JSMap`/`JSSet` 改为插入顺序数组 + SameValueZero 索引 + O(1) 计数；无活跃迭代器时压缩墓碑；内建改用键 API | 实时迭代语义（C1）不变；迭代期间不得压缩；`size` 必须保持 O(1) |
 | B1 · 可解释成本的基准 | `6b38b99` | 基准扩为 56 个条目、六组（生命周期/解析缓存/吞吐/对象环境/异步/标准库/集合）；teardown 关闭引擎；统一 2×300ms 预热；新增 `benchmarkEnvironment` 与 `-PbenchmarkFilter` | 基准必须能一条命令复现；环境信息与原始 JSON 一同归档；不用单次百分比做门禁 |
-| H1 · 宿主计时与使用契约 | 本次改动 | 新增可注入 `MonotonicClock`；`performance.timeOrigin` 安装时固定、`now()` 与 `console.time` 改用单调时钟；`BuiltinRegistry` 暴露 `host` | `Date` 继续用墙钟；墙钟回拨不得影响 `performance.now()` 与 `console.time` 差值 |
+| H1 · 宿主计时与使用契约 | `8e96b56` | 新增可注入 `MonotonicClock`；`performance.timeOrigin` 安装时固定、`now()` 与 `console.time` 改用单调时钟；`BuiltinRegistry` 暴露 `host` | `Date` 继续用墙钟；墙钟回拨不得影响 `performance.now()` 与 `console.time` 差值 |
+| A1 · 按职责拆分（低风险部分） | 本次改动 | 新增诊断适配层（`Diagnostic` + `toDiagnostic`，异常增加 `detail`）；`IteratorBuiltins` 的 helper 方法拆到 `IteratorHelperBuiltins` | 原异常类型与 message 格式不变；迭代器语义与公共 API 不变 |
 
 回归位置：[ConformanceTest.kt:165-343](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ConformanceTest.kt#L165-L343)（长度边界、Set size 转换、clear 实时迭代）与 [DifferentialCases.kt:139-207](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialCases.kt#L139-L207)（Node 差分）；T1 的回归位于 [RunSupportTest.kt](../vibe-js-conformance/src/test/kotlin/com/muedsa/js/conformance/RunSupportTest.kt)。
 
@@ -219,13 +220,19 @@
 
 **注意。** 先积累噪声范围再定回归阈值，不要用共享 CI 主机上的单次百分比做硬门禁；集合组同时作为 M1 的验收依据。
 
-### 3.6 A1 · 按职责拆分大文件（P3，5–10 人日，可选）
+### 3.6 A1 · 按职责拆分大文件（低风险部分已完成 2026-11-04）
 
-**现状。** 五个大文件见 1.3；词法/解析仍是 `LexerException` 与 `ParseException` 两套异常，没有结构化诊断适配层。
+**实施说明（只做原取舍中的低风险部分）。**
 
-**目标。** 围绕属性内部方法、函数/类调用、迭代器协议、正则构建逐步拆分内部实现，保持 `getV/putV`、`Conversions`、`Completion` 与解析期提升信息为唯一语义入口；单独设计带 `sourceName`/`range`/类别的诊断适配层（保持原异常兼容）。
+| 项 | 改动 |
+|---|---|
+| 诊断适配层 | 新增 [Diagnostic.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/diagnostics/Diagnostic.kt)：`DiagnosticCategory`（LEXICAL/SYNTAX）、`Diagnostic`（类别、纯描述、源码范围、来源信息，含叠加行偏移的 `line`/`column`/`format()`）、`Throwable.toDiagnostic()` 适配函数；`LexerException`/`ParseException` 增加 `detail` 保留无前缀描述，异常类型与 `message` 格式不变 |
+| 迭代器拆分 | `installPrototypeMethods`（约 585 行的 helper 与组合方法）拆到 [IteratorHelperBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/IteratorHelperBuiltins.kt)；共享基础设施（`DirectIterator`/`getIteratorDirect`/`nextValue`/`createHelper` 等）改为 `internal` 供其调用；[IteratorBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/IteratorBuiltins.kt) 从 1680 行降到 1095 行 |
+| 回归 | 新增 `DiagnosticTest`（4 例）；core 610 通过；ES2015 37,329、差分 0 不一致、真实库 309、JS/Wasm/Native 全绿 |
 
-**取舍。** 原计划"随 L1/L2 顺带拆分"的机会已随二者搁置而消失，纯拆分的收益下降。建议只做低风险部分：诊断适配层与 `IteratorBuiltins` 拆分；`Interpreter`/`Parser` 的大改留到有功能需求时再做。
+**未做（保留原取舍）。** `Interpreter.kt`（6276 行）与 `Parser.kt`（3807 行）的大改留到有功能需求时再做：属性内部方法、函数/类调用、正则构建的拆分需要 suspend 化或 CPS，风险与收益不匹配；`Lexer`/`ArrayBuiltins` 等文件没有独立职责可切，暂不动。
+
+**取舍。** 原计划"随 L1/L2 顺带拆分"的机会已随二者搁置而消失，纯拆分的收益下降；本次只做诊断适配层与 `IteratorBuiltins` 拆分。
 
 ### 3.7 D1 · 消除文档中的过时或冲突信息（已完成 2026-11-04）
 
@@ -251,11 +258,9 @@
 
 ## 4. 批次与投入
 
-| 批次 | 任务 | 粗估 | 主要产物 | 完成标准 |
-|---|---|---|---|---|
-| **1 · 收尾（可选）** | A1 低风险部分（诊断适配层、`IteratorBuiltins` 拆分） | **5–10 人日** | 诊断适配层 | 诊断信息可定位 |
+路线内的任务已全部完成：C1–C3、T1、T2、M1、B1、H1、A1（低风险部分）、D1。
 
-**剩余范围只有 A1（可选，5–10 人日）**。C1–C3、T1、T2、M1、B1、H1、D1 已完成（见 2.1）。
+剩余内容只有第 5 节记录的**无限期搁置**与**暂缓**项，不在排期内；重启条件与成本见该节。原"批次 1（集合与度量）/ 批次 2（收尾）"的划分已随任务完成而失效。
 
 ## 5. 搁置与暂缓项的现状记录
 
@@ -316,7 +321,8 @@
 | 集合内建 | [MapBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/MapBuiltins.kt)、[SetBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/SetBuiltins.kt)、[WeakMapBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/WeakMapBuiltins.kt)、[WeakSetBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/WeakSetBuiltins.kt) | M1 |
 | 一致性运行器 | [Test262Conformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Conformance.kt)、[DifferentialConformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialConformance.kt)、[LibrarySmoke.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/LibrarySmoke.kt)、[RunSupport.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/RunSupport.kt) | T1（已完成）、T2 |
 | 基准 | [InterpreterBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/InterpreterBenchmark.kt)、[ParsingBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/ParsingBenchmark.kt)、[EngineLifecycleBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/EngineLifecycleBenchmark.kt)、[ObjectEnvironmentBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/ObjectEnvironmentBenchmark.kt)、[AsyncBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/AsyncBenchmark.kt)、[StandardLibraryBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/StandardLibraryBenchmark.kt)、[CollectionBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/CollectionBenchmark.kt) | B1（已完成） |
-| 宿主 | [HostModule.kt](../vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/HostModule.kt)、[HostEnvironment.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/HostEnvironment.kt) | H1 |
+| 宿主 | [HostModule.kt](../vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/HostModule.kt)、[HostEnvironment.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/HostEnvironment.kt) | H1（已完成） |
+| 诊断与迭代器拆分 | [Diagnostic.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/diagnostics/Diagnostic.kt)、[IteratorHelperBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/IteratorHelperBuiltins.kt) | A1（已完成） |
 | 文档 | [README.md](../README.md)、[COMPATIBILITY.md](COMPATIBILITY.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[CONFORMANCE.md](CONFORMANCE.md) | D1 |
 
 ## 9. 变更记录
@@ -332,3 +338,4 @@
 | 2026-11-04 | M1 完成：Map/Set 改为索引存储与 O(1) 计数，墓碑在无迭代器时压缩；新增 10 个存储测试与集合基准（单键操作 4–19ns 且与规模无关）；ES2015 子集耗时从 134s 降到 89s |
 | 2026-11-04 | B1 完成：基准扩为 56 个条目、六组，teardown 关闭引擎，统一 2×300ms 预热（全量 10m34s → 约 1.5 分钟），新增环境记录任务与单组过滤；ARCHITECTURE 参考值同步为本次复测 |
 | 2026-11-04 | H1 完成：新增可注入 MonotonicClock，performance.timeOrigin 在模块安装时固定、now() 与 console.time 改用单调时钟，墙钟回拨不影响差值；宿主 25 个测试在 JVM/JS/Wasm/Native 通过 |
+| 2026-11-04 | A1 完成（低风险部分）：新增诊断适配层（Diagnostic/toDiagnostic，异常保留 detail），IteratorBuiltins 的 helper 方法拆到 IteratorHelperBuiltins（1680 → 1095 行）；core 610、ES2015 37,329、差分 0 不一致、真实库 309、三平台测试全绿 |

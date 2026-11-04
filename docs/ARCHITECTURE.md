@@ -313,7 +313,8 @@ Error 对象跨 then/catch/await 保留其创建位置；原始值的直接 thro
   动态函数行号对应包含函数包装行的合成源码。没有有效范围的合成帧只显示函数名。
 - 普通 Promise 回调显示自身定义位置，不自动拼接完整 then 注册链；自定义 thenable/capability
   若自行保存并重新拒绝原始值，只能从新的调用点记录诊断。原始值本身不携带 Error 内部槽。
-- 词法/解析错误仍沿用 LexerException/ParseException 的诊断协议，本次来源参数用于运行时栈。
+- 词法/解析错误仍沿用 LexerException/ParseException 的诊断协议；需要结构化视图时使用
+  `com.muedsa.js.diagnostics.toDiagnostic()`（类别、源码范围、来源文件名，异常类型与 message 不变）。
 - 快照仅保存函数名、来源及源码范围，不保存 Interpreter、词法环境或完整源码。
 
 `RuntimeErrorStackTest` 覆盖创建/重抛、精确行列、缓存/预解析来源、跨脚本函数、构造器与访问器、

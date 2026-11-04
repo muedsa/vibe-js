@@ -298,6 +298,7 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
     - `runtime/`：引擎、执行器、环境、类型转换、事件循环、Promise、扩展点
     - `runtime/value/`：JS 值、对象、函数、数组、集合、Promise、属性描述符
     - `builtins/`：ECMAScript 标准内建
+    - `diagnostics/`：结构化诊断适配层（词法/语法异常 → 类别、范围、来源）
   - `src/commonTest/`：核心单元测试
 - `vibe-js-host/`（Gradle 模块 `:vibe-js-host`）
   - `src/commonMain/kotlin/com/muedsa/js/host/`：宿主模块（console/timer/window 等）

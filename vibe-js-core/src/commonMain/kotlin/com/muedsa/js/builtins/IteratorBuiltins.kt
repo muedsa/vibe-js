@@ -22,7 +22,7 @@ import com.muedsa.js.runtime.value.PropertyKey
 internal object IteratorBuiltins {
 
     /** 迭代器直接记录：[[Iterator]] 与缓存的 next 方法（可调用性延迟到调用时校验）。 */
-    private class DirectIterator(val iterator: JSObject, val nextMethod: JSValue)
+    internal class DirectIterator(val iterator: JSObject, val nextMethod: JSValue)
 
     /**
      * Iterator Helper 的内部状态：共享原型 next/return 通过它分发，
@@ -269,7 +269,7 @@ internal object IteratorBuiltins {
     }
 
     /** GetIteratorDirect：只读取一次 next，可调用性在 IteratorStepValue 调用时自然报错。 */
-    private suspend fun getIteratorDirect(interpreter: Interpreter, value: JSValue): DirectIterator {
+    internal suspend fun getIteratorDirect(interpreter: Interpreter, value: JSValue): DirectIterator {
         if (value !is JSObject) {
             interpreter.typeError("Iterator helper called on non-object")
         }
@@ -295,7 +295,7 @@ internal object IteratorBuiltins {
      * GetIteratorFlattenable：对象优先走 @@iterator，无该方法时把自身视为迭代器；
      * 原始值只有字符串可按策略创建迭代器。
      */
-    private suspend fun getIteratorFlattenable(
+    internal suspend fun getIteratorFlattenable(
         interpreter: Interpreter,
         value: JSValue,
         rejectStrings: Boolean,
@@ -327,7 +327,7 @@ internal object IteratorBuiltins {
     }
 
     /** 读取下一条值；完成时返回 null。 */
-    private suspend fun nextValue(interpreter: Interpreter, record: DirectIterator): JSValue? {
+    internal suspend fun nextValue(interpreter: Interpreter, record: DirectIterator): JSValue? {
         val result = interpreter.callFunction(record.nextMethod, record.iterator, emptyList())
         if (result !is JSObject) {
             interpreter.typeError("Iterator result is not an object")
@@ -339,7 +339,7 @@ internal object IteratorBuiltins {
     }
 
     /** IteratorClose：normal 完成要求 return 结果为对象；throwCompletion 忽略关闭错误。 */
-    private suspend fun closeDirect(
+    internal suspend fun closeDirect(
         interpreter: Interpreter,
         record: DirectIterator,
         throwCompletion: Boolean,
@@ -368,13 +368,13 @@ internal object IteratorBuiltins {
      * 参数校验失败时的 IfAbruptCloseIterator：
      * 直接对 this 调用 return，不读取 next，关闭错误被吞掉后抛出原始验证错误。
      */
-    private suspend fun closeForInvalidArgument(interpreter: Interpreter, thisValue: JSValue) {
+    internal suspend fun closeForInvalidArgument(interpreter: Interpreter, thisValue: JSValue) {
         val record = thisValue as? JSObject ?: return
         closeDirect(interpreter, DirectIterator(record, JSUndefined), throwCompletion = true)
     }
 
     /** 创建辅助迭代器：next/return 由共享原型方法分发到内部状态。 */
-    private fun createHelper(
+    internal fun createHelper(
         interpreter: Interpreter,
         record: DirectIterator,
         onReturn: (suspend (Interpreter) -> Unit)? = null,
@@ -677,7 +677,7 @@ internal object IteratorBuiltins {
             configurable = true,
         )
 
-        installPrototypeMethods(registry)
+        IteratorHelperBuiltins.install(registry)
         registry.defineGlobal("Iterator", iteratorConstructor)
     }
 
@@ -1041,7 +1041,7 @@ internal object IteratorBuiltins {
     }
 
     /** chunks/windows 的尺寸：必须是 1..2^32-1 的整数 Number，且不做类型转换。 */
-    private suspend fun validateChunkSize(
+    internal suspend fun validateChunkSize(
         interpreter: Interpreter,
         value: JSValue,
         thisValue: JSValue,
@@ -1063,7 +1063,7 @@ internal object IteratorBuiltins {
     }
 
     /** take/drop 的 limit：按规范顺序 ToNumber、范围校验与 ToIntegerOrInfinity。 */
-    private suspend fun toLimit(interpreter: Interpreter, value: JSValue, thisValue: JSValue): Double {
+    internal suspend fun toLimit(interpreter: Interpreter, value: JSValue, thisValue: JSValue): Double {
         val number = try {
             interpreter.toNumber(value)
         } catch (error: JSException) {
@@ -1091,590 +1091,4 @@ internal object IteratorBuiltins {
         return integer
     }
 
-    /** 安装 %IteratorPrototype% 上的辅助方法。 */
-    private fun installPrototypeMethods(registry: BuiltinRegistry) {
-        val intrinsics = registry.intrinsics
-        val prototype = intrinsics.iteratorPrototype
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("chunks"),
-            BuiltinHelpers.method(intrinsics, "chunks", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.chunks called on non-object")
-                }
-                val chunkSize = validateChunkSize(
-                    interpreter,
-                    args.getOrElse(0) { JSUndefined },
-                    thisValue,
-                )
-                val record = getIteratorDirect(interpreter, thisValue)
-                createHelper(interpreter, record) { inner ->
-                    val buffer = ArrayList<JSValue>()
-                    while (buffer.size.toLong() < chunkSize) {
-                        val value = nextValue(inner, record)
-                        if (value == null) {
-                            if (buffer.isEmpty()) return@createHelper null
-                            return@createHelper JSArray(
-                                buffer.toMutableList(),
-                                prototype = intrinsics.arrayPrototype,
-                            )
-                        }
-                        buffer.add(value)
-                    }
-                    JSArray(buffer.toMutableList(), prototype = intrinsics.arrayPrototype)
-                }
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("windows"),
-            BuiltinHelpers.method(intrinsics, "windows", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.windows called on non-object")
-                }
-                val windowSize = validateChunkSize(
-                    interpreter,
-                    args.getOrElse(0) { JSUndefined },
-                    thisValue,
-                )
-                val undersizedValue = args.getOrElse(1) { JSUndefined }
-                val undersized = if (undersizedValue is JSUndefined) {
-                    "only-full"
-                } else if (undersizedValue is JSString &&
-                    undersizedValue.value in setOf("only-full", "allow-partial")
-                ) {
-                    undersizedValue.value
-                } else {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Invalid undersized mode")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                val buffer = ArrayList<JSValue>()
-                var yieldedPartial = false
-                createHelper(interpreter, record) { inner ->
-                    while (true) {
-                        val value = nextValue(inner, record)
-                        if (value == null) {
-                            if (undersized == "allow-partial" && !yieldedPartial &&
-                                buffer.isNotEmpty() && buffer.size.toLong() < windowSize
-                            ) {
-                                yieldedPartial = true
-                                return@createHelper JSArray(
-                                    buffer.toMutableList(),
-                                    prototype = intrinsics.arrayPrototype,
-                                )
-                            }
-                            return@createHelper null
-                        }
-                        if (buffer.size.toLong() == windowSize) {
-                            buffer.removeAt(0)
-                        }
-                        buffer.add(value)
-                        if (buffer.size.toLong() == windowSize) {
-                            return@createHelper JSArray(
-                                buffer.toMutableList(),
-                                prototype = intrinsics.arrayPrototype,
-                            )
-                        }
-                    }
-                    @Suppress("UNREACHABLE_CODE")
-                    null
-                }
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("includes"),
-            BuiltinHelpers.method(intrinsics, "includes", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.includes called on non-object")
-                }
-                val searchElement = args.getOrElse(0) { JSUndefined }
-                val skipValue = args.getOrElse(1) { JSUndefined }
-                var toSkip = 0.0
-                if (skipValue !is JSUndefined) {
-                    if (skipValue !is JSNumber) {
-                        closeForInvalidArgument(interpreter, thisValue)
-                        interpreter.typeError("skippedElements must be a Number")
-                    }
-                    val number = skipValue.value
-                    if (!number.isInfinite() &&
-                        (!number.isFinite() || kotlin.math.floor(number) != number)
-                    ) {
-                        closeForInvalidArgument(interpreter, thisValue)
-                        interpreter.typeError("skippedElements must be an integral Number")
-                    }
-                    if (number < 0.0) {
-                        closeForInvalidArgument(interpreter, thisValue)
-                        interpreter.rangeError("skippedElements must not be negative")
-                    }
-                    if (number.isFinite() && number > 9007199254740991.0) {
-                        closeForInvalidArgument(interpreter, thisValue)
-                        interpreter.rangeError("skippedElements out of range")
-                    }
-                    toSkip = number
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                var skipped = 0.0
-                while (true) {
-                    val value = nextValue(interpreter, record) ?: return@method JSBoolean.FALSE
-                    if (skipped < toSkip) {
-                        skipped += 1.0
-                        continue
-                    }
-                    if (interpreter.conversions.sameValueZero(value, searchElement)) {
-                        closeDirect(interpreter, record, throwCompletion = false)
-                        return@method JSBoolean.TRUE
-                    }
-                }
-                @Suppress("UNREACHABLE_CODE")
-                JSBoolean.FALSE
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("join"),
-            BuiltinHelpers.method(intrinsics, "join", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.join called on non-object")
-                }
-                val separatorValue = args.getOrElse(0) { JSUndefined }
-                val separator = if (separatorValue is JSUndefined) {
-                    ","
-                } else {
-                    try {
-                        interpreter.toStringValue(separatorValue)
-                    } catch (error: JSException) {
-                        closeForInvalidArgument(interpreter, thisValue)
-                        throw error
-                    }
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                val builder = StringBuilder()
-                var first = true
-                while (true) {
-                    val value = nextValue(interpreter, record) ?: break
-                    if (!first) builder.append(separator)
-                    first = false
-                    if (value !is JSNull && value !is JSUndefined) {
-                        try {
-                            builder.append(interpreter.toStringValue(value))
-                        } catch (error: JSException) {
-                            closeDirect(interpreter, record, throwCompletion = true)
-                            throw error
-                        }
-                    }
-                }
-                JSString(builder.toString())
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("map"),
-            BuiltinHelpers.method(intrinsics, "map", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.map called on non-object")
-                }
-                val mapper = args.getOrElse(0) { JSUndefined }
-                if (!interpreter.isCallable(mapper)) {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Iterator.prototype.map requires a callable mapper")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                var counter = 0.0
-                createHelper(interpreter, record) { _ ->
-                    val value = nextValue(interpreter, record) ?: return@createHelper null
-                    val index = counter
-                    val mapped = try {
-                        interpreter.callFunction(mapper, JSUndefined, listOf(value, JSNumber(index)))
-                    } catch (error: JSException) {
-                        closeDirect(interpreter, record, throwCompletion = true)
-                        throw error
-                    }
-                    counter += 1.0
-                    mapped
-                }
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("filter"),
-            BuiltinHelpers.method(intrinsics, "filter", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.filter called on non-object")
-                }
-                val predicate = args.getOrElse(0) { JSUndefined }
-                if (!interpreter.isCallable(predicate)) {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Iterator.prototype.filter requires a callable predicate")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                var counter = 0.0
-                createHelper(interpreter, record) { _ ->
-                    while (true) {
-                        val value = nextValue(interpreter, record) ?: return@createHelper null
-                        val index = counter
-                        val keep = try {
-                            interpreter.callFunction(
-                                predicate,
-                                JSUndefined,
-                                listOf(value, JSNumber(index)),
-                            )
-                        } catch (error: JSException) {
-                            closeDirect(interpreter, record, throwCompletion = true)
-                            throw error
-                        }
-                        counter += 1.0
-                        if (interpreter.toBoolean(keep)) return@createHelper value
-                    }
-                    @Suppress("UNREACHABLE_CODE")
-                    null
-                }
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("take"),
-            BuiltinHelpers.method(intrinsics, "take", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.take called on non-object")
-                }
-                var remaining = toLimit(interpreter, args.getOrElse(0) { JSUndefined }, thisValue)
-                val record = getIteratorDirect(interpreter, thisValue)
-                createHelper(interpreter, record) { _ ->
-                    if (remaining <= 0.0) {
-                        // 正常完成关闭底层迭代器：return 结果必须是对象
-                        closeDirect(interpreter, record, throwCompletion = false)
-                        return@createHelper null
-                    }
-                    remaining -= 1.0
-                    nextValue(interpreter, record)
-                }
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("drop"),
-            BuiltinHelpers.method(intrinsics, "drop", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.drop called on non-object")
-                }
-                var remaining = toLimit(interpreter, args.getOrElse(0) { JSUndefined }, thisValue)
-                val record = getIteratorDirect(interpreter, thisValue)
-                createHelper(interpreter, record) { _ ->
-                    while (remaining > 0.0) {
-                        remaining -= 1.0
-                        if (nextValue(interpreter, record) == null) return@createHelper null
-                    }
-                    nextValue(interpreter, record)
-                }
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("flatMap"),
-            BuiltinHelpers.method(intrinsics, "flatMap", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.flatMap called on non-object")
-                }
-                val mapper = args.getOrElse(0) { JSUndefined }
-                if (!interpreter.isCallable(mapper)) {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Iterator.prototype.flatMap requires a callable mapper")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                var counter = 0.0
-                var inner: DirectIterator? = null
-                createHelper(
-                    interpreter,
-                    record,
-                    onReturn = { innerInterpreter ->
-                        inner?.let { closeDirect(innerInterpreter, it, throwCompletion = false) }
-                    },
-                ) { _ ->
-                    while (true) {
-                        val currentInner = inner
-                        if (currentInner != null) {
-                            val innerValue = try {
-                                nextValue(interpreter, currentInner)
-                            } catch (error: JSException) {
-                                // 内层 step 抛错：只关闭外层，内层保持原状
-                                closeDirect(interpreter, record, throwCompletion = true)
-                                throw error
-                            }
-                            if (innerValue != null) return@createHelper innerValue
-                            inner = null
-                        }
-                        val value = nextValue(interpreter, record) ?: return@createHelper null
-                        val index = counter
-                        val mapped = try {
-                            interpreter.callFunction(
-                                mapper,
-                                JSUndefined,
-                                listOf(value, JSNumber(index)),
-                            )
-                        } catch (error: JSException) {
-                            closeDirect(interpreter, record, throwCompletion = true)
-                            throw error
-                        }
-                        counter += 1.0
-                        val innerRecord = try {
-                            getIteratorFlattenable(interpreter, mapped, rejectStrings = true)
-                        } catch (error: JSException) {
-                            closeDirect(interpreter, record, throwCompletion = true)
-                            throw error
-                        }
-                        inner = innerRecord
-                    }
-                    @Suppress("UNREACHABLE_CODE")
-                    null
-                }
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("reduce"),
-            BuiltinHelpers.method(intrinsics, "reduce", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.reduce called on non-object")
-                }
-                val reducer = args.getOrElse(0) { JSUndefined }
-                if (!interpreter.isCallable(reducer)) {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Iterator.prototype.reduce requires a callable reducer")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                val hasInitial = args.size > 1
-                var accumulator: JSValue
-                var counter: Double
-                if (hasInitial) {
-                    accumulator = args[1]
-                    counter = 0.0
-                } else {
-                    accumulator = nextValue(interpreter, record)
-                        ?: interpreter.typeError(
-                            "Reduce of empty iterator with no initial value"
-                        )
-                    counter = 1.0
-                }
-                while (true) {
-                    val value = nextValue(interpreter, record) ?: return@method accumulator
-                    val index = counter
-                    accumulator = try {
-                        interpreter.callFunction(
-                            reducer,
-                            JSUndefined,
-                            listOf(accumulator, value, JSNumber(index)),
-                        )
-                    } catch (error: JSException) {
-                        closeDirect(interpreter, record, throwCompletion = true)
-                        throw error
-                    }
-                    counter += 1.0
-                }
-                @Suppress("UNREACHABLE_CODE")
-                accumulator
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("toArray"),
-            BuiltinHelpers.method(intrinsics, "toArray", 0) { interpreter, thisValue, _ ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.toArray called on non-object")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                val values = ArrayList<JSValue?>()
-                while (true) {
-                    val value = nextValue(interpreter, record) ?: break
-                    values.add(value)
-                }
-                JSArray(values, prototype = intrinsics.arrayPrototype)
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("forEach"),
-            BuiltinHelpers.method(intrinsics, "forEach", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.forEach called on non-object")
-                }
-                val callback = args.getOrElse(0) { JSUndefined }
-                if (!interpreter.isCallable(callback)) {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Iterator.prototype.forEach requires a callable callback")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                var counter = 0.0
-                while (true) {
-                    val value = nextValue(interpreter, record) ?: break
-                    try {
-                        interpreter.callFunction(
-                            callback,
-                            JSUndefined,
-                            listOf(value, JSNumber(counter)),
-                        )
-                    } catch (error: JSException) {
-                        closeDirect(interpreter, record, throwCompletion = true)
-                        throw error
-                    }
-                    counter += 1.0
-                }
-                JSUndefined
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("some"),
-            BuiltinHelpers.method(intrinsics, "some", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.some called on non-object")
-                }
-                val predicate = args.getOrElse(0) { JSUndefined }
-                if (!interpreter.isCallable(predicate)) {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Iterator.prototype.some requires a callable predicate")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                var counter = 0.0
-                while (true) {
-                    val value = nextValue(interpreter, record) ?: return@method JSBoolean.FALSE
-                    val matched = try {
-                        interpreter.callFunction(
-                            predicate,
-                            JSUndefined,
-                            listOf(value, JSNumber(counter)),
-                        )
-                    } catch (error: JSException) {
-                        closeDirect(interpreter, record, throwCompletion = true)
-                        throw error
-                    }
-                    counter += 1.0
-                    if (interpreter.toBoolean(matched)) {
-                        closeDirect(interpreter, record, throwCompletion = false)
-                        return@method JSBoolean.TRUE
-                    }
-                }
-                @Suppress("UNREACHABLE_CODE")
-                JSBoolean.FALSE
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("every"),
-            BuiltinHelpers.method(intrinsics, "every", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.every called on non-object")
-                }
-                val predicate = args.getOrElse(0) { JSUndefined }
-                if (!interpreter.isCallable(predicate)) {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Iterator.prototype.every requires a callable predicate")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                var counter = 0.0
-                while (true) {
-                    val value = nextValue(interpreter, record) ?: return@method JSBoolean.TRUE
-                    val matched = try {
-                        interpreter.callFunction(
-                            predicate,
-                            JSUndefined,
-                            listOf(value, JSNumber(counter)),
-                        )
-                    } catch (error: JSException) {
-                        closeDirect(interpreter, record, throwCompletion = true)
-                        throw error
-                    }
-                    counter += 1.0
-                    if (!interpreter.toBoolean(matched)) {
-                        closeDirect(interpreter, record, throwCompletion = false)
-                        return@method JSBoolean.FALSE
-                    }
-                }
-                @Suppress("UNREACHABLE_CODE")
-                JSBoolean.TRUE
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-
-        prototype.defineDataProperty(
-            PropertyKey.Str("find"),
-            BuiltinHelpers.method(intrinsics, "find", 1) { interpreter, thisValue, args ->
-                if (thisValue !is JSObject) {
-                    interpreter.typeError("Iterator.prototype.find called on non-object")
-                }
-                val predicate = args.getOrElse(0) { JSUndefined }
-                if (!interpreter.isCallable(predicate)) {
-                    closeForInvalidArgument(interpreter, thisValue)
-                    interpreter.typeError("Iterator.prototype.find requires a callable predicate")
-                }
-                val record = getIteratorDirect(interpreter, thisValue)
-                var counter = 0.0
-                while (true) {
-                    val value = nextValue(interpreter, record) ?: return@method JSUndefined
-                    val matched = try {
-                        interpreter.callFunction(
-                            predicate,
-                            JSUndefined,
-                            listOf(value, JSNumber(counter)),
-                        )
-                    } catch (error: JSException) {
-                        closeDirect(interpreter, record, throwCompletion = true)
-                        throw error
-                    }
-                    counter += 1.0
-                    if (interpreter.toBoolean(matched)) {
-                        closeDirect(interpreter, record, throwCompletion = false)
-                        return@method value
-                    }
-                }
-                @Suppress("UNREACHABLE_CODE")
-                JSUndefined
-            },
-            writable = true,
-            enumerable = false,
-            configurable = true,
-        )
-    }
 }

@@ -184,4 +184,5 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、可选 catch 绑定、稳定排序、JSON 超集与 rawJSON/reviver source、属性枚举顺序、Annex B RegExp compile/escape/unescape、RegExp dotAll、Error.prototype.stack、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
+| `DiagnosticTest` | 词法/语法异常转换为结构化诊断（类别、纯描述、源码范围、来源文件名与行偏移），其他异常不产生诊断，原异常类型与 message 格式保持不变 |
 | `HostModuleTest`（:vibe-js-host） | window/self 身份、console、定时器/setInterval（额外参数与延迟钳制）、queueMicrotask（重入排序、异常记录）、atob/btoa（WHATWG Latin-1 码元与宽松 base64 解码）、墙钟/单调时钟注入、performance 时间原点（安装时固定）、console.time/timeEnd 走单调时钟 |
