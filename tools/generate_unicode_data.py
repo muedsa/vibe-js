@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""下载 Unicode 17.0.0 数据并重新生成 RegExp/标识符数据表。
+"""下载 Unicode 17.0.0 数据并重新生成 RegExp/标识符/规范化/大小写数据表。
 
 用法（可从任意目录运行）：
     python tools/generate_unicode_data.py
 
-脚本会把需要的 UCD 文件下载到 build/ucd17，然后依次执行：
-  - gen_unicode_properties.py   \p{...} 码点属性表
+脚本会把需要的 UCD 文件下载到 build/ucd17，然后依次执行六个生成器：
+  - gen_unicode_properties.py   \\p{...} 码点属性表
   - gen_emoji_properties.py     属性字符串（emoji 序列）表
   - gen_identifier_data.py      ID_Start / ID_Continue 表
+  - gen_normalization_data.py   normalize 的分解/组合数据
+  - gen_case_folding.py         正则大小写折叠（CaseFolding.txt）
+  - gen_case_mapping.py         String 大小写映射（UnicodeData + SpecialCasing + Final_Sigma）
+
+生成结果直接覆盖 vibe-js-core 下的 Kotlin 数据文件，请勿手工编辑。
 """
 
 import runpy

@@ -217,16 +217,14 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - **Iterator**：抽象构造器、`Iterator.from/concat/zip/zipKeyed` 与 helpers（map/filter/take/drop/flatMap/reduce/toArray 等）
 - **其他**：Symbol 知名方法、WeakMap/WeakSet、JSON 源文本、`RegExp.escape`、ES2025 Set 方法集
 
-### 尚未支持（明确排除或后续阶段）
+### 已搁置与暂缓的能力
 
-- Generator（`function*` / `yield`）
-- 异步迭代 `for await...of` / AsyncIterator 原型
-- 模块系统（`import` / `export`）
-- `Proxy` / `Reflect`
-- BigInt、Intl、TypedArray/ArrayBuffer/DataView
-- DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）
-- `ShadowRealm`、`Atomics`
-- 完整 ASI 边界规则
+以下能力**已明确不在当前路线内**（决策见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)），不再以"后续阶段"的形式承诺：
+
+- **无限期搁置**：Generator（`function*` / `yield`）、异步迭代 `for await...of` / AsyncIterator 原型、模块系统（`import` / `export`）、`Proxy` / `Reflect`、WeakMap/WeakSet 的真实弱引用语义；
+- **暂缓**：BigInt、Intl、TypedArray/ArrayBuffer/DataView；
+- **不在范围**：DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）、`ShadowRealm`、`Atomics`；
+- **已知不完整**：完整 ASI 边界规则。
 
 Unicode 属性/标识符/归一化/大小写映射数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。
 

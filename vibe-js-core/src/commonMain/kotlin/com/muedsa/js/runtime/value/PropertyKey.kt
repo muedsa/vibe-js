@@ -3,8 +3,8 @@ package com.muedsa.js.runtime.value
 /**
  * 属性键。
  *
- * ECMAScript 的属性键可以是字符串或 Symbol。阶段 A 只用到字符串键，
- * 但先把类型设计为 sealed，后续接入 Symbol 时不需要改动 JSObject 的存储结构。
+ * ECMAScript 的属性键可以是字符串或 Symbol；两者都由 [Str] / [Sym] 表示，
+ * 存储层不需要为接入 Symbol 改动结构。
  */
 sealed class PropertyKey {
 

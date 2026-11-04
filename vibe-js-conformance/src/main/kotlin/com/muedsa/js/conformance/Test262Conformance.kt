@@ -24,13 +24,14 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
 
 /**
- * Test262 ES5 子集语义运行器。
+ * Test262 语义运行器。
  *
  * 当前范围：
- * - 只运行 test/language 与 test/built-ins 中带 es5id 的脚本；
- * - 支持 includes、negative（parse/runtime）、strict/sloppy/raw 变体；
- * - 暂跳过 module/async/generator 以及包含 eval()/$262 的用例；
- * - 每 3 个变体独立 Engine，加载 sta.js/assert.js 与 metadata includes。
+ * - `--suite es5`：test/language 与 test/built-ins 中带 `es5id` 的脚本；
+ * - `--suite es2015`：非 ES5、特性全部受支持的用例（`--include-esid` 时纳入 esid 标注用例）；
+ * - 支持 includes、negative（parse/runtime）、strict/sloppy/raw 变体与 `flags: [async]`；
+ * - module/generator、未支持特性与部分 `$262` 宿主钩子由 `Test262Selection` 跳过并记录原因；
+ * - 每个变体使用独立 Engine，加载 sta.js/assert.js 与 metadata includes。
  */
 fun main(args: Array<String>) {
     val corpusDir = File(args.getOrElse(0) { "corpus/test262" })

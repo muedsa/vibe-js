@@ -1,10 +1,12 @@
 # 兼容性矩阵
 
-状态说明：✅ 支持　⚠️ 部分支持/有已知差异　❌ 尚未支持
+状态说明：✅ 支持　⚠️ 部分支持/有已知差异　❌ 尚未支持　⏳ 仅由 CI 覆盖
 
-> 当前覆盖 ES5 与 ES2015 的常用语法和内建；明确排除 Generator、模块系统、
-> Proxy/Reflect、BigInt、Intl、TypedArray、异步迭代（`for await` / AsyncIterator 原型）
-> 与真实 Web API（DOM/fetch 等）。
+> 当前覆盖 ES5 与 ES2015 的常用语法和内建，并已扩展部分 ES2016+ 特性。
+> 未实现的能力按[优化路线](OPTIMIZATION_ROADMAP.md)分为三类，都不以"后续阶段"承诺：
+> **无限期搁置**——Generator 与异步迭代（`for await` / AsyncIterator 原型）、模块系统、Proxy/Reflect、Weak 集合的真实弱引用语义；
+> **暂缓**——BigInt 运行时、Intl、TypedArray/ArrayBuffer；
+> **不在范围**——DOM/fetch 等真实 Web API。
 
 ## 1. 词法
 
@@ -15,7 +17,7 @@
 | 数字：0x/0o/0b、数字分隔符 | ✅ | |
 | 字符串：单/双引号与常见转义 | ✅ | `\n \t \r \b \f \v \0 \\ \' \"` |
 | 字符串：`\xXX` / `\uXXXX` / `\u{...}` | ✅ | |
-| 模板字符串 | ✅ | 支持 `${}` 嵌套；raw 文本暂与 cooked 相同 |
+| 模板字符串 | ✅ | 支持 `${}` 嵌套；raw 文本保留原始转义（标签模板行为见语法表） |
 | 正则字面量 | ✅ | 通过"上一 Token"启发式区分除法/正则 |
 | 注释：单行/多行 | ✅ | 未闭合报错；支持仅位于文件开头的 hashbang |
 | 未闭合字符串/模板/正则 | ✅ | 抛出 `LexerException` |
@@ -47,7 +49,7 @@
 | 模板字符串 / 标签模板 | ✅ | 标签模板对象按 AST 站点缓存（每个 realm 一份，重复求值返回同一冻结对象，raw 冻结）；非法转义在标签模板中 cooked=undefined、raw 保留原文，普通模板仍为解析期 SyntaxError |
 | 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；source 按 EscapeRegExpPattern 转义、原型访问器接收者校验；非 u 模式 Annex B IdentityEscape（\x/\u 缺位、\c 等）；忽略大小写按规范 Canonicalize（非 u 单码点大写并保留 U+212A/U+017F 等，u 模式 CaseFolding 简单折叠），字面量、字符类、范围、`\w`/`\b`/反向引用一致；`$` 非 m 模式按 JS 只在输入末尾匹配（JVM 回退规避 Java 的末尾换行差异）；m 模式 ^/$ 按 JS 行终止符集合（CRLF 视为两个终止符、不含 NEL）；Annex B 转义按 JS：字符类内控制转义支持数字/下划线，类外非法控制转义为字面反斜杠，非法十六进制/Unicode 转义按 IdentityEscape，垂直制表符按 U+000B；非 v 模式字符类中的 && 按字面 & 处理；/\B 按 JS 的 ASCII 单词判定处理非 ASCII 输入（JVM 回退）；命名组名按 Unicode 17 ID_Start/Continue 校验（含 $/_、astral 与 ZWNJ）；\p{...} 在 i+u 下按简单大小写与折叠正反向匹配（含 ß/ẞ 与 astral 字母）；字符类单点/范围在 i+u/i+v 下同样按简单折叠匹配（含 astral、Kelvin、ß）；astral 字面量与反向引用按完整码点折叠（含后向断言）；v 模式 q 字符串在 i 下按码点简单折叠（V8 仅折叠 ASCII，见已知差异） |
 | 赋值/复合赋值/逻辑赋值（`??=`/`&&=`/`||=`/`**=` 等） | ✅ | |
-| typeof、delete、void、in、instanceof | ✅ | 自定义 `Symbol.hasInstance` 未支持 |
+| typeof、delete、void、in、instanceof | ✅ | 支持自定义 `Symbol.hasInstance`（沿原型链查找 `@@hasInstance`） |
 | 可选链 `?.` | ✅ | 含短路、this 保留与 delete |
 | Iterator helpers | ✅ | `Iterator.from`、map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find；内建迭代器独立原型与访问器 |
 | 异步迭代（`for await...of` / AsyncIterator 原型） | ❌ | 支持 `Symbol.asyncIterator` 与 `Array.fromAsync` 的消费，但 `for await` 语句与 AsyncIterator 原型未实现 |
@@ -77,14 +79,14 @@
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile 与旧式八进制数字转义、超大 `{m,n}` 量词与零宽迭代/捕获回滚、u+i 基于 CaseFolding.txt 的简单折叠、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
 | Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、ISO 缺省字段与 0..99 年映射差异（构造器/UTC 映射，setFullYear 不映射）、24:00 顺延次日与超长小数秒截断、时区偏移范围校验、常用 getter/setter（无效日期参数顺序、参数无效时内部时间同步失效、规范 length）、toString 本地格式/toUTCString 与负年份补零、toISOString（扩展年份符号 + 6 位数字）/toJSON；本地时间通过宿主 utcOffsetMillis（默认 UTC）换算，构造与无时区 ISO 解析采用两轮偏移修正，本地 setter/toString 按该偏移处理，无效日期的 setFullYear/setYear 以 UTC +0 为基准 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
-| Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；forEach 与迭代器为实时语义（墓碑存储：遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代，支持非注册 Symbol 键 |
+| Map / Set / WeakMap / WeakSet | ✅ | 常用方法、size（Map/Set）、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；forEach 与迭代器为实时语义（墓碑存储：遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代、支持非注册 Symbol 键，但**底层是强引用存储，未实现 GC 弱语义**（无限期搁置），不能当作长期缓存的自动清理机制 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
 | Promise | ✅ | then/catch/finally、resolve/reject/all/race/allSettled/any、allKeyed/allSettledKeyed、withResolvers/try、thenable 与循环检测 |
 | DisposableStack | ✅ | DisposableStack/AsyncDisposableStack、use/adopt/defer/move/dispose/disposeAsync、Symbol.dispose/asyncDispose 与 SuppressedError |
 | using / await using 声明 | ✅ | 块/函数/for 头部资源作用域、逆序释放与 SuppressedError 聚合、for-of 每轮释放、异步释放 Await |
-| Generator | ❌ | 明确排除 |
-| TypedArray / ArrayBuffer / DataView | ❌ | 后续阶段 |
-| Intl | ❌ | 后续阶段 |
+| Generator | ❌ | 未实现（无限期搁置） |
+| TypedArray / ArrayBuffer / DataView | ❌ | 未实现（暂缓） |
+| Intl | ❌ | 未实现（不在当前路线） |
 
 ## 4. 函数与对象语义
 
@@ -93,7 +95,7 @@
 | 闭包、递归、this（方法/普通调用/构造函数） | ✅ |
 | new 与 prototype 链、constructor 双向关联 | ✅ |
 | 原型链继承（Object.create / setPrototypeOf / `__proto__`） | ✅ |
-| getter/setter、属性描述符 | ⚠️ 基础实现；复杂描述符冲突校验有限 |
+| getter/setter、属性描述符 | ⚠️ JS 路径（`Object.defineProperty`/`defineProperties`/`create`）按规范校验不可配置属性的字段冲突；低层存储 API（`JSObject.defineOwnProperty`）只做存储，不做不变量二次校验 |
 | instanceof、in、delete | ✅ |
 | arguments | ✅ | 类数组对象；sloppy 参数映射与 defineProperty 联动（不可配置/不可枚举后仍保持映射，writable:false 或改为访问器时解除；描述符层面呈现为可写数据属性） |
 | 参数环境与函数体 var 环境 | ✅ | 非简单参数下分离参数环境与 var 环境；参数初始化阶段 eval var 对参数闭包/函数体可见、同名冲突 SyntaxError、同名 var 取形参当前值 |
@@ -109,13 +111,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 522 + 宿主 23 个测试 |
-| JS（Node） | ✅ | 核心 522 + 宿主 23 个测试 |
-| Wasm（Node） | ✅ | 核心 522 + 宿主 23 个测试 |
+| JVM | ✅ | 核心 596 + 宿主 25 个测试（2026-11-03 记录） |
+| JS（Node） | ✅ | 核心 590 + 宿主 25 个测试（2026-11-03 记录） |
+| Wasm（Node） | ✅ | 核心 590 + 宿主 25 个测试（2026-11-03 记录） |
+| Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
+| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-01 本地复跑 Windows mingwX64 通过 |
 
-> CI 另在 Linux（linuxX64）、Windows（mingwX64）、macOS/iOS 模拟器运行对应 Native 测试；2026-11-01 本地复跑 Windows mingwX64 核心与宿主测试均通过。
-| Android | ⏳ | CI `testAndroidHostTest` |
-| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试 |
+> 数字来自各平台测试报告，JVM 与其余平台的差集是 JVM 专属并发/超时用例；"仅由 CI 覆盖"表示本次未在本地复跑。
 
 ## 6. 已知差异
 

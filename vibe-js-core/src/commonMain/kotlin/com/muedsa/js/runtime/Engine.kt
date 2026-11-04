@@ -184,7 +184,7 @@ class Engine(
                 throw error
             } catch (error: Throwable) {
                 // 宿主异常（除零、栈溢出、未实现等）统一包装为 JS 异常，
-                // 避免泄漏到调用方；后续阶段会进一步细分错误类型。
+                // 避免泄漏到调用方；细分错误类型时保持这一层包装与错误栈来源。
                 throw JSException(
                     JSError(
                         errorName = "InternalError",

@@ -31,7 +31,7 @@
 ## 当前基线
 
 语料版本：`tc39/test262-parser-tests@0e808c74fbec780646434cad17bb22dc52461003`  
-生成时间：2026-11-01
+生成时间：2026-11-02
 
 | 类别 | 总数 | 通过 | 失败 | 允许 | 通过率 | 崩溃 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -40,7 +40,7 @@
 | fail | 682 | 674 | 0 | 8 | 98.82% | 0 |
 
 早期错误用例（early）：共 605，解析成功 5，被拒绝 600。  
-5 条解析成功项均为现行规范允许的宽松/Annex B 语义（sloppy 顶层函数重复声明、块级函数同名重复、简单 catch 参数与块内 var 同名）；Node 同样接受，本语料为 ES2015 早期版本。fail 类别另有 8 条 NonOctalDecimalEscapeSequence（`\8`/`\9`，非严格模式合法）由允许列表放行。
+5 条解析成功项均为现行规范允许的宽松/Annex B 语义（sloppy 顶层函数重复声明、块级函数同名重复、简单 catch 参数与块内 var 同名）；Node 同样接受，本语料为 ES2015 早期版本。
 模块用例跳过：262。
 
 > 剩余 85 条 `pass` 失败全部是 Generator / generator method（项目明确排除），已列入 `vibe-js-conformance/src/main/resources/parser-pass-allowlist.txt`；`fail` 的 8 条允许项为 2 条过期公有字段负例、4 条 `\8`/`\9` 负例，以及 2 条现行 Annex B 语义（sloppy `CallExpression` 赋值目标、旧式 for-in 初始化器），`-Pstrict` 门禁不计为失败。

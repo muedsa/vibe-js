@@ -7,7 +7,7 @@ import com.muedsa.js.runtime.exception.StackFrame
  *
  * 属性以 [PropertyKey] 为键、[PropertyDescriptor] 为值存储：
  * - 支持数据属性与访问器属性（getter/setter 的调用由解释器执行）；
- * - 支持原型链（[prototype] 可修改，为后续 Object.setPrototypeOf 预留）；
+ * - 支持原型链（[prototype] 可修改，Object.setPrototypeOf 与 `__proto__` 已实现）；
  * - 属性顺序使用 LinkedHashMap 保留插入顺序。
  *
  * 注意：这里只负责"存储与查询"，不负责调用 getter/setter。
@@ -124,8 +124,9 @@ open class JSObject(
     /**
      * 定义/覆盖自有属性。
      *
-     * 阶段 A 采用简化语义：直接写入描述符，不做可配置性/可写性冲突检查。
-     * 阶段 B 会按 OrdinaryDefineOwnProperty 补齐校验。
+     * 低层存储接口：直接写入描述符，不做可配置性/可写性冲突检查。
+     * JS 可见路径（`Object.defineProperty` 等）在 ObjectBuiltins 中完成
+     * ValidateAndApplyPropertyDescriptor 的不变量校验后再调用本方法。
      */
     open fun defineOwnProperty(key: PropertyKey, descriptor: PropertyDescriptor): Boolean {
         val existing = ownProperties[key]

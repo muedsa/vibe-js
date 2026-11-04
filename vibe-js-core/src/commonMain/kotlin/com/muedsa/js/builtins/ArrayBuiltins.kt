@@ -20,7 +20,7 @@ import kotlin.math.floor
 /**
  * Array 构造器与 Array.prototype。
  *
- * 阶段 A 覆盖常用的构造、迭代、查找、增删与排序方法；
+ * 覆盖 ES5/ES2015 常用构造、迭代、查找、增删与排序方法，并扩展到 flat/flatMap/at 等后续方法；
  * 迭代方法遵循"跳过空洞"的规范行为。
  */
 object ArrayBuiltins {

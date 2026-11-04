@@ -34,7 +34,8 @@ class PrintlnConsole : Console {
 /**
  * 定时任务调度抽象。
  *
- * 阶段 A 只提供接口与默认实现；setTimeout / Promise 会在后续阶段使用。
+ * 默认实现基于 Kotlin 协程；宿主模块的 setTimeout/setInterval 通过它调度，
+ * 也可注入自定义实现以对接平台定时器。
  */
 interface Scheduler {
     fun schedule(delayMillis: Long, block: suspend () -> Unit): ScheduledTask

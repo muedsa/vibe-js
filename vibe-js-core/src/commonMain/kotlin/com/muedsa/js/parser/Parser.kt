@@ -12,13 +12,13 @@ import com.muedsa.js.lexer.TokenType
 /**
  * JavaScript 语法解析器（递归下降）。
  *
- * 阶段 A 的目标：
+ * 设计要点：
  * - 覆盖既有语法 + 空语句；
  * - AST 节点不可变且携带源码范围；
  * - 在解析阶段收集变量提升信息（var/function），避免运行时反复扫描 AST；
  * - 记录脚本/函数的严格模式标志（由 "use strict" 指令决定）。
  *
- * 后续阶段会在此基础上扩展箭头函数、模板字符串、解构、class 等语法。
+ * 已支持箭头函数、模板字符串、解构、class 等语法；扩展时保持错误位置与提升信息不变。
  */
 class Parser(
     private val tokens: List<Token>,

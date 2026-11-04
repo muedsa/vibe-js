@@ -14,8 +14,8 @@ import com.muedsa.js.runtime.regex.RegexSyntaxError
  *   供 Parser 实现自动分号插入（ASI）与 `return` 换行规则；
  * - 所有词法错误统一抛出 [LexerException]，不会泄漏宿主异常。
  *
- * 说明：当前阶段（阶段 A）只覆盖既有语法，正则字面量、模板字符串等
- * 由后续阶段在此基础上扩展。
+ * 说明：覆盖 ES5 与 ES2015 常用词法（含正则字面量、模板字符串、Unicode 标识符），
+ * 新增语法时保持 Token 位置信息与 LexerException 的 range 语义。
  */
 class Lexer(private val input: String) {
 

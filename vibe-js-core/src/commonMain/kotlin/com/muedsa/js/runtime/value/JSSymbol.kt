@@ -3,7 +3,7 @@ package com.muedsa.js.runtime.value
 /**
  * Symbol 原始值。
  *
- * 阶段 A 仅提供类型与属性键支持，内建 Symbol 对象在后续阶段注册。
+ * 作为属性键使用；内建 `Symbol` 构造器、注册表与知名 Symbol 位于 builtins/SymbolBuiltins.kt。
  * 符号的唯一性由引用决定，因此不重写 equals/hashCode。
  *
  * @property registered 是否由 Symbol.for 创建（注册符号不能作为 WeakMap/WeakSet 键）

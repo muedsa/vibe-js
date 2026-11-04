@@ -5,7 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 最小内建对象行为测试（阶段 A 范围）。
+ * 基础内建对象行为测试。
  */
 class BuiltinsTest {
 

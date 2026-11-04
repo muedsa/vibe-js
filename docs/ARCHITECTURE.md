@@ -1,14 +1,14 @@
 # 架构设计
 
-本文描述 Vibe JS 阶段 A 的内核设计，以及为后续语法/性能扩展预留的边界。
+本文描述 Vibe JS 当前实现的内核设计、执行流程与扩展点；历史阶段划分见第 10 节。
 
 ## 1. 目标与约束
 
 - **通用 Kotlin 多平台库**：核心代码全部位于 `commonMain`，不引用任何平台原生 API。
 - **单脚本执行起步**：`Engine.run(source)` 执行一段脚本，可重复调用共享全局环境。
-- **语义优先**：遵循 ECMAScript 规范（ES5 为主，逐步覆盖 ES2015）。
+- **语义优先**：遵循 ECMAScript 规范（覆盖 ES5 与 ES2015 常用语法，并扩展到部分后续年份特性）。
 - **可演进**：性能优化只替换内部实现（执行器、作用域查找、内建实现），不改变语义与公共 API。
-- **异步预留**：所有执行方法均为 `suspend`，为 `async/await`、Promise 与宿主定时器预留。
+- **异步**：所有执行方法均为 `suspend`，`async/await` 与 Promise 由 EventLoop 的微任务队列与协程调度驱动。
 
 ## 2. 分层
 
@@ -46,7 +46,7 @@ Lexer ──► Parser ──► AST (Program)
 | `JSValue` | 值基类；原始值直接继承，不再继承 JSObject |
 | `JSObject` | 属性描述符表 + 原型链；支持 getter/setter 与可枚举标志 |
 | `PropertyDescriptor` | value/get/set/writable/enumerable/configurable |
-| `PropertyKey` | 字符串键与 Symbol 键（Symbol 类型已预留） |
+| `PropertyKey` | 字符串键与 Symbol 键（Symbol 已实现） |
 | `Intrinsics` | 每个引擎实例一份的原型集合（Object.prototype、Function.prototype 等） |
 | `BuiltinRegistry` | 全局变量/内部对象注册；通过 `BuiltinModule` 安装扩展 |
 | `HostEnvironment` | 宿主抽象：Console / Clock / Scheduler |
@@ -372,7 +372,9 @@ setInterval 现在复用 Scheduler，在本次回调及微任务完成后安排�
 `EventLoopConcurrencyTest`，包括关闭等待清理、在途 run/定时器取消、迟到唤醒、空闲等待、
 词法帧恢复、多线程竞争与关闭纯计算死循环；既有万层递归和微任务顺序回归保持生效。
 
-## 9. 性能优化的预留点
+## 9. 性能优化的观察点
+
+> 这些是可替换的内部实现点，**不在当前路线内**（性能优化需先由基准证明热点，见优化路线的 B1/B2）。替换时不得改变语义与公共 API。
 
 | 现状 | 后续替换方式 | 影响范围 |
 |---|---|---|
@@ -413,5 +415,8 @@ setInterval 现在复用 Scheduler，在本次回调及微任务完成后安排�
   Promise、async/await）。
 - **阶段 D（已完成）**：独立宿主模块 `:vibe-js-host`（console、定时器、window/self、
   queueMicrotask、atob/btoa、performance）。
-- **明确排除**：Generator、import/export、Proxy/Reflect、BigInt、Intl、TypedArray、
-  异步迭代（`for await` / AsyncIterator 原型）、DOM/fetch 等真实 Web API。
+- **当前搁置**（不是"后续阶段"，决策见[优化路线](OPTIMIZATION_ROADMAP.md)）：Generator、
+  异步迭代（`for await` / AsyncIterator 原型）、import/export、Proxy/Reflect、
+  Weak 集合的真实弱引用语义；
+- **暂缓**：BigInt 运行时、Intl、TypedArray/ArrayBuffer、资源约束扩展、制品发布；
+- **不在范围**：DOM/fetch 等真实 Web API。

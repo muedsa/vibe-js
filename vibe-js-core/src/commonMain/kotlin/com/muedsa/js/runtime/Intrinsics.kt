@@ -16,7 +16,7 @@ import com.muedsa.js.runtime.value.PropertyKey
  * 这些对象是内建构造器与实例的原型；创建顺序很重要：
  * Object.prototype -> Function.prototype -> 其他原型。
  *
- * 阶段 A 只创建骨架，具体方法由 CoreBuiltins 安装。
+ * 本类只创建原型骨架，具体方法与属性由 CoreBuiltins 安装。
  */
 class Intrinsics(val globalObject: GlobalObject) {
 

@@ -22,7 +22,7 @@ import com.muedsa.js.runtime.value.PropertyKey
 /**
  * String 构造器与 String.prototype。
  *
- * 阶段 A 覆盖常用字符串方法，并修正旧实现中的边界问题：
+ * 覆盖 ES5/ES2015 常用字符串方法与后续年份方法，并保持以下规范边界：
  * - charAt 越界返回空串；
  * - at 支持负数索引；
  * - split() 无分隔符时返回原串；

@@ -202,7 +202,7 @@ class DeclarativeEnvironment(
         bindings[name] = Binding(value, mutable = false)
     }
 
-    /** 创建未初始化的 let 绑定（为完整 TDZ 预留在后续阶段使用）。 */
+    /** 创建未初始化的 let 绑定，用于 TDZ 期间的访问检查。 */
     fun declareUninitialized(name: String) {
         if (!bindings.containsKey(name)) {
             bindings[name] = Binding(JSUndefined, mutable = true, initialized = false)
