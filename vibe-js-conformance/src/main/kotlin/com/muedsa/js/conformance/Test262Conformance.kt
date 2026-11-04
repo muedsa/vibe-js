@@ -67,13 +67,30 @@ fun main(args: Array<String>) {
         exitProcess(3)
     }
 
+    // 元数据在进入运行前收集：报告必须能回答"哪份引擎、哪份语料、什么配置"
+    val metadata = RunMetadata.collect(
+        corpusDir = corpusDir,
+        args = args,
+        runnerConfig = mapOf(
+            "suite" to suite,
+            "filter" to (filter ?: ""),
+            "limit" to (limit?.toString() ?: ""),
+            "jobs" to (jobs?.toString() ?: ""),
+            "includeEsid" to includeEsid.toString(),
+            "caseTimeoutMs" to settings.caseTimeoutMillis.toString(),
+            "cleanupTimeoutMs" to settings.cleanupTimeoutMillis.toString(),
+            "maxSteps" to (settings.limits.maxSteps?.toString() ?: "unlimited"),
+        ),
+    )
+
     val report = runBlocking {
-        Test262Runner(corpusDir, limit, jobs, filter, suite, includeEsid, settings).run()
+        Test262Runner(corpusDir, limit, jobs, filter, suite, includeEsid, settings, metadata).run()
     }
     reportDir.mkdirs()
     report.writeMarkdown(File(reportDir, "test262-summary.md"))
     report.writeJson(File(reportDir, "test262-summary.json"))
     report.writeFailureLists(reportDir)
+    report.writeSkippedList(reportDir)
     report.printSummary()
 
     if (report.crashedRuns > 0) {
@@ -96,6 +113,7 @@ private class Test262Runner(
     private val suite: String = "es5",
     private val includeEsid: Boolean = false,
     private val settings: RunnerSettings = RunnerSettings(),
+    private val metadata: RunMetadata,
 ) {
 
     private val harnessDir = File(corpusDir, "harness")
@@ -150,7 +168,8 @@ private class Test262Runner(
 
     suspend fun run(): Test262Report = coroutineScope {
         val startedAt = System.nanoTime()
-        val tests = collectTests()
+        val selection = collectTests()
+        val tests = selection.selected
         val selected = if (limit != null && limit < tests.size) {
             tests.take(limit)
         } else {
@@ -190,12 +209,15 @@ private class Test262Runner(
         val failureKinds = LinkedHashMap<String, Int>()
         val failures = mutableListOf<RunRecord>()
         val allResults = mutableListOf<RunRecord>()
+        val skippedRecords = mutableListOf<SkipRecord>()
 
         for (outcome in ordered) {
             when (outcome) {
                 is TestOutcome.Skipped -> {
                     skippedTests++
                     skipReasons[outcome.reason] = (skipReasons[outcome.reason] ?: 0) + 1
+                    // 逐条落盘，便于审计文本筛选是否误排（见 test262-skipped.txt）
+                    skippedRecords.add(SkipRecord(outcome.path, outcome.reason))
                 }
 
                 is TestOutcome.Executed -> {
@@ -220,8 +242,10 @@ private class Test262Runner(
 
         Test262Report(
             generatedAt = Instant.now().toString(),
+            metadata = metadata,
             suite = suite,
             corpus = corpusDir.absolutePath,
+            selectionExcluded = selection.excluded,
             selectedTests = selected.size,
             executedRuns = executedRuns,
             passedRuns = passedRuns,
@@ -229,6 +253,8 @@ private class Test262Runner(
             crashedRuns = crashedRuns,
             skippedTests = skippedTests,
             skipReasons = skipReasons,
+            skippedRecords = skippedRecords.sortedBy { it.path },
+            harnessShims = activeHarnessShims(),
             failureKinds = failureKinds,
             failures = failures.sortedWith(
                 compareBy({ it.path }, { it.variant })
@@ -238,10 +264,25 @@ private class Test262Runner(
         )
     }
 
+    /**
+     * 列出本次实际生效的 harness 替换与注入。
+     *
+     * 这些改写会影响"测试到底验证了什么"，必须在报告里单列，而不是只写在文档里。
+     */
+    private fun activeHarnessShims(): List<String> = listOf(
+        "Reflect 垫片：仅注入 Object/反射断言所需的最小 Reflect 对象",
+        "\$262.evalScript 宿主钩子：同一 realm 内执行新 Script",
+        "\$DONE 注入：驱动 flags: [async] 用例",
+        "iteratorZipUtils.prefixes：生成器替换为等价数组实现",
+        "regExpUtils.buildString：改由宿主构造大码点字符串",
+        "严格模式前缀：strict 变体在源码前插入 \"use strict\"",
+    )
+
     private suspend fun runOne(test: TestFile): TestOutcome {
-        skipReason(test)?.let { return TestOutcome.Skipped(it) }
+        Test262Selection.skipReason(test.source, test.metadata, suite)
+            ?.let { return TestOutcome.Skipped(test.relativePath, it) }
         val includes = loadIncludes(test.metadata.includes)
-            ?: return TestOutcome.Skipped("missing include")
+            ?: return TestOutcome.Skipped(test.relativePath, "missing include")
         val results = variants(test.metadata.flags).map { variant ->
             val result = execute(test, variant, includes)
             RunRecord(
@@ -256,8 +297,15 @@ private class Test262Runner(
         return TestOutcome.Executed(results)
     }
 
-    private fun collectTests(): List<TestFile> {
-        val result = mutableListOf<TestFile>()
+    /**
+     * 收集当前子集的用例，并统计筛选阶段被排除的数量。
+     *
+     * "筛选期排除"与"选中后跳过"是两件事：前者说明用例不在本次口径内，
+     * 后者说明口径内但当前能力不支持。报告必须分开呈现，否则容易被误读成全仓缺口。
+     */
+    private fun collectTests(): SelectionStats {
+        val selected = mutableListOf<TestFile>()
+        val excluded = LinkedHashMap<String, Int>()
         val roots = if (suite == "es2015") {
             listOf("test/language", "test/built-ins", "test/annexB")
         } else {
@@ -274,33 +322,34 @@ private class Test262Runner(
                 .forEach { file ->
                     val relativePath = file.relativeTo(corpusDir).invariantSeparatorsPath
                     val (metadata, body, prefix) = parseTestFile(file)
-                    val matchesSuite = if (suite == "es2015") {
-                        // ES2015 子集：非 ES5 用例、特性全部已支持，且不依赖未实现的内建内部对象
-                        metadata != null && metadata.es5Id == null &&
-                            (metadata.features.isNotEmpty() &&
-                                metadata.features.all { it in es2015SupportedFeatures } ||
-                                metadata.features.isEmpty() &&
-                                (metadata.es6Id != null ||
-                                    includeEsid && metadata.esId != null)) &&
-                            es2015ExcludedPathFragments.none { relativePath.contains(it) }
-                    } else {
-                        metadata?.es5Id != null
-                    }
-                    if (matchesSuite && (filter == null || relativePath.contains(filter))) {
-                        // hashbang 用例的可执行前缀位于 metadata 之前，需保留
-                        val source = if ("hashbang" in metadata!!.features) prefix + body else body
-                        result.add(
-                            TestFile(
-                                file = file,
-                                relativePath = relativePath,
-                                metadata = metadata,
-                                source = source,
+                    val decision = Test262Selection.decide(
+                        relativePath = relativePath,
+                        metadata = metadata,
+                        suite = suite,
+                        includeEsid = includeEsid,
+                        filter = filter,
+                    )
+                    when (decision) {
+                        is SelectionDecision.Selected -> {
+                            val parsed = checkNotNull(metadata) { "选中的用例必须有 metadata" }
+                            // hashbang 用例的可执行前缀位于 metadata 之前，需保留
+                            val source = if ("hashbang" in parsed.features) prefix + body else body
+                            selected.add(
+                                TestFile(
+                                    file = file,
+                                    relativePath = relativePath,
+                                    metadata = parsed,
+                                    source = source,
+                                )
                             )
-                        )
+                        }
+
+                        is SelectionDecision.Excluded ->
+                            excluded[decision.reason] = (excluded[decision.reason] ?: 0) + 1
                     }
                 }
         }
-        return result
+        return SelectionStats(selected, excluded)
     }
 
     private fun parseTestFile(file: File): Triple<Metadata?, String, String> {
@@ -396,63 +445,6 @@ private class Test262Runner(
             .filter { it.isNotEmpty() }
     }
 
-    private fun skipReason(test: TestFile): String? {
-        val metadata = test.metadata
-        if (metadata.flags.any { it in setOf("module", "generator") }) {
-            return "unsupported flag"
-        }
-        // async 负数用例的期望落定方式与普通 $DONE 不同，暂不纳入
-        if ("async" in metadata.flags && metadata.negativePhase != null) {
-            return "unsupported async negative"
-        }
-        val unsupportedFeature = metadata.features.firstOrNull { it in unsupportedFeatures }
-        if (unsupportedFeature != null) {
-            return "unsupported feature: $unsupportedFeature"
-        }
-        if (test.source.contains("\$262")) {
-            // 仅放行只使用 $262.evalScript 的用例；其余宿主钩子（agent/createRealm 等）仍跳过
-            val members = dollar262MemberPattern.findAll(test.source)
-                .map { it.groupValues[1] }
-                .toSet()
-            if (members.isEmpty() || members.any { it != "evalScript" }) {
-                return "unsupported harness: \$262"
-            }
-        }
-        // 个别测试把宿主调试用的 print 挂到对象上，核心 runner 未提供该全局
-        if (test.source.contains("Array.print")) {
-            return "unsupported harness: print"
-        }
-        // TemporalHelpers.propertyBagObserver 通过 Proxy/Reflect 观测属性访问
-        if (test.source.contains("propertyBagObserver")) {
-            return "unsupported harness: Proxy"
-        }
-        // ArrayBuffer 等宿主型内建明确排除，测试源码中可能直接构造
-        if (suite == "es2015" &&
-            (test.source.contains("new ArrayBuffer") ||
-                test.source.contains("new SharedArrayBuffer"))
-        ) {
-            return "unsupported feature: ArrayBuffer"
-        }
-        // ES2015 子集中排除 BigInt/Proxy/Generator 内容（项目明确排除）
-        if (suite == "es2015" &&
-            (test.source.contains("BigInt") ||
-                test.source.contains("Proxy") ||
-                test.source.contains("function *") ||
-                test.source.contains("function*") ||
-                generatorFunctionPattern.containsMatchIn(test.source) ||
-                test.source.contains("async *") ||
-                test.source.contains("async*") ||
-                test.source.contains("for await") ||
-                generatorMethodPattern.containsMatchIn(test.source) ||
-                bigIntLiteralPattern.containsMatchIn(test.source))
-        ) {
-            return "unsupported BigInt/Proxy/Generator"
-        }
-        if (metadata.negativePhase != null && metadata.negativePhase !in setOf("parse", "runtime")) {
-            return "unsupported negative phase: ${metadata.negativePhase}"
-        }
-        return null
-    }
 
     private fun loadIncludes(names: List<String>): List<String>? {
         val allNames = LinkedHashSet<String>()
@@ -752,136 +744,8 @@ private class Test262Runner(
     private fun elapsedMillis(startedAt: Long): Long =
         (System.nanoTime() - startedAt) / 1_000_000
 
-    companion object {
-        /** BigInt 字面量检测（项目明确排除 BigInt）。 */
-        /** 生成器方法语法（`*keys() {}` / `*[Symbol.iterator]() {}`），项目未实现。 */
-        private val generatorMethodPattern = Regex(
-            """(?m)(?:^\s*|[{(,;]\s*|\*/\s*|\bstatic\s+|\basync\s+)\*\s*(?:/\*[\s\S]*?\*/\s*)*(?:[A-Za-z_$][A-Za-z0-9_$]*|\[[^\]]*\]|#[^\s(]*)\s*(?:/\*[\s\S]*?\*/\s*)*\("""
-        )
-
-        /** 生成器函数声明/表达式（允许 function 与 * 之间夹注释）。 */
-        private val generatorFunctionPattern = Regex(
-            """\bfunction\s*(?:/\*[\s\S]*?\*/\s*)*\*"""
-        )
-
-        /** `$262.<member>` 访问的成员名：当前只放行 evalScript。 */
-        private val dollar262MemberPattern =
-            Regex("""\$262\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)""")
-
-        private val bigIntLiteralPattern = Regex(
-            """(?<![A-Za-z0-9_$])(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*)n\b"""
-        )
-        /**
-         * ES2015 子集选择：用例的全部 features 必须在此集合内。
-         * 该集合只列出项目已实现并愿意纳入基线的特性。
-         */
-        private val es2015SupportedFeatures = setOf(
-            "arrow-function", "class", "computed-property-names", "const", "let",
-            "default-parameters", "destructuring-binding", "destructuring-assignment",
-            "rest-parameters", "spread-syntax", "template", "tagged-template",
-            "for-of", "new.target", "super", "Symbol", "Symbol.iterator",
-            "Symbol.toPrimitive", "Symbol.toStringTag", "Symbol.hasInstance",
-            "Symbol.species", "Symbol.isConcatSpreadable",
-            "Symbol.match", "Symbol.replace", "Symbol.search", "Symbol.split",
-            "Symbol.matchAll", "String.prototype.matchAll",
-            "Symbol.unscopables", "set-methods", "RegExp.escape", "iterator-helpers",
-            "iterator-sequencing", "joint-iteration", "symbols-as-weakmap-keys",
-            "explicit-resource-management", "__getter__", "__setter__", "iterator-chunking",
-            "await-dictionary", "iterator-includes", "Iterator.prototype.join", "Error.isError",
-            "hashbang", "optional-catch-binding", "stable-array-sort", "json-superset",
-            "error-stack-accessor", "json-parse-with-source", "for-in-order", "string-trimming",
-            "regexp-dotall", "class-static-block", "regexp-match-indices", "regexp-named-groups",
-            "regexp-modifiers", "regexp-duplicate-named-groups", "regexp-lookbehind",
-            "regexp-unicode-property-escapes", "regexp-v-flag", "tail-call-optimization",
-            "__proto__", "AggregateError", "coalesce-expression",
-            "u180e", "legacy-regexp", "caller", "well-formed-json-stringify",
-            "class-fields-public", "class-static-fields-public",
-            "class-fields-private", "class-methods-private", "class-static-fields-private",
-            "class-static-methods-private", "class-fields-private-in", "nonextensible-applies-to-private",
-            "Symbol.prototype.description", "Math.sumPrecise",
-            "Array.prototype.flat", "Array.prototype.flatMap", "Array.fromAsync",
-            "Array.prototype.includes", "Array.prototype.at", "Array.prototype.values",
-            "String.prototype.includes", "String.prototype.endsWith",
-            "String.prototype.trimStart", "String.prototype.trimEnd",
-            "String.prototype.at", "String.fromCodePoint",
-            "String.prototype.replaceAll",
-            "String.prototype.isWellFormed", "String.prototype.toWellFormed",
-            "Object.is", "Object.hasOwn", "Object.fromEntries", "array-grouping",
-            "array-find-from-last", "change-array-by-copy",
-            "Map", "Set", "WeakMap", "WeakSet", "Promise", "async-functions",
-            "upsert", "error-cause",
-            "Promise.allSettled", "Promise.any",
-            "Promise.prototype.finally", "promise-with-resolvers", "promise-try",
-            // 已在解析器/运行时实现的后续版本语法
-            "exponentiation", "logical-assignment-operators", "globalThis",
-            "object-rest", "object-spread", "optional-chaining",
-            "numeric-separator-literal",
-            "u-flag", "y-flag", "unicode-escapes",
-        )
-
-        /**
-         * ES2015 子集中排除的路径片段：
-         * - 未实现的宿主型内建（ArrayBuffer/DataView/TypedArray 等）；
-         * - 未实现的 AsyncIterator 原型；
-         * - 内容依赖 Generator 语法的计算属性名用例（Generator 明确排除）。
-         */
-        private val es2015ExcludedPathFragments = listOf(
-            "test/built-ins/ArrayBuffer/",
-            "test/built-ins/DataView/",
-            "test/built-ins/TypedArray/",
-            "test/built-ins/TypedArrayConstructors/",
-            "test/built-ins/SharedArrayBuffer/",
-            "test/built-ins/Atomics/",
-            // 依赖 TypedArray 的 concat 大型用例
-            "large-typed-array.js",
-            "small-typed-array.js",
-            "test/built-ins/AsyncIteratorPrototype/",
-            "-from-generator-function-declaration.js",
-            "-from-yield-expression.js",
-            // V8/最新规范允许子类实例调用 RegExp.prototype.compile，测试基于旧草案
-            "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
-            // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
-            "test/language/expressions/optional-chaining/new-target-optional-call.js",
-            // 宿主型二进制内建（ArrayBuffer/Uint8Array）明确不在支持范围
-            "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/",
-            "test/language/statements/class/subclass/builtins.js",
-            // TypedArray 的 Object.seal 用例无 features 标注，依赖明确排除的 TypedArray
-            "test/built-ins/Object/seal/seal-int8array.js",
-            "test/built-ins/Object/seal/seal-int16array.js",
-            "test/built-ins/Object/seal/seal-int32array.js",
-            "test/built-ins/Object/seal/seal-uint8array.js",
-            "test/built-ins/Object/seal/seal-uint8clampedarray.js",
-            "test/built-ins/Object/seal/seal-uint16array.js",
-            "test/built-ins/Object/seal/seal-uint32array.js",
-            "test/built-ins/Object/seal/seal-float32array.js",
-            "test/built-ins/Object/seal/seal-float64array.js",
-            "test/built-ins/Object/seal/seal-biguint64array.js",
-        )
-
-        /** 当前范围外或尚未实现的特性。 */
-        private val unsupportedFeatures = setOf(
-            "Reflect.construct", "Reflect", "Proxy", "BigInt",
-            "TypedArray", "ArrayBuffer", "DataView", "SharedArrayBuffer", "Atomics",
-            "Intl", "WeakRef", "FinalizationRegistry",
-            "decorators",
-            "Symbol.asyncIterator", "generator", "async-iteration",
-            "dynamic-import", "import-attributes", "top-level-await",
-            "resizable-arraybuffer", "arraybuffer-transfer", "Float16Array",
-            "Temporal",
-        )
-    }
 }
 
-private data class Metadata(
-    val es5Id: String?,
-    val es6Id: String?,
-    val esId: String?,
-    val includes: List<String>,
-    val flags: Set<String>,
-    val features: Set<String>,
-    val negativePhase: String?,
-    val negativeType: String?,
-)
 
 private data class TestFile(
     val file: File,
@@ -919,14 +783,26 @@ private data class RunRecord(
 )
 
 private sealed class TestOutcome {
-    data class Skipped(val reason: String) : TestOutcome()
+    data class Skipped(val path: String, val reason: String) : TestOutcome()
     data class Executed(val results: List<RunRecord>) : TestOutcome()
 }
 
+/** 筛选阶段的统计：选中列表 + 各排除原因的数量。 */
+private data class SelectionStats(
+    val selected: List<TestFile>,
+    val excluded: Map<String, Int>,
+)
+
+/** 一条被跳过的用例，用于落盘审计文本筛选是否误排。 */
+private data class SkipRecord(val path: String, val reason: String)
+
 private data class Test262Report(
     val generatedAt: String,
+    val metadata: RunMetadata,
     val suite: String,
     val corpus: String,
+    /** 筛选阶段被排除的数量（按原因）；与"选中后跳过"分开统计。 */
+    val selectionExcluded: Map<String, Int>,
     val selectedTests: Int,
     val executedRuns: Int,
     val passedRuns: Int,
@@ -934,6 +810,10 @@ private data class Test262Report(
     val crashedRuns: Int,
     val skippedTests: Int,
     val skipReasons: Map<String, Int>,
+    /** 被跳过的用例明细，写入 test262-skipped.txt 供审计。 */
+    val skippedRecords: List<SkipRecord>,
+    /** 本次生效的 harness 替换与注入说明。 */
+    val harnessShims: List<String>,
     /** 失败分类计数（断言失败/超时/步数耗尽/清理失败…），用于区分引擎缺陷与运行器失控。 */
     val failureKinds: Map<String, Int>,
     val failures: List<RunRecord>,
@@ -947,6 +827,11 @@ private data class Test262Report(
                 appendLine("# Test262 $suiteLabel 子集语义基线")
                 appendLine()
                 appendLine("- 生成时间：$generatedAt")
+                appendLine("- 引擎 commit：`${metadata.engineCommit}`")
+                appendLine("- 语料 commit：`${metadata.corpusCommit ?: "未知（缺少 .corpus-commit）"}`")
+                appendLine("- 工具链：Kotlin ${metadata.kotlinVersion} / Java ${metadata.javaVersion} / " +
+                    "Gradle ${metadata.gradleVersion ?: "未知"} / ${metadata.os}")
+                appendLine("- 筛选配置：${metadata.runnerConfig.entries.joinToString { "${it.key}=${it.value}" }}")
                 appendLine("- 语料目录：`$corpus`")
                 if (suite == "es2015") {
                     appendLine("- 范围：test/language + test/built-ins 中按已支持特性筛选的 ES2015 子集（排除 ES5 与未支持特性）")
@@ -965,6 +850,18 @@ private data class Test262Report(
                 appendLine("| 跳过测试文件 | $skippedTests |")
                 appendLine("| 耗时(ms) | $elapsedMillis |")
                 appendLine()
+                if (selectionExcluded.isNotEmpty()) {
+                    appendLine("## 筛选统计（未纳入本次口径）")
+                    appendLine()
+                    appendLine("| 原因 | 数量 |")
+                    appendLine("|---|---:|")
+                    for ((reason, count) in selectionExcluded.entries.sortedByDescending { it.value }) {
+                        appendLine("| ${reason.replace("|", "\\|")} | $count |")
+                    }
+                    appendLine()
+                    appendLine("以上用例在筛选阶段即被排除，与下方\"跳过原因\"（已选中但当前能力不支持）不是同一类。")
+                    appendLine()
+                }
                 if (skipReasons.isNotEmpty()) {
                     appendLine("## 跳过原因")
                     appendLine()
@@ -982,6 +879,14 @@ private data class Test262Report(
                     appendLine("|---|---:|")
                     for ((kind, count) in failureKinds.entries.sortedByDescending { it.value }) {
                         appendLine("| ${kind.replace("|", "\\|")} | $count |")
+                    }
+                    appendLine()
+                }
+                if (harnessShims.isNotEmpty()) {
+                    appendLine("## harness 替换与注入")
+                    appendLine()
+                    for (shim in harnessShims) {
+                        appendLine("- $shim")
                     }
                     appendLine()
                 }
@@ -1007,6 +912,34 @@ private data class Test262Report(
                 appendLine("  \"generatedAt\": \"${jsonEscape(generatedAt)}\",")
                 appendLine("  \"suite\": \"${jsonEscape(suite)}\",")
                 appendLine("  \"corpus\": \"${jsonEscape(corpus)}\",")
+                appendLine("  \"metadata\": {")
+                appendLine("    \"engineCommit\": \"${jsonEscape(metadata.engineCommit)}\",")
+                appendLine("    \"corpusCommit\": ${metadata.corpusCommit?.let { "\"${jsonEscape(it)}\"" } ?: "null"},")
+                appendLine("    \"kotlinVersion\": \"${jsonEscape(metadata.kotlinVersion)}\",")
+                appendLine("    \"javaVersion\": \"${jsonEscape(metadata.javaVersion)}\",")
+                appendLine("    \"gradleVersion\": ${metadata.gradleVersion?.let { "\"${jsonEscape(it)}\"" } ?: "null"},")
+                appendLine("    \"os\": \"${jsonEscape(metadata.os)}\",")
+                appendLine("    \"runnerConfig\": {")
+                val configs = metadata.runnerConfig.entries.toList()
+                configs.forEachIndexed { index, entry ->
+                    append("      \"${jsonEscape(entry.key)}\": \"${jsonEscape(entry.value)}\"")
+                    appendLine(if (index < configs.lastIndex) "," else "")
+                }
+                appendLine("    }")
+                appendLine("  },")
+                appendLine("  \"selectionExcluded\": {")
+                val exclusions = selectionExcluded.entries.sortedByDescending { it.value }
+                exclusions.forEachIndexed { index, entry ->
+                    append("    \"${jsonEscape(entry.key)}\": ${entry.value}")
+                    appendLine(if (index < exclusions.lastIndex) "," else "")
+                }
+                appendLine("  },")
+                appendLine("  \"harnessShims\": [")
+                harnessShims.forEachIndexed { index, shim ->
+                    append("    \"${jsonEscape(shim)}\"")
+                    appendLine(if (index < harnessShims.lastIndex) "," else "")
+                }
+                appendLine("  ],")
                 appendLine("  \"selectedTests\": $selectedTests,")
                 appendLine("  \"executedRuns\": $executedRuns,")
                 appendLine("  \"passedRuns\": $passedRuns,")
@@ -1056,6 +989,22 @@ private data class Test262Report(
                         .trim()
                     appendLine("${failure.path}\t${failure.variant}\t${failure.status}\t" +
                         "${failure.kind?.label ?: "-"}\t$message")
+                }
+            }
+        )
+    }
+
+    /**
+     * 写出被跳过用例的明细。
+     *
+     * 文本筛选（Generator/BigInt/Proxy）可能因注释或字符串误排，
+     * 把每条跳过记录落盘后，人工只需 grep 该文件即可复核。
+     */
+    fun writeSkippedList(directory: File) {
+        File(directory, "test262-skipped.txt").writeText(
+            buildString {
+                for (record in skippedRecords) {
+                    appendLine("${record.path}\t${record.reason}")
                 }
             }
         )

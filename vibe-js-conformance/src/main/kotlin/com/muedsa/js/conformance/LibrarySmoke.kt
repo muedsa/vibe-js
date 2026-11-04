@@ -24,8 +24,19 @@ fun main(args: Array<String>) {
     val strict = args.contains("--strict")
     // 用例超时/清理时限/步数配额，均可通过命令行覆盖
     val settings = RunnerSettings.fromArgs(args)
+    // 真实库语料没有 .corpus-commit 标记，corpusCommit 会记为未知；路径写入执行配置
+    val metadata = RunMetadata.collect(
+        corpusDir = libraryDir,
+        args = args,
+        runnerConfig = mapOf(
+            "libraries" to libraryDir.absolutePath,
+            "caseTimeoutMs" to settings.caseTimeoutMillis.toString(),
+            "cleanupTimeoutMs" to settings.cleanupTimeoutMillis.toString(),
+            "maxSteps" to (settings.limits.maxSteps?.toString() ?: "unlimited"),
+        ),
+    )
 
-    val report = runBlocking { LibrarySmokeRunner(libraryDir, settings).run() }
+    val report = runBlocking { LibrarySmokeRunner(libraryDir, settings, metadata).run() }
     reportDir.mkdirs()
     report.writeMarkdown(File(reportDir, "libraries-summary.md"))
     report.writeJson(File(reportDir, "libraries-summary.json"))
@@ -47,6 +58,7 @@ fun main(args: Array<String>) {
 private class LibrarySmokeRunner(
     private val libraryDir: File,
     private val settings: RunnerSettings = RunnerSettings(),
+    private val metadata: RunMetadata,
 ) {
 
     /** 用例执行器：负责引擎创建、超时、分类与关闭。 */
@@ -102,6 +114,7 @@ private class LibrarySmokeRunner(
         }
         return LibraryReport(
             generatedAt = Instant.now().toString(),
+            metadata = metadata,
             results = results,
             elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000,
         )
@@ -188,6 +201,7 @@ private data class LibraryResult(
 
 private data class LibraryReport(
     val generatedAt: String,
+    val metadata: RunMetadata,
     val results: List<LibraryResult>,
     val elapsedMillis: Long,
 ) {
@@ -211,6 +225,9 @@ private data class LibraryReport(
                 appendLine("# 真实 JS 库 UMD 冒烟")
                 appendLine()
                 appendLine("- 生成时间：$generatedAt")
+                appendLine("- 引擎 commit：`${metadata.engineCommit}`")
+                appendLine("- 工具链：Kotlin ${metadata.kotlinVersion} / Java ${metadata.javaVersion} / " +
+                    "Gradle ${metadata.gradleVersion ?: "未知"} / ${metadata.os}")
                 appendLine("- 通过：$passed，失败：$failed，崩溃：$crashed，跳过：$skipped，耗时：${elapsedMillis}ms")
                 appendLine()
                 appendLine("| 库 | 状态 | 用例 | 详情 |")
@@ -234,6 +251,13 @@ private data class LibraryReport(
             buildString {
                 appendLine("{")
                 appendLine("  \"generatedAt\": \"${jsonEscape(generatedAt)}\",")
+                appendLine("  \"metadata\": {")
+                appendLine("    \"engineCommit\": \"${jsonEscape(metadata.engineCommit)}\",")
+                appendLine("    \"kotlinVersion\": \"${jsonEscape(metadata.kotlinVersion)}\",")
+                appendLine("    \"javaVersion\": \"${jsonEscape(metadata.javaVersion)}\",")
+                appendLine("    \"gradleVersion\": ${metadata.gradleVersion?.let { "\"${jsonEscape(it)}\"" } ?: "null"},")
+                appendLine("    \"os\": \"${jsonEscape(metadata.os)}\"")
+                appendLine("  },")
                 appendLine("  \"passed\": $passed,")
                 appendLine("  \"failed\": $failed,")
                 appendLine("  \"crashed\": $crashed,")

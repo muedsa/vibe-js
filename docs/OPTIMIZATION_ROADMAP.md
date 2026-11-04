@@ -20,7 +20,7 @@
 | **暂缓** | L4 · 模块系统与宿主生态 | 暂不做 | "`import`/`export` 为保留字并直接报错；无 CLI、URL、TextEncoder 等" |
 | **暂缓** | B2 · 实测驱动的性能优化 | 暂不做 | "未做 profiler 分析，不承诺任何性能改进" |
 | **暂缓（未排期）** | L3 · ArrayBuffer/TypedArray/BigInt | 暂不做（本次未点名，按"不在在办范围"处理） | "无二进制数据与 BigInt 运行时；`BigInt` 字面量仅语法识别，求值抛 TypeError" |
-| **在办** | T2、M1、H1、B1、A1、D1 | 见第 3 节 | 本路线剩余的全部交付内容 |
+| **在办** | M1、H1、B1、A1、D1 | 见第 3 节 | 本路线剩余的全部交付内容 |
 
 ### 0.1 搁置/暂缓的后果（必须一起接受）
 
@@ -80,7 +80,7 @@
 
 ## 2. 已完成项与不可破坏的契约
 
-### 2.1 已完成任务（C1–C3、T1）
+### 2.1 已完成任务（C1–C3、T1、T2）
 
 | 任务 | 提交 | 实施内容 | 后续不能破坏的行为 |
 |---|---|---|---|
@@ -88,7 +88,8 @@
 | C2 · 固定上限治理 | `5f4daf7` | `Array.from` 使用共享 ToLength 与 Long 索引；移除迭代收集/全局正则/Set-like 消费的百万次 guard；原型链环检测改为快慢指针 | 规范长度上限（数组 2^32-1、安全整数）保留；资源耗尽必须抛异常而非静默截断 |
 | C3 · Set 新方法遗漏 size 整数转换 | `3e22ec2` | `GetSetRecord` 先 ToNumber、查 NaN、再 ToIntegerOrInfinity，然后判负 | `size → has → keys` 的可观察读取顺序；七个 Set 关系方法共用同一转换 |
 
-| T1 · 运行器生命周期与失败隔离 | 本次改动 | 三个运行器统一走 `RunSupport`：每用例独立引擎并在 `finally` 关闭（`NonCancellable` + 5 秒清理时限）、默认 60 秒协作式超时、失败分类、Node 输出重定向与超时强制终止、Test262 有界工作队列 | 用例超时/清理失败不得被记成普通断言失败；宿主取消必须原样传播；严格模式的零用例/缺少 Node/缺失库规则不变 |
+| T1 · 运行器生命周期与失败隔离 | `1f71e5b` | 三个运行器统一走 `RunSupport`：每用例独立引擎并在 `finally` 关闭（`NonCancellable` + 5 秒清理时限）、默认 60 秒协作式超时、失败分类、Node 输出重定向与超时强制终止、Test262 有界工作队列 | 用例超时/清理失败不得被记成普通断言失败；宿主取消必须原样传播；严格模式的零用例/缺少 Node/缺失库规则不变 |
+| T2 · 报告可审计 | 本次改动 | 三份报告写入运行元数据（引擎/语料 commit、工具链、配置）；选择与跳过判定抽为 `Test262Selection` 纯函数，区分"筛选期排除"与"选中后跳过"；shim 单列；跳过明细落盘；CI 增加 PR 快速子集 | 筛选与跳过必须分开统计；文本筛选的每条跳过都要可追溯；报告 JSON 字段不得随意改名 |
 
 回归位置：[ConformanceTest.kt:165-343](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ConformanceTest.kt#L165-L343)（长度边界、Set size 转换、clear 实时迭代）与 [DifferentialCases.kt:139-207](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialCases.kt#L139-L207)（Node 差分）；T1 的回归位于 [RunSupportTest.kt](../vibe-js-conformance/src/test/kotlin/com/muedsa/js/conformance/RunSupportTest.kt)。
 
@@ -127,21 +128,23 @@
 **已知边界。** 超时是协作式的：解析、正则回溯、超大字符串分配等非检查点工作不会被时限打断，硬隔离需要独立进程（未纳入本次范围）。
 
 
-### 3.2 T2 · 让一致性报告可审计（P1，4–8 人日）
+### 3.2 T2 · 让一致性报告可审计（已完成 2026-11-04）
 
-**现状（部分完成）。** 已有：执行计数、跳过原因、最慢用例、差分用例的 Node 版本。缺失：
+**实施说明。** 报告从"只有计数"改为"可追溯"：
 
-- 报告不含引擎 commit、语料 commit、工具链版本；语料 commit 只写在 `.corpus-commit`，报告不读。
-- 筛选参数（suite/filter/limit/jobs/includeEsid）不进报告；"筛选阶段未纳入"的计数在 `collectTests` 中被静默丢弃，无法区分"没选中"和"选中后跳过"。
-- harness shim 未单列：[Test262Conformance.kt:102-117](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Conformance.kt#L102-L117) 的 `REFLECT_SHIM`、`:125-140` 的 harness 改写、`:513-515` 的注入点只写在文档里。
-- 文本筛选的误排风险没有审计（见 0.1 第 3 条）。
-- `vibe-js-conformance` **没有 `src/test`**，运行器自身没有测试；CI 的 conformance 工作流只有手动与每周触发。
+- 新增 [RunMetadata.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/RunMetadata.kt)：引擎 commit（`--engine-commit` → `GITHUB_SHA` → `git rev-parse` → unknown）、语料 commit（`.corpus-commit`）、Kotlin/Java/Gradle 版本、OS、本次筛选配置；三份报告（Test262/真实库/差分）的 Markdown 与 JSON 均写入。
+- 抽出 [Test262Selection.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Selection.kt)：把子集选择与跳过判定从运行器中分离为纯函数，并区分**筛选期排除**（缺少 es5id、ES5 用例、特性未全部支持、路径排除、filter 不匹配）与**选中后跳过**（module/generator、未支持特性、`$262`、缺失 include）。
+- 报告新增「筛选统计」「harness 替换与注入」两节；JSON 增加 `metadata`、`selectionExcluded`、`harnessShims`。
+- 被跳过用例逐条写入 `test262-skipped.txt`，文本筛选误排可直接 grep 复核。
+- 新增 `Test262SelectionTest`（12 例）与 `RunMetadataTest`（4 例），conformance 测试合计 26 个。
+- CI：`conformance.yml` 增加 `pull_request` 触发，PR 只跑 parser + 差分快速子集（不需要 Test262 语料），完整基线仍在手动/每周任务。
 
-**目标。** 报告元数据齐全且可追溯；新增 `src/test` 覆盖筛选与报告生成；差分与 commonTest 的操作组合继续扩展（变异序列、getter 副作用、IteratorClose、关闭竞争）。
+**原始问题（已修复）。** 报告不含引擎/语料 commit 与工具链；筛选参数不进报告，"筛选期未纳入"被静默丢弃；harness shim 只写在文档里；文本筛选的误排无法审计；conformance 模块没有 `src/test`；CI 只有手动与每周触发。
 
-**范围。** 3–5 个文件、约 150–300 行，加一个新的测试源集（需在 `build.gradle.kts` 增加 `kotlin-test`）。无重构。
+**验证结果。** ES5 15,244/15,244（筛选期排除 39,592、跳过 2）、ES2015 37,329/37,329、差分 492/492、真实库 309/309；三份报告 JSON 均可解析，元数据完整（示例：引擎 `fecd579`、语料 `91c7075`、Kotlin 2.4.21 / Java 17.0.1 / Gradle 9.8.2）。
 
-**验收。** 空集、误排、shim、异常退出四种情况都能从报告追溯；一条最小反例能直接定位到用例与版本；全绿基线不再掩盖已知缺陷。
+**已知边界。** 真实库语料没有 `.corpus-commit` 标记，`corpusCommit` 记为未知；非 git 检出且无 `GITHUB_SHA` 时引擎 commit 为 `unknown`。
+
 
 ### 3.3 M1 · Map/Set 查找复杂度与墓碑回收（P1，5–10 人日）
 
@@ -210,11 +213,11 @@
 
 | 批次 | 任务 | 粗估 | 主要产物 | 完成标准 |
 |---|---|---|---|---|
-| **1 · 重建可信基线** | T2、D1（D1 可并行） | **5–10 人日** | 报告元数据、运行器自身测试、文档纠偏 | 筛选/跳过/shim 可追溯；现有严格基线仍全绿 |
+| **1 · 文档纠偏** | D1 | **1–2 人日** | 文档与注释纠偏 | 文档不再与实现冲突，排除项表述准确 |
 | **2 · 集合与度量** | M1、B1（集合组 + 引擎生命周期组）、H1 | **10–21 人日** | 集合索引与回收、性能基线、单调计时 | 实时迭代语义不回归；有规模基准数据；计时单调性有测试 |
-| **3 · 收尾（可选）** | B1 其余分组、A1 低风险部分、D1 收尾 | **6–14 人日** | 完整基准分组、诊断适配层 | 一条命令重现基准；诊断信息可定位 |
+| **3 · 收尾（可选）** | B1 其余分组、A1 低风险部分 | **6–14 人日** | 完整基准分组、诊断适配层 | 一条命令重现基准；诊断信息可定位 |
 
-**在办范围合计约 21–45 人日**：核心批次 1–2 约 15–31 人日，批次 3（6–14 人日）为可选项。T1 已完成（见 2.1 与 3.1），剩余数字已扣除其 5–10 人日。
+**在办范围合计约 17–37 人日**：核心批次 1–2 约 11–23 人日，批次 3（6–14 人日）为可选项。T1、T2 已完成（见 2.1），剩余数字已扣除其 9–18 人日。
 
 ## 5. 搁置与暂缓项的现状记录
 
@@ -282,3 +285,4 @@
 | 2026-11-03 | C1、C2、C3 完成并验证 |
 | 2026-11-04 | 重写：Generator、Reflect/Proxy、Weak 真实弱语义列为无限期搁置；R1、PKG1、L4、B2 暂缓；L3 未在本次点名，按"不在在办范围"归入暂缓（未排期）；在办范围收敛为 T1/T2/M1/H1/B1/A1/D1；更新基线与验证数字；补充搁置项的现状与重启条件 |
 | 2026-11-04 | T1 完成：新增 `RunSupport.kt`（用例超时、失败分类、受控关闭、Node 进程超时），三个运行器全部接入；新增 10 个 conformance 单元测试；ES5 15,244、ES2015 37,329、差分 492、真实库 309 全部通过 |
+| 2026-11-04 | T2 完成：三份报告写入运行元数据（引擎/语料 commit、工具链、配置）；选择与跳过判定抽为 `Test262Selection` 并区分筛选排除与选中后跳过；shim 单列、跳过明细落盘；新增 16 个单元测试；CI 增加 PR 快速子集 |

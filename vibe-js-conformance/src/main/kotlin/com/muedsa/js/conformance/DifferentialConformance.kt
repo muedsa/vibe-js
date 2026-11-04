@@ -19,8 +19,19 @@ fun main(args: Array<String>) {
     val reportDir = File(args.getOrElse(0) { "build/reports/conformance" })
     val strict = args.contains("--strict")
     val settings = RunnerSettings.fromArgs(args)
+    // 差分不依赖语料目录，元数据里记录工具链、配置与 Node 版本
+    val metadata = RunMetadata.collect(
+        corpusDir = null,
+        args = args,
+        runnerConfig = mapOf(
+            "caseTimeoutMs" to settings.caseTimeoutMillis.toString(),
+            "cleanupTimeoutMs" to settings.cleanupTimeoutMillis.toString(),
+            "nodeTimeoutMs" to settings.nodeTimeoutMillis.toString(),
+            "maxSteps" to (settings.limits.maxSteps?.toString() ?: "unlimited"),
+        ),
+    )
 
-    val report = runBlocking { DifferentialRunner(settings).run() }
+    val report = runBlocking { DifferentialRunner(settings, metadata).run() }
     reportDir.mkdirs()
     report.writeMarkdown(File(reportDir, "differential-summary.md"))
     report.writeJson(File(reportDir, "differential-summary.json"))
@@ -84,6 +95,7 @@ private data class DifferentialResult(
 
 private data class DifferentialReport(
     val generatedAt: String,
+    val metadata: RunMetadata,
     val nodeVersion: String,
     val nodeUnavailable: Boolean,
     /** Node 不可用或超时的具体原因；正常时为 null。 */
@@ -102,6 +114,10 @@ private data class DifferentialReport(
                 appendLine("# Node 差分基线")
                 appendLine()
                 appendLine("- 生成时间：$generatedAt")
+                appendLine("- 引擎 commit：`${metadata.engineCommit}`")
+                appendLine("- 工具链：Kotlin ${metadata.kotlinVersion} / Java ${metadata.javaVersion} / " +
+                    "Gradle ${metadata.gradleVersion ?: "未知"} / ${metadata.os}")
+                appendLine("- 执行配置：${metadata.runnerConfig.entries.joinToString { "${it.key}=${it.value}" }}")
                 appendLine("- Node：${if (nodeUnavailable) "不可用" else nodeVersion}")
                 if (nodeError != null) {
                     appendLine("- Node 故障：${nodeError.replace('\n', ' ')}")
@@ -151,6 +167,20 @@ private data class DifferentialReport(
             buildString {
                 appendLine("{")
                 appendLine("  \"generatedAt\": \"${jsonEscape(generatedAt)}\",")
+                appendLine("  \"metadata\": {")
+                appendLine("    \"engineCommit\": \"${jsonEscape(metadata.engineCommit)}\",")
+                appendLine("    \"kotlinVersion\": \"${jsonEscape(metadata.kotlinVersion)}\",")
+                appendLine("    \"javaVersion\": \"${jsonEscape(metadata.javaVersion)}\",")
+                appendLine("    \"gradleVersion\": ${metadata.gradleVersion?.let { "\"${jsonEscape(it)}\"" } ?: "null"},")
+                appendLine("    \"os\": \"${jsonEscape(metadata.os)}\",")
+                appendLine("    \"runnerConfig\": {")
+                val configs = metadata.runnerConfig.entries.toList()
+                configs.forEachIndexed { index, entry ->
+                    append("      \"${jsonEscape(entry.key)}\": \"${jsonEscape(entry.value)}\"")
+                    appendLine(if (index < configs.lastIndex) "," else "")
+                }
+                appendLine("    }")
+                appendLine("  },")
                 appendLine("  \"nodeVersion\": \"${jsonEscape(nodeVersion)}\",")
                 appendLine("  \"nodeUnavailable\": $nodeUnavailable,")
                 appendLine("  \"nodeError\": ${nodeError?.let { "\"${jsonEscape(it)}\"" } ?: "null"},")
@@ -206,7 +236,10 @@ private data class DifferentialReport(
     }
 }
 
-private class DifferentialRunner(private val settings: RunnerSettings) {
+private class DifferentialRunner(
+    private val settings: RunnerSettings,
+    private val metadata: RunMetadata,
+) {
 
     /** 用例执行器：负责引擎创建、超时、分类与关闭。 */
     private val runtime = CaseRuntime(settings)
@@ -283,6 +316,7 @@ private class DifferentialRunner(private val settings: RunnerSettings) {
         if (node == null) {
             return DifferentialReport(
                 generatedAt = Instant.now().toString(),
+                metadata = metadata,
                 nodeVersion = "",
                 nodeUnavailable = true,
                 nodeError = nodeError,
@@ -303,6 +337,7 @@ private class DifferentialRunner(private val settings: RunnerSettings) {
         }
         return DifferentialReport(
             generatedAt = Instant.now().toString(),
+            metadata = metadata,
             nodeVersion = version,
             nodeUnavailable = false,
             cleanupErrors = cleanupErrors,

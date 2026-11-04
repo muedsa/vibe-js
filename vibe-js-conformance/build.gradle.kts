@@ -24,6 +24,12 @@ dependencies {
  * 不传时由运行器使用自身默认值。
  */
 fun JavaExec.applyRunnerSettings() {
+    // 报告元数据：Gradle 版本无法在运行时得知，由构建脚本传入；
+    // CI 上的引擎提交优先用 GITHUB_SHA，本地缺省时由运行器回退到 git rev-parse
+    args("--gradle-version", project.gradle.gradleVersion)
+    System.getenv("GITHUB_SHA")?.takeIf { it.isNotBlank() }?.let { sha ->
+        args("--engine-commit", sha)
+    }
     listOf(
         "caseTimeoutMs" to "--case-timeout-ms",
         "cleanupTimeoutMs" to "--cleanup-timeout-ms",
