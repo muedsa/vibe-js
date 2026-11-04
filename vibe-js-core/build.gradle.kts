@@ -2,6 +2,9 @@
 
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
+import java.lang.management.ManagementFactory
+import java.time.Instant
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -107,4 +110,64 @@ benchmark {
             project.findProperty("benchmarkFilter")?.let { include(it.toString()) }
         }
     }
+}
+
+/**
+ * 记录基准运行环境。
+ *
+ * 基准数字只有配合 JDK/OS/CPU/内存/GC 信息才能跨机器比较；输出与
+ * kotlinx-benchmark 的 JSON 放在同一目录，便于一起归档。
+ */
+// 在脚本层读取版本：任务配置块内的接收者是 Task，直接访问 libs 会解析失败；
+// 版本目录访问器在脚本中不可直接链式调用，改用显式 API。
+val benchmarkKotlinVersion = project.extensions
+    .getByType(org.gradle.api.artifacts.VersionCatalogsExtension::class.java)
+    .named("libs")
+    .findVersion("kotlin")
+    .get()
+    .requiredVersion
+
+val benchmarkEnvironment by tasks.registering {
+    group = "verification"
+    description = "记录基准环境（JDK/OS/CPU/内存/GC/Gradle/Kotlin）"
+    val reportDir = layout.buildDirectory.dir("reports/benchmarks")
+    val gradleVersion = gradle.gradleVersion
+    val kotlinVersion = benchmarkKotlinVersion
+    outputs.dir(reportDir)
+    // 环境信息随每次运行刷新，不参与增量判定
+    outputs.upToDateWhen { false }
+    doLast {
+        val directory = reportDir.get().asFile
+        directory.mkdirs()
+        val runtime = Runtime.getRuntime()
+        val gcNames = ManagementFactory.getGarbageCollectorMXBeans()
+            .joinToString(", ") { it.name }
+        File(directory, "environment.md").writeText(
+            buildString {
+                appendLine("# 基准环境")
+                appendLine()
+                appendLine("| 项 | 值 |")
+                appendLine("|---|---|")
+                appendLine("| 生成时间 | ${Instant.now()} |")
+                appendLine(
+                    "| OS | ${System.getProperty("os.name")} " +
+                        "${System.getProperty("os.version")} / ${System.getProperty("os.arch")} |"
+                )
+                appendLine("| CPU 逻辑核 | ${runtime.availableProcessors()} |")
+                appendLine(
+                    "| JVM | ${System.getProperty("java.vm.name")} " +
+                        "${System.getProperty("java.version")} (${System.getProperty("java.vendor")}) |"
+                )
+                appendLine("| 最大堆 | ${runtime.maxMemory() / (1024 * 1024)} MB |")
+                appendLine("| GC | $gcNames |")
+                appendLine("| Gradle | $gradleVersion |")
+                appendLine("| Kotlin | $kotlinVersion |")
+            }
+        )
+        println("基准环境已写入 ${directory.absolutePath}/environment.md")
+    }
+}
+
+tasks.matching { it.name == "jvmBenchmarkBenchmark" }.configureEach {
+    dependsOn(benchmarkEnvironment)
 }

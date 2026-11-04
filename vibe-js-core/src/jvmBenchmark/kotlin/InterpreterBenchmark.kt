@@ -14,6 +14,7 @@ import kotlinx.benchmark.Scope
 import kotlinx.benchmark.Setup
 import kotlinx.benchmark.State
 import kotlinx.benchmark.TearDown
+import kotlinx.benchmark.Warmup
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -22,8 +23,12 @@ import kotlinx.coroutines.runBlocking
  * 说明：`*` 方法衡量 Engine.run 的整体吞吐（含词法/语法解析与执行），
  * `parsed*` 方法复用 Engine.parse 得到的 AST，仅衡量执行期吞吐；
  * `cached*` 方法使用开启 parseCacheSize 的 Engine，衡量同源码重复 run 的吞吐。
+ *
+ * 预热显式设为 2 × 300ms：JMH 默认 5 × 10s 会让整套基准跑十分钟以上，
+ * 与其他分组不一致。
  */
 @State(Scope.Benchmark)
+@Warmup(iterations = 2, time = 300, timeUnit = BenchmarkTimeUnit.MILLISECONDS)
 @Measurement(iterations = 10, time = 300, timeUnit = BenchmarkTimeUnit.MILLISECONDS)
 @OutputTimeUnit(BenchmarkTimeUnit.SECONDS)
 @BenchmarkMode(Mode.Throughput)
@@ -55,6 +60,11 @@ open class InterpreterBenchmark {
     open fun tearDown() {
         programs = emptyList()
         parsedPrograms = emptyList()
+        // 关闭事件循环：基准轮次之间不关闭会让调度器与在途任务持续累积
+        runBlocking {
+            engine.close()
+            cachedEngine.close()
+        }
     }
 
     @Benchmark

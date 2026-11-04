@@ -263,9 +263,11 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 ./gradlew :vibe-js-core:mingwX64Test
 ./gradlew :vibe-js-host:mingwX64Test
 
-# 基准测试编译/运行
-./gradlew :vibe-js-core:jvmBenchmarkClasses
+# 基准测试：环境记录 + 全量运行（约 1.5 分钟）
+./gradlew :vibe-js-core:benchmarkEnvironment
 ./gradlew :vibe-js-core:jvmBenchmarkBenchmark
+# 只跑某一组（六组见 docs/ARCHITECTURE.md §9.1）
+./gradlew :vibe-js-core:jvmBenchmarkBenchmark -PbenchmarkFilter=CollectionBenchmark
 
 # 解析一致性基线（首次运行自动下载 test262-parser-tests）
 ./gradlew :vibe-js-conformance:parserConformance

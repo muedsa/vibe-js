@@ -392,18 +392,26 @@ setInterval 现在复用 Scheduler，在本次回调及微任务完成后安排�
 
 ### 9.1 基准现状（JVM，参考值）
 
-`./gradlew :vibe-js-core:jvmBenchmarkBenchmark` 运行 kotlinx-benchmark（JMH）基准，同时衡量 `Engine.run`（解析 + 执行）与 `Engine.parse` 预解析后仅执行的吞吐：
+`./gradlew :vibe-js-core:jvmBenchmarkBenchmark` 运行 kotlinx-benchmark（JMH）基准，共六组：引擎生命周期、解析与缓存、解释器吞吐、对象与环境、异步与事件循环、标准库、集合。
+
+- 只跑某一组：`-PbenchmarkFilter=<类名>`（例如 `CollectionBenchmark`）；
+- 环境信息：`./gradlew :vibe-js-core:benchmarkEnvironment` 写入 `build/reports/benchmarks/environment.md`（JDK/OS/CPU/内存/GC/Gradle/Kotlin）；
+- 原始 JSON：`build/reports/benchmarks/main/<时间戳>/jvmBenchmark.json`。
+
+解释器吞吐（2 × 300ms 预热、10 × 300ms 测量，2026-11-04 本机 JDK 17、12 核、G1）：
 
 | 场景 | `Engine.run`（含解析） | 预解析执行 |
 |---|---:|---:|
-| 算术 `1 + 2 * 3` | ~225,000 – 240,000 | ~1,900,000 – 1,970,000 |
-| 字符串/对象拼接 | ~155,000 – 170,000 | ~530,000 – 550,000 |
-| 函数调用 | ~150,000 – 156,000 | ~985,000 – 1,010,000 |
-| 100 次数组 push 循环 | ~8,700 – 9,200 | ~9,200 – 9,800 |
+| 算术 `1 + 2 * 3` | ~142,000 ops/s | ~363,000 ops/s |
+| 字符串/对象拼接 | ~95,000 ops/s | ~202,000 ops/s |
+| 函数调用 | ~95,000 ops/s | ~271,000 ops/s |
+| 100 次数组 push 循环 | ~6,200 ops/s | ~7,100 ops/s |
 
-数值为本机（JDK 17、单线程、10 × 300ms，2026-11-01 复测）的粗略量级，仅用于纵向对比；空闲时多次运行波动约 ±10%，系统高负载时可能显著偏低，应择机复测。小脚本的 `Engine.run` 吞吐主要受词法/语法解析限制，重复执行时应使用 `Engine.parse` 复用 AST（算术场景解析开销约 8 倍）；`arrayLoop` 的解析占比较低，主要受逐条语句执行与 `push` 调用开销影响，是后续优化（槽位化环境、内联缓存）的首要观察点。
+集合（单次操作，1k / 10k / 100k 规模基本持平）：Map `get` 6–11 ns、`has` 4–6 ns、`set` 18–19 ns；`size` 读取约 0.02 ns/次。
 
-`Engine(parseCacheSize = N)` 的重复 `run(source)` 在本机复测中算术约 1.5–1.6M ops/s、数组 push 循环约 8,500–9,000，接近预解析执行；缓存查找与互斥开销使算术略低于纯预解析（同轮纯预解析约 1.7M）。
+数值仅用于纵向对比：空闲时波动约 ±10%，高负载时显著偏低，应择机复测。`Engine.run` 的小脚本吞吐主要受词法/语法解析限制（算术场景解析约占总成本 60%），重复执行应使用 `Engine.parse` 复用 AST；`arrayLoop` 的解析占比较低，主要受逐条语句执行与 `push` 调用开销影响，是后续优化（槽位化环境、内联缓存）的首要观察点。
+
+`Engine(parseCacheSize = N)` 的重复 `run(source)` 在本次复测中算术约 366,000 ops/s、数组 push 循环约 7,100 ops/s，接近预解析执行；缓存查找与互斥开销使算术略低于纯预解析。
 
 ## 10. 阶段状态
 

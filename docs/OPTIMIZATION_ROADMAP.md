@@ -20,7 +20,7 @@
 | **暂缓** | L4 · 模块系统与宿主生态 | 暂不做 | "`import`/`export` 为保留字并直接报错；无 CLI、URL、TextEncoder 等" |
 | **暂缓** | B2 · 实测驱动的性能优化 | 暂不做 | "未做 profiler 分析，不承诺任何性能改进" |
 | **暂缓（未排期）** | L3 · ArrayBuffer/TypedArray/BigInt | 暂不做（本次未点名，按"不在在办范围"处理） | "无二进制数据与 BigInt 运行时；`BigInt` 字面量仅语法识别，求值抛 TypeError" |
-| **在办** | H1、B1、A1 | 见第 3 节 | 本路线剩余的全部交付内容 |
+| **在办** | H1、A1 | 见第 3 节 | 本路线剩余的全部交付内容 |
 
 ### 0.1 搁置/暂缓的后果（必须一起接受）
 
@@ -80,7 +80,7 @@
 
 ## 2. 已完成项与不可破坏的契约
 
-### 2.1 已完成任务（C1–C3、T1、T2、M1、D1）
+### 2.1 已完成任务（C1–C3、T1、T2、M1、B1、D1）
 
 | 任务 | 提交 | 实施内容 | 后续不能破坏的行为 |
 |---|---|---|---|
@@ -91,7 +91,8 @@
 | T1 · 运行器生命周期与失败隔离 | `1f71e5b` | 三个运行器统一走 `RunSupport`：每用例独立引擎并在 `finally` 关闭（`NonCancellable` + 5 秒清理时限）、默认 60 秒协作式超时、失败分类、Node 输出重定向与超时强制终止、Test262 有界工作队列 | 用例超时/清理失败不得被记成普通断言失败；宿主取消必须原样传播；严格模式的零用例/缺少 Node/缺失库规则不变 |
 | T2 · 报告可审计 | `0e9c4a1` | 三份报告写入运行元数据（引擎/语料 commit、工具链、配置）；选择与跳过判定抽为 `Test262Selection` 纯函数，区分"筛选期排除"与"选中后跳过"；shim 单列；跳过明细落盘；CI 增加 PR 快速子集 | 筛选与跳过必须分开统计；文本筛选的每条跳过都要可追溯；报告 JSON 字段不得随意改名 |
 | D1 · 文档纠偏 | `88e4d8f` | 兼容性矩阵、架构文档、一致性文档、README、Unicode 生成脚本与 15 处代码注释统一为当前实现；搁置项改写为"不是后续阶段" | 文档不得再使用"阶段 A/后续阶段/预留"描述已实现能力；搁置项必须显式标注 |
-| M1 · 集合索引与墓碑回收 | 本次改动 | `JSMap`/`JSSet` 改为插入顺序数组 + SameValueZero 索引 + O(1) 计数；无活跃迭代器时压缩墓碑；内建改用键 API | 实时迭代语义（C1）不变；迭代期间不得压缩；`size` 必须保持 O(1) |
+| M1 · 集合索引与墓碑回收 | `5a6904f` | `JSMap`/`JSSet` 改为插入顺序数组 + SameValueZero 索引 + O(1) 计数；无活跃迭代器时压缩墓碑；内建改用键 API | 实时迭代语义（C1）不变；迭代期间不得压缩；`size` 必须保持 O(1) |
+| B1 · 可解释成本的基准 | 本次改动 | 基准扩为 56 个条目、六组（生命周期/解析缓存/吞吐/对象环境/异步/标准库/集合）；teardown 关闭引擎；统一 2×300ms 预热；新增 `benchmarkEnvironment` 与 `-PbenchmarkFilter` | 基准必须能一条命令复现；环境信息与原始 JSON 一同归档；不用单次百分比做门禁 |
 
 回归位置：[ConformanceTest.kt:165-343](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ConformanceTest.kt#L165-L343)（长度边界、Set size 转换、clear 实时迭代）与 [DifferentialCases.kt:139-207](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialCases.kt#L139-L207)（Node 差分）；T1 的回归位于 [RunSupportTest.kt](../vibe-js-conformance/src/test/kotlin/com/muedsa/js/conformance/RunSupportTest.kt)。
 
@@ -185,13 +186,31 @@
 
 **范围。** 4–5 个文件、几十行，非重构。难度低-中，主要成本是跨平台单调语义确认与改写既有断言。
 
-### 3.5 B1 · 建立能解释成本的基准（P2，4–8 人日）
+### 3.5 B1 · 建立能解释成本的基准（已完成 2026-11-04）
 
-**现状（部分完成）。** 仅 10 个 JVM 基准（4 个 `run` + 4 个预解析 + 2 个缓存），`@TearDown` 只清空列表、**没有 `engine.close()`**（[InterpreterBenchmark.kt:54-58](../vibe-js-core/src/jvmBenchmark/kotlin/InterpreterBenchmark.kt#L54-L58)），不记录环境信息，没有集合/异步/生命周期分组。
+**实施说明。** 基准从 10 个方法扩展为 **56 个条目、六组**，全部位于 [jvmBenchmark](../vibe-js-core/src/jvmBenchmark/kotlin)：
 
-**目标。** 按分组补齐：Engine 生命周期、解析与缓存、执行与 P0 开销、对象与环境、集合、异步与事件循环、标准库；记录 JDK/Kotlin/Gradle/CPU/GC/预热/原始 JSON；JS/Wasm/Native 各建轻量样本；teardown 关闭引擎。
+| 分组 | 文件 | 方法 |
+|---|---|---|
+| 引擎生命周期 | `EngineLifecycleBenchmark` | 创建、创建+关闭、创建+执行+关闭 |
+| 解析与缓存 | `ParsingBenchmark` | 仅解析、解析+执行、仅执行、缓存命中 |
+| 解释器吞吐 | `InterpreterBenchmark` | 4 个 `run` + 4 个预解析 + 2 个缓存 |
+| 对象与环境 | `ObjectEnvironmentBenchmark` | 对象字面量、属性读、属性写、闭包查找 |
+| 异步与事件循环 | `AsyncBenchmark` | Promise 链、async/await、微任务风暴 |
+| 标准库 | `StandardLibraryBenchmark` | JSON 解析/序列化、Array.map、RegExp.exec、String.slice |
+| 集合 | `CollectionBenchmark` | 单键 get/has/set、size、批量删插、迭代（1k/10k/100k） |
 
-**注意。** 先积累噪声范围再定回归阈值，不要用共享 CI 主机上的单次百分比做硬门禁。集合组与 M1 同批做，作为 M1 的验收依据。
+配套改动：
+
+- **teardown 关闭引擎**：所有基准在 `@TearDown` 调用 `engine.close()`，避免事件循环与在途任务跨轮次累积。
+- **统一预热**：显式 `2 × 300ms` 预热。`InterpreterBenchmark` 原先使用 JMH 默认的 `5 × 10s`，整套基准需 10 分 34 秒；统一后全量约 1.5 分钟，且复测数值在 ±5% 内一致。
+- **环境记录**：新增 `benchmarkEnvironment` 任务，输出 `build/reports/benchmarks/environment.md`（OS/CPU/JVM/堆/GC/Gradle/Kotlin），与原始 JSON 同目录归档。
+- **单组运行**：`-PbenchmarkFilter=<类名>`，避免每次全量。
+- **参考值同步**：ARCHITECTURE §9.1 更新为本次复测值（算术 `run` ~142k ops/s、预解析 ~363k ops/s）。
+
+**关于跨平台样本。** 原计划为 JS/Wasm/Native 各建轻量样本，本次**不做**：kotlinx-benchmark 的 JS 目标依赖 benchmark.js 运行器、Native 需要单独工具链，而这两个平台的时间噪声远大于可解释差异；功能正确性已由各平台测试覆盖。若后续需要跨平台对比，再单独评估。
+
+**注意。** 先积累噪声范围再定回归阈值，不要用共享 CI 主机上的单次百分比做硬门禁；集合组同时作为 M1 的验收依据。
 
 ### 3.6 A1 · 按职责拆分大文件（P3，5–10 人日，可选）
 
@@ -227,10 +246,10 @@
 
 | 批次 | 任务 | 粗估 | 主要产物 | 完成标准 |
 |---|---|---|---|---|
-| **1 · 度量与计时** | B1（集合组已完成，补其余分组）、H1 | **5–11 人日** | 完整基准分组、单调计时 | 一条命令重现基准；计时单调性有测试 |
-| **2 · 收尾（可选）** | B1 其余分组、A1 低风险部分 | **6–14 人日** | 诊断适配层 | 诊断信息可定位 |
+| **1 · 计时契约** | H1 | **1–3 人日** | 单调计时、`timeOrigin` 建立时点 | 计时单调性有测试 |
+| **2 · 收尾（可选）** | A1 低风险部分（诊断适配层、`IteratorBuiltins` 拆分） | **5–10 人日** | 诊断适配层 | 诊断信息可定位 |
 
-**在办范围合计约 11–25 人日**。C1–C3、T1、T2、M1、D1 已完成（见 2.1）。
+**在办范围合计约 1–13 人日**（A1 为可选项）。C1–C3、T1、T2、M1、B1、D1 已完成（见 2.1）。
 
 ## 5. 搁置与暂缓项的现状记录
 
@@ -272,9 +291,13 @@
 # 真实库与 Node 差分
 .\gradlew :vibe-js-conformance:librarySmoke :vibe-js-conformance:differentialConformance -Pstrict --continue --console=plain
 
-# 基准（B1）
+# 基准（B1）：编译 + 环境记录 + 全量运行
 .\gradlew :vibe-js-core:jvmBenchmarkClasses
+.\gradlew :vibe-js-core:benchmarkEnvironment
 .\gradlew :vibe-js-core:jvmBenchmarkBenchmark
+
+# 只跑某一组
+.\gradlew :vibe-js-core:jvmBenchmarkBenchmark -PbenchmarkFilter=CollectionBenchmark
 ```
 
 ## 8. 关键文件入口
@@ -286,7 +309,7 @@
 | 集合存储 | [JSMap.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSMap.kt)、[JSSet.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSSet.kt)、[JSWeakMap.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSWeakMap.kt)、[JSWeakSet.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSWeakSet.kt) | M1、M2（搁置） |
 | 集合内建 | [MapBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/MapBuiltins.kt)、[SetBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/SetBuiltins.kt)、[WeakMapBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/WeakMapBuiltins.kt)、[WeakSetBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/WeakSetBuiltins.kt) | M1 |
 | 一致性运行器 | [Test262Conformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Conformance.kt)、[DifferentialConformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialConformance.kt)、[LibrarySmoke.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/LibrarySmoke.kt)、[RunSupport.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/RunSupport.kt) | T1（已完成）、T2 |
-| 基准 | [InterpreterBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/InterpreterBenchmark.kt) | B1 |
+| 基准 | [InterpreterBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/InterpreterBenchmark.kt)、[ParsingBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/ParsingBenchmark.kt)、[EngineLifecycleBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/EngineLifecycleBenchmark.kt)、[ObjectEnvironmentBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/ObjectEnvironmentBenchmark.kt)、[AsyncBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/AsyncBenchmark.kt)、[StandardLibraryBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/StandardLibraryBenchmark.kt)、[CollectionBenchmark.kt](../vibe-js-core/src/jvmBenchmark/kotlin/CollectionBenchmark.kt) | B1（已完成） |
 | 宿主 | [HostModule.kt](../vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/HostModule.kt)、[HostEnvironment.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/HostEnvironment.kt) | H1 |
 | 文档 | [README.md](../README.md)、[COMPATIBILITY.md](COMPATIBILITY.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[CONFORMANCE.md](CONFORMANCE.md) | D1 |
 
@@ -301,3 +324,4 @@
 | 2026-11-04 | T2 完成：三份报告写入运行元数据（引擎/语料 commit、工具链、配置）；选择与跳过判定抽为 `Test262Selection` 并区分筛选排除与选中后跳过；shim 单列、跳过明细落盘；新增 16 个单元测试；CI 增加 PR 快速子集 |
 | 2026-11-04 | D1 完成：兼容性矩阵、架构文档、一致性文档、README、Unicode 生成脚本与 15 处代码注释统一为当前实现；搁置项改为"无限期搁置/暂缓/不在范围"；core JVM 测试 596 通过 |
 | 2026-11-04 | M1 完成：Map/Set 改为索引存储与 O(1) 计数，墓碑在无迭代器时压缩；新增 10 个存储测试与集合基准（单键操作 4–19ns 且与规模无关）；ES2015 子集耗时从 134s 降到 89s |
+| 2026-11-04 | B1 完成：基准扩为 56 个条目、六组，teardown 关闭引擎，统一 2×300ms 预热（全量 10m34s → 约 1.5 分钟），新增环境记录任务与单组过滤；ARCHITECTURE 参考值同步为本次复测 |
