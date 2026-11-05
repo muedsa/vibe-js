@@ -1,0 +1,90 @@
+name: Publish Snapshot
+
+# 项目暂不发布正式版：版本固定为 0.0.0-SNAPSHOT，每次分支推送都覆盖发布一次。
+# tag、PR 不触发；workflow_dispatch 便于手动补发。
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # 使用 GITHUB_TOKEN 推送到 GitHub Packages 需要 packages:write
+  packages: write
+
+# 同一分支连续推送时只保留最新一次发布，避免并发覆盖同一快照版本
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 与宿主无关的目标 + Linux Native；KMP 根元数据只在 Linux 任务发布一次
+          - name: JVM / JS / Wasm / Android / Linux
+            os: ubuntu-latest
+            tasks: >-
+              :vibe-js-core:publishKotlinMultiplatformPublicationToGitHubPackagesRepository
+              :vibe-js-core:publishJvmPublicationToGitHubPackagesRepository
+              :vibe-js-core:publishJsPublicationToGitHubPackagesRepository
+              :vibe-js-core:publishWasmJsPublicationToGitHubPackagesRepository
+              :vibe-js-core:publishAndroidPublicationToGitHubPackagesRepository
+              :vibe-js-core:publishLinuxX64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishKotlinMultiplatformPublicationToGitHubPackagesRepository
+              :vibe-js-host:publishJvmPublicationToGitHubPackagesRepository
+              :vibe-js-host:publishJsPublicationToGitHubPackagesRepository
+              :vibe-js-host:publishWasmJsPublicationToGitHubPackagesRepository
+              :vibe-js-host:publishLinuxX64PublicationToGitHubPackagesRepository
+          # Apple 目标只能在 macOS 上编译
+          - name: Apple Native
+            os: macos-latest
+            tasks: >-
+              :vibe-js-core:publishMacosArm64PublicationToGitHubPackagesRepository
+              :vibe-js-core:publishIosX64PublicationToGitHubPackagesRepository
+              :vibe-js-core:publishIosArm64PublicationToGitHubPackagesRepository
+              :vibe-js-core:publishIosSimulatorArm64PublicationToGitHubPackagesRepository
+              :vibe-js-core:publishTvosArm64PublicationToGitHubPackagesRepository
+              :vibe-js-core:publishTvosSimulatorArm64PublicationToGitHubPackagesRepository
+              :vibe-js-core:publishWatchosArm64PublicationToGitHubPackagesRepository
+              :vibe-js-core:publishWatchosSimulatorArm64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishMacosArm64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishIosX64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishIosArm64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishIosSimulatorArm64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishTvosArm64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishTvosSimulatorArm64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishWatchosArm64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishWatchosSimulatorArm64PublicationToGitHubPackagesRepository
+          # mingwX64 只能在 Windows 上编译
+          - name: Windows Native
+            os: windows-latest
+            tasks: >-
+              :vibe-js-core:publishMingwX64PublicationToGitHubPackagesRepository
+              :vibe-js-host:publishMingwX64PublicationToGitHubPackagesRepository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+        if: runner.os != 'Windows'
+
+      - name: Publish to GitHub Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew ${{ matrix.tasks }}

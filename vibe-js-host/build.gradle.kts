@@ -5,10 +5,10 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
+    `maven-publish`
 }
 
-group = "com.muedsa.js"
-version = "0.0.1"
+// group/version 由根 build.gradle.kts 统一设置（0.0.0-SNAPSHOT）
 
 /**
  * 宿主环境模块：提供 console / setTimeout / window 等浏览器风格能力。
@@ -55,6 +55,30 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+        }
+    }
+}
+
+/**
+ * GitHub Packages 发布配置。
+ *
+ * - 版本由根项目统一为 `0.0.0-SNAPSHOT`，每次分支推送由 CI 覆盖发布；
+ * - 仓库地址取 CI 的 `GITHUB_REPOSITORY`（owner/repo，需小写），
+ *   本地未设置该变量时不注册仓库，避免误发布；
+ * - 凭据使用工作流注入的 `GITHUB_ACTOR` / `GITHUB_TOKEN`。
+ */
+publishing {
+    repositories {
+        val githubRepository = providers.environmentVariable("GITHUB_REPOSITORY").orNull
+        if (!githubRepository.isNullOrBlank()) {
+            maven {
+                name = "GitHubPackages"
+                url = uri("https://maven.pkg.github.com/${githubRepository.lowercase()}")
+                credentials {
+                    username = providers.environmentVariable("GITHUB_ACTOR").orNull
+                    password = providers.environmentVariable("GITHUB_TOKEN").orNull
+                }
+            }
         }
     }
 }

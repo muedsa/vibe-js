@@ -51,6 +51,30 @@ engine.run("1 + 2 * 3") // 首次解析并缓存
 engine.run("1 + 2 * 3") // 复用 AST
 ```
 
+### 引入依赖
+
+项目暂不发布正式版，所有模块版本统一为 `0.0.0-SNAPSHOT`；每次分支推送由
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) 构建并推送到 GitHub Packages。
+
+```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.pkg.github.com/muedsa/vibe-js")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+        }
+    }
+}
+
+dependencies {
+    implementation("com.muedsa.js:vibe-js-core:0.0.0-SNAPSHOT")
+    implementation("com.muedsa.js:vibe-js-host:0.0.0-SNAPSHOT")
+}
+```
+
+发布目标为 JVM / JS / WasmJs / Android；Native（含 Apple 目标与 mingwX64）尚未发布到该仓库。
+
 ### 取消与超时
 
 `Engine.run` 支持协作式取消：解释器定期检查当前协程的取消状态，

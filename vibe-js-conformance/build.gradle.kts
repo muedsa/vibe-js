@@ -2,8 +2,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
 }
 
-group = "com.muedsa.js"
-version = "0.0.1"
+// group/version 由根 build.gradle.kts 统一设置（0.0.0-SNAPSHOT）；该模块不发布
 
 kotlin {
     jvmToolchain(17)
