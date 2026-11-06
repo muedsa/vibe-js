@@ -4553,27 +4553,8 @@ class Interpreter(
             }
 
             is JSNativeFunction -> {
-                // 原生父构造器（Map/Set/Promise/Error 等）创建实际实例；
-                // 把实例原型改为 NewTarget.prototype（即派生构造器预创建实例的原型），
-                // 使 instanceof 与原型方法生效。
-                val previousConstructCall = nativeConstructCall
-                nativeConstructCall = true
-                val result = try {
-                    callFunction(superConstructor, thisValue, args)
-                } finally {
-                    nativeConstructCall = previousConstructCall
-                }
-                // 原始值结果按构造语义包装（Boolean/Number/String/Symbol 的实例）；
-                // undefined 表示构造函数未返回对象，沿用预创建的 this
-                val objectResult = when (result) {
-                    is JSObject -> result
-                    is JSUndefined -> thisValue as? JSObject ?: wrapPrimitive(result)
-                    else -> wrapPrimitive(result)
-                }
-                if (thisValue is JSObject) {
-                    objectResult.prototype = thisValue.prototype
-                }
-                objectResult
+                // 原生父构造器：按 construct 语义创建实例，NewTarget 透传，Derived 采用返回值作为 this
+                construct(superConstructor, args, currentFrame.newTarget ?: superConstructor)
             }
 
             else -> throw typeError("Super constructor is not a constructor")
