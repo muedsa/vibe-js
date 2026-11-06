@@ -5,7 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Proxy/Reflect 语义补齐测试：IsArray、toString、instanceof、freeze、Reflect.defineProperty。
+ * Proxy/Reflect 语义补齐测试：IsArray、toString、instanceof、freeze、Reflect.defineProperty、JSON。
  */
 class ProxyReflectCompletionTest {
 
@@ -124,5 +124,27 @@ class ProxyReflectCompletionTest {
             """.trimIndent()
         )
         assertEquals(true, runtime.evalBoolean("threw"))
+    }
+
+    @Test
+    fun `JSON stringify 走 Proxy 的 ownKeys 与 get 陷阱`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var target = { a: 1, b: 2 };
+            var proxy = new Proxy(target, {
+                ownKeys: function () { log.push('keys'); return ['a']; },
+                getOwnPropertyDescriptor: function (t, key) {
+                    log.push('gopd:' + key);
+                    return Object.getOwnPropertyDescriptor(t, key);
+                },
+                get: function (t, key) { log.push('get:' + key); return t[key]; }
+            });
+            var json = JSON.stringify(proxy);
+            """.trimIndent()
+        )
+        assertEquals("""{"a":1}""", runtime.evalString("json"))
+        assertEquals("get:toJSON,keys,gopd:a,get:a", runtime.evalString("log.join(',')"))
     }
 }

@@ -163,25 +163,25 @@ object JsonBuiltins {
                         interpreter, value, elementKey, reviver, parser, rootHolder,
                     )
                     if (newElement is JSUndefined) {
-                        value.deleteOwnProperty(elementKeyRef)
+                        interpreter.internalDeleteProperty(value, elementKeyRef)
                     } else {
-                        createDataPropertyOrIgnore(value, elementKeyRef, newElement)
+                        createDataPropertyOrIgnore(interpreter, value, elementKeyRef, newElement)
                     }
                 }
             } else {
                 // 规范：先取 EnumerableOwnPropertyNames 快照，再逐个 Internalize；
                 // reviver 删除属性后仍按快照继续（Get 可能读到原型链值）
-                val keys = value.ownPropertyKeys()
+                val keys = interpreter.internalOwnPropertyKeys(value)
                     .filterIsInstance<PropertyKey.Str>()
-                    .filter { value.getOwnProperty(it)?.enumerable == true }
+                    .filter { interpreter.internalGetOwnProperty(value, it)?.enumerable == true }
                 for (propertyKey in keys) {
                     val newValue = internalize(
                         interpreter, value, propertyKey.value, reviver, parser, rootHolder,
                     )
                     if (newValue is JSUndefined) {
-                        value.deleteOwnProperty(propertyKey)
+                        interpreter.internalDeleteProperty(value, propertyKey)
                     } else {
-                        createDataPropertyOrIgnore(value, propertyKey, newValue)
+                        createDataPropertyOrIgnore(interpreter, value, propertyKey, newValue)
                     }
                 }
             }
@@ -215,14 +215,16 @@ object JsonBuiltins {
      * InternalizeJSONProperty 的 CreateDataProperty：
      * 既有不可配置属性（或对象不可扩展）时返回 false，调用方忽略而不再覆盖。
      */
-    private fun createDataPropertyOrIgnore(
+    private suspend fun createDataPropertyOrIgnore(
+        interpreter: Interpreter,
         objectValue: JSObject,
         key: PropertyKey,
         value: JSValue,
     ) {
-        val existing = objectValue.getOwnProperty(key)
+        val existing = interpreter.internalGetOwnProperty(objectValue, key)
         if (existing != null && !existing.configurable) return
-        objectValue.defineOwnProperty(
+        interpreter.internalDefineOwnProperty(
+            objectValue,
             key,
             PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
         )
@@ -440,9 +442,9 @@ object JsonBuiltins {
                 interpreter.typeError("Converting circular structure to JSON")
             }
             try {
-                val keys = propertyList ?: value.ownPropertyKeys()
+                val keys = propertyList ?: interpreter.internalOwnPropertyKeys(value)
                     .filterIsInstance<PropertyKey.Str>()
-                    .filter { value.getOwnProperty(it)?.enumerable == true }
+                    .filter { interpreter.internalGetOwnProperty(value, it)?.enumerable == true }
                     .map { it.value }
                 val childIndent = indent + gap
                 val parts = ArrayList<String>()
