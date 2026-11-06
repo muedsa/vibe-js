@@ -89,6 +89,8 @@ class FunctionDeclaration(
     val body: BlockStatement,
     val strict: Boolean,
     val isAsync: Boolean,
+    /** 是否为同步生成器函数声明（`function* f() {}`）。 */
+    val isGenerator: Boolean = false,
     val varDeclarations: List<String>,
     val functionDeclarations: List<FunctionDeclaration>,
     override val range: SourceRange,

@@ -18,6 +18,7 @@ import com.muedsa.js.lexer.SourceInfo
  * @property strict 函数体是否处于严格模式
  * @property isArrow 是否为箭头函数
  * @property isAsync 是否为 async 函数
+ * @property isGenerator 是否为同步生成器函数（调用返回 [JSGenerator]，不执行函数体）
  * @property lexicalThis 箭头函数捕获的 this
  * @property isClassConstructor 是否为 class 构造器（不能直接调用）
  * @property homeObject 方法所属对象（super 查找基准）
@@ -39,6 +40,7 @@ class JSFunction(
     val expressionBody: Expression? = null,
     val isArrow: Boolean = false,
     val isAsync: Boolean = false,
+    val isGenerator: Boolean = false,
     isMethod: Boolean = false,
     val lexicalThis: JSValue? = null,
     /** 箭头函数捕获的 this 绑定来源（用于派生构造器中 this 的 TDZ 判定） */
@@ -123,7 +125,8 @@ class JSFunction(
 
     override fun toPrimitiveString(): String =
         sourceText
-            ?: "function ${nativeFunctionName()}(${params.joinToString(", ") { it.name ?: "[pattern]" }}) { [native code] }"
+            ?: "function${if (isGenerator) "*" else ""} ${nativeFunctionName()}" +
+            "(${params.joinToString(", ") { it.name ?: "[pattern]" }}) { [native code] }"
 
     /** 私有名（#x）等非法 IdentifierName 在 NativeFunction 形式中省略。 */
     private fun nativeFunctionName(): String {

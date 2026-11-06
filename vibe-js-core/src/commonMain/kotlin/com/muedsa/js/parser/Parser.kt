@@ -32,6 +32,8 @@ class Parser(
     evalPrivateNames: Set<String>? = null,
     /** 原始源码（Function.prototype.toString 的源码文本切片使用；null 表示不可用） */
     private val source: String? = null,
+    /** 子表达式（模板字符串 ${...}）继承的生成器语境：其中 yield 仍是关键字。 */
+    yieldContext: Boolean = false,
 ) {
 
     /** 当前语句列表是否允许 using 声明（脚本体、eval 顶层与 case 子句不允许）。 */
@@ -57,6 +59,14 @@ class Parser(
 
     /** 当前是否处于 async 函数体（用于解析 await）。 */
     private var asyncContext = false
+
+    /**
+     * 当前是否处于同步生成器函数的参数/函数体（用于解析 yield）。
+     *
+     * 与 [asyncContext] 一样属于上下文相关关键字：非生成器语境中 yield 仍是标识符。
+     * 初始值来自构造参数，使模板字符串的 ${...} 子表达式继承外层生成器语境。
+     */
+    private var generatorContext = yieldContext
 
     /** 函数嵌套深度；顶层脚本为 0，用于检查 return 位置。 */
     private var functionDepth = 0
@@ -352,6 +362,10 @@ class Parser(
             }
             if (tokenType == TokenType.FUNCTION && (!allowFunctionInSingleStatement || strict)) {
                 throw error("Function declaration cannot appear in a single-statement context")
+            }
+            // 生成器声明与 async 函数一样，不存在 Annex B 单语句例外
+            if (tokenType == TokenType.FUNCTION && peek(1).type == TokenType.MULTIPLY) {
+                throw error("Generator declaration cannot appear in a single-statement context")
             }
             // async function 声明不存在 Annex B 单语句例外
             if (tokenType == TokenType.IDENTIFIER && !peek().containsEscape &&
@@ -716,10 +730,19 @@ class Parser(
     }
 
     /** 登记 function 声明：块级按词法声明，其他位置按 var 声明。 */
-    private fun declareFunctionBinding(name: String, isAsync: Boolean = false) {
+    private fun declareFunctionBinding(
+        name: String,
+        isAsync: Boolean = false,
+        isGenerator: Boolean = false,
+    ) {
         val scope = declScopes.lastOrNull()
         if (scope != null && scope.treatsFunctionsAsLexical) {
-            declareLexicalBinding(name, isFunctionDeclaration = true, isAsyncFunction = isAsync)
+            // 生成器与 async 函数一样，不受 sloppy 模式同名重复的 Annex B 放宽
+            declareLexicalBinding(
+                name,
+                isFunctionDeclaration = true,
+                isAsyncFunction = isAsync || isGenerator,
+            )
         } else {
             declareVarBinding(name)
         }
@@ -1217,7 +1240,10 @@ class Parser(
                 consume(TokenType.LPAREN, "Expected '(' in class member")
                 val allowSuperCall = isConstructor && classDerived
                 val (params, bodyInfo) = withFunctionContext(true, allowSuperCall, true) {
-                    val parsedParams = withAsyncContext(isAsync) { parseParametersAfterOpen() }
+                    // 类成员方法/访问器的形参是 [~Yield] 语境（类方法暂不支持生成器语法）
+                    val parsedParams = withGeneratorContext(false) {
+                        withAsyncContext(isAsync) { parseParametersAfterOpen() }
+                    }
                     when (kind) {
                         ClassMemberKind.GET -> validateAccessorParameters(parsedParams, getter = true)
                         ClassMemberKind.SET -> validateAccessorParameters(parsedParams, getter = false)
@@ -1369,7 +1395,7 @@ class Parser(
         return VarDeclaration(kind, declarations, SourceRange(start, previous().range.end))
     }
 
-    /** 函数声明：`function name(params) { ... }`（可选 async）。 */
+    /** 函数声明：`function name(params) { ... }`（可选 async / 生成器 `*`）。 */
     private fun parseFunctionDeclaration(
         isAsync: Boolean = false,
         annexBLegacy: Boolean = false,
@@ -1377,21 +1403,32 @@ class Parser(
         val start = peek().range.start
         if (isAsync) advance() // async
         consume(TokenType.FUNCTION, "Expected 'function'")
+        // 生成器声明：函数关键字后紧跟 `*`（与乘号无关的上下文相关语法）
+        val isGenerator = match(TokenType.MULTIPLY)
+        // 项目只支持同步生成器；async function* 属于明确排除的语法
+        if (isAsync && isGenerator) {
+            throw error("Async generators are not supported")
+        }
+        // 声明名沿用外层 [?Yield] 语境：顶层 sloppy 允许 function* yield(){}，
+        // 但在生成器函数体内 yield 已是关键字
         val name = consumeBindingIdentifier("Expected function name")
         // Annex B：在登记函数名之前判定扩展资格，避免把函数自身的词法绑定当作冲突
         val blockScoped = annexBLegacy ||
             declScopes.lastOrNull()?.treatsFunctionsAsLexical == true
-        val annexBVarEligible = !isAsync && !strict && blockScoped &&
+        // Annex B.3.3 只覆盖普通 FunctionDeclaration，生成器与 async 函数不建立 var 绑定
+        val annexBVarEligible = !isAsync && !isGenerator && !strict && blockScoped &&
             isAnnexBVarEligible(
                 name.value,
                 allowSameBlockFunction = !annexBLegacy && blockScoped,
             )
         // 函数声明登记到外层作用域；Annex B 的 if 分支函数不参与早期冲突检查
-        if (!annexBLegacy) declareFunctionBinding(name.value, isAsync)
+        if (!annexBLegacy) declareFunctionBinding(name.value, isAsync, isGenerator)
         val params = withFunctionContext(false, false, true) {
-            withAsyncContext(isAsync) { parseParameters() }
+            withGeneratorContext(isGenerator) {
+                withAsyncContext(isAsync) { parseParameters() }
+            }
         }
-        val bodyInfo = parseFunctionBody(isAsync, params = params)
+        val bodyInfo = parseFunctionBody(isAsync, params = params, isGenerator = isGenerator)
         validateFunctionParameters(params, bodyInfo.strict)
         validateIdentifierName(name.value, bodyInfo.strict)
         if (bodyInfo.strict && name.value in STRICT_RESTRICTED_NAMES) {
@@ -1403,6 +1440,7 @@ class Parser(
             body = bodyInfo.body,
             strict = bodyInfo.strict,
             isAsync = isAsync,
+            isGenerator = isGenerator,
             varDeclarations = bodyInfo.varDeclarations,
             functionDeclarations = bodyInfo.functionDeclarations,
             range = SourceRange(start, bodyInfo.body.range.end),
@@ -1412,21 +1450,35 @@ class Parser(
         )
     }
 
-    /** 函数表达式：`function [name](params) { ... }`（调用前已由 parsePrimary 消费 function）。 */
+    /** 函数表达式：`function [*] [name](params) { ... }`（调用前已由 parsePrimary 消费 function）。 */
     private fun parseFunctionExpression(startPos: SourcePosition, isAsync: Boolean = false): FunctionExpression {
-        val nameToken = if (check(TokenType.IDENTIFIER) ||
-            (check(TokenType.LET) && allowLetAsIdentifier())
-        ) {
-            advance()
-        } else {
-            null
+        // 生成器函数表达式：function 关键字后的 `*`
+        val isGenerator = match(TokenType.MULTIPLY)
+        // 项目只支持同步生成器；async function* 属于明确排除的语法
+        if (isAsync && isGenerator) {
+            throw error("Async generators are not supported")
+        }
+        // 普通函数表达式的名字是 [~Yield] 语境；生成器自身的名字是 [+Yield] 语境
+        val nameGeneratorContext = isGenerator
+        val nameToken = withGeneratorContext(nameGeneratorContext) {
+            if (check(TokenType.IDENTIFIER) ||
+                (check(TokenType.LET) && allowLetAsIdentifier())
+            ) {
+                advance()
+            } else {
+                null
+            }
         }
         // 函数表达式名属于函数自身绑定作用域：静态块内的 await 限制在此不适用
-        nameToken?.let { validateIdentifierToken(it) }
-        val params = withFunctionContext(false, false, true) {
-            withAsyncContext(isAsync) { parseParameters() }
+        nameToken?.let {
+            withGeneratorContext(nameGeneratorContext) { validateIdentifierToken(it) }
         }
-        val bodyInfo = parseFunctionBody(isAsync, params = params)
+        val params = withFunctionContext(false, false, true) {
+            withGeneratorContext(isGenerator) {
+                withAsyncContext(isAsync) { parseParameters() }
+            }
+        }
+        val bodyInfo = parseFunctionBody(isAsync, params = params, isGenerator = isGenerator)
         validateFunctionParameters(params, bodyInfo.strict)
         nameToken?.let { validateIdentifierName(it.value, bodyInfo.strict) }
         if (bodyInfo.strict && nameToken?.value in STRICT_RESTRICTED_NAMES) {
@@ -1438,6 +1490,7 @@ class Parser(
             body = bodyInfo.body,
             strict = bodyInfo.strict,
             isAsync = isAsync,
+            isGenerator = isGenerator,
             varDeclarations = bodyInfo.varDeclarations,
             functionDeclarations = bodyInfo.functionDeclarations,
             range = SourceRange(startPos, bodyInfo.body.range.end),
@@ -1455,12 +1508,15 @@ class Parser(
     private inline fun <T> withFieldInitializerContext(block: () -> T): T {
         val outerArgumentsForbidden = argumentsForbidden
         val outerAwaitForbidden = awaitIdentifierForbidden
+        val outerGenerator = generatorContext
         val outerSuperProperty = superPropertyAllowed
         val outerSuperCall = superCallAllowed
         val outerNewTarget = newTargetAllowed
         val outerAsync = asyncContext
         argumentsForbidden = true
         awaitIdentifierForbidden = false
+        // 字段初始化表达式是 [~Yield] 语境：yield 只能作为标识符（严格模式下直接报错）
+        generatorContext = false
         superPropertyAllowed = true
         superCallAllowed = false
         newTargetAllowed = true
@@ -1470,6 +1526,7 @@ class Parser(
         } finally {
             argumentsForbidden = outerArgumentsForbidden
             awaitIdentifierForbidden = outerAwaitForbidden
+            generatorContext = outerGenerator
             superPropertyAllowed = outerSuperProperty
             superCallAllowed = outerSuperCall
             newTargetAllowed = outerNewTarget
@@ -1519,6 +1576,7 @@ class Parser(
         params: List<Parameter> = emptyList(),
         staticBlock: Boolean = false,
         isArrow: Boolean = false,
+        isGenerator: Boolean = false,
     ): FunctionBodyInfo {
         val bodyStart = pos
         val bodyStrict = detectUseStrictDirective(bodyStart)
@@ -1528,6 +1586,7 @@ class Parser(
         }
         val outerStrict = strict
         val outerAsync = asyncContext
+        val outerGenerator = generatorContext
         val outerSuperProperty = superPropertyAllowed
         val outerSuperCall = superCallAllowed
         val outerNewTarget = newTargetAllowed
@@ -1535,6 +1594,7 @@ class Parser(
         val outerAwaitForbidden = awaitIdentifierForbidden
         strict = outerStrict || bodyStrict
         asyncContext = isAsync
+        generatorContext = isGenerator
         superPropertyAllowed = allowSuperProperty
         superCallAllowed = allowSuperCall
         newTargetAllowed = allowNewTarget
@@ -1595,6 +1655,7 @@ class Parser(
         val innerStrict = strict
         strict = outerStrict
         asyncContext = outerAsync
+        generatorContext = outerGenerator
 
         val hoist = collectHoisted(body.statements, innerStrict)
         return FunctionBodyInfo(
@@ -1664,11 +1725,15 @@ class Parser(
         }
     }
 
-    /** 标识符引用/绑定位置的额外校验：转义关键字与 async 上下文中的 await。 */
+    /** 标识符引用/绑定位置的额外校验：转义关键字与 async/generator 上下文中的关键字。 */
     private fun validateIdentifierToken(token: Token) {
         validateEscapedKeyword(token)
         if (asyncContext && token.value == "await") {
             throw ParseException("await is not a valid identifier in async context", token.range)
+        }
+        // 生成器语境中 yield 是关键字，不能作为标识符引用或绑定名
+        if (generatorContext && token.value == "yield") {
+            throw ParseException("yield is not a valid identifier in generator context", token.range)
         }
     }
 
@@ -1681,6 +1746,22 @@ class Parser(
             block()
         } finally {
             asyncContext = outer
+        }
+    }
+
+    /**
+     * 在指定的生成器语境中解析函数参数。
+     *
+     * 函数边界总是把 [generatorContext] 重置为参数自身的取值：普通函数（isGenerator=false）
+     * 的参数是 [~Yield] 语境，yield 可以继续作为绑定名；生成器参数是 [+Yield] 语境。
+     */
+    private inline fun <T> withGeneratorContext(isGenerator: Boolean, block: () -> T): T {
+        val outer = generatorContext
+        generatorContext = isGenerator
+        return try {
+            block()
+        } finally {
+            generatorContext = outer
         }
     }
 
@@ -2426,8 +2507,12 @@ class Parser(
         )
     }
 
-    /** 赋值表达式（右结合，箭头函数也在此层解析）。 */
+    /** 赋值表达式（右结合，箭头函数与 yield 也在此层解析）。 */
     private fun parseAssignment(): Expression {
+        // 生成器语境中的 yield 是关键字：它只能出现在赋值表达式层
+        if (generatorContext) {
+            parseYieldExpressionOrNull()?.let { return it }
+        }
         parseArrowFunctionOrNull()?.let { return it }
         val defaultsBefore = patternDefaultsSeen
         val left = withPatternSyntax { parseConditional() }
@@ -2466,6 +2551,60 @@ class Parser(
             throw error("Invalid shorthand property initializer")
         }
         return left
+    }
+
+    /**
+     * 尝试解析 `yield` / `yield*` 表达式；当前位置不是 `yield` 时返回 null。
+     *
+     * 语法（生成器语境）：
+     * - `yield`：产出 undefined；
+     * - `yield AssignmentExpression`（实参不能跨行）；
+     * - `yield* AssignmentExpression`（`*` 必须与 yield 同一行）。
+     */
+    private fun parseYieldExpressionOrNull(): Expression? {
+        val token = peek()
+        if (token.type != TokenType.IDENTIFIER || token.value != "yield" || token.containsEscape) {
+            return null
+        }
+        val start = token.range.start
+        advance() // yield
+        if (check(TokenType.MULTIPLY) && !peek().precededByNewline) {
+            advance() // *
+            val argument = parseAssignment()
+            return YieldExpression(
+                argument = argument,
+                delegate = true,
+                range = SourceRange(start, argument.range.end),
+            )
+        }
+        // 换行或后续 Token 不能开始表达式时按无实参的 yield 处理（yield 自身可被 ASI 结束）
+        if (peek().precededByNewline || !canStartYieldArgument()) {
+            return YieldExpression(
+                argument = null,
+                delegate = false,
+                range = SourceRange(start, previous().range.end),
+            )
+        }
+        val argument = parseAssignment()
+        return YieldExpression(
+            argument = argument,
+            delegate = false,
+            range = SourceRange(start, argument.range.end),
+        )
+    }
+
+    /** 判断当前 Token 是否可以开始 yield 的实参（AssignmentExpression）。 */
+    private fun canStartYieldArgument(): Boolean = when (peek().type) {
+        TokenType.NUMBER, TokenType.NUMBER_HEX, TokenType.NUMBER_OCT, TokenType.NUMBER_BIN,
+        TokenType.BIGINT, TokenType.STRING, TokenType.NULL, TokenType.TRUE, TokenType.FALSE,
+        TokenType.IDENTIFIER, TokenType.LET, TokenType.PRIVATE_IDENTIFIER,
+        TokenType.THIS, TokenType.NEW, TokenType.SUPER, TokenType.FUNCTION, TokenType.CLASS,
+        TokenType.LPAREN, TokenType.LBRACKET, TokenType.LBRACE, TokenType.REGEX,
+        TokenType.TEMPLATE, TokenType.NOT, TokenType.MINUS, TokenType.PLUS,
+        TokenType.BITWISE_NOT, TokenType.TYPEOF, TokenType.DELETE, TokenType.VOID,
+        TokenType.INCREMENT, TokenType.DECREMENT -> true
+
+        else -> false
     }
 
     /**
@@ -2583,9 +2722,11 @@ class Parser(
 
         val outerAsync = asyncContext
         asyncContext = isAsync
-        // 箭头函数体是 await 标识符限制的边界（[~Await] 语境）
+        // 箭头函数体是 await 标识符限制的边界（[~Await] 语境）；同样是 [~Yield] 语境
         val outerAwaitForbidden = awaitIdentifierForbidden
         awaitIdentifierForbidden = false
+        val outerGenerator = generatorContext
+        generatorContext = false
         // 表达式体沿用当前严格模式上下文
         validateFunctionParameters(params, strict, isArrow = true)
         try {
@@ -2605,6 +2746,7 @@ class Parser(
         } finally {
             asyncContext = outerAsync
             awaitIdentifierForbidden = outerAwaitForbidden
+            generatorContext = outerGenerator
         }
     }
 
@@ -3264,7 +3406,8 @@ class Parser(
                     } catch (error: LexerException) {
                         throw ParseException(error.message ?: "Invalid template expression", error.range)
                     }
-                    // 模板嵌入的是表达式，不能按 Program 解析（对象字面量会被当作块）
+                    // 模板嵌入的是表达式，不能按 Program 解析（对象字面量会被当作块）；
+                    // 生成器语境需要继承，${yield ...} 中的 yield 仍是关键字
                     expressions.add(
                         Parser(
                             subTokens,
@@ -3274,6 +3417,7 @@ class Parser(
                             newTargetContext = newTargetAllowed,
                             argumentsForbiddenContext = argumentsForbidden,
                             evalPrivateNames = externalPrivateNames,
+                            yieldContext = generatorContext,
                         ).parseExpressionInput()
                     )
                 }
@@ -3394,7 +3538,10 @@ class Parser(
                 match(TokenType.LPAREN) -> {
                     isMethodSyntax = true
                     val (params, bodyInfo) = withFunctionContext(true, false, true) {
-                        val parsedParams = withAsyncContext(isAsync) { parseParametersAfterOpen() }
+                        // 对象方法的形参是 [~Yield] 语境（方法语法目前不支持生成器）
+                        val parsedParams = withGeneratorContext(false) {
+                            withAsyncContext(isAsync) { parseParametersAfterOpen() }
+                        }
                         when (kind) {
                             PropertyKind.GET -> validateAccessorParameters(parsedParams, getter = true)
                             PropertyKind.SET -> validateAccessorParameters(parsedParams, getter = false)

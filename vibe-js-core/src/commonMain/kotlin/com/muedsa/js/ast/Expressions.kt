@@ -147,6 +147,8 @@ class FunctionExpression(
     val body: BlockStatement,
     val strict: Boolean,
     val isAsync: Boolean,
+    /** 是否为同步生成器函数（`function* f() {}`）。 */
+    val isGenerator: Boolean = false,
     val varDeclarations: List<String>,
     val functionDeclarations: List<FunctionDeclaration>,
     override val range: SourceRange,
@@ -176,6 +178,20 @@ class ArrowFunction(
     val allowsNewTarget: Boolean = false,
     /** 源码文本（Function.prototype.toString 使用） */
     val sourceText: String? = null,
+) : Expression()
+
+/**
+ * `yield` / `yield*` 表达式（只允许出现在生成器函数体内）。
+ *
+ * - `yield` 没有实参时 argument 为 null，产出 undefined；
+ * - `yield* expr` 的 delegate 为 true，按迭代协议转发整个迭代器。
+ */
+class YieldExpression(
+    /** 被产出（或委托）的表达式；`yield` 后直接换行/结束时为 null。 */
+    val argument: Expression?,
+    /** 是否为 `yield*` 委托形式。 */
+    val delegate: Boolean,
+    override val range: SourceRange,
 ) : Expression()
 
 /** 成员访问，例如 `obj.prop` 或 `obj[key]`。 */

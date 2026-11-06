@@ -17,6 +17,8 @@ object CoreBuiltins {
         ReflectBuiltins.install(registry)
         FunctionBuiltins.install(registry)
         AsyncFunctionBuiltins.install(registry)
+        // 生成器内建依赖 Function.prototype 与 %IteratorPrototype%
+        GeneratorBuiltins.install(registry)
         SymbolBuiltins.install(registry)
         IteratorBuiltins.install(registry)
         ArrayBuiltins.install(registry)

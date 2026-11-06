@@ -92,6 +92,20 @@ class Intrinsics(val globalObject: GlobalObject) {
     /** %AsyncFunction.prototype%：普通对象，async 函数的 [[Prototype]]。 */
     lateinit var asyncFunctionPrototype: JSObject
 
+    /**
+     * %GeneratorPrototype%（即 %GeneratorFunction.prototype.prototype%）。
+     *
+     * 生成器实例的默认原型，[[Prototype]] 为 %IteratorPrototype%，
+     * 携带 next/return/throw/@@iterator 与 @@toStringTag。
+     */
+    lateinit var generatorPrototype: JSObject
+
+    /** %GeneratorFunction.prototype%：普通对象，生成器函数的 [[Prototype]]。 */
+    lateinit var generatorFunctionPrototype: JSObject
+
+    /** %GeneratorFunction% 构造器（生成器函数的 constructor）。 */
+    lateinit var generatorFunctionConstructor: JSNativeFunction
+
     /** %Promise% 构造器（SpeciesConstructor 的默认值）。 */
     lateinit var promiseConstructor: JSNativeFunction
 
@@ -195,6 +209,10 @@ class Intrinsics(val globalObject: GlobalObject) {
         wrapForValidIteratorPrototype = JSObject(prototype = iteratorPrototype)
         // 规范：%AsyncFunction.prototype% 是普通对象（非函数），其 [[Prototype]] 为 Function.prototype
         asyncFunctionPrototype = JSObject(prototype = functionPrototype)
+        // 规范：%GeneratorFunction.prototype% 同样是普通对象
+        generatorFunctionPrototype = JSObject(prototype = functionPrototype)
+        // 规范：%GeneratorPrototype% 的 [[Prototype]] 是 %IteratorPrototype%
+        generatorPrototype = JSObject(prototype = iteratorPrototype)
 
         symbolIterator = JSSymbol("Symbol.iterator")
         symbolAsyncIterator = JSSymbol("Symbol.asyncIterator")

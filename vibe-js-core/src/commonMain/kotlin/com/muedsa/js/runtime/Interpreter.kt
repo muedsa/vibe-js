@@ -66,6 +66,7 @@ import com.muedsa.js.ast.UpdateExpr
 import com.muedsa.js.ast.VarDeclaration
 import com.muedsa.js.ast.WhileStatement
 import com.muedsa.js.ast.WithStatement
+import com.muedsa.js.ast.YieldExpression
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.lexer.LexerException
 import com.muedsa.js.lexer.SourceRange
@@ -74,6 +75,7 @@ import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.exception.ExecutionLimitException
+import com.muedsa.js.runtime.exception.GeneratorReturn
 import com.muedsa.js.runtime.exception.StackFrame
 import com.muedsa.js.runtime.exception.StackFrameLink
 import com.muedsa.js.runtime.regex.JsRegex
@@ -82,6 +84,9 @@ import com.muedsa.js.runtime.regex.JsRegexEngine
 import com.muedsa.js.runtime.regex.KotlinJsRegex
 import com.muedsa.js.runtime.regex.RegexNamedGroups
 import com.muedsa.js.runtime.regex.RegexSyntaxError
+import com.muedsa.js.runtime.value.GeneratorChannels
+import com.muedsa.js.runtime.value.GeneratorRequest
+import com.muedsa.js.runtime.value.GeneratorStep
 import com.muedsa.js.runtime.value.InstanceField
 import com.muedsa.js.runtime.value.JSArguments
 import com.muedsa.js.runtime.value.JSArray
@@ -89,6 +94,7 @@ import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSFunction
+import com.muedsa.js.runtime.value.JSGenerator
 import com.muedsa.js.runtime.value.JSMap
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNull
@@ -113,8 +119,10 @@ import com.muedsa.js.runtime.value.PrivateSlot
 import com.muedsa.js.runtime.value.PropertyKey
 import com.muedsa.js.runtime.value.ThisBindingSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlin.math.pow
 import kotlin.coroutines.ContinuationInterceptor
 
@@ -183,6 +191,14 @@ class Interpreter(
 
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
+
+    /**
+     * 生成器函数体执行期间绑定的暂停/恢复通道。
+     *
+     * 只在生成器体所在的独立解释器实例上非空；普通函数调用为 null，
+     * 因此 yield 出现在生成器体之外时会明确报错。
+     */
+    private var generatorChannels: GeneratorChannels? = null
 
     /**
      * 语句、表达式和循环共用检查计数器，每 1024 个执行检查点观察一次取消。
@@ -1632,10 +1648,118 @@ class Interpreter(
             wrapPrimitive(thisValue)
         }
 
+        if (function.isGenerator) {
+            // 生成器函数调用只创建生成器对象，函数体延迟到首次 next() 执行
+            return createGeneratorObject(function, effectiveThis, args)
+        }
         if (function.isAsync) {
             return callAsyncFunction(function, effectiveThis, args, callRange)
         }
         return executeUserFunction(function, effectiveThis, args, callRange)
+    }
+
+    /**
+     * 创建生成器对象（GeneratorStart 的创建阶段）。
+     *
+     * 实例的 [[Prototype]] 取生成器函数当前的 `.prototype` 属性（脚本可改写），
+     * 该属性不是对象时回退 `%GeneratorPrototype%`。
+     */
+    private suspend fun createGeneratorObject(
+        function: JSFunction,
+        thisValue: JSValue,
+        args: List<JSValue>,
+    ): JSGenerator = JSGenerator(
+        interpreter = this,
+        function = function,
+        thisValue = thisValue,
+        arguments = args.toList(),
+        prototype = prototypeFromNewTarget(function, intrinsics.generatorPrototype),
+    )
+
+    /**
+     * 启动生成器函数体协程（首次 next 时调用）。
+     *
+     * 协程挂在事件循环作用域上而不是当前 run：生成器必须在多次脚本执行之间
+     * 保持暂停状态，仍能在后续任务中恢复；引擎关闭时随事件循环一起取消。
+     * UNDISPATCHED 让函数体同步执行到第一个 yield，保证 next() 同步返回结果。
+     */
+    internal fun launchGeneratorBody(generator: JSGenerator) {
+        context.eventLoop.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                executeGeneratorBody(
+                    generator.function,
+                    generator.thisValue,
+                    generator.arguments,
+                    generator.channels,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: ExecutionLimitException) {
+                // 配额耗尽：交给等待中的 next()/return()/throw() 原样抛出
+                generator.channels.steps.trySend(GeneratorStep.LimitReached(error))
+            } catch (error: JSException) {
+                // 边界兜底：正常情况下函数体已把异常转换为 Threw 步骤
+                generator.channels.steps.trySend(GeneratorStep.Threw(error))
+            } catch (error: Throwable) {
+                generator.channels.steps.trySend(
+                    GeneratorStep.Threw(
+                        JSException(
+                            JSError(
+                                errorName = "InternalError",
+                                messageText = error.message
+                                    ?: error::class.simpleName
+                                    ?: "Internal error",
+                                prototype = intrinsics.errorPrototype,
+                            )
+                        )
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * 执行生成器函数体（在生成器协程中调用）。
+     *
+     * 使用独立解释器实例：函数体挂起期间调用方会继续执行其他脚本，不能复用
+     * 调用方的词法帧与调用栈。函数体的所有完成（正常返回、return 请求、未捕获异常）
+     * 都转换为 [GeneratorStep] 步骤交还给恢复方；只有宿主控制流（协程取消、
+     * 步数耗尽）继续向上传播。
+     */
+    internal suspend fun executeGeneratorBody(
+        function: JSFunction,
+        thisValue: JSValue,
+        args: List<JSValue>,
+        channels: GeneratorChannels,
+    ) {
+        val bodyInterpreter = forkForCallback()
+        bodyInterpreter.generatorChannels = channels
+        try {
+            val result = bodyInterpreter.executeUserFunction(function, thisValue, args)
+            channels.steps.send(GeneratorStep.Returned(result))
+        } catch (signal: GeneratorReturn) {
+            // 生成器边界：return() 的控制流信号转换为 { done: true } 的返回步骤
+            channels.steps.send(GeneratorStep.Returned(signal.value))
+        } catch (error: JSException) {
+            channels.steps.send(GeneratorStep.Threw(error))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: ExecutionLimitException) {
+            throw error
+        } catch (error: Throwable) {
+            channels.steps.send(
+                GeneratorStep.Threw(
+                    JSException(
+                        JSError(
+                            errorName = "InternalError",
+                            messageText = error.message ?: error::class.simpleName ?: "Internal error",
+                            prototype = intrinsics.errorPrototype,
+                        ),
+                        stack = bodyInterpreter.hostFailureStack ?: emptyList(),
+                    )
+                )
+            )
+        }
     }
 
     /**
@@ -1755,38 +1879,59 @@ class Interpreter(
             } else {
                 varEnv
             }
-            currentFrame.lexicalEnv = bodyEnv
-            currentFrame.variableEnv = varEnv
-            currentFrame.inParameterInitialization = false
-            hoistDeclarations(bodyEnv, function.functionDeclarations, function.varDeclarations)
-            if (hasParameterExpressions) {
-                initializeParameterVarBindings(function, parameterEnv, varEnv)
-            }
-
-            val expressionBody = function.expressionBody
-            if (expressionBody != null) {
-                // 字段初始化器按字段名做 NamedEvaluation（匿名 class 需在静态初始化前带名）
-                val hint = function.namedEvaluationHint
-                return if (hint != null) evaluateNamed(expressionBody, hint) else evaluate(expressionBody)
-            }
-
-            val bodyBlock = body ?: return JSUndefined
-            if (bodyBlock.requiresEnvironment) {
-                predeclareLexical(bodyBlock.statements, bodyEnv)
-            }
-            val completion = executeStatements(bodyBlock.statements, bodyBlock.hasUsingDeclaration)
-            return when (completion) {
-                is Completion.Normal -> JSUndefined
-                is Completion.Return -> completion.value
-                is Completion.Break, is Completion.Continue ->
-                    throw syntaxError("Illegal break/continue statement")
-            }
+            return executeFunctionBody(function, bodyEnv, varEnv, parameterEnv, hasParameterExpressions)
         } catch (error: Throwable) {
             captureFailure(error)
             throw error
         } finally {
             popStackFrame()
             frame = previousFrame
+        }
+    }
+
+    /**
+     * 执行已绑定参数的函数体（普通函数、箭头函数与生成器函数共用）。
+     *
+     * 调用前必须已经建立执行上下文、绑定 arguments 与形参；本方法负责
+     * 函数体环境的词法声明/var 提升，并返回函数体的完成值。
+     *
+     * @param bodyEnv 函数体词法环境
+     * @param varEnv 函数体 var 环境
+     * @param parameterEnv 参数环境（含参数表达式时与 var 环境分离）
+     * @param hasParameterExpressions 形参列表是否含默认值/rest/解构
+     */
+    private suspend fun executeFunctionBody(
+        function: JSFunction,
+        bodyEnv: DeclarativeEnvironment,
+        varEnv: DeclarativeEnvironment,
+        parameterEnv: DeclarativeEnvironment,
+        hasParameterExpressions: Boolean,
+    ): JSValue {
+        currentFrame.lexicalEnv = bodyEnv
+        currentFrame.variableEnv = varEnv
+        currentFrame.inParameterInitialization = false
+        hoistDeclarations(bodyEnv, function.functionDeclarations, function.varDeclarations)
+        if (hasParameterExpressions) {
+            initializeParameterVarBindings(function, parameterEnv, varEnv)
+        }
+
+        val expressionBody = function.expressionBody
+        if (expressionBody != null) {
+            // 字段初始化器按字段名做 NamedEvaluation（匿名 class 需在静态初始化前带名）
+            val hint = function.namedEvaluationHint
+            return if (hint != null) evaluateNamed(expressionBody, hint) else evaluate(expressionBody)
+        }
+
+        val bodyBlock = function.body ?: return JSUndefined
+        if (bodyBlock.requiresEnvironment) {
+            predeclareLexical(bodyBlock.statements, bodyEnv)
+        }
+        val completion = executeStatements(bodyBlock.statements, bodyBlock.hasUsingDeclaration)
+        return when (completion) {
+            is Completion.Normal -> JSUndefined
+            is Completion.Return -> completion.value
+            is Completion.Break, is Completion.Continue ->
+                throw syntaxError("Illegal break/continue statement")
         }
     }
 
@@ -1883,7 +2028,7 @@ class Interpreter(
         args: List<JSValue>,
         newTarget: JSValue = function,
     ): JSValue {
-        if (function.isArrow || function.isMethod || function.isAsync) {
+        if (function.isArrow || function.isMethod || function.isAsync || function.isGenerator) {
             throw typeError("${function.name.ifEmpty { "anonymous" }} is not a constructor")
         }
         // 必须在构造时读取当前的 F.prototype，而不是创建函数时捕获的对象；
@@ -1999,6 +2144,7 @@ class Interpreter(
         expressionBody: Expression? = null,
         isArrow: Boolean = false,
         isAsync: Boolean = false,
+        isGenerator: Boolean = false,
         isMethod: Boolean = false,
         lexicalThis: JSValue? = null,
         lexicalThisSource: ThisBindingSource? = null,
@@ -2019,11 +2165,19 @@ class Interpreter(
         sourceText: String? = null,
         sourceInfo: SourceInfo = currentSourceInfo,
     ): JSFunction {
-        // async 函数不是构造器，没有 own "prototype" 属性
+        // async 函数不是构造器，没有 own "prototype" 属性；
+        // 生成器的 .prototype 对象以 %GeneratorPrototype% 为原型（规范 9.2.3）
         val prototypeObject = if (isArrow || isMethod || isAsync) {
             null
         } else {
-            functionPrototypeObject ?: JSObject(prototype = intrinsics.objectPrototype)
+            functionPrototypeObject
+                ?: JSObject(
+                    prototype = if (isGenerator) {
+                        intrinsics.generatorPrototype
+                    } else {
+                        intrinsics.objectPrototype
+                    },
+                )
         }
         val function = JSFunction(
             name = name,
@@ -2031,15 +2185,21 @@ class Interpreter(
             body = body,
             closure = closure,
             strict = strict,
-            // async 函数的 [[Prototype]] 是 %AsyncFunction.prototype%
+            // async 函数的 [[Prototype]] 是 %AsyncFunction.prototype%；
+            // 生成器函数是 %GeneratorFunction.prototype%
             prototype = functionObjectPrototype
-                ?: if (isAsync) intrinsics.asyncFunctionPrototype else intrinsics.functionPrototype,
+                ?: when {
+                    isAsync -> intrinsics.asyncFunctionPrototype
+                    isGenerator -> intrinsics.generatorFunctionPrototype
+                    else -> intrinsics.functionPrototype
+                },
             functionPrototypeObject = prototypeObject,
             varDeclarations = varDeclarations,
             functionDeclarations = functionDeclarations,
             expressionBody = expressionBody,
             isArrow = isArrow,
             isAsync = isAsync,
+            isGenerator = isGenerator,
             isMethod = isMethod,
             lexicalThis = lexicalThis,
             lexicalThisSource = lexicalThisSource,
@@ -2058,8 +2218,8 @@ class Interpreter(
         )
         function.sourceText = sourceText
         // ES5 15.3.5.4：非严格普通函数的 caller/arguments 是值为 null 的自有数据属性；
-        // 严格函数、箭头、方法与 async 函数不定义（读取落到 Function.prototype 拒绝访问器）
-        if (!strict && !isArrow && !isMethod && !isAsync) {
+        // 严格函数、箭头、方法、async 与生成器函数不定义（读取落到 Function.prototype 拒绝访问器）
+        if (!strict && !isArrow && !isMethod && !isAsync && !isGenerator) {
             function.defineDataProperty(
                 PropertyKey.Str("caller"),
                 JSUndefined,
@@ -2247,6 +2407,36 @@ class Interpreter(
         return created
     }
 
+    /**
+     * 动态创建生成器函数（GeneratorFunction 构造器）。
+     *
+     * 与 AsyncFunction 一样以全局环境作为闭包，并通过 Parser 校验参数与函数体；
+     * 生成器关键字写在源码文本中，由解析器产生 isGenerator 标记。
+     */
+    fun createDynamicGeneratorFunction(
+        paramStrings: List<String>,
+        body: String,
+        functionObjectPrototype: JSObject? = null,
+    ): JSFunction {
+        val parameters = paramStrings.joinToString(",")
+        val source = "(function* anonymous($parameters\n) {\n$body\n})"
+        val function = parseDynamicFunctionSource(source)
+        val created = createFunction(
+            name = function.name ?: "anonymous",
+            params = function.params,
+            body = function.body,
+            closure = context.globalEnvironment,
+            strict = function.strict,
+            varDeclarations = function.varDeclarations,
+            functionDeclarations = function.functionDeclarations,
+            isGenerator = true,
+            functionObjectPrototype = functionObjectPrototype,
+            sourceInfo = SourceInfo("<GeneratorFunction>"),
+        )
+        created.sourceText = source.substring(1, source.length - 1)
+        return created
+    }
+
     /** 解析动态函数源码并返回函数表达式节点。 */
     private fun parseDynamicFunctionSource(source: String): FunctionExpression {
         val expression = try {
@@ -2391,6 +2581,7 @@ class Interpreter(
                 varDeclarations = declaration.varDeclarations,
                 functionDeclarations = declaration.functionDeclarations,
                 isAsync = declaration.isAsync,
+                isGenerator = declaration.isGenerator,
                 // 函数声明同样闭包捕获当前上下文的私有名环境
                 privateEnvironment = frame?.function?.privateEnvironment,
                 sourceText = declaration.sourceText,
@@ -2509,6 +2700,7 @@ class Interpreter(
                         varDeclarations = statement.varDeclarations,
                         functionDeclarations = statement.functionDeclarations,
                         isAsync = statement.isAsync,
+                        isGenerator = statement.isGenerator,
                         privateEnvironment = frame?.function?.privateEnvironment,
                         sourceText = statement.sourceText,
                     )
@@ -2591,6 +2783,7 @@ class Interpreter(
                 varDeclarations = statement.varDeclarations,
                 functionDeclarations = statement.functionDeclarations,
                 isAsync = statement.isAsync,
+                isGenerator = statement.isGenerator,
                 privateEnvironment = frame?.function?.privateEnvironment,
                 sourceText = statement.sourceText,
             )
@@ -3379,7 +3572,8 @@ class Interpreter(
      */
     private suspend fun executeTryBody(statement: TryStatement): Completion {
         var pending: Completion = Completion.Normal(JSUndefined)
-        var thrown: JSException? = null
+        // 除 JSException 外还要承载生成器 return 的控制流信号（不进入 catch 子句）
+        var thrown: Throwable? = null
         val outerBlockers = tailCallBlockers
 
         tailCallBlockers = if (statement.handler != null || statement.finalizer != null) {
@@ -3397,6 +3591,9 @@ class Interpreter(
                 },
                 statement.block.hasUsingDeclaration,
             )
+        } catch (signal: GeneratorReturn) {
+            // 生成器 return() 不是 JS 异常：catch 子句过滤它，finally 仍然执行
+            thrown = signal
         } catch (exception: JSException) {
             normalizeErrorValue(exception.value)
             val handler = statement.handler
@@ -3437,6 +3634,9 @@ class Interpreter(
                         },
                         handler.body.hasUsingDeclaration,
                     )
+                } catch (signal: GeneratorReturn) {
+                    // catch 块内的 yield 收到 return 请求：先记下控制流信号，finally 照常执行
+                    thrown = signal
                 } catch (catchException: JSException) {
                     thrown = catchException
                 }
@@ -3464,6 +3664,9 @@ class Interpreter(
                     pending = completion
                     thrown = null
                 }
+            } catch (signal: GeneratorReturn) {
+                // finally 中的 yield 收到 return 请求：以新的完成记录覆盖之前的 throw
+                thrown = signal
             } catch (finalizerException: JSException) {
                 thrown = finalizerException
             }
@@ -3517,6 +3720,8 @@ class Interpreter(
             is SuperExpr -> throw syntaxError("'super' keyword unexpected here")
             is NewTargetExpr -> currentFrame.newTarget ?: JSUndefined
 
+            is YieldExpression -> evaluateYield(expression)
+
             is ArrayLiteral -> evaluateArrayLiteral(expression)
             is ObjectLiteral -> evaluateObjectLiteral(expression)
 
@@ -3533,6 +3738,7 @@ class Interpreter(
                         varDeclarations = expression.varDeclarations,
                         functionDeclarations = expression.functionDeclarations,
                         isAsync = expression.isAsync,
+                        isGenerator = expression.isGenerator,
                         isMethod = expression.isMethodDefinition,
                         privateEnvironment = currentFrame.function?.privateEnvironment,
                         sourceText = expression.sourceText,
@@ -3550,6 +3756,7 @@ class Interpreter(
                         varDeclarations = expression.varDeclarations,
                         functionDeclarations = expression.functionDeclarations,
                         isAsync = expression.isAsync,
+                        isGenerator = expression.isGenerator,
                         privateEnvironment = currentFrame.function?.privateEnvironment,
                         sourceText = expression.sourceText,
                     )
@@ -4601,6 +4808,98 @@ class Interpreter(
             }
 
             else -> throw typeError("Super constructor is not a constructor")
+        }
+    }
+
+    // ================================================================
+    // 生成器（yield / yield*）
+    // ================================================================
+
+    /**
+     * 求值 `yield` / `yield*`。
+     *
+     * yield 是生成器函数体与恢复方之间的握手点：先交出产出值，再等待下一个恢复请求。
+     * Next 请求的值成为 yield 表达式的值；Return 请求转换为内部控制流信号
+     * [GeneratorReturn]（因此 finally 会正常执行）；Throw 请求转换为 JS 异常。
+     */
+    private suspend fun evaluateYield(expression: YieldExpression): JSValue {
+        val channels = generatorChannels
+            ?: throw syntaxError("yield is only valid inside a generator function")
+        val argument = expression.argument
+        if (expression.delegate) {
+            if (argument == null) throw syntaxError("yield* requires an argument")
+            return evaluateYieldDelegate(argument, channels)
+        }
+        val value = if (argument != null) evaluate(argument) else JSUndefined
+        return when (val request = yieldAndReceive(channels, value)) {
+            is GeneratorRequest.Next -> request.value
+            is GeneratorRequest.Return -> throw GeneratorReturn(request.value)
+            is GeneratorRequest.Throw -> throw JSException(request.value)
+        }
+    }
+
+    /** 交出产出值并等待下一个恢复请求（不解释请求语义，供 yield* 复用）。 */
+    private suspend fun yieldAndReceive(
+        channels: GeneratorChannels,
+        value: JSValue,
+    ): GeneratorRequest {
+        channels.steps.send(GeneratorStep.Yielded(value))
+        return channels.requests.receive()
+    }
+
+    /**
+     * 求值 `yield*`：按迭代协议转发 next/throw/return。
+     *
+     * 委托结束（内部迭代器 done）时 yield* 的值是内部迭代器的返回值；
+     * 内部迭代器没有 return 方法时，return 请求直接作为外层生成器的返回值传播；
+     * 没有 throw 方法时先关闭迭代器再抛 TypeError。
+     */
+    private suspend fun evaluateYieldDelegate(
+        argument: Expression,
+        channels: GeneratorChannels,
+    ): JSValue {
+        val record = getIterator(evaluate(argument))
+        val iterator = record.iterator
+        var request: GeneratorRequest? = null
+        while (true) {
+            val innerResult = when (val current = request) {
+                null -> callFunction(record.nextMethod, iterator, emptyList())
+                is GeneratorRequest.Next ->
+                    callFunction(record.nextMethod, iterator, listOf(current.value))
+
+                is GeneratorRequest.Throw -> {
+                    val throwMethod = getV(iterator, PropertyKey.Str("throw"))
+                    if (throwMethod is JSUndefined || throwMethod is JSNull) {
+                        // 没有 throw 方法：按正常完成关闭迭代器后再抛 TypeError
+                        iteratorClose(record, throwCompletion = false)
+                        throw typeError("The iterator does not provide a 'throw' method")
+                    }
+                    if (!isCallable(throwMethod)) {
+                        throw typeError("Iterator throw is not a function")
+                    }
+                    callFunction(throwMethod, iterator, listOf(current.value))
+                }
+
+                is GeneratorRequest.Return -> {
+                    val returnMethod = getV(iterator, PropertyKey.Str("return"))
+                    if (returnMethod is JSUndefined || returnMethod is JSNull) {
+                        // 委托的 return 完成直接结束外层生成器（仍会执行 finally）
+                        throw GeneratorReturn(current.value)
+                    }
+                    if (!isCallable(returnMethod)) {
+                        throw typeError("Iterator return is not a function")
+                    }
+                    callFunction(returnMethod, iterator, listOf(current.value))
+                }
+            }
+            if (innerResult !is JSObject) {
+                throw typeError("Iterator result is not an object")
+            }
+            if (toBoolean(getV(innerResult, PropertyKey.Str("done")))) {
+                return getV(innerResult, PropertyKey.Str("value"))
+            }
+            // 产出内部迭代器的值，并等待下一个恢复请求
+            request = yieldAndReceive(channels, getV(innerResult, PropertyKey.Str("value")))
         }
     }
 
@@ -6810,7 +7109,7 @@ class Interpreter(
 
     /** 判断值是否可作为构造器（[[Construct]] 是否存在）。 */
     fun isConstructor(value: JSValue): Boolean = when (value) {
-        is JSFunction -> !value.isArrow && !value.isAsync && !value.isMethod
+        is JSFunction -> !value.isArrow && !value.isAsync && !value.isGenerator && !value.isMethod
         is JSNativeFunction -> value.functionPrototypeObject != null || value.constructFunction != null
         is JSProxy -> isConstructor(value.target)
         else -> false
@@ -6890,10 +7189,11 @@ class Interpreter(
         }
     }
 
-    /** 在退栈前补齐环境/宿主异常；取消、配额中止和尾调用信号不属于 JS 错误。 */
+    /** 在退栈前补齐环境/宿主异常；取消、配额中止、尾调用与生成器 return 信号不属于 JS 错误。 */
     private fun captureFailure(error: Throwable) {
         when (error) {
-            is CancellationException, is ExecutionLimitException, is TailCallSignal -> Unit
+            is CancellationException, is ExecutionLimitException, is TailCallSignal,
+            is GeneratorReturn -> Unit
             is JSException -> {
                 // 已有快照时不再次遍历，深递归退栈保持线性复杂度。
                 if (error.stack.isEmpty()) error.attachStackIfAbsent(captureStack())
