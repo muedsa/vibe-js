@@ -23,6 +23,19 @@ internal sealed class SelectionDecision {
 }
 
 /**
+ * 跳过判定结果。
+ *
+ * @property reason 跳过原因（写入报告与 `test262-skipped.txt`）
+ * @property textMatchOnly 是否仅由源码文本匹配触发：对应能力没有出现在
+ *   `metadata.features` 中，判定只能依赖源码文本。这类判定可能因注释或字符串误排，
+ *   运行器会单独落盘到 `test262-text-exclusions.txt` 供人工复核
+ */
+internal data class SkipDecision(
+    val reason: String,
+    val textMatchOnly: Boolean = false,
+)
+
+/**
  * Test262 用例的选择与跳过判定。
  *
  * 从运行器中抽出为纯函数，目的有两个：
@@ -94,17 +107,25 @@ internal object Test262Selection {
      * @param source 去掉 metadata 后的可执行源码
      * @param suite 当前子集
      */
-    fun skipReason(source: String, metadata: Metadata, suite: String): String? {
+    fun skipReason(source: String, metadata: Metadata, suite: String): String? =
+        skipDecision(source, metadata, suite)?.reason
+
+    /**
+     * 判定选中后的用例是否跳过，并标记该判定是否只依赖源码文本。
+     *
+     * 与 [skipReason] 的区别：调用方可以据此把"文本匹配排除"单独落盘复核。
+     */
+    fun skipDecision(source: String, metadata: Metadata, suite: String): SkipDecision? {
         if (metadata.flags.any { it in setOf("module", "generator") }) {
-            return "unsupported flag"
+            return SkipDecision("unsupported flag")
         }
         // async 负数用例的期望落定方式与普通 $DONE 不同，暂不纳入
         if ("async" in metadata.flags && metadata.negativePhase != null) {
-            return "unsupported async negative"
+            return SkipDecision("unsupported async negative")
         }
         val unsupportedFeature = metadata.features.firstOrNull { it in unsupportedFeatures }
         if (unsupportedFeature != null) {
-            return "unsupported feature: $unsupportedFeature"
+            return SkipDecision("unsupported feature: $unsupportedFeature")
         }
         if (source.contains("\$262")) {
             // 仅放行只使用 $262.evalScript 的用例；其余宿主钩子（agent/createRealm 等）仍跳过
@@ -112,22 +133,22 @@ internal object Test262Selection {
                 .map { it.groupValues[1] }
                 .toSet()
             if (members.isEmpty() || members.any { it != "evalScript" }) {
-                return "unsupported harness: \$262"
+                return SkipDecision("unsupported harness: \$262", textMatchOnly = true)
             }
         }
         // 个别测试把宿主调试用的 print 挂到对象上，核心 runner 未提供该全局
         if (source.contains("Array.print")) {
-            return "unsupported harness: print"
+            return SkipDecision("unsupported harness: print", textMatchOnly = true)
         }
         // TemporalHelpers.propertyBagObserver 通过 Proxy/Reflect 观测属性访问
         if (source.contains("propertyBagObserver")) {
-            return "unsupported harness: Proxy"
+            return SkipDecision("unsupported harness: Proxy", textMatchOnly = true)
         }
         // ArrayBuffer 等宿主型内建明确排除，测试源码中可能直接构造
         if (suite == "es2015" &&
             (source.contains("new ArrayBuffer") || source.contains("new SharedArrayBuffer"))
         ) {
-            return "unsupported feature: ArrayBuffer"
+            return SkipDecision("unsupported feature: ArrayBuffer", textMatchOnly = true)
         }
         // ES2015 子集中排除 BigInt/Proxy/Generator 内容（项目明确排除）
         if (suite == "es2015" &&
@@ -142,10 +163,10 @@ internal object Test262Selection {
                 generatorMethodPattern.containsMatchIn(source) ||
                 bigIntLiteralPattern.containsMatchIn(source))
         ) {
-            return "unsupported BigInt/Proxy/Generator"
+            return SkipDecision("unsupported BigInt/Proxy/Generator", textMatchOnly = true)
         }
         if (metadata.negativePhase != null && metadata.negativePhase !in setOf("parse", "runtime")) {
-            return "unsupported negative phase: ${metadata.negativePhase}"
+            return SkipDecision("unsupported negative phase: ${metadata.negativePhase}")
         }
         return null
     }

@@ -211,6 +211,7 @@ private class Test262Runner(
         val failures = mutableListOf<RunRecord>()
         val allResults = mutableListOf<RunRecord>()
         val skippedRecords = mutableListOf<SkipRecord>()
+        val textMatchExclusions = mutableListOf<SkipRecord>()
 
         for (outcome in ordered) {
             when (outcome) {
@@ -218,7 +219,11 @@ private class Test262Runner(
                     skippedTests++
                     skipReasons[outcome.reason] = (skipReasons[outcome.reason] ?: 0) + 1
                     // 逐条落盘，便于审计文本筛选是否误排（见 test262-skipped.txt）
-                    skippedRecords.add(SkipRecord(outcome.path, outcome.reason))
+                    val record = SkipRecord(outcome.path, outcome.reason, outcome.textMatchOnly)
+                    skippedRecords.add(record)
+                    if (outcome.textMatchOnly) {
+                        textMatchExclusions.add(record)
+                    }
                 }
 
                 is TestOutcome.Executed -> {
@@ -255,6 +260,7 @@ private class Test262Runner(
             skippedTests = skippedTests,
             skipReasons = skipReasons,
             skippedRecords = skippedRecords.sortedBy { it.path },
+            textMatchExclusions = textMatchExclusions.sortedBy { it.path },
             harnessShims = activeHarnessShims(),
             failureKinds = failureKinds,
             failures = failures.sortedWith(
@@ -280,8 +286,8 @@ private class Test262Runner(
     )
 
     private suspend fun runOne(test: TestFile): TestOutcome {
-        Test262Selection.skipReason(test.source, test.metadata, suite)
-            ?.let { return TestOutcome.Skipped(test.relativePath, it) }
+        Test262Selection.skipDecision(test.source, test.metadata, suite)
+            ?.let { return TestOutcome.Skipped(test.relativePath, it.reason, it.textMatchOnly) }
         val includes = loadIncludes(test.metadata.includes)
             ?: return TestOutcome.Skipped(test.relativePath, "missing include")
         val results = variants(test.metadata.flags).map { variant ->
@@ -784,7 +790,12 @@ private data class RunRecord(
 )
 
 private sealed class TestOutcome {
-    data class Skipped(val path: String, val reason: String) : TestOutcome()
+    data class Skipped(
+        val path: String,
+        val reason: String,
+        /** 是否仅由源码文本匹配触发（features 未标注对应特性）。 */
+        val textMatchOnly: Boolean = false,
+    ) : TestOutcome()
     data class Executed(val results: List<RunRecord>) : TestOutcome()
 }
 
@@ -795,7 +806,12 @@ private data class SelectionStats(
 )
 
 /** 一条被跳过的用例，用于落盘审计文本筛选是否误排。 */
-private data class SkipRecord(val path: String, val reason: String)
+private data class SkipRecord(
+    val path: String,
+    val reason: String,
+    /** 是否仅由源码文本匹配触发。 */
+    val textMatchOnly: Boolean = false,
+)
 
 private data class Test262Report(
     val generatedAt: String,
@@ -813,6 +829,8 @@ private data class Test262Report(
     val skipReasons: Map<String, Int>,
     /** 被跳过的用例明细，写入 test262-skipped.txt 供审计。 */
     val skippedRecords: List<SkipRecord>,
+    /** 仅由源码文本匹配排除的用例，写入 test262-text-exclusions.txt 供复核。 */
+    val textMatchExclusions: List<SkipRecord>,
     /** 本次生效的 harness 替换与注入说明。 */
     val harnessShims: List<String>,
     /** 失败分类计数（断言失败/超时/步数耗尽/清理失败…），用于区分引擎缺陷与运行器失控。 */
@@ -871,6 +889,15 @@ private data class Test262Report(
                     for ((reason, count) in skipReasons.entries.sortedByDescending { it.value }) {
                         appendLine("| ${reason.replace("|", "\\|")} | $count |")
                     }
+                    appendLine()
+                }
+                if (textMatchExclusions.isNotEmpty()) {
+                    appendLine("## 文本匹配排除（供复核）")
+                    appendLine()
+                    appendLine(
+                        "以下 ${textMatchExclusions.size} 条由源码文本匹配排除，metadata.features " +
+                            "未标注对应特性；可能因注释或字符串误排，明细见 `test262-text-exclusions.txt`。"
+                    )
                     appendLine()
                 }
                 if (failureKinds.isNotEmpty()) {
@@ -947,6 +974,7 @@ private data class Test262Report(
                 appendLine("  \"failedRuns\": $failedRuns,")
                 appendLine("  \"crashedRuns\": $crashedRuns,")
                 appendLine("  \"skippedTests\": $skippedTests,")
+                appendLine("  \"textMatchExclusionCount\": ${textMatchExclusions.size},")
                 appendLine("  \"elapsedMillis\": $elapsedMillis,")
                 appendLine("  \"skipReasons\": {")
                 val reasons = skipReasons.entries.sortedByDescending { it.value }
@@ -1009,6 +1037,16 @@ private data class Test262Report(
                 }
             }
         )
+        // 文本匹配排除单独落盘：这些判定没有 metadata.features 支撑，可能因注释/字符串误排
+        File(directory, "test262-text-exclusions.txt").writeText(
+            buildString {
+                appendLine("# 仅由源码文本匹配排除的用例（metadata.features 未标注对应特性），供人工复核")
+                appendLine("# path\treason")
+                for (record in textMatchExclusions) {
+                    appendLine("${record.path}\t${record.reason}")
+                }
+            }
+        )
     }
 
     fun printSummary() {
@@ -1018,6 +1056,9 @@ private data class Test262Report(
         println("  耗时: ${elapsedMillis}ms")
         if (skipReasons.isNotEmpty()) {
             println("  跳过原因: " + skipReasons.entries.joinToString { "${it.key}=${it.value}" })
+        }
+        if (textMatchExclusions.isNotEmpty()) {
+            println("  文本匹配排除（待复核）: ${textMatchExclusions.size}，见 test262-text-exclusions.txt")
         }
         if (failureKinds.isNotEmpty()) {
             println("  失败分类: " + failureKinds.entries.joinToString { "${it.key}=${it.value}" })

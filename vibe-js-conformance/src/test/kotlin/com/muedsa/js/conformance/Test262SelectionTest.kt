@@ -197,4 +197,28 @@ class Test262SelectionTest {
         )
         assertEquals("unsupported async negative", reason)
     }
+
+    @Test
+    fun `文本匹配跳过会标记 textMatchOnly，元数据排除不标记`() {
+        // 源码文本命中：features 没有标注，只能靠文本判断，标记为待复核
+        val textMatched = Test262Selection.skipDecision("function* g() {}", metadata(), "es2015")
+        assertEquals("unsupported BigInt/Proxy/Generator", textMatched?.reason)
+        assertEquals(true, textMatched?.textMatchOnly)
+
+        // features 明确标注：属于元数据排除，不需要文本复核
+        val featureMatched = Test262Selection.skipDecision(
+            "", metadata(features = setOf("Proxy")), "es2015",
+        )
+        assertEquals("unsupported feature: Proxy", featureMatched?.reason)
+        assertEquals(false, featureMatched?.textMatchOnly)
+
+        // flag 排除同样不需要文本复核
+        val flagMatched = Test262Selection.skipDecision(
+            "", metadata(flags = setOf("module")), "es2015",
+        )
+        assertEquals("unsupported flag", flagMatched?.reason)
+        assertEquals(false, flagMatched?.textMatchOnly)
+
+        assertNull(Test262Selection.skipDecision("var x = 1;", metadata(), "es2015"))
+    }
 }
