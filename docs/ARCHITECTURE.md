@@ -430,5 +430,7 @@ setInterval 现在复用 Scheduler，在本次回调及微任务完成后安排�
 - **当前搁置**（不是"后续阶段"，决策见[优化路线](OPTIMIZATION_ROADMAP.md)）：Generator、
   异步迭代（`for await` / AsyncIterator 原型）、import/export、Proxy/Reflect、
   Weak 集合的真实弱引用语义；
-- **暂缓**：BigInt 运行时、Intl、TypedArray/ArrayBuffer、资源约束扩展、制品发布；
+- **暂缓**：BigInt 运行时、Intl、TypedArray/ArrayBuffer、资源约束扩展；
+- **已发布**：`0.0.0-SNAPSHOT` 快照推送到 GitHub Packages（JVM/JS/Wasm/Android 与各 Native 目标，
+  见 [publish.yml](../.github/workflows/publish.yml)），尚未发布正式版；
 - **不在范围**：DOM/fetch 等真实 Web API。
