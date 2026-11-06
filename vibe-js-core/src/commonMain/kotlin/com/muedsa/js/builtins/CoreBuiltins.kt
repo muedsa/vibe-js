@@ -24,6 +24,10 @@ object CoreBuiltins {
         SymbolBuiltins.install(registry)
         IteratorBuiltins.install(registry)
         ArrayBuiltins.install(registry)
+        // ArrayBuffer 需要 Symbol.species/toStringTag 与 Function.prototype
+        ArrayBufferBuiltins.install(registry)
+        // DataView 依赖 %ArrayBuffer% 的内部数据槽
+        DataViewBuiltins.install(registry)
         StringBuiltins.install(registry)
         NumberBuiltins.install(registry)
         BooleanBuiltins.install(registry)

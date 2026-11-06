@@ -68,6 +68,18 @@ class Intrinsics(val globalObject: GlobalObject) {
     lateinit var weakSetPrototype: JSObject
     lateinit var promisePrototype: JSObject
 
+    /** %ArrayBuffer.prototype%：ArrayBuffer 实例原型。 */
+    lateinit var arrayBufferPrototype: JSObject
+
+    /** %DataView.prototype%：DataView 实例原型。 */
+    lateinit var dataViewPrototype: JSObject
+
+    /** %ArrayBuffer% 构造器（slice 的 SpeciesConstructor 默认值）。 */
+    lateinit var arrayBufferConstructor: JSNativeFunction
+
+    /** %DataView% 构造器。 */
+    lateinit var dataViewConstructor: JSNativeFunction
+
     /** %IteratorPrototype%：所有迭代器共享的原型（含 @@iterator 与辅助方法）。 */
     lateinit var iteratorPrototype: JSObject
     /** %AsyncIteratorPrototype%：异步迭代器共享的原型（含 @@asyncIterator）。 */
@@ -212,6 +224,9 @@ class Intrinsics(val globalObject: GlobalObject) {
         weakMapPrototype = JSObject(prototype = objectPrototype)
         weakSetPrototype = JSObject(prototype = objectPrototype)
         promisePrototype = JSObject(prototype = objectPrototype)
+        // 规范：%ArrayBuffer.prototype% 与 %DataView.prototype% 的 [[Prototype]] 是 %Object.prototype%
+        arrayBufferPrototype = JSObject(prototype = objectPrototype)
+        dataViewPrototype = JSObject(prototype = objectPrototype)
         iteratorPrototype = JSObject(prototype = objectPrototype)
         asyncIteratorPrototype = JSObject(prototype = objectPrototype)
         arrayIteratorPrototype = JSObject(prototype = iteratorPrototype)

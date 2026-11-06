@@ -116,6 +116,20 @@ class Conversions(private val interpreter: Interpreter) {
     }
 
     /**
+     * ToIndex：先 ToIntegerOrInfinity，再要求落在 0..2^53-1。
+     *
+     * 负数与超上限都抛 RangeError（ArrayBuffer 长度、DataView 的
+     * byteOffset/byteLength 与逐次访问下标都使用该转换）。
+     */
+    internal suspend fun toIndex(value: JSValue): Long {
+        val integer = toIntegerOrInfinity(toNumber(value))
+        if (integer < 0.0 || integer > 9007199254740991.0) {
+            interpreter.rangeError("Invalid index: $integer")
+        }
+        return integer.toLong()
+    }
+
+    /**
      * ToString。
      */
     suspend fun toString(value: JSValue): String = when (value) {

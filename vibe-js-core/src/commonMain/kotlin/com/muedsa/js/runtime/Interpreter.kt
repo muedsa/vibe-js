@@ -561,6 +561,9 @@ class Interpreter(
     /** ToUint32。 */
     suspend fun toUint32(value: JSValue): Long = conversions.toUint32(value)
 
+    /** ToIndex（0..2^53-1，越界抛 RangeError）。 */
+    suspend fun toIndex(value: JSValue): Long = conversions.toIndex(value)
+
     /** 严格相等。 */
     fun strictEquals(a: JSValue, b: JSValue): Boolean = conversions.strictEquals(a, b)
 
