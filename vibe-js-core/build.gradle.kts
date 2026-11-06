@@ -85,7 +85,7 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
         }
 
-        val jvmBenchmark by getting {
+        val jvmBenchmark = getByName("jvmBenchmark") {
             dependencies {
                 // 基准测试注解不应进入发布库的 runtime classpath
                 implementation(libs.kotlin.benchmark.runtime)
@@ -127,7 +127,7 @@ val benchmarkKotlinVersion = project.extensions
     .get()
     .requiredVersion
 
-val benchmarkEnvironment by tasks.registering {
+val benchmarkEnvironment = tasks.register("benchmarkEnvironment") {
     group = "verification"
     description = "记录基准环境（JDK/OS/CPU/内存/GC/Gradle/Kotlin）"
     val reportDir = layout.buildDirectory.dir("reports/benchmarks")

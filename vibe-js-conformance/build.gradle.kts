@@ -50,7 +50,7 @@ val conformanceReportDir = layout.buildDirectory.dir("reports/conformance")
  * 语料不入库（见 .gitignore），由该任务按固定 commit 下载并解压；
  * 已存在时跳过，避免重复下载。
  */
-val downloadParserCorpus by tasks.registering(JavaExec::class) {
+val downloadParserCorpus = tasks.register<JavaExec>("downloadParserCorpus") {
     group = "verification"
     description = "下载固定版本的 tc39/test262-parser-tests 语料"
     dependsOn(tasks.named("classes"))
@@ -70,7 +70,7 @@ val downloadParserCorpus by tasks.registering(JavaExec::class) {
  * 使用 `-Pstrict` 时，允许列表（`src/main/resources/parser-pass-allowlist.txt`，
  * 当前为明确排除的 Generator）之外的任何正/负向语法不一致都会导致任务失败。
  */
-val parserConformance by tasks.registering(JavaExec::class) {
+val parserConformance = tasks.register<JavaExec>("parserConformance") {
     group = "verification"
     description = "运行 test262-parser-tests 并生成解析一致性报告（默认报告模式）"
     dependsOn(downloadParserCorpus)
@@ -95,7 +95,7 @@ val libraryCorpusDir = layout.projectDirectory.dir("corpus/libraries")
 /**
  * 下载 tc39/test262 语料（含 test/ 与 harness/）。
  */
-val downloadTest262Corpus by tasks.registering(JavaExec::class) {
+val downloadTest262Corpus = tasks.register<JavaExec>("downloadTest262Corpus") {
     group = "verification"
     description = "下载固定版本的 tc39/test262 语料"
     dependsOn(tasks.named("classes"))
@@ -112,7 +112,7 @@ val downloadTest262Corpus by tasks.registering(JavaExec::class) {
  * 默认报告模式（退出码 0）；崩溃退出码 2；-Pstrict 时存在失败退出码 1。
  * 可通过 -Ptest262Limit=1000 限制用例数，便于先行验证。
  */
-val test262Conformance by tasks.registering(JavaExec::class) {
+val test262Conformance = tasks.register<JavaExec>("test262Conformance") {
     group = "verification"
     description = "运行 Test262 ES5 子集并生成语义一致性报告（默认报告模式）"
     dependsOn(downloadTest262Corpus)
@@ -145,7 +145,7 @@ val test262Conformance by tasks.registering(JavaExec::class) {
  * 选择 test/language 与 test/built-ins 中 features 全部落在支持集合内的用例；
  * 未支持特性/Generator/模块等继续跳过，用于推进 ES2015 语义收敛。
  */
-val test262Es2015Conformance by tasks.registering(JavaExec::class) {
+val test262Es2015Conformance = tasks.register<JavaExec>("test262Es2015Conformance") {
     group = "verification"
     description = "运行 Test262 ES2015 特性子集并生成语义报告（报告模式）"
     dependsOn(downloadTest262Corpus)
@@ -178,7 +178,8 @@ val test262Es2015Conformance by tasks.registering(JavaExec::class) {
 }
 
 /** 下载固定版本的真实 JS 库 UMD 构建。 */
-val downloadLibraryCorpus by tasks.registering(JavaExec::class) {    group = "verification"
+val downloadLibraryCorpus = tasks.register<JavaExec>("downloadLibraryCorpus") {
+    group = "verification"
     description = "下载固定版本的真实 JS 库 UMD 构建"
     dependsOn(tasks.named("classes"))
     classpath = sourceSets["main"].runtimeClasspath
@@ -192,7 +193,7 @@ val downloadLibraryCorpus by tasks.registering(JavaExec::class) {    group = "ve
  *
  * 默认报告模式；崩溃退出码 2；-Pstrict 时失败退出码 1。
  */
-val librarySmoke by tasks.registering(JavaExec::class) {
+val librarySmoke = tasks.register<JavaExec>("librarySmoke") {
     group = "verification"
     description = "运行 lodash/mustache/dayjs/qs/validator/underscore/moment/semver/punycode/json5/big.js/diff/lz-string/marked/bignumber.js/decimal.js/crypto-js 的 UMD 冒烟"
     dependsOn(downloadLibraryCorpus)
@@ -215,7 +216,7 @@ val librarySmoke by tasks.registering(JavaExec::class) {
  *
  * 默认报告模式；-Pstrict 时存在不一致退出码 1。
  */
-val differentialConformance by tasks.registering(JavaExec::class) {
+val differentialConformance = tasks.register<JavaExec>("differentialConformance") {
     group = "verification"
     description = "与 Node 对比 JSON/Number/RegExp/String/Date 等行为的差分测试"
     classpath = sourceSets["main"].runtimeClasspath
