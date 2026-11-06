@@ -62,7 +62,7 @@ object ObjectBuiltins {
                 // 规范顺序：先 ToPropertyKey(V)，再 ToObject(O)
                 val key = interpreter.toPropertyKey(args.getOrElse(0) { JSUndefined })
                 val objectValue = interpreter.toObject(thisValue)
-                JSBoolean.getJsBoolean(objectValue.hasOwnProperty(key))
+                JSBoolean.getJsBoolean(interpreter.internalGetOwnProperty(objectValue, key) != null)
             },
         )
 
@@ -78,14 +78,14 @@ object ObjectBuiltins {
                         interpreter.typeError("Object.prototype.isPrototypeOf called on null or undefined")
                     }
                     val objectValue = interpreter.toObject(thisValue)
-                    var prototype = target.prototype
+                    var prototype = interpreter.internalGetPrototypeOf(target)
                     var result = false
                     while (prototype != null) {
                         if (prototype === objectValue) {
                             result = true
                             break
                         }
-                        prototype = prototype.prototype
+                        prototype = interpreter.internalGetPrototypeOf(prototype)
                     }
                     JSBoolean.getJsBoolean(result)
                 }
@@ -97,7 +97,9 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "propertyIsEnumerable", 1) { interpreter, thisValue, args ->
                 val key = interpreter.toPropertyKey(args.getOrElse(0) { JSUndefined })
                 val objectValue = interpreter.toObject(thisValue)
-                JSBoolean.getJsBoolean(objectValue.getOwnProperty(key)?.enumerable == true)
+                JSBoolean.getJsBoolean(
+                    interpreter.internalGetOwnProperty(objectValue, key)?.enumerable == true
+                )
             },
         )
 
@@ -155,7 +157,7 @@ object ObjectBuiltins {
             get = BuiltinHelpers.method(intrinsics, "get __proto__", 0) { interpreter, thisValue, _ ->
                 // 规范：先 ToObject(this)（null/undefined 抛 TypeError），再读取 [[Prototype]]
                 val objectValue = interpreter.toObject(thisValue)
-                objectValue.prototype ?: JSNull
+                interpreter.internalGetPrototypeOf(objectValue) ?: JSNull
             },
             set = BuiltinHelpers.method(intrinsics, "set __proto__", 1) { interpreter, thisValue, args ->
                 // 规范：先 ToObject(this)；非对象值（undefined 除外）静默忽略
@@ -170,7 +172,9 @@ object ObjectBuiltins {
 
                     is JSObject -> {
                         // 不可扩展对象不能修改原型；规范 setter 在失败时抛 TypeError
-                        if (!target.isExtensible() && target.prototype !== newPrototype) {
+                        if (!interpreter.internalIsExtensible(target) &&
+                            interpreter.internalGetPrototypeOf(target) !== newPrototype
+                        ) {
                             interpreter.typeError("Cannot set prototype of non-extensible object")
                         }
                         if (!interpreter.setPrototypeOf(target, newPrototype)) {
@@ -264,7 +268,7 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "keys", 1) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
                 JSArray(
-                    enumerableOwnStringKeys(objectValue).map { JSString(it) }.toMutableList(),
+                    enumerableOwnStringKeys(interpreter, objectValue).map { JSString(it) }.toMutableList(),
                     prototype = arrayPrototype,
                 )
             },
@@ -276,9 +280,9 @@ object ObjectBuiltins {
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
                 val values = ArrayList<JSValue?>()
                 // 键在开始快照；每个 Get 前重新检查是否仍为可枚举自有属性
-                for (propertyKey in objectValue.ownPropertyKeys()) {
+                for (propertyKey in interpreter.internalOwnPropertyKeys(objectValue)) {
                     if (propertyKey !is PropertyKey.Str) continue
-                    val descriptor = objectValue.getOwnProperty(propertyKey) ?: continue
+                    val descriptor = interpreter.internalGetOwnProperty(objectValue, propertyKey) ?: continue
                     if (!descriptor.enumerable) continue
                     values.add(interpreter.getV(objectValue, propertyKey))
                 }
@@ -291,9 +295,9 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "entries", 1) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
                 val entries = ArrayList<JSValue?>()
-                for (propertyKey in objectValue.ownPropertyKeys()) {
+                for (propertyKey in interpreter.internalOwnPropertyKeys(objectValue)) {
                     if (propertyKey !is PropertyKey.Str) continue
-                    val descriptor = objectValue.getOwnProperty(propertyKey) ?: continue
+                    val descriptor = interpreter.internalGetOwnProperty(objectValue, propertyKey) ?: continue
                     if (!descriptor.enumerable) continue
                     val pair = ArrayList<JSValue?>()
                     pair.add(JSString(propertyKey.value))
@@ -313,8 +317,8 @@ object ObjectBuiltins {
                     if (source is JSNull || source is JSUndefined) continue
                     val sourceObject = interpreter.toObject(source)
                     // 复制所有可枚举自有属性，包括 Symbol 键（规范要求）
-                    for (propertyKey in sourceObject.ownPropertyKeys()) {
-                        if (sourceObject.getOwnProperty(propertyKey)?.enumerable != true) continue
+                    for (propertyKey in interpreter.internalOwnPropertyKeys(sourceObject)) {
+                        if (interpreter.internalGetOwnProperty(sourceObject, propertyKey)?.enumerable != true) continue
                         val value = interpreter.getV(sourceObject, propertyKey)
                         interpreter.putV(target, propertyKey, value, strict = true)
                     }
@@ -347,7 +351,7 @@ object ObjectBuiltins {
             key = PropertyKey.Str("getPrototypeOf"),
             value = BuiltinHelpers.method(intrinsics, "getPrototypeOf", 1) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
-                objectValue.prototype ?: JSNull
+                interpreter.internalGetPrototypeOf(objectValue) ?: JSNull
             },
         )
 
@@ -367,7 +371,9 @@ object ObjectBuiltins {
                 // 原始值按 ES2015 返回自身（不做包装）
                 if (objectValue !is JSObject) return@method objectValue
                 // 不可扩展对象只能保持原原型
-                if (!objectValue.isExtensible() && objectValue.prototype !== newPrototype) {
+                if (!interpreter.internalIsExtensible(objectValue) &&
+                    interpreter.internalGetPrototypeOf(objectValue) !== newPrototype
+                ) {
                     interpreter.typeError("Cannot set prototype of non-extensible object")
                 }
                 if (!interpreter.setPrototypeOf(objectValue, newPrototype)) {
@@ -392,7 +398,7 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "getOwnPropertyDescriptors", 1) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
                 val result = JSObject(prototype = objectPrototype)
-                for (key in objectValue.ownPropertyKeys()) {
+                for (key in interpreter.internalOwnPropertyKeys(objectValue)) {
                     val descriptorObject = createDescriptorObject(interpreter, objectValue, key)
                         ?: continue
                     result.defineDataProperty(
@@ -411,7 +417,7 @@ object ObjectBuiltins {
             key = PropertyKey.Str("getOwnPropertyNames"),
             value = BuiltinHelpers.method(intrinsics, "getOwnPropertyNames", 1) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
-                val names = objectValue.ownPropertyKeys()
+                val names = interpreter.internalOwnPropertyKeys(objectValue)
                     .filterIsInstance<PropertyKey.Str>()
                     .map { JSString(it.value) }
                 JSArray(names.toMutableList(), prototype = arrayPrototype)
@@ -422,7 +428,7 @@ object ObjectBuiltins {
             key = PropertyKey.Str("getOwnPropertySymbols"),
             value = BuiltinHelpers.method(intrinsics, "getOwnPropertySymbols", 1) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { throwObjectError(interpreter) })
-                val symbols = objectValue.ownPropertyKeys()
+                val symbols = interpreter.internalOwnPropertyKeys(objectValue)
                     .filterIsInstance<PropertyKey.Sym>()
                     .map { it.symbol }
                 JSArray(symbols.toMutableList(), prototype = arrayPrototype)
@@ -479,7 +485,7 @@ object ObjectBuiltins {
             value = BuiltinHelpers.method(intrinsics, "hasOwn", 2) { interpreter, _, args ->
                 val objectValue = interpreter.toObject(args.getOrElse(0) { JSUndefined })
                 val key = interpreter.toPropertyKey(args.getOrElse(1) { JSUndefined })
-                JSBoolean.getJsBoolean(objectValue.hasOwnProperty(key))
+                JSBoolean.getJsBoolean(interpreter.internalGetOwnProperty(objectValue, key) != null)
             },
         )
 
@@ -552,27 +558,27 @@ object ObjectBuiltins {
         // 冻结 / 密封 / 防扩展
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("freeze"),
-            value = BuiltinHelpers.method(intrinsics, "freeze", 1) { _, _, args ->
+            value = BuiltinHelpers.method(intrinsics, "freeze", 1) { interpreter, _, args ->
                 val value = args.getOrNull(0) ?: JSUndefined
                 when (value) {
                     is JSArray -> {
                         value.freezeArray()
                         // 数组的普通自有属性（如 arr.foo）同样需要冻结
-                        for (key in value.ownPropertyKeys()) {
+                        for (key in interpreter.internalOwnPropertyKeys(value)) {
                             if (key == PropertyKey.LENGTH) continue
-                            val descriptor = value.getOwnProperty(key) ?: continue
+                            val descriptor = interpreter.internalGetOwnProperty(value, key) ?: continue
                             descriptor.configurable = false
                             if (descriptor.isData) descriptor.writable = false
                         }
                     }
 
                     is JSObject -> {
-                        for (key in value.ownPropertyKeys()) {
-                            val descriptor = value.getOwnProperty(key) ?: continue
+                        for (key in interpreter.internalOwnPropertyKeys(value)) {
+                            val descriptor = interpreter.internalGetOwnProperty(value, key) ?: continue
                             descriptor.configurable = false
                             if (descriptor.isData) descriptor.writable = false
                         }
-                        value.preventExtensions()
+                        interpreter.internalPreventExtensions(value)
                     }
 
                     else -> Unit
@@ -582,22 +588,22 @@ object ObjectBuiltins {
         )
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("seal"),
-            value = BuiltinHelpers.method(intrinsics, "seal", 1) { _, _, args ->
+            value = BuiltinHelpers.method(intrinsics, "seal", 1) { interpreter, _, args ->
                 val value = args.getOrNull(0) ?: JSUndefined
                 when (value) {
                     is JSArray -> {
                         value.sealArray()
-                        for (key in value.ownPropertyKeys()) {
+                        for (key in interpreter.internalOwnPropertyKeys(value)) {
                             if (key == PropertyKey.LENGTH) continue
-                            value.getOwnProperty(key)?.configurable = false
+                            interpreter.internalGetOwnProperty(value, key)?.configurable = false
                         }
                     }
 
                     is JSObject -> {
-                        for (key in value.ownPropertyKeys()) {
-                            value.getOwnProperty(key)?.configurable = false
+                        for (key in interpreter.internalOwnPropertyKeys(value)) {
+                            interpreter.internalGetOwnProperty(value, key)?.configurable = false
                         }
-                        value.preventExtensions()
+                        interpreter.internalPreventExtensions(value)
                     }
 
                     else -> Unit
@@ -607,31 +613,32 @@ object ObjectBuiltins {
         )
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("preventExtensions"),
-            value = BuiltinHelpers.method(intrinsics, "preventExtensions", 1) { _, _, args ->
+            value = BuiltinHelpers.method(intrinsics, "preventExtensions", 1) { interpreter, _, args ->
                 val value = args.getOrNull(0) ?: JSUndefined
-                if (value is JSObject) value.preventExtensions()
+                if (value is JSObject) interpreter.internalPreventExtensions(value)
                 value
             },
         )
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("isExtensible"),
-            value = BuiltinHelpers.method(intrinsics, "isExtensible", 1) { _, _, args ->
+            value = BuiltinHelpers.method(intrinsics, "isExtensible", 1) { interpreter, _, args ->
                 val value = args.getOrNull(0)
-                JSBoolean.getJsBoolean(value is JSObject && value.isExtensible())
+                JSBoolean.getJsBoolean(value is JSObject && interpreter.internalIsExtensible(value))
             },
         )
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("isFrozen"),
-            value = BuiltinHelpers.method(intrinsics, "isFrozen", 1) { _, _, args ->
+            value = BuiltinHelpers.method(intrinsics, "isFrozen", 1) { interpreter, _, args ->
                 val value = args.getOrNull(0)
                 JSBoolean.getJsBoolean(
                     when (value) {
                         is JSArray -> value.frozen
-                        is JSObject -> !value.isExtensible() && value.ownPropertyKeys().all { key ->
-                            val descriptor = value.getOwnProperty(key)
-                            descriptor == null ||
-                                (!descriptor.configurable && (descriptor.isAccessor || !descriptor.writable))
-                        }
+                        is JSObject -> !interpreter.internalIsExtensible(value) &&
+                            interpreter.internalOwnPropertyKeys(value).all { key ->
+                                val descriptor = interpreter.internalGetOwnProperty(value, key)
+                                descriptor == null ||
+                                    (!descriptor.configurable && (descriptor.isAccessor || !descriptor.writable))
+                            }
 
                         else -> true // 原始值按规范被视为已冻结
                     }
@@ -640,14 +647,15 @@ object ObjectBuiltins {
         )
         objectConstructor.defineDataProperty(
             key = PropertyKey.Str("isSealed"),
-            value = BuiltinHelpers.method(intrinsics, "isSealed", 1) { _, _, args ->
+            value = BuiltinHelpers.method(intrinsics, "isSealed", 1) { interpreter, _, args ->
                 val value = args.getOrNull(0)
                 JSBoolean.getJsBoolean(
                     when (value) {
                         is JSArray -> value.sealed
-                        is JSObject -> !value.isExtensible() && value.ownPropertyKeys().all { key ->
-                            value.getOwnProperty(key)?.configurable == false
-                        }
+                        is JSObject -> !interpreter.internalIsExtensible(value) &&
+                            interpreter.internalOwnPropertyKeys(value).all { key ->
+                                interpreter.internalGetOwnProperty(value, key)?.configurable == false
+                            }
 
                         else -> true
                     }
@@ -671,7 +679,7 @@ object ObjectBuiltins {
         descriptorObject: JSObject,
     ) {
         suspend fun has(name: String): Boolean =
-            descriptorObject.hasProperty(PropertyKey.Str(name))
+            interpreter.internalHasProperty(descriptorObject, PropertyKey.Str(name))
 
         suspend fun read(name: String): JSValue =
             interpreter.getV(descriptorObject, PropertyKey.Str(name))
@@ -701,7 +709,7 @@ object ObjectBuiltins {
         if (isAccessorDescriptor && isDataDescriptor) {
             interpreter.typeError("Invalid property descriptor: cannot be both accessor and data")
         }
-        var current = objectValue.getOwnProperty(key)
+        var current = interpreter.internalGetOwnProperty(objectValue, key)
         // ES5 10.6：arguments 的映射索引在描述符层面视为可写数据属性，
         // 否则从映射访问器合并会错误保留参数 setter
         if (objectValue is JSArguments && current != null) {
@@ -845,7 +853,7 @@ object ObjectBuiltins {
         preserveGet: Boolean,
         preserveSet: Boolean,
     ) {
-        val existing = objectValue.getOwnProperty(key)
+        val existing = interpreter.internalGetOwnProperty(objectValue, key)
         // 描述符固定带 configurable: true；不可配置属性无法重新定义
         if (existing != null && !existing.configurable) {
             interpreter.typeError("Cannot redefine property: ${key}")
@@ -886,12 +894,12 @@ object ObjectBuiltins {
         val key = interpreter.toPropertyKey(keyValue)
         var current: JSObject? = objectValue
         while (current != null) {
-            val descriptor = current.getOwnProperty(key)
+            val descriptor = interpreter.internalGetOwnProperty(current, key)
             if (descriptor != null) {
                 if (!descriptor.isAccessor) return JSUndefined
                 return (if (getter) descriptor.get else descriptor.set) ?: JSUndefined
             }
-            current = current.prototype
+            current = interpreter.internalGetPrototypeOf(current)
         }
         return JSUndefined
     }
@@ -917,9 +925,9 @@ object ObjectBuiltins {
         target: JSObject,
         properties: JSObject,
     ) {
-        for (key in properties.ownPropertyKeys()) {
+        for (key in interpreter.internalOwnPropertyKeys(properties)) {
             // Object.defineProperties/Object.create 只处理可枚举的自有描述符条目
-            if (properties.getOwnProperty(key)?.enumerable != true) continue
+            if (interpreter.internalGetOwnProperty(properties, key)?.enumerable != true) continue
             val descriptorValue = interpreter.getV(properties, key)
             val descriptorObject = descriptorValue as? JSObject
                 ?: interpreter.typeError("Property description must be an object")
@@ -928,11 +936,14 @@ object ObjectBuiltins {
     }
 
     /** 获取可枚举的自有字符串键。 */
-    private fun enumerableOwnStringKeys(objectValue: JSObject): List<String> {
+    private suspend fun enumerableOwnStringKeys(
+        interpreter: Interpreter,
+        objectValue: JSObject,
+    ): List<String> {
         val keys = mutableListOf<String>()
-        for (key in objectValue.ownPropertyKeys()) {
+        for (key in interpreter.internalOwnPropertyKeys(objectValue)) {
             if (key !is PropertyKey.Str) continue
-            if (objectValue.getOwnProperty(key)?.enumerable == true) {
+            if (interpreter.internalGetOwnProperty(objectValue, key)?.enumerable == true) {
                 keys.add(key.value)
             }
         }
@@ -946,7 +957,7 @@ object ObjectBuiltins {
         objectValue: JSObject,
         key: PropertyKey,
     ): JSObject? {
-        var descriptor = objectValue.getOwnProperty(key) ?: return null
+        var descriptor = interpreter.internalGetOwnProperty(objectValue, key) ?: return null
         if (objectValue is JSArguments && descriptor.isAccessor) {
             val mapping = objectValue.parameterMapping(key)
             if (mapping != null) {

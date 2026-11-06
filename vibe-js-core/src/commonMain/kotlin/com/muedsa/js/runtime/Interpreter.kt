@@ -516,19 +516,18 @@ class Interpreter(
      * 设置对象原型并阻止原型环（OrdinarySetPrototypeOf 的循环检查）。
      * 返回 false 表示会形成环，调用方应抛 TypeError。
      */
-    fun setPrototypeOf(objectValue: JSObject, newPrototype: JSObject?): Boolean {
-        if (objectValue.prototype === newPrototype) return true
+    suspend fun setPrototypeOf(objectValue: JSObject, newPrototype: JSObject?): Boolean {
+        if (internalGetPrototypeOf(objectValue) === newPrototype) return true
         var cursor: JSObject? = newPrototype
         var fast: JSObject? = newPrototype
         while (cursor != null) {
             if (cursor === objectValue) return false
-            cursor = cursor.prototype
+            cursor = internalGetPrototypeOf(cursor)
             // 宿主低层写入也可能构造已有环；快慢指针检测实际环，不误拒绝较长的合法链。
-            fast = fast?.prototype?.prototype
+            fast = fast?.let { internalGetPrototypeOf(it) }?.let { internalGetPrototypeOf(it) }
             if (cursor != null && cursor === fast) return false
         }
-        objectValue.prototype = newPrototype
-        return true
+        return internalSetPrototypeOf(objectValue, newPrototype)
     }
 
     /** ToInt32。 */
@@ -703,6 +702,65 @@ class Interpreter(
 
     override fun isStrictContext(): Boolean = frame?.strict ?: false
 
+    // ================================================================
+    // 对象内部方法（Ordinary Object Internal Methods）
+    //
+    // 全部声明为 suspend：Proxy 的 trap 可以执行任意 JS（包括 await），
+    // 因此所有 JS 可见的属性操作都必须经过这一层，而不是直接调用
+    // JSObject 的非挂起存储方法。后续 L2.3 会在这里按对象类型分派。
+    // ================================================================
+
+    /** [[GetOwnProperty]]：读取自有属性描述符。 */
+    suspend fun internalGetOwnProperty(objectValue: JSObject, key: PropertyKey): PropertyDescriptor? =
+        objectValue.getOwnProperty(key)
+
+    /** [[DefineOwnProperty]]：定义/覆盖自有属性。 */
+    suspend fun internalDefineOwnProperty(
+        objectValue: JSObject,
+        key: PropertyKey,
+        descriptor: PropertyDescriptor,
+    ): Boolean = defineOwnPropertyOn(objectValue, key, descriptor)
+
+    /** [[Delete]]：删除自有属性。 */
+    suspend fun internalDeleteProperty(objectValue: JSObject, key: PropertyKey): Boolean =
+        objectValue.deleteOwnProperty(key)
+
+    /** [[OwnPropertyKeys]]：自有属性键（数组索引升序、字符串插入序、Symbol 最后）。 */
+    suspend fun internalOwnPropertyKeys(objectValue: JSObject): List<PropertyKey> =
+        objectValue.ownPropertyKeys()
+
+    /** [[GetPrototypeOf]]：读取原型。 */
+    suspend fun internalGetPrototypeOf(objectValue: JSObject): JSObject? =
+        objectValue.prototype
+
+    /** [[SetPrototypeOf]]：设置原型（不可扩展且原型不同则失败）。 */
+    suspend fun internalSetPrototypeOf(objectValue: JSObject, proto: JSObject?): Boolean {
+        if (objectValue.prototype === proto) return true
+        if (!objectValue.isExtensible()) return false
+        objectValue.prototype = proto
+        return true
+    }
+
+    /** [[IsExtensible]]：是否可扩展。 */
+    suspend fun internalIsExtensible(objectValue: JSObject): Boolean =
+        objectValue.isExtensible()
+
+    /** [[PreventExtensions]]：禁止新增属性。 */
+    suspend fun internalPreventExtensions(objectValue: JSObject): Boolean {
+        objectValue.preventExtensions()
+        return true
+    }
+
+    /** [[HasProperty]]：沿原型链判断属性是否存在（不触发 getter）。 */
+    suspend fun internalHasProperty(objectValue: JSObject, key: PropertyKey): Boolean {
+        var current: JSObject? = objectValue
+        while (current != null) {
+            if (internalGetOwnProperty(current, key) != null) return true
+            current = internalGetPrototypeOf(current)
+        }
+        return false
+    }
+
     /** 沿原型链读取属性，访问器使用 receiver 作为 this。 */
     private suspend fun getPropertyFrom(
         objectValue: JSObject?,
@@ -711,7 +769,7 @@ class Interpreter(
     ): JSValue {
         var current: JSObject? = objectValue
         while (current != null) {
-            val descriptor = current.getOwnProperty(key)
+            val descriptor = internalGetOwnProperty(current, key)
             if (descriptor != null) {
                 if (descriptor.isAccessor) {
                     val getter = descriptor.get
@@ -720,7 +778,7 @@ class Interpreter(
                 }
                 return descriptor.value ?: JSUndefined
             }
-            current = current.prototype
+            current = internalGetPrototypeOf(current)
         }
         return JSUndefined
     }
@@ -734,7 +792,7 @@ class Interpreter(
     ) {
         var current: JSObject? = objectValue
         while (current != null) {
-            val descriptor = current.getOwnProperty(key)
+            val descriptor = internalGetOwnProperty(current, key)
             if (descriptor != null) {
                 if (descriptor.isAccessor) {
                     val setter = descriptor.set
@@ -750,7 +808,7 @@ class Interpreter(
                     return
                 }
                 if (current === objectValue) {
-                    val updated = defineOwnPropertyOn(current, key,
+                    val updated = internalDefineOwnProperty(current, key,
                         PropertyDescriptor.data(
                             value = value,
                             writable = true,
@@ -765,9 +823,9 @@ class Interpreter(
                 }
                 break
             }
-            current = current.prototype
+            current = internalGetPrototypeOf(current)
         }
-        val created = defineOwnPropertyOn(
+        val created = internalDefineOwnProperty(
             objectValue,
             key,
             PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
@@ -2365,7 +2423,7 @@ class Interpreter(
             for (key in keys) {
                 checkExecution()
                 val propertyKey = PropertyKey.Str(key)
-                if (!objectValue.hasProperty(propertyKey)) continue
+                if (!internalHasProperty(objectValue, propertyKey)) continue
 
                 val iterationEnvironment = if (lexical) {
                     DeclarativeEnvironment(parent = headEnvironment!!)
@@ -3028,8 +3086,8 @@ class Interpreter(
                     val spreadValue = evaluate(element.argument)
                     if (spreadValue is JSNull || spreadValue is JSUndefined) continue
                     val source = toObject(spreadValue)
-                    for (key in source.ownPropertyKeys()) {
-                        if (source.getOwnProperty(key)?.enumerable != true) continue
+                    for (key in internalOwnPropertyKeys(source)) {
+                        if (internalGetOwnProperty(source, key)?.enumerable != true) continue
                         result.defineDataProperty(
                             key = key,
                             value = getV(source, key),
@@ -3097,7 +3155,7 @@ class Interpreter(
                         }
 
                         PropertyKind.GET, PropertyKind.SET -> {
-                            val existing = result.getOwnProperty(key)
+                            val existing = internalGetOwnProperty(result, key)
                             val getter = if (element.kind == PropertyKind.GET) value else existing?.get
                             val setter = if (element.kind == PropertyKind.SET) value else existing?.set
                             result.defineOwnProperty(
@@ -4219,7 +4277,7 @@ class Interpreter(
     ) {
         var current: JSObject? = base
         while (current != null) {
-            val descriptor = current.getOwnProperty(key)
+            val descriptor = internalGetOwnProperty(current, key)
             if (descriptor != null) {
                 if (descriptor.isAccessor) {
                     val setter = descriptor.set
@@ -4631,9 +4689,9 @@ class Interpreter(
 
                         is ObjectSpreadProperty -> {
                             val restObject = JSObject(prototype = intrinsics.objectPrototype)
-                            for (key in source.ownPropertyKeys()) {
+                            for (key in internalOwnPropertyKeys(source)) {
                                 if (key in usedKeys) continue
-                                if (source.getOwnProperty(key)?.enumerable != true) continue
+                                if (internalGetOwnProperty(source, key)?.enumerable != true) continue
                                 restObject.defineDataProperty(
                                     key = key,
                                     value = getV(source, key),
@@ -4955,7 +5013,7 @@ class Interpreter(
                 when {
                     owner == null -> JSBoolean.TRUE // 无法解析的引用删除返回 true
                     owner is ObjectEnvironment -> JSBoolean.getJsBoolean(
-                        owner.bindingObject.deleteOwnProperty(PropertyKey.Str(operand.name))
+                        internalDeleteProperty(owner.bindingObject, PropertyKey.Str(operand.name))
                     )
                     owner is DeclarativeEnvironment ->
                         JSBoolean.getJsBoolean(owner.deleteBinding(operand.name))
@@ -4976,7 +5034,7 @@ class Interpreter(
                 }
                 val baseObject = toObject(base)
                 val key = memberKey(operand)
-                val deleted = baseObject.deleteOwnProperty(key)
+                val deleted = internalDeleteProperty(baseObject, key)
                 if (!deleted && currentFrame.strict) {
                     throw typeError("Cannot delete property '${key}'")
                 }
@@ -5110,7 +5168,7 @@ class Interpreter(
                 if (right !is JSObject) {
                     throw typeError("Cannot use 'in' operator to search for '${describeValue(left)}' in ${typeOf(right)}")
                 }
-                JSBoolean.getJsBoolean(right.hasProperty(toPropertyKey(left)))
+                JSBoolean.getJsBoolean(internalHasProperty(right, toPropertyKey(left)))
             }
 
             "instanceof" -> JSBoolean.getJsBoolean(instanceOf(left, right))
@@ -5306,20 +5364,20 @@ class Interpreter(
     }
 
     /** 收集对象自身与原型链上的可枚举字符串键（for-in）。 */
-    private fun enumerableStringKeysIncludingPrototype(objectValue: JSObject): List<String> {
+    private suspend fun enumerableStringKeysIncludingPrototype(objectValue: JSObject): List<String> {
         val keys = LinkedHashSet<String>()
         // 非枚举的自有属性同样会遮蔽原型上的同名属性，因此单独记录已访问键
         val visited = HashSet<String>()
         var current: JSObject? = objectValue
         while (current != null) {
-            for (key in current.ownPropertyKeys()) {
+            for (key in internalOwnPropertyKeys(current)) {
                 if (key !is PropertyKey.Str) continue
                 if (!visited.add(key.value)) continue
-                if (current.getOwnProperty(key)?.enumerable == true) {
+                if (internalGetOwnProperty(current, key)?.enumerable == true) {
                     keys.add(key.value)
                 }
             }
-            current = current.prototype
+            current = internalGetPrototypeOf(current)
         }
         return keys.toList()
     }
