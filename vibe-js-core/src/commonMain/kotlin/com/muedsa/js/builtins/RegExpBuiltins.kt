@@ -24,12 +24,12 @@ object RegExpBuiltins {
         val intrinsics = registry.intrinsics
         val regexpPrototype = intrinsics.regexpPrototype
 
-        val regexpConstructor = BuiltinHelpers.constructor(
+        val regexpConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "RegExp",
             length = 2,
             prototypeObject = regexpPrototype,
-        ) constructorBody@ { interpreter, _, args ->
+        ) constructorBody@ { interpreter, _, args, newTarget ->
             val patternValue = args.getOrNull(0) ?: JSUndefined
             val flagsValue = args.getOrNull(1)
             val hasFlags = flagsValue != null && flagsValue !is JSUndefined
@@ -73,7 +73,11 @@ object RegExpBuiltins {
                 pattern = if (patternValue is JSUndefined) "" else interpreter.toStringValue(patternValue)
                 flags = if (hasFlags) interpreter.toStringValue(flagsValue) else ""
             }
-            interpreter.createRegExp(pattern, flags)
+            interpreter.createRegExp(
+                pattern,
+                flags,
+                interpreter.prototypeFromNewTarget(newTarget, regexpPrototype),
+            )
         }
 
         intrinsics.regexpConstructor = regexpConstructor

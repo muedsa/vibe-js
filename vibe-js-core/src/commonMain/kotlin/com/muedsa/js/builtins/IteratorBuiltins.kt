@@ -526,18 +526,27 @@ internal object IteratorBuiltins {
             configurable = true,
         )
 
-        val iteratorConstructor = BuiltinHelpers.constructor(
+        lateinit var iteratorConstructorRef: JSNativeFunction
+        val iteratorConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Iterator",
             length = 0,
             prototypeObject = prototype,
-        ) { interpreter, thisValue, _ ->
-            // 抽象类：直接调用/构造 Iterator 抛错；子类 super() 复用预创建实例
-            if (!interpreter.nativeConstructCall || thisValue !is JSObject) {
+        ) { interpreter, thisValue, _, newTarget ->
+            // 抽象类：直接 new Iterator() 抛错；子类 super() 复用预创建实例；
+            // Reflect.construct(Iterator, [], Sub) 按 NewTarget 创建实例
+            if (newTarget !is JSUndefined && newTarget === iteratorConstructorRef) {
                 interpreter.typeError("Abstract class Iterator not directly constructable")
             }
-            thisValue
-        }
+            if (newTarget !is JSUndefined && thisValue !is JSObject) {
+                JSObject(prototype = interpreter.prototypeFromNewTarget(newTarget, prototype))
+            } else {
+                if (!interpreter.nativeConstructCall || thisValue !is JSObject) {
+                    interpreter.typeError("Abstract class Iterator not directly constructable")
+                }
+                thisValue
+            }
+        }.also { iteratorConstructorRef = it }
         intrinsics.iteratorConstructor = iteratorConstructor
 
         defineIteratorPrototypeAccessors(registry, iteratorConstructor)

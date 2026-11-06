@@ -35,12 +35,12 @@ object StringBuiltins {
         val intrinsics = registry.intrinsics
         val stringPrototype = intrinsics.stringPrototype
 
-        val stringConstructor = BuiltinHelpers.constructor(
+        val stringConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "String",
             length = 1,
             prototypeObject = stringPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, _ ->
             val firstArgument = args.getOrNull(0)
             // new String(Symbol) 非法；String(Symbol) 显式转换允许
             if (interpreter.nativeConstructCall &&

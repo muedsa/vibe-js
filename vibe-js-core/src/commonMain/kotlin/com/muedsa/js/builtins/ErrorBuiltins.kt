@@ -91,15 +91,17 @@ object ErrorBuiltins {
             enumerable = false,
             configurable = true,
         )
-        val aggregateErrorConstructor = BuiltinHelpers.constructor(
+        val aggregateErrorConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "AggregateError",
             length = 2,
             prototypeObject = aggregateErrorPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             val errorsValue = args.getOrElse(0) { JSUndefined }
             val messageArg = args.getOrElse(1) { JSUndefined }
-            val objectValue = JSObject(prototype = aggregateErrorPrototype)
+            val objectValue = JSObject(
+                prototype = interpreter.prototypeFromNewTarget(newTarget, aggregateErrorPrototype)
+            )
             objectValue.isErrorData = true
             interpreter.captureErrorStack(objectValue, skipTopFrame = true)
             // 规范：仅在显式传入非 undefined 的 message 时创建自有属性
@@ -139,16 +141,21 @@ object ErrorBuiltins {
         intrinsics.aggregateErrorConstructor = aggregateErrorConstructor
 
         // SuppressedError(error, suppressed, message)：message 仅在显式传入时创建
-        val suppressedErrorConstructor = BuiltinHelpers.constructor(
+        val suppressedErrorConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "SuppressedError",
             length = 3,
             prototypeObject = intrinsics.suppressedErrorPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             val errorValue = args.getOrElse(0) { JSUndefined }
             val suppressedValue = args.getOrElse(1) { JSUndefined }
             val messageArg = args.getOrElse(2) { JSUndefined }
-            val objectValue = JSObject(prototype = intrinsics.suppressedErrorPrototype)
+            val objectValue = JSObject(
+                prototype = interpreter.prototypeFromNewTarget(
+                    newTarget,
+                    intrinsics.suppressedErrorPrototype,
+                )
+            )
             objectValue.isErrorData = true
             interpreter.captureErrorStack(objectValue, skipTopFrame = true)
             if (messageArg !is JSUndefined) {
@@ -284,17 +291,22 @@ object ErrorBuiltins {
         prototype: JSObject,
     ): JSNativeFunction {
         val intrinsics = registry.intrinsics
-        return BuiltinHelpers.constructor(
+        return BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = name,
             length = 1,
             prototypeObject = prototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             // 规范：message 仅在传入非 undefined 时定义为自有属性
             val messageArg = args.getOrElse(0) { JSUndefined }
             val hasMessage = messageArg !is JSUndefined
             val message = if (hasMessage) interpreter.toStringValue(messageArg) else ""
-            val error = JSError(name, message, prototype, defineMessage = hasMessage)
+            val error = JSError(
+                errorName = name,
+                messageText = message,
+                prototype = interpreter.prototypeFromNewTarget(newTarget, prototype),
+                defineMessage = hasMessage,
+            )
             interpreter.captureErrorStack(error, skipTopFrame = true)
             // options.cause：存在该属性时复制到错误实例（不可枚举）
             val options = args.getOrNull(1)

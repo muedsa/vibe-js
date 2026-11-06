@@ -15,8 +15,14 @@ class JSNativeFunction(
     val length: Int = 0,
     prototype: JSObject? = null,
     val functionPrototypeObject: JSObject? = null,
-    /** 自定义 [[Construct]]（如 bind 生成的绑定函数）；null 表示按普通内建构造规则处理。 */
-    val constructFunction: (suspend (interpreter: Interpreter, args: List<JSValue>) -> JSValue)? = null,
+    /**
+     * 自定义 [[Construct]]（如 bind 生成的绑定函数、内建构造器）。
+     *
+     * 参数依次为：解释器、实参列表、NewTarget。NewTarget 与构造函数本身可能不同
+     * （`Reflect.construct`、子类 `super()`），实例原型必须由它决定。
+     * null 表示按普通内建构造规则处理。
+     */
+    val constructFunction: (suspend (interpreter: Interpreter, args: List<JSValue>, newTarget: JSValue) -> JSValue)? = null,
     /** bind 生成的绑定函数所指向的目标函数（供 @@hasInstance 解包）。 */
     val boundTarget: JSValue? = null,
     val function: suspend (interpreter: Interpreter, thisValue: JSValue, args: List<JSValue>) -> JSValue,

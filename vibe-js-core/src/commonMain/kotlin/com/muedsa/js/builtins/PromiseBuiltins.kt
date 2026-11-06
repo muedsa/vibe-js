@@ -25,12 +25,12 @@ object PromiseBuiltins {
         val intrinsics = registry.intrinsics
         val prototype = intrinsics.promisePrototype
 
-        val promiseConstructor = BuiltinHelpers.constructor(
+        val promiseConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Promise",
             length = 1,
             prototypeObject = prototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             if (!interpreter.nativeConstructCall) {
                 interpreter.typeError("Constructor Promise requires 'new'")
             }
@@ -38,7 +38,7 @@ object PromiseBuiltins {
             if (!interpreter.isCallable(executor)) {
                 interpreter.typeError("Promise resolver is not a function")
             }
-            val promise = JSPromise(prototype)
+            val promise = JSPromise(interpreter.prototypeFromNewTarget(newTarget, prototype))
             // CreateResolvingFunctions：共享 [[AlreadyResolved]]，重复 resolve/reject 被忽略
             val (resolveFunction, rejectFunction) = PromiseSupport.createResolvingFunctions(interpreter, promise)
             try {

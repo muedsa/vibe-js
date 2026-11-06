@@ -22,16 +22,16 @@ object SetBuiltins {
         val intrinsics = registry.intrinsics
         val setPrototype = intrinsics.setPrototype
 
-        val setConstructor = BuiltinHelpers.constructor(
+        val setConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Set",
             length = 0,
             prototypeObject = setPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             if (!interpreter.nativeConstructCall) {
                 interpreter.typeError("Constructor Set requires 'new'")
             }
-            val set = JSSet(prototype = setPrototype)
+            val set = JSSet(prototype = interpreter.prototypeFromNewTarget(newTarget, setPrototype))
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
                 val adder = interpreter.getV(set, PropertyKey.Str("add"))

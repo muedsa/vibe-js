@@ -16,12 +16,12 @@ object AsyncFunctionBuiltins {
         val intrinsics = registry.intrinsics
         val prototype = intrinsics.asyncFunctionPrototype
 
-        val asyncFunctionConstructor = BuiltinHelpers.constructor(
+        val asyncFunctionConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "AsyncFunction",
             length = 1,
             prototypeObject = prototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             // 与 Function 构造器相同的参数/函数体转换顺序
             val params = if (args.size > 1) {
                 args.dropLast(1).map { interpreter.toStringValue(it) }
@@ -29,7 +29,11 @@ object AsyncFunctionBuiltins {
                 emptyList()
             }
             val body = if (args.isEmpty()) "" else interpreter.toStringValue(args.last())
-            interpreter.createDynamicAsyncFunction(params, body)
+            interpreter.createDynamicAsyncFunction(
+                params,
+                body,
+                interpreter.prototypeFromNewTarget(newTarget, prototype),
+            )
         }
         // 规范：%AsyncFunction% 的 [[Prototype]] 是 %Function%
         (intrinsics.functionConstructor as? com.muedsa.js.runtime.value.JSObject)?.let {

@@ -32,13 +32,17 @@ object ArrayBuiltins {
         val intrinsics = registry.intrinsics
         val arrayPrototype = intrinsics.arrayPrototype
 
-        val arrayConstructor = BuiltinHelpers.constructor(
+        val arrayConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Array",
             length = 1,
             prototypeObject = arrayPrototype,
-        ) { interpreter, _, args ->
-            createArray(interpreter, arrayPrototype, args)
+        ) { interpreter, _, args, newTarget ->
+            createArray(
+                interpreter,
+                interpreter.prototypeFromNewTarget(newTarget, arrayPrototype),
+                args,
+            )
         }
 
         arrayPrototype.defineDataProperty(

@@ -4,6 +4,7 @@ import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.Intrinsics
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 
 /**
@@ -53,5 +54,33 @@ object BuiltinHelpers {
         prototype = intrinsics.functionPrototype,
         functionPrototypeObject = prototypeObject,
         function = body,
+    )
+
+    /**
+     * 创建带 NewTarget 语义的原生构造器（引擎同构做法）。
+     *
+     * 实例原型必须在创建时由 [body] 用 newTarget 决定，
+     * 不要先按默认原型创建再修改 [[Prototype]]。
+     *
+     * @param body 统一构造/调用逻辑；thisValue 在构造时为 undefined，
+     *   newTarget 在直接调用（无 new）时为 undefined
+     */
+    fun constructorWithNewTarget(
+        intrinsics: Intrinsics,
+        name: String,
+        length: Int,
+        prototypeObject: JSObject,
+        body: suspend (Interpreter, JSValue, List<JSValue>, JSValue) -> JSValue,
+    ): JSNativeFunction = JSNativeFunction(
+        name = name,
+        length = length,
+        prototype = intrinsics.functionPrototype,
+        functionPrototypeObject = prototypeObject,
+        constructFunction = { interpreter, args, newTarget ->
+            body(interpreter, JSUndefined, args, newTarget)
+        },
+        function = { interpreter, thisValue, args ->
+            body(interpreter, thisValue, args, JSUndefined)
+        },
     )
 }

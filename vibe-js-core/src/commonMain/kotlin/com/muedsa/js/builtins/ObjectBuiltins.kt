@@ -30,20 +30,26 @@ object ObjectBuiltins {
         val objectPrototype = intrinsics.objectPrototype
 
         // Object 构造器：对象原样返回，原始值转为包装对象
-        val objectConstructor = BuiltinHelpers.constructor(
+        lateinit var objectConstructorRef: JSNativeFunction
+        val objectConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Object",
             length = 1,
             prototypeObject = objectPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             val value = args.getOrNull(0) ?: JSUndefined
-            // 规范：无参或 undefined/null 时创建普通新对象；对象原样返回，原始值装箱
-            when (value) {
-                is JSObject -> value
-                is JSUndefined, is JSNull -> JSObject(prototype = objectPrototype)
-                else -> interpreter.toObject(value)
+            // 规范：NewTarget 不是 Object 时按 OrdinaryCreateFromConstructor 新建对象；
+            // 否则无参/undefined/null 新建，对象原样返回，原始值装箱
+            if (newTarget !is JSUndefined && newTarget !== objectConstructorRef) {
+                JSObject(prototype = interpreter.prototypeFromNewTarget(newTarget, objectPrototype))
+            } else {
+                when (value) {
+                    is JSObject -> value
+                    is JSUndefined, is JSNull -> JSObject(prototype = objectPrototype)
+                    else -> interpreter.toObject(value)
+                }
             }
-        }
+        }.also { objectConstructorRef = it }
 
         installPrototypeMethods(registry, objectConstructor)
         installStaticMethods(registry, objectConstructor)

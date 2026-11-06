@@ -24,7 +24,7 @@ object ProxyBuiltins {
             name = "Proxy",
             length = 2,
             prototype = intrinsics.functionPrototype,
-            constructFunction = { interpreter, args -> createProxy(interpreter, args) },
+            constructFunction = { interpreter, args, _ -> createProxy(interpreter, args) },
             function = { interpreter, _, _ -> interpreter.typeError("Proxy is not a function") },
         )
 

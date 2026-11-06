@@ -24,16 +24,16 @@ object WeakMapBuiltins {
         val intrinsics = registry.intrinsics
         val prototype = intrinsics.weakMapPrototype
 
-        val constructor = BuiltinHelpers.constructor(
+        val constructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "WeakMap",
             length = 0,
             prototypeObject = prototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             if (!interpreter.nativeConstructCall) {
                 interpreter.typeError("Constructor WeakMap requires 'new'")
             }
-            val map = JSWeakMap(prototype = prototype)
+            val map = JSWeakMap(prototype = interpreter.prototypeFromNewTarget(newTarget, prototype))
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
                 val adder = interpreter.getV(map, PropertyKey.Str("set"))

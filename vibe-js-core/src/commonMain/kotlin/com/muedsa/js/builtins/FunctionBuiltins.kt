@@ -23,12 +23,12 @@ object FunctionBuiltins {
         val intrinsics = registry.intrinsics
         val functionPrototype = intrinsics.functionPrototype
 
-        val functionConstructor = BuiltinHelpers.constructor(
+        val functionConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Function",
             length = 1,
             prototypeObject = functionPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             // 规范顺序：先 ToString 全部参数，再 ToString 函数体（异常顺序有测试覆盖）
             val params = if (args.size > 1) {
                 args.dropLast(1).map { interpreter.toStringValue(it) }
@@ -36,7 +36,11 @@ object FunctionBuiltins {
                 emptyList()
             }
             val body = if (args.isEmpty()) "" else interpreter.toStringValue(args.last())
-            interpreter.createDynamicFunction(params, body)
+            interpreter.createDynamicFunction(
+                params,
+                body,
+                interpreter.prototypeFromNewTarget(newTarget, intrinsics.functionPrototype),
+            )
         }
         intrinsics.functionConstructor = functionConstructor
 
@@ -194,13 +198,22 @@ object FunctionBuiltins {
                 }
                 // 目标是构造器时，绑定函数也可用 new 调用（转交给目标的 [[Construct]]）
                 val constructable = interpreter.isConstructor(thisValue)
+                lateinit var boundFunctionRef: JSNativeFunction
                 JSNativeFunction(
                     name = "bound $targetName",
                     length = 0,
                     prototype = functionPrototype,
                     constructFunction = if (constructable) {
-                        { inner, constructArgs ->
-                            inner.construct(thisValue, boundArguments + constructArgs)
+                        { inner, constructArgs, boundNewTarget ->
+                            // 规范 10.4.1.2：newTarget 是绑定函数自身时改为 target，
+                            // 这样 new bound() 的实例原型来自 target.prototype
+                            val effectiveNewTarget =
+                                if (boundNewTarget === boundFunctionRef) thisValue else boundNewTarget
+                            inner.construct(
+                                thisValue,
+                                boundArguments + constructArgs,
+                                effectiveNewTarget,
+                            )
                         }
                     } else {
                         null
@@ -209,6 +222,7 @@ object FunctionBuiltins {
                 ) { inner, _, callArgs ->
                     inner.callFunction(thisValue, boundThis, boundArguments + callArgs)
                 }.also { boundFunction ->
+                    boundFunctionRef = boundFunction
                     boundFunction.defineOwnProperty(
                         PropertyKey.LENGTH,
                         PropertyDescriptor.data(

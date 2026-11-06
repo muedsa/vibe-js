@@ -19,16 +19,16 @@ object WeakSetBuiltins {
         val intrinsics = registry.intrinsics
         val prototype = intrinsics.weakSetPrototype
 
-        val constructor = BuiltinHelpers.constructor(
+        val constructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "WeakSet",
             length = 0,
             prototypeObject = prototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             if (!interpreter.nativeConstructCall) {
                 interpreter.typeError("Constructor WeakSet requires 'new'")
             }
-            val set = JSWeakSet(prototype = prototype)
+            val set = JSWeakSet(prototype = interpreter.prototypeFromNewTarget(newTarget, prototype))
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
                 val adder = interpreter.getV(set, PropertyKey.Str("add"))

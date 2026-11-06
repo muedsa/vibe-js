@@ -1373,6 +1373,17 @@ class Interpreter(
     }
 
     /**
+     * GetPrototypeFromConstructor(NewTarget, fallback)。
+     *
+     * newTarget 为 undefined（直接调用）或 prototype 不是对象时回退 fallback。
+     */
+    suspend fun prototypeFromNewTarget(newTarget: JSValue, fallback: JSObject): JSObject {
+        if (newTarget is JSUndefined) return fallback
+        val proto = getV(newTarget, PropertyKey.PROTOTYPE)
+        return proto as? JSObject ?: fallback
+    }
+
+    /**
      * 构造实例（new）。
      *
      * @param newTarget 规范中的 NewTarget；默认等于 constructor，Reflect.construct 可显式指定。
@@ -1395,7 +1406,20 @@ class Interpreter(
                     val previousConstructCall = nativeConstructCall
                     nativeConstructCall = true
                     try {
-                        customConstruct(this, args)
+                        val result = customConstruct(this, args, newTarget)
+                        if (result is JSObject) {
+                            result
+                        } else {
+                            // 包装器构造器（Boolean/Number/String）返回原始值：
+                            // 用 NewTarget.prototype 包装，而不是默认原型
+                            wrapPrimitive(
+                                result,
+                                prototypeFromNewTarget(
+                                    newTarget,
+                                    constructor.functionPrototypeObject ?: intrinsics.objectPrototype,
+                                ),
+                            )
+                        }
                     } catch (error: Throwable) {
                         captureFailure(error)
                         throw error
@@ -1437,8 +1461,8 @@ class Interpreter(
     /**
      * 把原始值包装为对象（new String/Number/Boolean/Symbol 与 Object(primitive)）。
      */
-    fun wrapPrimitive(value: JSValue): JSObject {
-        val prototype = when (value) {
+    fun wrapPrimitive(value: JSValue, prototypeOverride: JSObject? = null): JSObject {
+        val prototype = prototypeOverride ?: when (value) {
             is JSString -> intrinsics.stringPrototype
             is JSNumber -> intrinsics.numberPrototype
             is JSBoolean -> intrinsics.booleanPrototype
@@ -1846,7 +1870,7 @@ class Interpreter(
             instance,
             function.strict,
             function,
-            newTarget = function,
+            newTarget = newTarget,
             thisInitialized = !derived,
             isConstructor = true,
             variableEnv = calleeEnv,
@@ -1947,6 +1971,8 @@ class Interpreter(
         superConstructor: JSValue? = null,
         superBase: JSObject? = null,
         functionPrototypeObject: JSObject? = null,
+        /** 函数对象自身的 [[Prototype]]；null 时按 kind 使用默认（Function/AsyncFunction）。 */
+        functionObjectPrototype: JSObject? = null,
         sourceText: String? = null,
         sourceInfo: SourceInfo = currentSourceInfo,
     ): JSFunction {
@@ -1963,7 +1989,8 @@ class Interpreter(
             closure = closure,
             strict = strict,
             // async 函数的 [[Prototype]] 是 %AsyncFunction.prototype%
-            prototype = if (isAsync) intrinsics.asyncFunctionPrototype else intrinsics.functionPrototype,
+            prototype = functionObjectPrototype
+                ?: if (isAsync) intrinsics.asyncFunctionPrototype else intrinsics.functionPrototype,
             functionPrototypeObject = prototypeObject,
             varDeclarations = varDeclarations,
             functionDeclarations = functionDeclarations,
@@ -2122,7 +2149,11 @@ class Interpreter(
      *
      * 使用全局环境作为闭包，参数与函数体通过 Parser 校验。
      */
-    fun createDynamicFunction(paramStrings: List<String>, body: String): JSFunction {
+    fun createDynamicFunction(
+        paramStrings: List<String>,
+        body: String,
+        functionObjectPrototype: JSObject? = null,
+    ): JSFunction {
         val parameters = paramStrings.joinToString(",")
         // 规范：')' 前与函数体前后保留换行，参数末尾的行注释不会吞掉右括号
         val sourceText = "function anonymous($parameters\n) {\n$body\n}"
@@ -2136,6 +2167,7 @@ class Interpreter(
             varDeclarations = function.varDeclarations,
             functionDeclarations = function.functionDeclarations,
             isAsync = function.isAsync,
+            functionObjectPrototype = functionObjectPrototype,
             sourceInfo = SourceInfo("<Function>"),
         )
         created.sourceText = sourceText
@@ -2148,7 +2180,11 @@ class Interpreter(
      * 参数文本可能以行注释结尾，因此在 ')' 前保留换行；源码文本同时用于
      * Function.prototype.toString（动态函数按规范返回构造函数体源码）。
      */
-    fun createDynamicAsyncFunction(paramStrings: List<String>, body: String): JSFunction {
+    fun createDynamicAsyncFunction(
+        paramStrings: List<String>,
+        body: String,
+        functionObjectPrototype: JSObject? = null,
+    ): JSFunction {
         val parameters = paramStrings.joinToString(",")
         val source = "(async function anonymous($parameters\n) {\n$body\n})"
         val function = parseDynamicFunctionSource(source)
@@ -2161,6 +2197,7 @@ class Interpreter(
             varDeclarations = function.varDeclarations,
             functionDeclarations = function.functionDeclarations,
             isAsync = true,
+            functionObjectPrototype = functionObjectPrototype,
             sourceInfo = SourceInfo("<AsyncFunction>"),
         )
         created.sourceText = source.substring(1, source.length - 1)
@@ -5940,7 +5977,11 @@ class Interpreter(
         return builder.toString()
     }
 
-    fun createRegExp(pattern: String, flags: String): JSValue {
+    fun createRegExp(
+        pattern: String,
+        flags: String,
+        prototype: JSObject = intrinsics.regexpPrototype,
+    ): JSValue {
         // 命名捕获组：校验组名/反向引用，并得到规范化后的引擎模式
         if ('u' in flags && 'v' in flags) {
             throw syntaxError("Invalid regular expression flags")
@@ -6032,7 +6073,7 @@ class Interpreter(
             pattern = pattern,
             flags = flags,
             matcher = matcher,
-            prototype = intrinsics.regexpPrototype,
+            prototype = prototype,
         )
     }
 

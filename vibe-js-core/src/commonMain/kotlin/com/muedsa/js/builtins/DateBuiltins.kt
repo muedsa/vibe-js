@@ -26,12 +26,12 @@ object DateBuiltins {
         val intrinsics = registry.intrinsics
         val datePrototype = intrinsics.datePrototype
 
-        val dateConstructor = BuiltinHelpers.constructor(
+        val dateConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Date",
             length = 7,
             prototypeObject = datePrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             if (!interpreter.nativeConstructCall) {
                 // Date() 直接调用返回当前时间字符串
                 JSString(localString(interpreter, interpreter.currentTimeMillis()))
@@ -61,7 +61,10 @@ object DateBuiltins {
                         toUtcFromLocal(interpreter, wallTime)
                     }
                 }
-                JSDate(DateMath.timeClip(time), datePrototype)
+                JSDate(
+                    DateMath.timeClip(time),
+                    interpreter.prototypeFromNewTarget(newTarget, datePrototype),
+                )
             }
         }
 

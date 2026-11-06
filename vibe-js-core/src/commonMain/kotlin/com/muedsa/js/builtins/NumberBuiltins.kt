@@ -22,12 +22,12 @@ object NumberBuiltins {
         val intrinsics = registry.intrinsics
         val numberPrototype = intrinsics.numberPrototype
 
-        val numberConstructor = BuiltinHelpers.constructor(
+        val numberConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Number",
             length = 1,
             prototypeObject = numberPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, _ ->
             if (args.isEmpty()) JSNumber.ZERO else JSNumber(interpreter.toNumber(args[0]))
         }
 

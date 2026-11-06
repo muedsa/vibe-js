@@ -16,12 +16,12 @@ object BooleanBuiltins {
         val intrinsics = registry.intrinsics
         val booleanPrototype = intrinsics.booleanPrototype
 
-        val booleanConstructor = BuiltinHelpers.constructor(
+        val booleanConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Boolean",
             length = 1,
             prototypeObject = booleanPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, _ ->
             JSBoolean.getJsBoolean(interpreter.toBoolean(args.getOrElse(0) { JSUndefined }))
         }
 

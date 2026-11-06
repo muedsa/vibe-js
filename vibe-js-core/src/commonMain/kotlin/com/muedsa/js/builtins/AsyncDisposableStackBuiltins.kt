@@ -35,16 +35,16 @@ internal object AsyncDisposableStackBuiltins {
     fun install(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
         val prototype = JSObject(prototype = intrinsics.objectPrototype)
-        val constructor = BuiltinHelpers.constructor(
+        val constructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "AsyncDisposableStack",
             length = 0,
             prototypeObject = prototype,
-        ) { interpreter, _, _ ->
+        ) { interpreter, _, _, newTarget ->
             if (!interpreter.nativeConstructCall) {
                 interpreter.typeError("Constructor AsyncDisposableStack requires 'new'")
             }
-            val stack = JSObject(prototype = prototype)
+            val stack = JSObject(prototype = interpreter.prototypeFromNewTarget(newTarget, prototype))
             stack.internalState = AsyncDisposeState()
             stack
         }

@@ -21,16 +21,16 @@ object MapBuiltins {
         val intrinsics = registry.intrinsics
         val mapPrototype = intrinsics.mapPrototype
 
-        val mapConstructor = BuiltinHelpers.constructor(
+        val mapConstructor = BuiltinHelpers.constructorWithNewTarget(
             intrinsics = intrinsics,
             name = "Map",
             length = 0,
             prototypeObject = mapPrototype,
-        ) { interpreter, _, args ->
+        ) { interpreter, _, args, newTarget ->
             if (!interpreter.nativeConstructCall) {
                 interpreter.typeError("Constructor Map requires 'new'")
             }
-            val map = JSMap(prototype = mapPrototype)
+            val map = JSMap(prototype = interpreter.prototypeFromNewTarget(newTarget, mapPrototype))
             val iterable = args.getOrNull(0)
             if (iterable != null && iterable !is JSUndefined && iterable !is JSNull) {
                 val adder = interpreter.getV(map, PropertyKey.Str("set"))
