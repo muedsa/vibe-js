@@ -1,28 +1,5 @@
 # test262-parser-tests pass/pass-explicit 允许列表（尚未支持的 Generator 语法扩展）
 # 每行一个文件名（不含目录）；strict 模式下这些文件的解析失败不计为门禁失败。
-# 当前剩余项：生成器方法（对象字面量/class 的 `*m() {}`）与 yield 后紧跟正则字面量
-# （词法层上下文相关关键字的已知限制）。同步 function* 声明/表达式已实现。
+# 当前为空：同步 function* 声明/表达式、生成器方法（`*m() {}`、`async *m() {}`）
+# 与 `yield /re/` 的词法上下文均已实现，pass/pass-explicit 全部解析通过。
 # 更新方式：实现对应语法后删除对应行；新增误报需先确认不是回归。
-06981f39d0844079.js
-0e22e969622bf137.js
-18f05b95a72dffa1.js
-1ea254c74f1071de.js
-2c16af589c5c8535.js
-32efa0efd255748a.js
-6d981ff8b6a3faec.js
-7fbe94acda67721e.js
-884e5c2703ce95f3.js
-939479d60d564ccd.js
-93c75264893587a5.js
-b86b0122e80c330e.js
-bedf5be599c82fe8.js
-c4336e0b6801c42c.js
-c771490bbb3dd6e9.js
-cb3316f2b008bec3.js
-d198e0d3a33b7b61.js
-ec99a663d6f3983d.js
-f108a85d36ec9afc.js
-f13a130829aa77c5.js
-f78abc3cba581cdd.js
-fb50400b4c9cf740.js
-fd167642d02f2c66.js

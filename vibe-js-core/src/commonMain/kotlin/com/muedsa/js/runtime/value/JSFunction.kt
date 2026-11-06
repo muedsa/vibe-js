@@ -88,10 +88,10 @@ class JSFunction(
     var isMethod: Boolean = isMethod
         private set
 
-    /** 标记为方法并移除已创建的 prototype 属性。 */
+    /** 标记为方法；普通方法移除已创建的 prototype 属性，生成器方法按规范保留。 */
     fun markAsMethod() {
         isMethod = true
-        removeOwnPropertyIgnoringAttributes(PropertyKey.PROTOTYPE)
+        if (!isGenerator) removeOwnPropertyIgnoringAttributes(PropertyKey.PROTOTYPE)
     }
 
     /** ES2015 SetFunctionName：更新 name 自有属性（configurable，允许重定义）。 */
@@ -155,7 +155,8 @@ class JSFunction(
             enumerable = false,
             configurable = true,
         )
-        if (functionPrototypeObject != null && !isMethod) {
+        // 普通方法没有 own "prototype"；生成器方法按规范仍保留 .prototype
+        if (functionPrototypeObject != null && (!isMethod || isGenerator)) {
             defineDataProperty(
                 PropertyKey.PROTOTYPE,
                 functionPrototypeObject,

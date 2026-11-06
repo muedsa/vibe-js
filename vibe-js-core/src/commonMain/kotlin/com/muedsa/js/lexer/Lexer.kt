@@ -34,6 +34,12 @@ class Lexer(private val input: String) {
     /** 上一个有效 Token 的类型，用于区分正则字面量与除法。 */
     private var lastTokenType: TokenType? = null
 
+    /** 上一个有效 Token 的文本：`yield` 等上下文相关关键字需要按文本判断。 */
+    private var lastTokenValue: String = ""
+
+    /** 上上一个有效 Token 的类型：判断 `yield` 是否处于属性名位置（`obj.yield`）。 */
+    private var previousTokenType: TokenType? = null
+
     /** 当前字符串字面量是否出现旧式八进制转义（严格模式禁止）。 */
     private var legacyOctalEscape = false
 
@@ -127,7 +133,9 @@ class Lexer(private val input: String) {
 
             val token = nextToken(startLine, startColumn, startOffset, newlineBefore)
             tokens.add(token)
+            previousTokenType = lastTokenType
             lastTokenType = token.type
+            lastTokenValue = token.value
         }
 
         tokens.add(
@@ -240,16 +248,32 @@ class Lexer(private val input: String) {
 
             // 正则字面量与除法需要结合上下文判断：
             // 在表达式起始位置出现的 `/` 视为正则，否则视为除法/除赋值。
+            // `yield /re/` 是上下文相关关键字的特例：按启发式识别，失败回退为除法。
             current == '/' -> {
                 if (isRegexAllowed(lastTokenType) && peek(1) != '/') {
                     readRegex(startLine, startColumn, startOffset, newlineBefore)
                 } else {
-                    advance()
-                    if (peek() == '=') {
-                        advance()
-                        makeToken(TokenType.DIVIDE_ASSIGN, "/=", startLine, startColumn, startOffset, newlineBefore)
+                    val yieldRegex = peek(1) != '/' && isYieldRegexStart()
+                    val regex = if (yieldRegex) {
+                        tryReadRegex(startLine, startColumn, startOffset, newlineBefore)
                     } else {
-                        makeToken(TokenType.DIVIDE, "/", startLine, startColumn, startOffset, newlineBefore)
+                        null
+                    }
+                    regex ?: run {
+                        advance()
+                        if (peek() == '=') {
+                            advance()
+                            makeToken(
+                                TokenType.DIVIDE_ASSIGN,
+                                "/=",
+                                startLine,
+                                startColumn,
+                                startOffset,
+                                newlineBefore,
+                            )
+                        } else {
+                            makeToken(TokenType.DIVIDE, "/", startLine, startColumn, startOffset, newlineBefore)
+                        }
                     }
                 }
             }
@@ -1383,6 +1407,50 @@ class Lexer(private val input: String) {
             TokenType.INSTANCEOF, TokenType.NEW, TokenType.DO, TokenType.ELSE,
             TokenType.ARROW, TokenType.DEBUGGER,
         )
+    }
+
+    /**
+     * 判断当前 `/` 是否是 `yield` 的操作数（`yield /re/`）。
+     *
+     * yield 是上下文相关关键字：生成器中是关键字，其它位置可以是标识符。
+     * 词法层没有解析器上下文，只能按“前一 Token 是 yield、后面看起来是完整正则
+     * 字面量”近似判断；属性名位置（`obj.yield / 2`）不参与该判断。
+     *
+     * 已知限制：非生成器代码中的 `yield / 2 / 3` 除法链会被误判为正则；
+     * 若该“正则”本身非法，[tryReadRegex] 会回退为除法。
+     */
+    private fun isYieldRegexStart(): Boolean {
+        if (lastTokenType != TokenType.IDENTIFIER || lastTokenValue != "yield") return false
+        // `obj.yield / 2`：属性名位置上的 yield 一定是标识符
+        if (previousTokenType == TokenType.DOT || previousTokenType == TokenType.QUESTION_DOT) {
+            return false
+        }
+        return looksLikeRegexLiteral()
+    }
+
+    /**
+     * 尝试把 `yield` 后的 `/` 读成正则字面量。
+     *
+     * 读取失败（非法正则/flags）时恢复词法位置并返回 null，由调用方退回除法：
+     * 此时 yield 更可能是普通标识符。
+     */
+    private fun tryReadRegex(
+        startLine: Int,
+        startColumn: Int,
+        startOffset: Int,
+        newlineBefore: Boolean,
+    ): Token? {
+        val savedPos = pos
+        val savedLine = line
+        val savedColumn = column
+        return try {
+            readRegex(startLine, startColumn, startOffset, newlineBefore)
+        } catch (_: LexerException) {
+            pos = savedPos
+            line = savedLine
+            column = savedColumn
+            null
+        }
     }
 
     /**

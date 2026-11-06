@@ -1649,6 +1649,11 @@ class Interpreter(
         }
 
         if (function.isGenerator) {
+            // async generator 的语义依赖 L1.4（AsyncGenerator 原型与 Promise 化的 next），
+            // 语法层允许解析，调用时给出明确的不支持错误
+            if (function.isAsync) {
+                throw typeError("Async generators are not supported")
+            }
             // 生成器函数调用只创建生成器对象，函数体延迟到首次 next() 执行
             return createGeneratorObject(function, effectiveThis, args)
         }
@@ -2165,9 +2170,10 @@ class Interpreter(
         sourceText: String? = null,
         sourceInfo: SourceInfo = currentSourceInfo,
     ): JSFunction {
-        // async 函数不是构造器，没有 own "prototype" 属性；
-        // 生成器的 .prototype 对象以 %GeneratorPrototype% 为原型（规范 9.2.3）
-        val prototypeObject = if (isArrow || isMethod || isAsync) {
+        // async 函数与普通方法不是构造器，没有 own "prototype" 属性；
+        // 生成器方法按规范仍然创建 .prototype（其 [[Prototype]] 是 %GeneratorPrototype%），
+        // 与生成器函数声明/表达式一致（规范 9.2.3）
+        val prototypeObject = if (isArrow || isAsync || (isMethod && !isGenerator)) {
             null
         } else {
             functionPrototypeObject
@@ -3361,6 +3367,13 @@ class Interpreter(
                         )
                     }
                     completion = executeStatement(statement.body)
+                } catch (signal: GeneratorReturn) {
+                    // 生成器 return() 在循环体内 yield 处提前完成：按 return 完成
+                    // 先释放本次迭代的 using 资源，再关闭外层迭代器后传播信号
+                    val failure = if (usingScope != null) disposeScope(usingScope, null) else null
+                    iteratorClose(records, throwCompletion = failure != null)
+                    if (failure != null) throw JSException(failure)
+                    throw signal
                 } catch (error: JSException) {
                     val failure = if (usingScope != null) {
                         disposeScope(usingScope, error.value)
@@ -4433,6 +4446,8 @@ class Interpreter(
                 varDeclarations = member.value.varDeclarations,
                 functionDeclarations = member.value.functionDeclarations,
                 isAsync = member.value.isAsync,
+                // 生成器方法：调用返回生成器对象，函数体延迟到首次 next()
+                isGenerator = member.value.isGenerator,
                 isMethod = true,
                 superBase = superBase,
                 homeObject = target,
@@ -4586,6 +4601,12 @@ class Interpreter(
         try {
             val result = try {
                 block()
+            } catch (signal: GeneratorReturn) {
+                // 生成器 return() 触发的提前完成等价于 return 完成：
+                // using 资源仍然要释放，释放失败时由释放错误覆盖该完成
+                disposeScope(scope, null)?.let { throw JSException(it) }
+                if (scope.hasAsyncResource) awaitPromiseValue(JSUndefined)
+                throw signal
             } catch (error: JSException) {
                 disposeScope(scope, error.value)?.let { throw JSException(it) }
                 throw error
@@ -5456,79 +5477,85 @@ class Interpreter(
                 // next() 自身的异常直接传播，绑定异常在未 done 时 close 后重抛
                 val record = getIterator(value)
                 var done = false
-                for (element in pattern.elements) {
-                    if (element == null) {
-                        if (!done) {
-                            val next = iteratorNext(record)
-                            if (next == null) done = true
-                        }
-                        continue
-                    }
-                    if (element is SpreadElement) {
-                        // 赋值模式下 rest 目标引用先于迭代求值
-                        val reference = if (kind == null) {
-                            try {
-                                preEvaluateMemberReference(element.argument)
-                            } catch (error: JSException) {
-                                if (!done) iteratorClose(record, throwCompletion = true)
-                                throw error
+                try {
+                    for (element in pattern.elements) {
+                        if (element == null) {
+                            if (!done) {
+                                val next = iteratorNext(record)
+                                if (next == null) done = true
                             }
-                        } else {
-                            null
+                            continue
                         }
-                        val restValues = ArrayList<JSValue?>()
-                        while (!done) {
-                            val next = iteratorNext(record)
-                            if (next == null) {
-                                done = true
+                        if (element is SpreadElement) {
+                            // 赋值模式下 rest 目标引用先于迭代求值
+                            val reference = if (kind == null) {
+                                try {
+                                    preEvaluateMemberReference(element.argument)
+                                } catch (error: JSException) {
+                                    if (!done) iteratorClose(record, throwCompletion = true)
+                                    throw error
+                                }
                             } else {
-                                restValues.add(next)
+                                null
                             }
-                        }
-                        try {
-                            bindPattern(
-                                element.argument,
-                                JSArray(restValues, prototype = intrinsics.arrayPrototype),
-                                kind,
-                                environment,
-                                reference,
-                            )
-                        } catch (error: JSException) {
-                            if (!done) iteratorClose(record, throwCompletion = true)
-                            throw error
-                        }
-                    } else {
-                        // 赋值模式下目标引用先于 IteratorStep
-                        val reference = if (kind == null) {
+                            val restValues = ArrayList<JSValue?>()
+                            while (!done) {
+                                val next = iteratorNext(record)
+                                if (next == null) {
+                                    done = true
+                                } else {
+                                    restValues.add(next)
+                                }
+                            }
                             try {
-                                preEvaluateMemberReference(element)
+                                bindPattern(
+                                    element.argument,
+                                    JSArray(restValues, prototype = intrinsics.arrayPrototype),
+                                    kind,
+                                    environment,
+                                    reference,
+                                )
                             } catch (error: JSException) {
                                 if (!done) iteratorClose(record, throwCompletion = true)
                                 throw error
                             }
                         } else {
-                            null
-                        }
-                        val elementValue = if (done) {
-                            JSUndefined
-                        } else {
-                            val next = iteratorNext(record)
-                            if (next == null) {
-                                done = true
+                            // 赋值模式下目标引用先于 IteratorStep
+                            val reference = if (kind == null) {
+                                try {
+                                    preEvaluateMemberReference(element)
+                                } catch (error: JSException) {
+                                    if (!done) iteratorClose(record, throwCompletion = true)
+                                    throw error
+                                }
+                            } else {
+                                null
+                            }
+                            val elementValue = if (done) {
                                 JSUndefined
                             } else {
-                                next
+                                val next = iteratorNext(record)
+                                if (next == null) {
+                                    done = true
+                                    JSUndefined
+                                } else {
+                                    next
+                                }
+                            }
+                            try {
+                                bindPattern(element, elementValue, kind, environment, reference)
+                            } catch (error: JSException) {
+                                if (!done) iteratorClose(record, throwCompletion = true)
+                                throw error
                             }
                         }
-                        try {
-                            bindPattern(element, elementValue, kind, environment, reference)
-                        } catch (error: JSException) {
-                            if (!done) iteratorClose(record, throwCompletion = true)
-                            throw error
-                        }
                     }
+                    if (!done) iteratorClose(record, throwCompletion = false)
+                } catch (signal: GeneratorReturn) {
+                    // 生成器 return() 在默认值/目标引用求值中触发：按 throw 完成关闭迭代器
+                    if (!done) iteratorClose(record, throwCompletion = true)
+                    throw signal
                 }
-                if (!done) iteratorClose(record, throwCompletion = false)
             }
 
             is ObjectLiteral -> {

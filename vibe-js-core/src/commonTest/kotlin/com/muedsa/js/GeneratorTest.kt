@@ -1,15 +1,18 @@
 package com.muedsa.js
 
+import com.muedsa.js.parser.ParseException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * 同步 Generator（L1.1）语义测试。
+ * 同步 Generator（L1.1 / L1.2）语义测试。
  *
  * 覆盖 next 序列、next(v) 传值、return/throw、finally 执行、yield* 委托、
- * for...of 与展开语法消费生成器，以及生成器函数的内建原型关系。
+ * for...of 与展开语法消费生成器、生成器函数的内建原型关系，
+ * 以及 L1.2 引入的对象字面量/class 生成器方法（含 async *、计算键与上下文关键字方法名）。
  */
 class GeneratorTest {
 
@@ -567,5 +570,371 @@ class GeneratorTest {
             """.trimIndent()
         )
         assertEquals(30.0, runtime.evalNumber("result"))
+    }
+
+    // ================================================================
+    // L1.2：对象字面量与 class 中的生成器方法
+    // ================================================================
+
+    @Test
+    fun `对象字面量生成器方法按迭代协议产出值`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var o = {
+                *gen() {
+                    yield 1;
+                    yield 2;
+                }
+            };
+            var it = o.gen();
+            var result = it.next().value + ',' + it.next().value + ',' + it.next().done;
+            """.trimIndent()
+        )
+        assertEquals("1,2,true", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器方法支持计算键字符串键数字键并推断函数名`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var suffix = 'b';
+            var o = {
+                *['a' + suffix]() { yield 'computed'; },
+                *'str'() { yield 'string'; },
+                *7() { yield 'number'; }
+            };
+            var result = o.ab().next().value + ',' + o.str().next().value + ',' +
+                o[7]().next().value + ':' + o.ab.name + ',' + o.str.name + ',' + o[7].name;
+            """.trimIndent()
+        )
+        assertEquals("computed,string,number:ab,str,7", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `class 生成器方法支持实例静态与计算键形式`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            class C {
+                constructor() { this.base = 10; }
+                *values() { yield this.base; yield this.base + 1; }
+                static *tags() { yield 'static'; }
+                *['pre' + 'fix']() { yield 'computed'; }
+            }
+            var c = new C();
+            var it = c.values();
+            var result = it.next().value + ',' + it.next().value + ',' +
+                C.tags().next().value + ',' + c.prefix().next().value;
+            """.trimIndent()
+        )
+        assertEquals("10,11,static,computed", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器方法的函数标签与实例原型符合规范`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var o = { *g() { yield 1; }, *h() { yield 2; } };
+            function* declared() { yield 0; }
+            var it = o.g();
+            var result = Object.prototype.toString.call(o.g) + ':' +
+                Object.prototype.toString.call(it) + ':' +
+                (Object.getPrototypeOf(it) === o.g.prototype) + ':' +
+                (o.g.prototype.constructor === o.g) + ':' +
+                (Object.getPrototypeOf(o.g.prototype) === Object.getPrototypeOf(declared.prototype)) + ':' +
+                (o.g.prototype !== o.h.prototype);
+            """.trimIndent()
+        )
+        assertEquals(
+            "[object GeneratorFunction]:[object Generator]:true:true:true:true",
+            runtime.evalString("result"),
+        )
+    }
+
+    @Test
+    fun `生成器方法不能作为构造器且源码文本保留星号`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var o = { *g(a) { yield a; } };
+            class C { *m(b) { yield b; } }
+            var objectNew = '';
+            var classNew = '';
+            try { new o.g(); } catch (e) { objectNew = e.name; }
+            try { new C.prototype.m(); } catch (e) { classNew = e.name; }
+            var result = objectNew + ',' + classNew + ':' +
+                String(o.g).slice(0, 2) + ',' + String(C.prototype.m).slice(0, 2) +
+                ':' + o.g.length + ',' + C.prototype.m.length;
+            """.trimIndent()
+        )
+        assertEquals("TypeError,TypeError:*g,*m:1,1", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器方法保存 this 绑定并支持 super 属性访问`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var proto = { greet() { return 'hi'; } };
+            var o = {
+                __proto__: proto,
+                marker: 'own',
+                *m() {
+                    yield super.greet();
+                    yield this.marker;
+                }
+            };
+            var it = o.m();
+            var first = it.next().value + ',' + it.next().value;
+            class Base {
+                hello() { return 'base'; }
+            }
+            class Derived extends Base {
+                *m() { yield super.hello(); }
+            }
+            var result = first + ':' + new Derived().m().next().value;
+            """.trimIndent()
+        )
+        assertEquals("hi,own:base", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `class 私有生成器方法可以被子类方法委托`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            class C {
+                *#items() {
+                    yield 1;
+                    yield 2;
+                }
+                *all() { yield* this.#items(); }
+            }
+            var values = [...new C().all()];
+            var tag = Object.prototype.toString.call(C.prototype.all);
+            var result = values.join(',') + ':' + tag;
+            """.trimIndent()
+        )
+        assertEquals("1,2:[object GeneratorFunction]", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `yield 后紧跟正则字面量按正则解析`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            function* g() {
+                yield /ab+c/i;
+                yield /=3/;
+            }
+            var it = g();
+            var first = it.next().value;
+            var second = it.next().value;
+            var result = first.source + ':' + first.flags + '|' + second.source;
+            """.trimIndent()
+        )
+        assertEquals("ab+c:i|=3", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `yield 作为标识符或属性名时斜杠仍按除法解析`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var o = { yield: 8 };
+            var propertyDivision = o.yield / 2;
+            var yield = 10;
+            var identifierDivision = yield / 2;
+            var result = propertyDivision + ',' + identifierDivision;
+            """.trimIndent()
+        )
+        assertEquals("4,5", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `yield星号 可以委托给对象与 class 的生成器方法`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            class Box {
+                *items() { yield 'x'; yield 'y'; }
+            }
+            var box = new Box();
+            var o = {
+                *inner() { yield 1; yield 2; },
+                *outer() {
+                    yield* this.inner();
+                    yield* box.items();
+                    yield 'done';
+                }
+            };
+            var values = [];
+            var it = o.outer();
+            var step = it.next();
+            while (!step.done) {
+                values.push(step.value);
+                step = it.next();
+            }
+            var result = values.join(',');
+            """.trimIndent()
+        )
+        assertEquals("1,2,x,y,done", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器方法名可以是 yield 或 static 等上下文关键字`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var o = { *yield() { yield 'y'; } };
+            class C { *static() { yield 's'; } }
+            var result = o.yield().next().value + ',' +
+                C.prototype['static']().next().value + ':' + o.yield.name;
+            """.trimIndent()
+        )
+        assertEquals("y,s:yield", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `async 生成器语法可以解析但调用时报告不支持`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            async function* declared() { yield 1; }
+            var expression = async function*() { yield 2; };
+            var o = { async *gen() { yield 1; } };
+            class C { async *items() { yield 2; } }
+            function call(fn) {
+                try { fn(); } catch (e) { return e.name; }
+                return 'no-error';
+            }
+            var result = typeof declared + ',' + typeof expression + ',' + typeof o.gen + ':' +
+                call(declared) + ',' + call(expression) + ',' + call(o.gen) + ',' +
+                call(function () { return new C().items(); });
+            """.trimIndent()
+        )
+        assertEquals(
+            "function,function,function:TypeError,TypeError,TypeError,TypeError",
+            runtime.evalString("result"),
+        )
+    }
+
+    @Test
+    fun `生成器 return 请求会关闭迭代器并释放 using 资源`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            function makeIterable() {
+                var index = 0;
+                return {
+                    [Symbol.iterator]() { return this; },
+                    next() { index++; return { value: index, done: false }; },
+                    return() { log.push('iterator:' + index); return {}; }
+                };
+            }
+            function makeResource(name) {
+                return { [Symbol.dispose]() { log.push('dispose:' + name); } };
+            }
+            function* g() {
+                using outer = makeResource('outer');
+                for (var value of makeIterable()) {
+                    yield value;
+                }
+            }
+            var it = g();
+            var first = it.next().value;
+            var returned = it.return(7);
+            var result = log.join(',') + ':' + first + ':' + returned.done + ':' + returned.value;
+            """.trimIndent()
+        )
+        assertEquals("iterator:1,dispose:outer:1:true:7", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器 throw 请求同样关闭迭代器并释放 using 资源`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            function makeIterable() {
+                var index = 0;
+                return {
+                    [Symbol.iterator]() { return this; },
+                    next() { index++; return { value: index, done: false }; },
+                    return() { log.push('iterator'); return {}; }
+                };
+            }
+            function makeResource() {
+                return { [Symbol.dispose]() { log.push('dispose'); } };
+            }
+            function* g() {
+                using outer = makeResource();
+                for (var value of makeIterable()) {
+                    yield value;
+                }
+            }
+            var it = g();
+            it.next();
+            var name = '';
+            try { it.throw(new Error('boom')); } catch (e) { name = e.message; }
+            var result = log.join(',') + ':' + name;
+            """.trimIndent()
+        )
+        assertEquals("iterator,dispose:boom", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器在解构默认值中收到 return 请求会关闭迭代器`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            function makeIterable() {
+                var index = 0;
+                return {
+                    [Symbol.iterator]() { return this; },
+                    next() {
+                        index++;
+                        return { value: index === 1 ? undefined : index, done: false };
+                    },
+                    return() { log.push('closed'); return {}; }
+                };
+            }
+            function* g() {
+                var [first = yield 'default', second] = makeIterable();
+                return first + ':' + second;
+            }
+            var it = g();
+            var step = it.next();
+            var returned = it.return(3);
+            var result = step.value + ':' + log.join(',') + ':' + returned.done;
+            """.trimIndent()
+        )
+        assertEquals("default:closed:true", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器方法语法错误在解析期被拒绝`() = runTest {
+        val runtime = TestRuntime()
+        // class 构造器不能是生成器
+        assertFailsWith<ParseException> { runtime.eval("class C { *constructor() {} }") }
+        // `*` 不能与 get/set 组合
+        assertFailsWith<ParseException> { runtime.eval("var o = { get *a() {} };") }
+        assertFailsWith<ParseException> { runtime.eval("var o = { *get a() {} };") }
+        assertFailsWith<ParseException> { runtime.eval("class C { set *a(v) {} }") }
+        // 生成器方法必须紧跟参数列表
+        assertFailsWith<ParseException> { runtime.eval("var o = { *a: 1 };") }
+        assertFailsWith<ParseException> { runtime.eval("var o = { *a };") }
+        assertFailsWith<ParseException> { runtime.eval("class C { *a = 1; }") }
+        // 生成器方法的形参是 [+Yield] 语境：yield 不能作为参数名
+        assertFailsWith<ParseException> { runtime.eval("var o = { *g(yield) {} };") }
+        assertFailsWith<ParseException> { runtime.eval("class C { *g(yield) {} }") }
+        // 生成器方法使用 UniqueFormalParameters：即使 sloppy 也不允许重名
+        assertFailsWith<ParseException> { runtime.eval("var o = { *g(a, a) {} };") }
+        assertFailsWith<ParseException> { runtime.eval("class C { *g(a, a) {} }") }
     }
 }

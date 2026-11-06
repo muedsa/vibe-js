@@ -1148,13 +1148,28 @@ class Parser(
                     }
                 }
                 // Function.prototype.toString 的源码文本：static 修饰符不计入
+                // （`*` 属于方法自身语法，因此 `*m(){}` 的文本从 `*` 开始）
                 val memberTextStart = modifierStart ?: peek().range.start
+
+                // 生成器方法检测：`*m() {}`、`static *m() {}`、`async *m() {}`
+                var isGenerator = false
+                if (check(TokenType.MULTIPLY)) {
+                    advance()
+                    isGenerator = true
+                    if (kind != ClassMemberKind.METHOD) {
+                        throw error("A class method cannot be both an accessor and a generator")
+                    }
+                }
 
                 val (key, computed) = if (check(TokenType.PRIVATE_IDENTIFIER)) {
                     val token = advance()
                     PrivateIdentifier(token.value, token.range) to false
                 } else {
                     parsePropertyKeyExpression()
+                }
+                // 生成器方法必须紧跟参数列表：`*m` 后面不能是字段初始化或 `:`
+                if (isGenerator && !check(TokenType.LPAREN)) {
+                    throw error("Expected '(' after generator method name")
                 }
                 val privateKey = key as? PrivateIdentifier
                 val keyName = when (key) {
@@ -1173,6 +1188,7 @@ class Parser(
                             throw error("Class constructor may not be an accessor")
 
                         isAsync -> throw error("Class constructor may not be an async method")
+                        isGenerator -> throw error("Class constructor may not be a generator")
                         else -> {
                             if (constructorSeen) {
                                 throw error("A class may only have one constructor")
@@ -1185,7 +1201,7 @@ class Parser(
 
                 // class 字段：没有参数列表（可选初始化表达式，ASI 结束）
                 if (!check(TokenType.LPAREN)) {
-                    if (kind != ClassMemberKind.METHOD || isAsync) {
+                    if (kind != ClassMemberKind.METHOD || isAsync || isGenerator) {
                         throw error("Expected '(' in class member")
                     }
                     if (isConstructor) {
@@ -1240,8 +1256,9 @@ class Parser(
                 consume(TokenType.LPAREN, "Expected '(' in class member")
                 val allowSuperCall = isConstructor && classDerived
                 val (params, bodyInfo) = withFunctionContext(true, allowSuperCall, true) {
-                    // 类成员方法/访问器的形参是 [~Yield] 语境（类方法暂不支持生成器语法）
-                    val parsedParams = withGeneratorContext(false) {
+                    // 形参沿用函数自身的 [Yield] 语境：生成器方法是 [+Yield]，
+                    // 普通方法/访问器是 [~Yield]（yield 仍可作为绑定名）
+                    val parsedParams = withGeneratorContext(isGenerator) {
                         withAsyncContext(isAsync) { parseParametersAfterOpen() }
                     }
                     when (kind) {
@@ -1255,6 +1272,7 @@ class Parser(
                         allowSuperCall = allowSuperCall,
                         allowNewTarget = true,
                         params = parsedParams,
+                        isGenerator = isGenerator,
                     )
                     parsedParams to parsedBody
                 }
@@ -1266,6 +1284,7 @@ class Parser(
                     body = bodyInfo.body,
                     strict = true,
                     isAsync = isAsync,
+                    isGenerator = isGenerator,
                     varDeclarations = bodyInfo.varDeclarations,
                     functionDeclarations = bodyInfo.functionDeclarations,
                     range = SourceRange(key.range.start, bodyInfo.body.range.end),
@@ -1299,6 +1318,8 @@ class Parser(
     private fun canStartClassMember(offset: Int): Boolean {
         val token = peek(offset)
         return when {
+            // `*` 是生成器方法标记：`static *m() {}`、`async *m() {}`
+            token.type == TokenType.MULTIPLY -> true
             token.type in setOf(
                 TokenType.IDENTIFIER, TokenType.PRIVATE_IDENTIFIER, TokenType.STRING,
                 TokenType.NUMBER, TokenType.NUMBER_HEX,
@@ -1405,10 +1426,8 @@ class Parser(
         consume(TokenType.FUNCTION, "Expected 'function'")
         // 生成器声明：函数关键字后紧跟 `*`（与乘号无关的上下文相关语法）
         val isGenerator = match(TokenType.MULTIPLY)
-        // 项目只支持同步生成器；async function* 属于明确排除的语法
-        if (isAsync && isGenerator) {
-            throw error("Async generators are not supported")
-        }
+        // async generator 的语法解析与同步生成器一致；运行期语义属于 L1.4，
+        // 调用时由解释器给出明确的“不支持”错误（见 Interpreter.callUserFunctionOnce）
         // 声明名沿用外层 [?Yield] 语境：顶层 sloppy 允许 function* yield(){}，
         // 但在生成器函数体内 yield 已是关键字
         val name = consumeBindingIdentifier("Expected function name")
@@ -1454,10 +1473,8 @@ class Parser(
     private fun parseFunctionExpression(startPos: SourcePosition, isAsync: Boolean = false): FunctionExpression {
         // 生成器函数表达式：function 关键字后的 `*`
         val isGenerator = match(TokenType.MULTIPLY)
-        // 项目只支持同步生成器；async function* 属于明确排除的语法
-        if (isAsync && isGenerator) {
-            throw error("Async generators are not supported")
-        }
+        // async generator 表达式的语法与同步生成器一致；运行期语义属于 L1.4，
+        // 调用时由解释器给出明确的“不支持”错误（见 Interpreter.callUserFunctionOnce）
         // 普通函数表达式的名字是 [~Yield] 语境；生成器自身的名字是 [+Yield] 语境
         val nameGeneratorContext = isGenerator
         val nameToken = withGeneratorContext(nameGeneratorContext) {
@@ -3500,16 +3517,25 @@ class Parser(
             }
             val propertyStart = peek().range.start
 
-            // async 方法检测：`async m() {}`
+            // async 方法检测：`async m() {}`、`async *m() {}`
             var isAsync = false
             if (isAsyncMethodStart()) {
                 isAsync = true
                 advance()
             }
 
-            // getter / setter 检测：`get x() {}`、`set x(v) {}`
+            // 生成器方法检测：`*m() {}`。方法起始位置的 `*` 只可能是生成器标记，
+            // 因此先消费 `*`，再由后面的“属性名 + (”决定是否为合法方法。
+            var isGenerator = false
+            if (check(TokenType.MULTIPLY)) {
+                advance()
+                isGenerator = true
+            }
+
+            // getter / setter 检测：`get x() {}`、`set x(v) {}`；
+            // `*` 不能与访问器组合（`*get x() {}` 里的 get 是方法名）
             var kind = PropertyKind.INIT
-            if (peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
+            if (!isGenerator && peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
                 (peek().value == "get" || peek().value == "set") &&
                 canStartAccessorProperty(1)
             ) {
@@ -3518,6 +3544,10 @@ class Parser(
             }
 
             val (key, computed) = parsePropertyKeyExpression()
+            // 生成器方法必须紧跟参数列表：`{*a}`、`{*a: 1}` 都不是合法方法
+            if (isGenerator && !check(TokenType.LPAREN)) {
+                throw error("Expected '(' after generator method name")
+            }
 
             var isMethodSyntax = false
             val value: Expression = when {
@@ -3538,8 +3568,9 @@ class Parser(
                 match(TokenType.LPAREN) -> {
                     isMethodSyntax = true
                     val (params, bodyInfo) = withFunctionContext(true, false, true) {
-                        // 对象方法的形参是 [~Yield] 语境（方法语法目前不支持生成器）
-                        val parsedParams = withGeneratorContext(false) {
+                        // 形参沿用函数自身的 [Yield] 语境：生成器方法是 [+Yield]，
+                        // 普通方法/访问器是 [~Yield]（yield 仍可作为绑定名）
+                        val parsedParams = withGeneratorContext(isGenerator) {
                             withAsyncContext(isAsync) { parseParametersAfterOpen() }
                         }
                         when (kind) {
@@ -3553,6 +3584,7 @@ class Parser(
                             allowSuperCall = false,
                             allowNewTarget = true,
                             params = parsedParams,
+                            isGenerator = isGenerator,
                         )
                         parsedParams to parsedBody
                     }
@@ -3566,6 +3598,7 @@ class Parser(
                         body = bodyInfo.body,
                         strict = bodyInfo.strict,
                         isAsync = isAsync,
+                        isGenerator = isGenerator,
                         varDeclarations = bodyInfo.varDeclarations,
                         functionDeclarations = bodyInfo.functionDeclarations,
                         range = SourceRange(key.range.start, bodyInfo.body.range.end),
@@ -3628,7 +3661,8 @@ class Parser(
      * 对象字面量中的 `async` 是否开始异步方法。
      *
      * AsyncMethod 要求 `async` 与属性名之间无换行，且属性名后紧跟 `(`；
-     * 计算属性名需要先匹配到对应的 `]`。
+     * 计算属性名需要先匹配到对应的 `]`。`async *m() {}`（async 生成器方法）
+     * 在 `async` 与属性名之间多一个 `*`，其余规则相同。
      */
     private fun isAsyncMethodStart(): Boolean {
         if (peek().type != TokenType.IDENTIFIER || peek().containsEscape ||
@@ -3638,21 +3672,43 @@ class Parser(
         }
         val nameToken = peek(1)
         if (nameToken.precededByNewline) return false
-        if (nameToken.type == TokenType.LBRACKET) {
-            var offset = 2
-            var depth = 1
-            while (depth > 0) {
-                when (peek(offset).type) {
+        // async 生成器方法：`async` 后紧跟 `*`，属性名在 `*` 之后
+        if (nameToken.type == TokenType.MULTIPLY) {
+            return isPropertyKeyFollowedByParen(2)
+        }
+        return isPropertyKeyFollowedByParen(1)
+    }
+
+    /**
+     * 判断从偏移 [offset] 开始是否为「属性名 (」形式。
+     *
+     * 计算属性名需要先匹配到对应的 `]`，再检查其后的 `(`。
+     */
+    private fun isPropertyKeyFollowedByParen(offset: Int): Boolean {
+        if (!canStartAccessorProperty(offset)) return false
+        var index = offset
+        if (peek(index).type == TokenType.LBRACKET) {
+            var depth = 0
+            while (true) {
+                when (peek(index).type) {
                     TokenType.LBRACKET -> depth++
-                    TokenType.RBRACKET -> depth--
+                    TokenType.RBRACKET -> {
+                        depth--
+                        if (depth == 0) {
+                            index++
+                            break
+                        }
+                    }
+
                     TokenType.EOF -> return false
                     else -> Unit
                 }
-                offset++
+                index++
             }
-            return peek(offset).type == TokenType.LPAREN
+        } else {
+            index++
         }
-        return canStartAccessorProperty(1) && peek(2).type == TokenType.LPAREN
+        return peek(index).type == TokenType.LPAREN
     }
 
     private fun canStartAccessorProperty(offset: Int): Boolean {
