@@ -787,6 +787,102 @@ class Interpreter(
         return false
     }
 
+    /** [[Get]]，显式指定 receiver（Reflect.get 使用）。 */
+    suspend fun getWithReceiver(target: JSObject, key: PropertyKey, receiver: JSValue): JSValue =
+        getPropertyFrom(target, key, receiver)
+
+    /**
+     * [[Set]]，显式指定 receiver（Reflect.set 使用）。
+     *
+     * 返回是否成功；不因 strict 抛 TypeError（由调用方决定）。
+     */
+    suspend fun setWithReceiver(
+        target: JSObject,
+        key: PropertyKey,
+        value: JSValue,
+        receiver: JSValue,
+    ): Boolean {
+        if (target is JSProxy) {
+            val trap = proxyTrap(target, "set")
+                ?: return setWithReceiver(target.target, key, value, receiver)
+            val result = toBoolean(
+                callProxyTrap(
+                    target,
+                    trap,
+                    listOf<JSValue>(target.target, propertyKeyToValue(key), value, receiver),
+                )
+            )
+            if (result) {
+                val targetDescriptor = internalGetOwnProperty(target.target, key)
+                if (targetDescriptor != null && !targetDescriptor.configurable) {
+                    if (targetDescriptor.isData && !targetDescriptor.writable &&
+                        !sameValue(value, targetDescriptor.value ?: JSUndefined)
+                    ) {
+                        throw typeError("'set' trap returned true for a non-configurable, non-writable property")
+                    }
+                    if (targetDescriptor.isAccessor &&
+                        (targetDescriptor.set == null || targetDescriptor.set is JSUndefined)
+                    ) {
+                        throw typeError("'set' trap returned true for a non-configurable accessor without setter")
+                    }
+                }
+            }
+            return result
+        }
+        var current: JSObject? = target
+        while (current != null) {
+            val descriptor = internalGetOwnProperty(current, key)
+            if (descriptor != null) {
+                if (descriptor.isAccessor) {
+                    val setter = descriptor.set
+                    if (setter == null || !isCallable(setter)) return false
+                    callFunction(setter, receiver, listOf(value))
+                    return true
+                }
+                if (!descriptor.writable) return false
+                if (current === target) {
+                    if (receiver !is JSObject) return false
+                    return internalDefineOwnProperty(
+                        receiver,
+                        key,
+                        PropertyDescriptor.data(
+                            value = value,
+                            writable = true,
+                            enumerable = descriptor.enumerable,
+                            configurable = descriptor.configurable,
+                        ),
+                    )
+                }
+                break
+            }
+            current = internalGetPrototypeOf(current)
+        }
+        if (receiver !is JSObject) return false
+        return internalDefineOwnProperty(
+            receiver,
+            key,
+            PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
+        )
+    }
+
+    /** CreateListFromArrayLike：按 length 与索引读取类数组（Reflect.apply/construct 使用）。 */
+    suspend fun createListFromArrayLike(value: JSValue): List<JSValue> {
+        if (value !is JSObject) throw typeError("CreateListFromArrayLike called on non-object")
+        val lengthValue = toNumber(getV(value, PropertyKey.LENGTH))
+        val length = when {
+            lengthValue.isNaN() || lengthValue <= 0.0 -> 0L
+            lengthValue >= 9007199254740991.0 -> 9007199254740991L
+            else -> kotlin.math.floor(lengthValue).toLong()
+        }
+        val list = ArrayList<JSValue>(length.toInt().coerceAtMost(1024))
+        var index = 0L
+        while (index < length) {
+            list.add(getV(value, PropertyKey.Str(index.toString())))
+            index++
+        }
+        return list
+    }
+
     // ================================================================
     // Proxy 内部方法（ECMAScript 9.5）
     //
@@ -1103,15 +1199,19 @@ class Interpreter(
     }
 
     /** [[Construct]] 的 Proxy 分支。 */
-    private suspend fun proxyConstruct(proxy: JSProxy, args: List<JSValue>): JSValue {
+    private suspend fun proxyConstruct(
+        proxy: JSProxy,
+        args: List<JSValue>,
+        newTarget: JSValue = proxy,
+    ): JSValue {
         val trap = proxyTrap(proxy, "construct")
         if (trap == null) {
             if (!isConstructor(proxy.target)) throw typeError("Proxy target is not a constructor")
-            return construct(proxy.target, args)
+            return construct(proxy.target, args, newTarget)
         }
         if (!isConstructor(proxy.target)) throw typeError("'construct' trap requires a constructor target")
         val argsArray = JSArray(args.toMutableList(), prototype = intrinsics.arrayPrototype)
-        val result = callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, argsArray, proxy))
+        val result = callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, argsArray, newTarget))
         if (result !is JSObject) throw typeError("'construct' trap must return an object")
         return result
     }
@@ -1274,14 +1374,20 @@ class Interpreter(
 
     /**
      * 构造实例（new）。
+     *
+     * @param newTarget 规范中的 NewTarget；默认等于 constructor，Reflect.construct 可显式指定。
      */
-    suspend fun construct(constructor: JSValue, args: List<JSValue>): JSValue {
+    suspend fun construct(
+        constructor: JSValue,
+        args: List<JSValue>,
+        newTarget: JSValue = constructor,
+    ): JSValue {
         if (callDepth == 0 && currentCoroutineContext()[ContinuationInterceptor] !is ExecutionTrampoline) {
-            return withExecutionTrampoline { construct(constructor, args) }
+            return withExecutionTrampoline { construct(constructor, args, newTarget) }
         }
         checkExecution()
         return when (constructor) {
-            is JSFunction -> constructUserFunction(constructor, args)
+            is JSFunction -> constructUserFunction(constructor, args, newTarget)
             is JSNativeFunction -> {
                 val customConstruct = constructor.constructFunction
                 if (customConstruct != null) {
@@ -1322,7 +1428,7 @@ class Interpreter(
                 }
             }
 
-            is JSProxy -> proxyConstruct(constructor, args)
+            is JSProxy -> proxyConstruct(constructor, args, newTarget)
 
             else -> throw typeError("${describeValue(constructor)} is not a constructor")
         }
@@ -1705,12 +1811,17 @@ class Interpreter(
     }
 
     /** 构造用户函数实例。 */
-    private suspend fun constructUserFunction(function: JSFunction, args: List<JSValue>): JSValue {
+    private suspend fun constructUserFunction(
+        function: JSFunction,
+        args: List<JSValue>,
+        newTarget: JSValue = function,
+    ): JSValue {
         if (function.isArrow || function.isMethod || function.isAsync) {
             throw typeError("${function.name.ifEmpty { "anonymous" }} is not a constructor")
         }
-        // 必须在构造时读取当前的 F.prototype，而不是创建函数时捕获的对象
-        val prototypeValue = getV(function, PropertyKey.PROTOTYPE)
+        // 必须在构造时读取当前的 F.prototype，而不是创建函数时捕获的对象；
+        // Reflect.construct 允许 newTarget 与 constructor 不同。
+        val prototypeValue = getV(newTarget, PropertyKey.PROTOTYPE)
         val instancePrototype = prototypeValue as? JSObject ?: intrinsics.objectPrototype
         val instance = JSObject(prototype = instancePrototype)
 
