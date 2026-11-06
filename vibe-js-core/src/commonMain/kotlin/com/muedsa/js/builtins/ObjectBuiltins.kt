@@ -12,6 +12,7 @@ import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSProxy
 import com.muedsa.js.runtime.value.JSRegExp
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSSymbol
@@ -453,7 +454,9 @@ object ObjectBuiltins {
                 if (descriptorObject !is JSObject) {
                     interpreter.typeError("Property description must be an object")
                 }
-                definePropertyFromDescriptor(interpreter, objectValue, key, descriptorObject)
+                if (!definePropertyFromDescriptor(interpreter, objectValue, key, descriptorObject)) {
+                    interpreter.typeError("Cannot define property '$key'")
+                }
                 objectValue
             },
         )
@@ -575,6 +578,7 @@ object ObjectBuiltins {
                             val descriptor = interpreter.internalGetOwnProperty(value, key) ?: continue
                             descriptor.configurable = false
                             if (descriptor.isData) descriptor.writable = false
+                            interpreter.internalDefineOwnProperty(value, key, descriptor)
                         }
                     }
 
@@ -583,6 +587,7 @@ object ObjectBuiltins {
                             val descriptor = interpreter.internalGetOwnProperty(value, key) ?: continue
                             descriptor.configurable = false
                             if (descriptor.isData) descriptor.writable = false
+                            interpreter.internalDefineOwnProperty(value, key, descriptor)
                         }
                         interpreter.internalPreventExtensions(value)
                     }
@@ -601,13 +606,17 @@ object ObjectBuiltins {
                         value.sealArray()
                         for (key in interpreter.internalOwnPropertyKeys(value)) {
                             if (key == PropertyKey.LENGTH) continue
-                            interpreter.internalGetOwnProperty(value, key)?.configurable = false
+                            val descriptor = interpreter.internalGetOwnProperty(value, key) ?: continue
+                            descriptor.configurable = false
+                            interpreter.internalDefineOwnProperty(value, key, descriptor)
                         }
                     }
 
                     is JSObject -> {
                         for (key in interpreter.internalOwnPropertyKeys(value)) {
-                            interpreter.internalGetOwnProperty(value, key)?.configurable = false
+                            val descriptor = interpreter.internalGetOwnProperty(value, key) ?: continue
+                            descriptor.configurable = false
+                            interpreter.internalDefineOwnProperty(value, key, descriptor)
                         }
                         interpreter.internalPreventExtensions(value)
                     }
@@ -678,12 +687,19 @@ object ObjectBuiltins {
      * - 未提供的字段在已有属性上保留当前值；
      * - 检查不可配置属性的不变量。
      */
-    private suspend fun definePropertyFromDescriptor(
+    internal suspend fun definePropertyFromDescriptor(
         interpreter: com.muedsa.js.runtime.Interpreter,
         objectValue: JSObject,
         key: PropertyKey,
         descriptorObject: JSObject,
-    ) {
+    ): Boolean {
+        // Proxy：直接走 [[DefineOwnProperty]]，由 trap 负责不变量，避免预校验读取 gopd trap
+        if (objectValue is JSProxy) {
+            val descriptor = interpreter.toPropertyDescriptor(descriptorObject)
+                ?: interpreter.typeError("Property description must be an object")
+            return interpreter.internalDefineOwnProperty(objectValue, key, descriptor)
+        }
+
         suspend fun has(name: String): Boolean =
             interpreter.internalHasProperty(descriptorObject, PropertyKey.Str(name))
 
@@ -745,21 +761,21 @@ object ObjectBuiltins {
 
         if (current != null && !current.configurable) {
             if (hasConfigurable && configurable == true) {
-                interpreter.typeError("Cannot redefine property: $key")
+                return false
             }
             if (hasEnumerable && enumerable != current.enumerable) {
-                interpreter.typeError("Cannot redefine property: $key")
+                return false
             }
             if (isAccessorDescriptor && current.isData) {
-                interpreter.typeError("Cannot redefine property: $key")
+                return false
             }
             if (isDataDescriptor && current.isAccessor) {
-                interpreter.typeError("Cannot redefine property: $key")
+                return false
             }
             if (current.isData) {
                 if (!current.writable) {
                     if (hasWritable && writable == true) {
-                        interpreter.typeError("Cannot redefine property: $key")
+                        return false
                     }
                     if (hasValue && !sameDescriptorValue(
                             interpreter,
@@ -767,7 +783,7 @@ object ObjectBuiltins {
                             current.value ?: JSUndefined,
                         )
                     ) {
-                        interpreter.typeError("Cannot redefine property: $key")
+                        return false
                     }
                 }
             } else {
@@ -777,7 +793,7 @@ object ObjectBuiltins {
                         current.get ?: JSUndefined,
                     )
                 ) {
-                    interpreter.typeError("Cannot redefine property: $key")
+                    return false
                 }
                 if (hasSet && !sameDescriptorValue(
                         interpreter,
@@ -785,7 +801,7 @@ object ObjectBuiltins {
                         current.set ?: JSUndefined,
                     )
                 ) {
-                    interpreter.typeError("Cannot redefine property: $key")
+                    return false
                 }
             }
         }
@@ -844,9 +860,7 @@ object ObjectBuiltins {
             }
         }
 
-        if (!interpreter.internalDefineOwnProperty(objectValue, key, descriptor)) {
-            interpreter.typeError("Cannot define property '${key}'")
-        }
+        return interpreter.internalDefineOwnProperty(objectValue, key, descriptor)
     }
 
     /** Annex B：定义访问器并保留未指定的另一侧访问器。 */
@@ -937,7 +951,9 @@ object ObjectBuiltins {
             val descriptorValue = interpreter.getV(properties, key)
             val descriptorObject = descriptorValue as? JSObject
                 ?: interpreter.typeError("Property description must be an object")
-            definePropertyFromDescriptor(interpreter, target, key, descriptorObject)
+            if (!definePropertyFromDescriptor(interpreter, target, key, descriptorObject)) {
+                interpreter.typeError("Cannot define property '$key'")
+            }
         }
     }
 
@@ -1012,6 +1028,8 @@ object ObjectBuiltins {
     }
 
     private fun objectTag(intrinsics: com.muedsa.js.runtime.Intrinsics, value: JSValue): String = when (value) {
+    // IsArray / 内建标签需要穿透 Proxy（ECMAScript 7.2.2 / 20.1.3.6）
+    is JSProxy -> objectTag(intrinsics, value.target)
         is JSUndefined -> "Undefined"
         is JSNull -> "Null"
         is JSBoolean -> "Boolean"

@@ -81,9 +81,13 @@ object ReflectBuiltins {
         defineMethod("defineProperty", 3) { interpreter, args ->
             val target = targetOf(interpreter, args, "defineProperty")
             val key = interpreter.toPropertyKey(args.getOrElse(1) { JSUndefined })
-            val descriptor = interpreter.toPropertyDescriptor(args.getOrElse(2) { JSUndefined })
-                ?: interpreter.typeError("Reflect.defineProperty requires a property descriptor")
-            JSBoolean.getJsBoolean(interpreter.internalDefineOwnProperty(target, key, descriptor))
+            val descriptorValue = args.getOrElse(2) { JSUndefined }
+            if (descriptorValue !is JSObject) {
+                interpreter.typeError("Reflect.defineProperty requires a property descriptor")
+            }
+            JSBoolean.getJsBoolean(
+                ObjectBuiltins.definePropertyFromDescriptor(interpreter, target, key, descriptorValue)
+            )
         }
 
         defineMethod("deleteProperty", 2) { interpreter, args ->

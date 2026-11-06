@@ -115,10 +115,10 @@ object FunctionBuiltins {
                 if (prototype !is JSObject) {
                     interpreter.typeError("Function has non-object prototype in instanceof check")
                 }
-                var current: JSObject? = value.prototype
+                var current: JSObject? = interpreter.internalGetPrototypeOf(value)
                 while (current != null) {
                     if (current === prototype) return@method JSBoolean.TRUE
-                    current = current.prototype
+                    current = interpreter.internalGetPrototypeOf(current)
                 }
                 JSBoolean.FALSE
             },

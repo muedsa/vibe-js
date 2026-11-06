@@ -10,6 +10,7 @@ import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSPromise
+import com.muedsa.js.runtime.value.JSProxy
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
@@ -100,6 +101,13 @@ object ArrayBuiltins {
      * - 单个数字参数：指定长度的空数组
      * - 其他：以参数为元素
      */
+    /** IsArray：穿透 Proxy 检查 target（ECMAScript 7.2.2）。 */
+    private fun isArrayValue(value: JSValue?): Boolean = when (value) {
+        is JSArray -> true
+        is JSProxy -> isArrayValue(value.target)
+        else -> false
+    }
+
     private fun createArray(
         interpreter: Interpreter,
         arrayPrototype: JSObject,
@@ -1295,7 +1303,7 @@ object ArrayBuiltins {
         arrayConstructor.defineDataProperty(
             key = PropertyKey.Str("isArray"),
             value = BuiltinHelpers.method(intrinsics, "isArray", 1) { _, _, args ->
-                JSBoolean.getJsBoolean(args.getOrNull(0) is JSArray)
+                JSBoolean.getJsBoolean(isArrayValue(args.getOrNull(0)))
             },
         )
 

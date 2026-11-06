@@ -1011,6 +1011,21 @@ class Interpreter(
                     throw typeError("'getOwnPropertyDescriptor' trap reported a different value for a non-configurable, non-writable property")
                 }
             }
+            if (targetDescriptor.isData && targetDescriptor.writable &&
+                descriptor.isData && !descriptor.writable
+            ) {
+                throw typeError("'getOwnPropertyDescriptor' trap reported a writable property as non-writable")
+            }
+            if (targetDescriptor.isAccessor) {
+                if (!descriptor.isAccessor) {
+                    throw typeError("'getOwnPropertyDescriptor' trap reported an accessor property as a data property")
+                }
+                if (!sameValue(descriptor.get ?: JSUndefined, targetDescriptor.get ?: JSUndefined) ||
+                    !sameValue(descriptor.set ?: JSUndefined, targetDescriptor.set ?: JSUndefined)
+                ) {
+                    throw typeError("'getOwnPropertyDescriptor' trap reported different accessors")
+                }
+            }
         }
         if (targetDescriptor == null && !internalIsExtensible(proxy.target)) {
             throw typeError("'getOwnPropertyDescriptor' trap reported a property of a non-extensible target")
@@ -1051,6 +1066,21 @@ class Interpreter(
                     !sameValue(descriptorValue, targetDescriptor.value ?: JSUndefined)
                 ) {
                     throw typeError("'defineProperty' trap reported a different value for a non-configurable, non-writable property")
+                }
+            }
+            if (targetDescriptor.isData && targetDescriptor.writable &&
+                descriptor.isData && !descriptor.writable
+            ) {
+                throw typeError("'defineProperty' trap reported a writable property as non-writable")
+            }
+            if (targetDescriptor.isAccessor) {
+                if (!descriptor.isAccessor) {
+                    throw typeError("'defineProperty' trap reported an accessor property as a data property")
+                }
+                if (!sameValue(descriptor.get ?: JSUndefined, targetDescriptor.get ?: JSUndefined) ||
+                    !sameValue(descriptor.set ?: JSUndefined, targetDescriptor.set ?: JSUndefined)
+                ) {
+                    throw typeError("'defineProperty' trap reported different accessors")
                 }
             }
         }
@@ -1229,11 +1259,17 @@ class Interpreter(
                 if (trap != null) {
                     val result = callProxyTrap(current, trap, listOf<JSValue>(current.target, propertyKeyToValue(key), receiver))
                     val targetDescriptor = internalGetOwnProperty(current.target, key)
-                    if (targetDescriptor != null && !targetDescriptor.configurable &&
-                        targetDescriptor.isData && !targetDescriptor.writable &&
-                        !sameValue(result, targetDescriptor.value ?: JSUndefined)
-                    ) {
-                        throw typeError("'get' trap returned a different value for a non-configurable, non-writable property")
+                    if (targetDescriptor != null && !targetDescriptor.configurable) {
+                        if (targetDescriptor.isData && !targetDescriptor.writable &&
+                            !sameValue(result, targetDescriptor.value ?: JSUndefined)
+                        ) {
+                            throw typeError("'get' trap returned a different value for a non-configurable, non-writable property")
+                        }
+                        if (targetDescriptor.isAccessor && targetDescriptor.get == null &&
+                            !sameValue(result, JSUndefined)
+                        ) {
+                            throw typeError("'get' trap returned a value for a non-configurable accessor without getter")
+                        }
                     }
                     return result
                 }
@@ -1286,8 +1322,11 @@ class Interpreter(
                 }
                 return
             }
-            // 无 trap：OrdinarySet 到 target
-            putProperty(objectValue.target, key, value, strict)
+            // 无 trap：OrdinarySet(target, P, V, Receiver = proxy)
+            val success = setWithReceiver(objectValue.target, key, value, objectValue)
+            if (!success && strict) {
+                throw typeError("Cannot assign to property '$key'")
+            }
             return
         }
         var current: JSObject? = objectValue
@@ -5732,10 +5771,10 @@ class Interpreter(
         val prototypeObject = prototypeValue as? JSObject
             ?: throw typeError("Function has non-object prototype in instanceof check")
         if (value !is JSObject) return false
-        var prototype = value.prototype
+        var prototype = internalGetPrototypeOf(value)
         while (prototype != null) {
             if (prototype === prototypeObject) return true
-            prototype = prototype.prototype
+            prototype = internalGetPrototypeOf(prototype)
         }
         return false
     }
