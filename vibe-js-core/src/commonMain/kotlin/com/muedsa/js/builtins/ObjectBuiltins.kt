@@ -746,20 +746,11 @@ object ObjectBuiltins {
             }
         }
 
-        // 数组 length 的非法数值优先抛 RangeError（早于不可配置等描述符校验）
-        if (objectValue is com.muedsa.js.runtime.value.JSArray &&
-            key == PropertyKey.LENGTH && hasValue && value != null
-        ) {
-            val number = interpreter.toNumber(value)
-            if (number.isNaN() || number < 0.0 ||
-                number > com.muedsa.js.runtime.value.JSArray.MAX_LENGTH.toDouble() ||
-                number != kotlin.math.floor(number)
-            ) {
-                interpreter.rangeError("Invalid array length")
-            }
-        }
 
-        if (current != null && !current.configurable) {
+        // 数组 length 的 RangeError 必须先于描述符不变量（ArraySetLength 顺序）
+        val isArrayLength = objectValue is com.muedsa.js.runtime.value.JSArray &&
+            key == PropertyKey.LENGTH
+        if (!isArrayLength && current != null && !current.configurable) {
             if (hasConfigurable && configurable == true) {
                 return false
             }

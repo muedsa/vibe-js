@@ -683,11 +683,12 @@ class Interpreter(
         }
         if (objectValue is JSArray && key == PropertyKey.LENGTH) {
             if (descriptor.isAccessor) return false
-            // 规范顺序：先校验 length 数值（非法抛 RangeError），再拒绝描述符标志
+            // ArraySetLength：先 ToUint32（可能触发 valueOf），再 ToNumber（再次触发）
             val value = descriptor.value
             val newLength = if (value == null) {
                 objectValue.lengthLong
             } else {
+                toUint32(value)
                 val number = toNumber(value)
                 if (number.isNaN() || number < 0.0 || number > JSArray.MAX_LENGTH.toDouble() ||
                     number != kotlin.math.floor(number)
@@ -698,6 +699,9 @@ class Interpreter(
             }
             // length 恒为不可枚举、不可配置
             if (descriptor.enumerable || descriptor.configurable) return false
+            // ValidateAndApplyPropertyDescriptor：当前 length 不可写时不能请求 writable = true
+            val currentLength = objectValue.getOwnProperty(PropertyKey.LENGTH)
+            if (currentLength != null && !currentLength.writable && descriptor.writable) return false
             return objectValue.defineLength(newLength, descriptor.writable)
         }
         return objectValue.defineOwnProperty(key, descriptor)

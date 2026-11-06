@@ -141,6 +141,8 @@ open class JSArray(
      * @return 是否成功；失败时已按规范回退 length
      */
     fun defineLength(newLength: Long, writable: Boolean): Boolean {
+    // ES5 15.4.5.1：length 不可写时，任何长度变化都必须失败（不只是收缩）
+    if (!lengthWritable && newLength != arrayLength) return false
         if (newLength == arrayLength) {
             if (!writable) lengthWritable = false
             return true

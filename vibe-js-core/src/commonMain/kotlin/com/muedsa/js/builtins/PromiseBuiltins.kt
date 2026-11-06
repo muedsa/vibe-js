@@ -131,7 +131,7 @@ object PromiseBuiltins {
                     }
                     val valueThunk = JSNativeFunction(
                         name = "",
-                        length = 1,
+                        length = 0,
                         prototype = intrinsics.functionPrototype,
                     ) { _, _, _ -> value }
                     inner.callFunction(settledThen, settled, listOf(valueThunk))
@@ -150,7 +150,7 @@ object PromiseBuiltins {
                     }
                     val thrower = JSNativeFunction(
                         name = "",
-                        length = 1,
+                        length = 0,
                         prototype = intrinsics.functionPrototype,
                     ) { _, _, _ -> throw JSException(reason) }
                     inner.callFunction(settledThen, settled, listOf(thrower))
