@@ -838,7 +838,7 @@ object ObjectBuiltins {
             }
         }
 
-        if (!interpreter.defineOwnPropertyOn(objectValue, key, descriptor)) {
+        if (!interpreter.internalDefineOwnProperty(objectValue, key, descriptor)) {
             interpreter.typeError("Cannot define property '${key}'")
         }
     }
@@ -868,7 +868,7 @@ object ObjectBuiltins {
         } else {
             setter
         }
-        val defined = interpreter.defineOwnPropertyOn(
+        val defined = interpreter.internalDefineOwnProperty(
             objectValue,
             key,
             PropertyDescriptor.accessor(

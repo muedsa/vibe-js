@@ -13,6 +13,7 @@ object CoreBuiltins {
 
     fun install(registry: BuiltinRegistry) {
         ObjectBuiltins.install(registry)
+        ProxyBuiltins.install(registry)
         FunctionBuiltins.install(registry)
         AsyncFunctionBuiltins.install(registry)
         SymbolBuiltins.install(registry)

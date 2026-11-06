@@ -95,6 +95,7 @@ import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSPromise
+import com.muedsa.js.runtime.value.JSProxy
 import com.muedsa.js.runtime.value.JSRegExp
 import com.muedsa.js.runtime.value.JSSet
 import com.muedsa.js.runtime.value.JSString
@@ -539,11 +540,24 @@ class Interpreter(
     /** 严格相等。 */
     fun strictEquals(a: JSValue, b: JSValue): Boolean = conversions.strictEquals(a, b)
 
+    /** SameValue：NaN 视为相等，+0 与 -0 视为不同（Proxy 不变量与描述符比较使用）。 */
+    fun sameValue(left: JSValue, right: JSValue): Boolean {
+        if (left is JSNumber && right is JSNumber) {
+            if (left.value.isNaN() && right.value.isNaN()) return true
+            if (left.value == 0.0 && right.value == 0.0) {
+                return 1.0 / left.value == 1.0 / right.value
+            }
+        }
+        return strictEquals(left, right)
+    }
+
     /** 抽象相等。 */
     suspend fun abstractEquals(a: JSValue, b: JSValue): Boolean = conversions.abstractEquals(a, b)
 
     /** 是否为可调用对象。 */
-    fun isCallable(value: JSValue): Boolean = value is JSFunction || value is JSNativeFunction
+    fun isCallable(value: JSValue): Boolean =
+        value is JSFunction || value is JSNativeFunction ||
+            (value is JSProxy && isCallable(value.target))
 
     /**
      * SpeciesConstructor(O, defaultConstructor)。
@@ -581,6 +595,7 @@ class Interpreter(
         is JSString -> "string"
         is JSSymbol -> "symbol"
         is JSFunction, is JSNativeFunction -> "function"
+        is JSProxy -> if (isCallable(value)) "function" else "object"
         is JSObject -> "object"
     }
 
@@ -707,34 +722,41 @@ class Interpreter(
     //
     // 全部声明为 suspend：Proxy 的 trap 可以执行任意 JS（包括 await），
     // 因此所有 JS 可见的属性操作都必须经过这一层，而不是直接调用
-    // JSObject 的非挂起存储方法。后续 L2.3 会在这里按对象类型分派。
+    // JSObject 的非挂起存储方法。Proxy 分支由 proxy* 方法实现。
     // ================================================================
 
     /** [[GetOwnProperty]]：读取自有属性描述符。 */
     suspend fun internalGetOwnProperty(objectValue: JSObject, key: PropertyKey): PropertyDescriptor? =
-        objectValue.getOwnProperty(key)
+        if (objectValue is JSProxy) proxyGetOwnProperty(objectValue, key)
+        else objectValue.getOwnProperty(key)
 
     /** [[DefineOwnProperty]]：定义/覆盖自有属性。 */
     suspend fun internalDefineOwnProperty(
         objectValue: JSObject,
         key: PropertyKey,
         descriptor: PropertyDescriptor,
-    ): Boolean = defineOwnPropertyOn(objectValue, key, descriptor)
+    ): Boolean =
+        if (objectValue is JSProxy) proxyDefineOwnProperty(objectValue, key, descriptor)
+        else defineOwnPropertyOn(objectValue, key, descriptor)
 
     /** [[Delete]]：删除自有属性。 */
     suspend fun internalDeleteProperty(objectValue: JSObject, key: PropertyKey): Boolean =
-        objectValue.deleteOwnProperty(key)
+        if (objectValue is JSProxy) proxyDeleteProperty(objectValue, key)
+        else objectValue.deleteOwnProperty(key)
 
     /** [[OwnPropertyKeys]]：自有属性键（数组索引升序、字符串插入序、Symbol 最后）。 */
     suspend fun internalOwnPropertyKeys(objectValue: JSObject): List<PropertyKey> =
-        objectValue.ownPropertyKeys()
+        if (objectValue is JSProxy) proxyOwnPropertyKeys(objectValue)
+        else objectValue.ownPropertyKeys()
 
     /** [[GetPrototypeOf]]：读取原型。 */
     suspend fun internalGetPrototypeOf(objectValue: JSObject): JSObject? =
-        objectValue.prototype
+        if (objectValue is JSProxy) proxyGetPrototypeOf(objectValue)
+        else objectValue.prototype
 
     /** [[SetPrototypeOf]]：设置原型（不可扩展且原型不同则失败）。 */
     suspend fun internalSetPrototypeOf(objectValue: JSObject, proto: JSObject?): Boolean {
+        if (objectValue is JSProxy) return proxySetPrototypeOf(objectValue, proto)
         if (objectValue.prototype === proto) return true
         if (!objectValue.isExtensible()) return false
         objectValue.prototype = proto
@@ -743,22 +765,355 @@ class Interpreter(
 
     /** [[IsExtensible]]：是否可扩展。 */
     suspend fun internalIsExtensible(objectValue: JSObject): Boolean =
-        objectValue.isExtensible()
+        if (objectValue is JSProxy) proxyIsExtensible(objectValue)
+        else objectValue.isExtensible()
 
     /** [[PreventExtensions]]：禁止新增属性。 */
     suspend fun internalPreventExtensions(objectValue: JSObject): Boolean {
+        if (objectValue is JSProxy) return proxyPreventExtensions(objectValue)
         objectValue.preventExtensions()
         return true
     }
 
     /** [[HasProperty]]：沿原型链判断属性是否存在（不触发 getter）。 */
     suspend fun internalHasProperty(objectValue: JSObject, key: PropertyKey): Boolean {
+        if (objectValue is JSProxy) return proxyHasProperty(objectValue, key)
         var current: JSObject? = objectValue
         while (current != null) {
-            if (internalGetOwnProperty(current, key) != null) return true
-            current = internalGetPrototypeOf(current)
+            if (current is JSProxy) return proxyHasProperty(current, key)
+            if (current.getOwnProperty(key) != null) return true
+            current = current.prototype
         }
         return false
+    }
+
+    // ================================================================
+    // Proxy 内部方法（ECMAScript 9.5）
+    //
+    // 每个方法：取 trap -> 无 trap 时回退 target 的普通行为 -> 调用 trap ->
+    // 校验规范不变量。撤销后一律抛 TypeError。
+    // ================================================================
+
+    /** 撤销检查。 */
+    private fun ensureProxyActive(proxy: JSProxy) {
+        if (proxy.revoked) {
+            throw typeError("Cannot perform operation on a proxy that has been revoked")
+        }
+    }
+
+    /** 读取并校验 trap；缺失返回 null。 */
+    private suspend fun proxyTrap(proxy: JSProxy, name: String): JSValue? {
+        ensureProxyActive(proxy)
+        val trap = getV(proxy.handler, PropertyKey.Str(name))
+        if (trap is JSUndefined || trap is JSNull) return null
+        if (!isCallable(trap)) throw typeError("'$name' trap must be a function")
+        return trap
+    }
+
+    /** 调用 trap，this 为 handler。 */
+    private suspend fun callProxyTrap(
+        proxy: JSProxy,
+        trap: JSValue,
+        args: List<JSValue>,
+    ): JSValue = callFunction(trap, proxy.handler, args)
+
+    /** PropertyKey 转为 JS 值（trap 参数使用）。 */
+    internal fun propertyKeyToValue(key: PropertyKey): JSValue = when (key) {
+        is PropertyKey.Str -> JSString(key.value)
+        is PropertyKey.Sym -> key.symbol
+    }
+
+    /** ToPropertyDescriptor：读取描述符对象（包括继承字段）。 */
+    internal suspend fun toPropertyDescriptor(value: JSValue): PropertyDescriptor? {
+        if (value is JSUndefined) return null
+        if (value !is JSObject) throw typeError("Property description must be an object")
+        val descriptor = PropertyDescriptor()
+        val hasValue = internalHasProperty(value, PropertyKey.Str("value"))
+        val hasWritable = internalHasProperty(value, PropertyKey.Str("writable"))
+        val hasGet = internalHasProperty(value, PropertyKey.Str("get"))
+        val hasSet = internalHasProperty(value, PropertyKey.Str("set"))
+        val hasEnumerable = internalHasProperty(value, PropertyKey.Str("enumerable"))
+        val hasConfigurable = internalHasProperty(value, PropertyKey.Str("configurable"))
+        if (hasValue) descriptor.value = getV(value, PropertyKey.Str("value"))
+        if (hasWritable) descriptor.writable = toBoolean(getV(value, PropertyKey.Str("writable")))
+        if (hasGet) {
+            val getter = getV(value, PropertyKey.Str("get"))
+            if (getter !is JSUndefined && !isCallable(getter)) {
+                throw typeError("Getter must be a function")
+            }
+            descriptor.get = if (getter is JSUndefined) null else getter
+        }
+        if (hasSet) {
+            val setter = getV(value, PropertyKey.Str("set"))
+            if (setter !is JSUndefined && !isCallable(setter)) {
+                throw typeError("Setter must be a function")
+            }
+            descriptor.set = if (setter is JSUndefined) null else setter
+        }
+        if (hasEnumerable) descriptor.enumerable = toBoolean(getV(value, PropertyKey.Str("enumerable")))
+        if (hasConfigurable) descriptor.configurable = toBoolean(getV(value, PropertyKey.Str("configurable")))
+        if ((hasGet || hasSet) && (hasValue || hasWritable)) {
+            throw typeError("Invalid property descriptor: cannot be both accessor and data")
+        }
+        descriptor.accessor = hasGet || hasSet
+        return descriptor
+    }
+
+    /** FromPropertyDescriptor：把描述符转换为普通对象。 */
+    internal fun fromPropertyDescriptor(descriptor: PropertyDescriptor): JSObject {
+        val result = JSObject(prototype = intrinsics.objectPrototype)
+        if (descriptor.isAccessor) {
+            result.defineDataProperty(PropertyKey.Str("get"), descriptor.get ?: JSUndefined, true, true, true)
+            result.defineDataProperty(PropertyKey.Str("set"), descriptor.set ?: JSUndefined, true, true, true)
+        } else {
+            result.defineDataProperty(PropertyKey.Str("value"), descriptor.value ?: JSUndefined, true, true, true)
+            result.defineDataProperty(
+                PropertyKey.Str("writable"),
+                JSBoolean.getJsBoolean(descriptor.writable),
+                true, true, true,
+            )
+        }
+        result.defineDataProperty(
+            PropertyKey.Str("enumerable"),
+            JSBoolean.getJsBoolean(descriptor.enumerable),
+            true, true, true,
+        )
+        result.defineDataProperty(
+            PropertyKey.Str("configurable"),
+            JSBoolean.getJsBoolean(descriptor.configurable),
+            true, true, true,
+        )
+        return result
+    }
+
+    /** [[GetOwnProperty]] 的 Proxy 分支。 */
+    private suspend fun proxyGetOwnProperty(proxy: JSProxy, key: PropertyKey): PropertyDescriptor? {
+        val trap = proxyTrap(proxy, "getOwnPropertyDescriptor")
+            ?: return internalGetOwnProperty(proxy.target, key)
+        val result = callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, propertyKeyToValue(key)))
+        val targetDescriptor = internalGetOwnProperty(proxy.target, key)
+        if (result is JSUndefined) {
+            if (targetDescriptor != null && !targetDescriptor.configurable) {
+                throw typeError("'getOwnPropertyDescriptor' trap reported a non-configurable property as non-existent")
+            }
+            if (!internalIsExtensible(proxy.target)) {
+                throw typeError("'getOwnPropertyDescriptor' trap reported a property of a non-extensible target as non-existent")
+            }
+            return null
+        }
+        val descriptor = toPropertyDescriptor(result)
+            ?: throw typeError("'getOwnPropertyDescriptor' trap must return an object or undefined")
+        if (targetDescriptor != null && !targetDescriptor.configurable) {
+            if (descriptor.configurable) {
+                throw typeError("'getOwnPropertyDescriptor' trap reported a non-configurable property as configurable")
+            }
+            if (targetDescriptor.isData && !targetDescriptor.writable) {
+                if (!descriptor.isData || descriptor.writable) {
+                    throw typeError("'getOwnPropertyDescriptor' trap reported a non-configurable, non-writable property as writable")
+                }
+                if (!sameValue(descriptor.value ?: JSUndefined, targetDescriptor.value ?: JSUndefined)) {
+                    throw typeError("'getOwnPropertyDescriptor' trap reported a different value for a non-configurable, non-writable property")
+                }
+            }
+        }
+        if (targetDescriptor == null && !internalIsExtensible(proxy.target)) {
+            throw typeError("'getOwnPropertyDescriptor' trap reported a property of a non-extensible target")
+        }
+        return descriptor
+    }
+
+    /** [[DefineOwnProperty]] 的 Proxy 分支。 */
+    private suspend fun proxyDefineOwnProperty(
+        proxy: JSProxy,
+        key: PropertyKey,
+        descriptor: PropertyDescriptor,
+    ): Boolean {
+        val trap = proxyTrap(proxy, "defineProperty")
+            ?: return internalDefineOwnProperty(proxy.target, key, descriptor)
+        val descriptorObject = fromPropertyDescriptor(descriptor)
+        val result = toBoolean(callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, propertyKeyToValue(key), descriptorObject)))
+        val targetDescriptor = internalGetOwnProperty(proxy.target, key)
+        if (!result) {
+            if (targetDescriptor != null && !targetDescriptor.configurable) {
+                throw typeError("'defineProperty' trap returned false for a non-configurable property")
+            }
+            if (!internalIsExtensible(proxy.target)) {
+                throw typeError("'defineProperty' trap returned false for a non-extensible target")
+            }
+            return false
+        }
+        if (targetDescriptor != null && !targetDescriptor.configurable) {
+            if (descriptor.configurable) {
+                throw typeError("'defineProperty' trap reported a non-configurable property as configurable")
+            }
+            if (targetDescriptor.isData && !targetDescriptor.writable) {
+                if (!descriptor.isData || descriptor.writable) {
+                    throw typeError("'defineProperty' trap reported a non-configurable, non-writable property as writable")
+                }
+                val descriptorValue = descriptor.value
+                if (descriptorValue != null &&
+                    !sameValue(descriptorValue, targetDescriptor.value ?: JSUndefined)
+                ) {
+                    throw typeError("'defineProperty' trap reported a different value for a non-configurable, non-writable property")
+                }
+            }
+        }
+        if (targetDescriptor == null && !internalIsExtensible(proxy.target)) {
+            throw typeError("'defineProperty' trap reported a new property on a non-extensible target")
+        }
+        return true
+    }
+
+    /** [[Delete]] 的 Proxy 分支。 */
+    private suspend fun proxyDeleteProperty(proxy: JSProxy, key: PropertyKey): Boolean {
+        val trap = proxyTrap(proxy, "deleteProperty")
+            ?: return internalDeleteProperty(proxy.target, key)
+        val result = toBoolean(callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, propertyKeyToValue(key))))
+        if (!result) {
+            val targetDescriptor = internalGetOwnProperty(proxy.target, key)
+            if (targetDescriptor != null && !targetDescriptor.configurable) {
+                throw typeError("'deleteProperty' trap returned false for a non-configurable property")
+            }
+            if (!internalIsExtensible(proxy.target)) {
+                throw typeError("'deleteProperty' trap returned false for a non-extensible target")
+            }
+        }
+        return result
+    }
+
+    /** [[OwnPropertyKeys]] 的 Proxy 分支。 */
+    private suspend fun proxyOwnPropertyKeys(proxy: JSProxy): List<PropertyKey> {
+        val trap = proxyTrap(proxy, "ownKeys")
+            ?: return internalOwnPropertyKeys(proxy.target)
+        val result = callProxyTrap(proxy, trap, listOf(proxy.target))
+        if (result !is JSObject) throw typeError("'ownKeys' trap must return an object")
+        val lengthValue = toNumber(getV(result, PropertyKey.LENGTH))
+        val length = when {
+            lengthValue.isNaN() || lengthValue <= 0.0 -> 0L
+            lengthValue >= 9007199254740991.0 -> 9007199254740991L
+            else -> kotlin.math.floor(lengthValue).toLong()
+        }
+        val keys = ArrayList<PropertyKey>(length.toInt().coerceAtMost(1024))
+        val seen = HashSet<PropertyKey>()
+        for (index in 0 until length) {
+            val key = toPropertyKey(getV(result, PropertyKey.Str(index.toString())))
+            if (!seen.add(key)) throw typeError("'ownKeys' trap returned duplicate keys")
+            keys.add(key)
+        }
+        val targetKeys = internalOwnPropertyKeys(proxy.target)
+        for (key in targetKeys) {
+            val descriptor = internalGetOwnProperty(proxy.target, key)
+            if (descriptor != null && !descriptor.configurable && key !in seen) {
+                throw typeError("'ownKeys' trap omitted a non-configurable property")
+            }
+        }
+        if (!internalIsExtensible(proxy.target)) {
+            if (targetKeys.size != keys.size || !targetKeys.all { it in seen }) {
+                throw typeError("'ownKeys' trap returned keys inconsistent with a non-extensible target")
+            }
+        }
+        return keys
+    }
+
+    /** [[GetPrototypeOf]] 的 Proxy 分支。 */
+    private suspend fun proxyGetPrototypeOf(proxy: JSProxy): JSObject? {
+        val trap = proxyTrap(proxy, "getPrototypeOf")
+            ?: return internalGetPrototypeOf(proxy.target)
+        val result = callProxyTrap(proxy, trap, listOf(proxy.target))
+        if (result !is JSObject && result !is JSNull) {
+            throw typeError("'getPrototypeOf' trap must return an object or null")
+        }
+        val proto = result as? JSObject
+        if (!internalIsExtensible(proxy.target)) {
+            if (internalGetPrototypeOf(proxy.target) !== proto) {
+                throw typeError("'getPrototypeOf' trap returned a different prototype for a non-extensible target")
+            }
+        }
+        return proto
+    }
+
+    /** [[SetPrototypeOf]] 的 Proxy 分支。 */
+    private suspend fun proxySetPrototypeOf(proxy: JSProxy, proto: JSObject?): Boolean {
+        val trap = proxyTrap(proxy, "setPrototypeOf")
+            ?: return internalSetPrototypeOf(proxy.target, proto)
+        val result = toBoolean(
+            callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, proto ?: JSNull))
+        )
+        if (result && !internalIsExtensible(proxy.target)) {
+            if (internalGetPrototypeOf(proxy.target) !== proto) {
+                throw typeError("'setPrototypeOf' trap changed the prototype of a non-extensible target")
+            }
+        }
+        return result
+    }
+
+    /** [[IsExtensible]] 的 Proxy 分支。 */
+    private suspend fun proxyIsExtensible(proxy: JSProxy): Boolean {
+        val trap = proxyTrap(proxy, "isExtensible")
+            ?: return internalIsExtensible(proxy.target)
+        val result = toBoolean(callProxyTrap(proxy, trap, listOf(proxy.target)))
+        if (result != internalIsExtensible(proxy.target)) {
+            throw typeError("'isExtensible' trap result does not match the target")
+        }
+        return result
+    }
+
+    /** [[PreventExtensions]] 的 Proxy 分支。 */
+    private suspend fun proxyPreventExtensions(proxy: JSProxy): Boolean {
+        val trap = proxyTrap(proxy, "preventExtensions")
+            ?: return internalPreventExtensions(proxy.target)
+        val result = toBoolean(callProxyTrap(proxy, trap, listOf(proxy.target)))
+        if (result && internalIsExtensible(proxy.target)) {
+            throw typeError("'preventExtensions' trap returned true but the target is still extensible")
+        }
+        return result
+    }
+
+    /** [[HasProperty]] 的 Proxy 分支。 */
+    private suspend fun proxyHasProperty(proxy: JSProxy, key: PropertyKey): Boolean {
+        val trap = proxyTrap(proxy, "has")
+            ?: return internalHasProperty(proxy.target, key)
+        val result = toBoolean(callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, propertyKeyToValue(key))))
+        if (!result) {
+            val targetDescriptor = internalGetOwnProperty(proxy.target, key)
+            if (targetDescriptor != null && !targetDescriptor.configurable) {
+                throw typeError("'has' trap returned false for a non-configurable property")
+            }
+            if (!internalIsExtensible(proxy.target)) {
+                throw typeError("'has' trap returned false for a non-extensible target")
+            }
+        }
+        return result
+    }
+
+    /** [[Call]] 的 Proxy 分支。 */
+    private suspend fun proxyApply(
+        proxy: JSProxy,
+        thisValue: JSValue,
+        args: List<JSValue>,
+    ): JSValue {
+        val trap = proxyTrap(proxy, "apply")
+        if (trap == null) {
+            if (!isCallable(proxy.target)) throw typeError("Proxy target is not callable")
+            return callFunction(proxy.target, thisValue, args)
+        }
+        if (!isCallable(proxy.target)) throw typeError("'apply' trap requires a callable target")
+        val argsArray = JSArray(args.toMutableList(), prototype = intrinsics.arrayPrototype)
+        return callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, thisValue, argsArray))
+    }
+
+    /** [[Construct]] 的 Proxy 分支。 */
+    private suspend fun proxyConstruct(proxy: JSProxy, args: List<JSValue>): JSValue {
+        val trap = proxyTrap(proxy, "construct")
+        if (trap == null) {
+            if (!isConstructor(proxy.target)) throw typeError("Proxy target is not a constructor")
+            return construct(proxy.target, args)
+        }
+        if (!isConstructor(proxy.target)) throw typeError("'construct' trap requires a constructor target")
+        val argsArray = JSArray(args.toMutableList(), prototype = intrinsics.arrayPrototype)
+        val result = callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, argsArray, proxy))
+        if (result !is JSObject) throw typeError("'construct' trap must return an object")
+        return result
     }
 
     /** 沿原型链读取属性，访问器使用 receiver 作为 this。 */
@@ -769,6 +1124,22 @@ class Interpreter(
     ): JSValue {
         var current: JSObject? = objectValue
         while (current != null) {
+            if (current is JSProxy) {
+                val trap = proxyTrap(current, "get")
+                if (trap != null) {
+                    val result = callProxyTrap(current, trap, listOf<JSValue>(current.target, propertyKeyToValue(key), receiver))
+                    val targetDescriptor = internalGetOwnProperty(current.target, key)
+                    if (targetDescriptor != null && !targetDescriptor.configurable &&
+                        targetDescriptor.isData && !targetDescriptor.writable &&
+                        !sameValue(result, targetDescriptor.value ?: JSUndefined)
+                    ) {
+                        throw typeError("'get' trap returned a different value for a non-configurable, non-writable property")
+                    }
+                    return result
+                }
+                current = current.target
+                continue
+            }
             val descriptor = internalGetOwnProperty(current, key)
             if (descriptor != null) {
                 if (descriptor.isAccessor) {
@@ -790,6 +1161,35 @@ class Interpreter(
         value: JSValue,
         strict: Boolean,
     ) {
+        if (objectValue is JSProxy) {
+            val trap = proxyTrap(objectValue, "set")
+            if (trap != null) {
+                val result = toBoolean(
+                    callProxyTrap(objectValue, trap, listOf<JSValue>(objectValue.target, propertyKeyToValue(key), value, objectValue))
+                )
+                if (!result) {
+                    if (strict) throw typeError("'set' trap returned falsish")
+                    return
+                }
+                val targetDescriptor = internalGetOwnProperty(objectValue.target, key)
+                if (targetDescriptor != null && !targetDescriptor.configurable) {
+                    if (targetDescriptor.isData && !targetDescriptor.writable &&
+                        !sameValue(value, targetDescriptor.value ?: JSUndefined)
+                    ) {
+                        throw typeError("'set' trap returned true for a non-configurable, non-writable property")
+                    }
+                    if (targetDescriptor.isAccessor &&
+                        (targetDescriptor.set == null || targetDescriptor.set is JSUndefined)
+                    ) {
+                        throw typeError("'set' trap returned true for a non-configurable accessor without setter")
+                    }
+                }
+                return
+            }
+            // 无 trap：OrdinarySet 到 target
+            putProperty(objectValue.target, key, value, strict)
+            return
+        }
         var current: JSObject? = objectValue
         while (current != null) {
             val descriptor = internalGetOwnProperty(current, key)
@@ -866,6 +1266,8 @@ class Interpreter(
                 }
             }
 
+            is JSProxy -> proxyApply(callee, thisValue, args)
+
             else -> throw typeError("${describeValue(callee)} is not a function")
         }
     }
@@ -919,6 +1321,8 @@ class Interpreter(
                     }
                 }
             }
+
+            is JSProxy -> proxyConstruct(constructor, args)
 
             else -> throw typeError("${describeValue(constructor)} is not a constructor")
         }
@@ -6232,6 +6636,7 @@ class Interpreter(
     fun isConstructor(value: JSValue): Boolean = when (value) {
         is JSFunction -> !value.isArrow && !value.isAsync && !value.isMethod
         is JSNativeFunction -> value.functionPrototypeObject != null || value.constructFunction != null
+        is JSProxy -> isConstructor(value.target)
         else -> false
     }
 
