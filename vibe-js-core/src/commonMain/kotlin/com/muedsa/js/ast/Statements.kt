@@ -194,6 +194,8 @@ class ForOfStatement(
     override val range: SourceRange,
     /** for (using x of ...) / for (await using x of ...) 的资源模式。 */
     val usingMode: UsingMode? = null,
+    /** 是否为 `for await (... of ...)`（异步迭代）。 */
+    val isAwait: Boolean = false,
 ) : Statement()
 
 /** using / await using 的资源释放模式。 */

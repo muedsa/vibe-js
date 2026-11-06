@@ -500,6 +500,16 @@ internal object IteratorBuiltins {
             enumerable = false,
             configurable = true,
         )
+        // %AsyncIteratorPrototype%[@@asyncIterator] 返回自身，供异步迭代器继承
+        intrinsics.asyncIteratorPrototype.defineDataProperty(
+            key = PropertyKey.Sym(intrinsics.symbolAsyncIterator),
+            value = BuiltinHelpers.method(intrinsics, "[Symbol.asyncIterator]", 0) { _, thisValue, _ ->
+                thisValue
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
         prototype.defineDataProperty(
             key = PropertyKey.Sym(intrinsics.symbolDispose),
             value = BuiltinHelpers.method(intrinsics, "[Symbol.dispose]", 0) { interpreter, thisValue, _ ->

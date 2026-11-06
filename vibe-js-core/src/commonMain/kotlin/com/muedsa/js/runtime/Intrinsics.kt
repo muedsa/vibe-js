@@ -70,6 +70,8 @@ class Intrinsics(val globalObject: GlobalObject) {
 
     /** %IteratorPrototype%：所有迭代器共享的原型（含 @@iterator 与辅助方法）。 */
     lateinit var iteratorPrototype: JSObject
+    /** %AsyncIteratorPrototype%：异步迭代器共享的原型（含 @@asyncIterator）。 */
+    lateinit var asyncIteratorPrototype: JSObject
     /** %ArrayIteratorPrototype%：数组迭代器专用原型。 */
     lateinit var arrayIteratorPrototype: JSObject
     /** %StringIteratorPrototype%：字符串迭代器原型。 */
@@ -183,6 +185,7 @@ class Intrinsics(val globalObject: GlobalObject) {
         weakSetPrototype = JSObject(prototype = objectPrototype)
         promisePrototype = JSObject(prototype = objectPrototype)
         iteratorPrototype = JSObject(prototype = objectPrototype)
+        asyncIteratorPrototype = JSObject(prototype = objectPrototype)
         arrayIteratorPrototype = JSObject(prototype = iteratorPrototype)
         stringIteratorPrototype = JSObject(prototype = iteratorPrototype)
         mapIteratorPrototype = JSObject(prototype = iteratorPrototype)

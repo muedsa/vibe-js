@@ -1902,12 +1902,28 @@ class Parser(
     /** for / for-in 语句。 */
     private fun parseForStatement(): Statement {
         val start = consume(TokenType.FOR, "Expected 'for'").range.start
+
+        // `for await` 只在 async 上下文中把 await 当关键字；同步上下文里它是普通标识符。
+        // 转义写法（aw\u0061it）按标识符处理，不构成 for-await。
+        val isAwait = asyncContext &&
+            check(TokenType.IDENTIFIER) &&
+            peek().value == "await" &&
+            !peek().containsEscape
+        if (isAwait) {
+            advance()
+        }
         consume(TokenType.LPAREN, "Expected '(' after 'for'")
 
         when (forHeaderKind()) {
-            ForHeaderKind.IN -> return parseForInOfStatement(start, isOf = false)
-            ForHeaderKind.OF -> return parseForInOfStatement(start, isOf = true)
-            ForHeaderKind.NONE -> Unit
+            ForHeaderKind.IN -> {
+                if (isAwait) throw error("for await may not be used with 'in'")
+                return parseForInOfStatement(start, isOf = false)
+            }
+
+            ForHeaderKind.OF -> return parseForInOfStatement(start, isOf = true, isAwait = isAwait)
+            ForHeaderKind.NONE -> {
+                if (isAwait) throw error("for await requires 'of'")
+            }
         }
 
         // for 头部词法声明与循环体 var 的冲突检查需要一个独立作用域帧
@@ -2011,16 +2027,24 @@ class Parser(
     }
 
     /** for-in / for-of 头部（`for (` 已消费）。 */
-    private fun parseForInOfStatement(start: SourcePosition, isOf: Boolean): Statement {
+    private fun parseForInOfStatement(
+        start: SourcePosition,
+        isOf: Boolean,
+        isAwait: Boolean = false,
+    ): Statement {
         pushDeclScope(DeclScopeKind.FOR)
         try {
-            return parseForInOfStatementBody(start, isOf)
+            return parseForInOfStatementBody(start, isOf, isAwait)
         } finally {
             popDeclScope()
         }
     }
 
-    private fun parseForInOfStatementBody(start: SourcePosition, isOf: Boolean): Statement {
+    private fun parseForInOfStatementBody(
+        start: SourcePosition,
+        isOf: Boolean,
+        isAwait: Boolean = false,
+    ): Statement {
         // for-of 左值不允许以 let 开头（Lookahead 限制）
         if (isOf && check(TokenType.LET) && !isLetDeclarationStart()) {
             throw error("The left-hand side of a for-of loop may not start with 'let'")
@@ -2171,6 +2195,7 @@ class Parser(
                 body = body,
                 range = range,
                 usingMode = usingMode,
+                isAwait = isAwait,
             )
         } else {
             ForInStatement(

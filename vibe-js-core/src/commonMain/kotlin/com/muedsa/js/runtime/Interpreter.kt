@@ -2454,7 +2454,8 @@ class Interpreter(
                 }
                 currentFrame.lexicalEnv = headEnvironment
             }
-            val records = getIterator(evaluate(statement.right))
+            val iterable = evaluate(statement.right)
+            val records = if (statement.isAwait) getAsyncIterator(iterable) else getIterator(iterable)
             if (!lexical) {
                 forEnvironment = DeclarativeEnvironment(parent = previousEnvironment)
                 currentFrame.lexicalEnv = forEnvironment
@@ -4672,7 +4673,14 @@ class Interpreter(
      * Map/Set 与自定义迭代器在后续批次接入。
      */
     /** 迭代器记录：[[Iterator]] 与 [[NextMethod]]。 */
-    private class IteratorRecord(val iterator: JSObject, val nextMethod: JSValue)
+    private class IteratorRecord(
+        val iterator: JSObject,
+        val nextMethod: JSValue,
+        /** 异步迭代器：next()/return() 的返回值需要 await。 */
+        val isAsync: Boolean = false,
+        /** AsyncFromSync 回退：每次取到的 value 也需要 await。 */
+        val awaitValue: Boolean = false,
+    )
 
     /** GetIterator：要求对象具有可调用的 @@iterator。 */
     private suspend fun getIterator(value: JSValue): IteratorRecord {
@@ -4697,12 +4705,14 @@ class Interpreter(
 
     /** 取下一个迭代值；返回 null 表示迭代完成，否则返回 value（非空）。 */
     private suspend fun iteratorNext(record: IteratorRecord): JSValue? {
-        val result = callFunction(record.nextMethod, record.iterator, emptyList())
+        val raw = callFunction(record.nextMethod, record.iterator, emptyList())
+        val result = if (record.isAsync) awaitPromiseValue(raw) else raw
         if (result !is JSObject) {
             throw typeError("Iterator result is not an object")
         }
         if (toBoolean(getV(result, PropertyKey.Str("done")))) return null
-        return getV(result, PropertyKey.Str("value"))
+        val value = getV(result, PropertyKey.Str("value"))
+        return if (record.awaitValue) awaitPromiseValue(value) else value
     }
 
     /**
@@ -4723,15 +4733,55 @@ class Interpreter(
             if (throwCompletion) return
             throw typeError("Iterator return is not a function")
         }
-        val result = try {
+        val raw = try {
             callFunction(returnMethod, record.iterator, emptyList())
         } catch (error: JSException) {
             if (throwCompletion) return
             throw error
         }
+        val result = if (record.isAsync) {
+            try {
+                awaitPromiseValue(raw)
+            } catch (error: JSException) {
+                if (throwCompletion) return
+                throw error
+            }
+        } else {
+            raw
+        }
         if (!throwCompletion && result !is JSObject) {
             throw typeError("Iterator result is not an object")
         }
+    }
+
+    /**
+     * GetIterator(obj, async)：优先 @@asyncIterator；缺失时回退到同步迭代器。
+     *
+     * 回退路径按 AsyncFromSyncIterator 语义处理：next() 的结果与 value 都需要 await。
+     */
+    private suspend fun getAsyncIterator(value: JSValue): IteratorRecord {
+        if (value is JSNull || value is JSUndefined) {
+            throw typeError("Cannot convert undefined or null to object")
+        }
+        val objectValue = if (value is JSObject) value else toObject(value)
+        val asyncMethod = getV(objectValue, PropertyKey.Sym(intrinsics.symbolAsyncIterator))
+        if (asyncMethod !is JSUndefined && asyncMethod !is JSNull) {
+            if (!isCallable(asyncMethod)) {
+                throw typeError("Symbol.asyncIterator is not a function")
+            }
+            val iteratorValue = callFunction(asyncMethod, objectValue, emptyList())
+            if (iteratorValue !is JSObject) {
+                throw typeError("Result of the Symbol.asyncIterator method is not an object")
+            }
+            val nextMethod = getV(iteratorValue, PropertyKey.Str("next"))
+            if (!isCallable(nextMethod)) {
+                throw typeError("Iterator does not have a next method")
+            }
+            return IteratorRecord(iteratorValue, nextMethod, isAsync = true)
+        }
+        // 没有 @@asyncIterator：按 AsyncFromSyncIterator 处理同步迭代器
+        val sync = getIterator(value)
+        return IteratorRecord(sync.iterator, sync.nextMethod, isAsync = true, awaitValue = true)
     }
 
     /** 是否具有可调用的 @@iterator（Array.from 的数组式回退判断）。 */
