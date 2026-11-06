@@ -717,7 +717,7 @@ class Interpreter(
     }
 
     /** [PropertyAccess] 实现：属性存在性判断。 */
-    override fun hasProperty(base: JSObject, key: PropertyKey): Boolean = base.hasProperty(key)
+    override suspend fun hasProperty(base: JSObject, key: PropertyKey): Boolean = internalHasProperty(base, key)
 
     override fun isStrictContext(): Boolean = frame?.strict ?: false
 
@@ -5824,7 +5824,7 @@ class Interpreter(
             is ObjectEnvironment -> {
                 val key = PropertyKey.Str(name)
                 // GetBindingValue：HasBinding 之后绑定可能被删除
-                if (!owner.bindingObject.hasProperty(key) && currentFrame.strict) {
+                if (!internalHasProperty(owner.bindingObject, key) && currentFrame.strict) {
                     throw referenceError("$name is not defined")
                 }
                 getV(owner.bindingObject, key)
@@ -5846,7 +5846,7 @@ class Interpreter(
             is ObjectEnvironment -> {
                 val key = PropertyKey.Str(name)
                 // SetMutableBinding：严格模式下绑定已被删除需抛 ReferenceError
-                if (!owner.bindingObject.hasProperty(key) && currentFrame.strict) {
+                if (!internalHasProperty(owner.bindingObject, key) && currentFrame.strict) {
                     throw referenceError("$name is not defined")
                 }
                 putV(owner.bindingObject, key, value, currentFrame.strict)

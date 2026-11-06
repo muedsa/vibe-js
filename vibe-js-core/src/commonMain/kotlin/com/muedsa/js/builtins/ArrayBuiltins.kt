@@ -722,7 +722,7 @@ object ArrayBuiltins {
                     var index = 0L
                     while (index < length) {
                         val key = PropertyKey.Str(index.toString())
-                        if (objectValue.hasProperty(key)) {
+                        if (interpreter.internalHasProperty(objectValue, key)) {
                             initialIndex = index
                             initialValue = interpreter.getV(objectValue, key)
                             break
@@ -772,7 +772,7 @@ object ArrayBuiltins {
                     var index = length - 1
                     while (index >= 0) {
                         val key = PropertyKey.Str(index.toString())
-                        if (objectValue.hasProperty(key)) {
+                        if (interpreter.internalHasProperty(objectValue, key)) {
                             initialIndex = index
                             initialValue = interpreter.getV(objectValue, key)
                             break
@@ -819,7 +819,7 @@ object ArrayBuiltins {
                         var index = 0L
                         while (index < length) {
                             val key = PropertyKey.Str(index.toString())
-                            if (sourceObject.hasProperty(key)) {
+                            if (interpreter.internalHasProperty(sourceObject, key)) {
                                 val element = interpreter.getV(sourceObject, key)
                                 createDataPropertyOrThrow(interpreter, target, n, element)
                             }
@@ -850,9 +850,9 @@ object ArrayBuiltins {
                     val upper = length - 1 - lower
                     val lowerKey = PropertyKey.Str(lower.toString())
                     val upperKey = PropertyKey.Str(upper.toString())
-                    val lowerExists = objectValue.hasProperty(lowerKey)
+                    val lowerExists = interpreter.internalHasProperty(objectValue, lowerKey)
                     val lowerValue = if (lowerExists) interpreter.getV(objectValue, lowerKey) else null
-                    val upperExists = objectValue.hasProperty(upperKey)
+                    val upperExists = interpreter.internalHasProperty(objectValue, upperKey)
                     val upperValue = if (upperExists) interpreter.getV(objectValue, upperKey) else null
                     if (upperExists) {
                         interpreter.putV(objectValue, lowerKey, upperValue!!, strict = true)
@@ -919,7 +919,7 @@ object ArrayBuiltins {
                     var index = 0L
                     while (index < actualDeleteCount) {
                         val from = PropertyKey.Str((actualStart + index).toString())
-                        if (objectValue.hasProperty(from)) {
+                        if (interpreter.internalHasProperty(objectValue, from)) {
                             createDataPropertyOrThrow(
                                 interpreter, removed, index, interpreter.getV(objectValue, from),
                             )
@@ -1659,16 +1659,16 @@ object ArrayBuiltins {
         index: Long,
     ): JSValue? {
         val key = PropertyKey.Str(index.toString())
-        return if (objectValue.hasProperty(key)) interpreter.getV(objectValue, key) else null
+        return if (interpreter.internalHasProperty(objectValue, key)) interpreter.getV(objectValue, key) else null
     }
 
     /** DeletePropertyOrThrow：Delete 返回 false 时抛 TypeError。 */
-    private fun deletePropertyOrThrow(
+    private suspend fun deletePropertyOrThrow(
         interpreter: Interpreter,
         objectValue: JSObject,
         key: PropertyKey,
     ) {
-        if (!objectValue.deleteOwnProperty(key)) {
+        if (!interpreter.internalDeleteProperty(objectValue, key)) {
             interpreter.typeError("Cannot delete property '${key}'")
         }
     }
@@ -1680,7 +1680,7 @@ object ArrayBuiltins {
         from: PropertyKey,
         to: PropertyKey,
     ) {
-        if (objectValue.hasProperty(from)) {
+        if (interpreter.internalHasProperty(objectValue, from)) {
             interpreter.putV(objectValue, to, interpreter.getV(objectValue, from), strict = true)
         } else {
             deletePropertyOrThrow(interpreter, objectValue, to)
@@ -1757,7 +1757,7 @@ object ArrayBuiltins {
         value: JSValue,
     ) {
         val key = PropertyKey.Str(index.toString())
-        val existing = target.getOwnProperty(key)
+        val existing = interpreter.internalGetOwnProperty(target, key)
         if (existing != null) {
             // 目标描述符是 {writable:true, enumerable:true, configurable:true}，
             // 只有可配置的现有属性才能被这样覆盖
@@ -1824,7 +1824,7 @@ object ArrayBuiltins {
         var sourceIndex = 0L
         while (sourceIndex < sourceLength) {
             val key = PropertyKey.Str(sourceIndex.toString())
-            if (source.hasProperty(key)) {
+            if (interpreter.internalHasProperty(source, key)) {
                 var element = interpreter.getV(source, key)
                 if (mapper != null) {
                     element = interpreter.callFunction(
@@ -1910,7 +1910,7 @@ object ArrayBuiltins {
         var index = 0L
         while (index < length) {
             val key = PropertyKey.Str(index.toString())
-            if (objectValue.hasProperty(key)) {
+            if (interpreter.internalHasProperty(objectValue, key)) {
                 values.add(interpreter.getV(objectValue, key))
             }
             index++

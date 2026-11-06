@@ -147,4 +147,49 @@ class ProxyReflectCompletionTest {
         assertEquals("""{"a":1}""", runtime.evalString("json"))
         assertEquals("get:toJSON,keys,gopd:a,get:a", runtime.evalString("log.join(',')"))
     }
+
+    @Test
+    fun `with 语句穿透 Proxy 的 has 与 get 陷阱`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var target = { x: 1 };
+            var proxy = new Proxy(target, {
+                has: function (t, key) { log.push('has:' + String(key)); return key in t; },
+                get: function (t, key) { log.push('get:' + String(key)); return t[key]; },
+                set: function (t, key, value) { log.push('set:' + String(key)); t[key] = value; return true; }
+            });
+            var result;
+            with (proxy) {
+                result = x;
+                x = 2;
+            }
+            """.trimIndent()
+        )
+        assertEquals(1.0, runtime.evalNumber("result"))
+        assertEquals(2.0, runtime.evalNumber("target.x"))
+        assertEquals(true, runtime.evalBoolean("log.indexOf('has:x') >= 0"))
+        assertEquals(true, runtime.evalBoolean("log.indexOf('get:x') >= 0"))
+        assertEquals(true, runtime.evalBoolean("log.indexOf('set:x') >= 0"))
+    }
+
+    @Test
+    fun `Array 方法在 Proxy 上触发 has 陷阱`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var target = [1, 2, 3];
+            var proxy = new Proxy(target, {
+                has: function (t, key) { log.push(String(key)); return key in t; },
+                get: function (t, key) { return t[key]; }
+            });
+            var index = Array.prototype.indexOf.call(proxy, 2);
+            var hasCalls = log.join(',');
+            """.trimIndent()
+        )
+        assertEquals(1.0, runtime.evalNumber("index"))
+        assertEquals(true, runtime.evalBoolean("log.indexOf('0') >= 0"))
+    }
 }

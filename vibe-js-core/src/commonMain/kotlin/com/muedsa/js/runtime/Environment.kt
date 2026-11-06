@@ -48,10 +48,10 @@ sealed class Environment(val parent: Environment?) {
     open val isVarScope: Boolean get() = false
 
     /** 当前作用域链（含父级）是否存在该绑定。 */
-    open fun hasBinding(name: String): Boolean = parent?.hasBinding(name) ?: false
+    open suspend fun hasBinding(name: String): Boolean = parent?.hasBinding(name) ?: false
 
     /** 仅当前作用域是否存在该绑定。 */
-    open fun hasOwnBinding(name: String): Boolean = false
+    open suspend fun hasOwnBinding(name: String): Boolean = false
 
     /**
      * 读取绑定值；不存在返回 null（由调用方决定是否抛 ReferenceError）。
@@ -103,10 +103,10 @@ class DeclarativeEnvironment(
 
     private val bindings: MutableMap<String, Binding> = LinkedHashMap()
 
-    override fun hasBinding(name: String): Boolean =
+    override suspend fun hasBinding(name: String): Boolean =
         bindings.containsKey(name) || super.hasBinding(name)
 
-    override fun hasOwnBinding(name: String): Boolean = bindings.containsKey(name)
+    override suspend fun hasOwnBinding(name: String): Boolean = bindings.containsKey(name)
 
     override suspend fun getBinding(name: String): JSValue? {
         val binding = bindings[name]
@@ -286,38 +286,38 @@ class ObjectEnvironment(
         return access.getProperty(unscopables, PropertyKey.Str(name)).toPrimitiveBoolean()
     }
 
-    override fun hasBinding(name: String): Boolean =
-        bindingObject.hasProperty(PropertyKey.Str(name)) || super.hasBinding(name)
+    override suspend fun hasBinding(name: String): Boolean =
+        access.hasProperty(bindingObject, PropertyKey.Str(name)) || super.hasBinding(name)
 
     /** WithBaseObject：with 环境的绑定对象（全局对象环境返回 null）。 */
     fun withBaseObject(): JSObject? =
         if (unscopablesKey != null) bindingObject else null
 
-    override fun hasOwnBinding(name: String): Boolean =
-        bindingObject.hasProperty(PropertyKey.Str(name))
+    override suspend fun hasOwnBinding(name: String): Boolean =
+        access.hasProperty(bindingObject, PropertyKey.Str(name))
 
     /** 标识符引用解析：先 HasProperty，再（with 环境）检查 @@unscopables。 */
     override suspend fun hasBindingForReference(name: String): Boolean {
         if (unscopablesKey == null) return hasOwnBinding(name)
         val key = PropertyKey.Str(name)
-        if (!bindingObject.hasProperty(key)) return false
+        if (!access.hasProperty(bindingObject, key)) return false
         return !isUnscopable(name)
     }
 
     override suspend fun getBinding(name: String): JSValue? {
         if (unscopablesKey == null) {
             val legacyKey = PropertyKey.Str(name)
-            return if (bindingObject.hasProperty(legacyKey)) {
+            return if (access.hasProperty(bindingObject, legacyKey)) {
                 access.getProperty(bindingObject, legacyKey)
             } else {
                 parent?.getBinding(name)
             }
         }
         val key = PropertyKey.Str(name)
-        if (!bindingObject.hasProperty(key)) return parent?.getBinding(name)
+        if (!access.hasProperty(bindingObject, key)) return parent?.getBinding(name)
         if (isUnscopable(name)) return parent?.getBinding(name)
         // GetBindingValue：unscopables getter 可能删除绑定
-        if (!bindingObject.hasProperty(key)) {
+        if (!access.hasProperty(bindingObject, key)) {
             if (access.isStrictContext()) {
                 throw JSException(JSError("ReferenceError", "$name is not defined"))
             }
@@ -328,13 +328,13 @@ class ObjectEnvironment(
 
     override suspend fun setBinding(name: String, value: JSValue, strict: Boolean): Boolean {
         val key = PropertyKey.Str(name)
-        if (!bindingObject.hasProperty(key)) {
+        if (!access.hasProperty(bindingObject, key)) {
             return parent?.setBinding(name, value, strict) ?: false
         }
         if (unscopablesKey != null && isUnscopable(name)) {
             return parent?.setBinding(name, value, strict) ?: false
         }
-        if (!bindingObject.hasProperty(key) && strict) {
+        if (!access.hasProperty(bindingObject, key) && strict) {
             throw JSException(JSError("ReferenceError", "$name is not defined"))
         }
         access.setProperty(bindingObject, key, value, strict)
