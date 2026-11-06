@@ -7,6 +7,7 @@ import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSDataView
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSTypedArray
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyKey
@@ -17,7 +18,7 @@ import com.muedsa.js.runtime.value.PropertyKey
  * 首版（L3.1）不支持 resizable / detachable / transfer：
  * - `byteLength` 为只读访问器；
  * - `slice` 通过 SpeciesConstructor 创建副本，默认回到 %ArrayBuffer%；
- * - `isView` 暂时只识别 DataView（TypedArray 在 L3.2 接入后扩展）。
+ * - `isView` 识别 DataView 与全部 TypedArray（L3.2 接入）。
  */
 object ArrayBufferBuiltins {
 
@@ -45,11 +46,15 @@ object ArrayBufferBuiltins {
             }
             // 规范：length 为 undefined 时按 0 处理，否则 ToIndex
             val byteLength = interpreter.toIndex(args.getOrElse(0) { JSUndefined })
+            // 规范顺序：ToIndex 之后先由 OrdinaryCreateFromConstructor 解析实例原型
+            // （可能触发 NewTarget.prototype getter），最后才分配字节存储
+            val instancePrototype =
+                interpreter.prototypeFromNewTarget(newTarget, prototype)
             if (byteLength > MAX_BYTE_LENGTH.toLong()) {
                 interpreter.rangeError("Array buffer allocation failed")
             }
             JSArrayBuffer(
-                prototype = interpreter.prototypeFromNewTarget(newTarget, prototype),
+                prototype = instancePrototype,
                 byteLength = byteLength.toInt(),
             )
         }
@@ -123,12 +128,12 @@ object ArrayBufferBuiltins {
             },
         )
 
-        // ArrayBuffer.isView(arg)：L3.1 只识别 DataView，TypedArray 后续接入
+        // ArrayBuffer.isView(arg)：DataView 与 9 种 TypedArray 都是视图对象
         constructor.defineDataProperty(
             key = PropertyKey.Str("isView"),
             value = BuiltinHelpers.method(intrinsics, "isView", 1) { _, _, args ->
                 val argument = args.getOrElse(0) { JSUndefined }
-                JSBoolean.getJsBoolean(argument is JSDataView)
+                JSBoolean.getJsBoolean(argument is JSDataView || argument is JSTypedArray)
             },
         )
 

@@ -114,7 +114,7 @@ object DataViewBuiltins {
         fun defineWriteMethod(
             name: String,
             elementSize: Int,
-            write: suspend (JSDataView, Int, Boolean, JSValue, Interpreter) -> Unit,
+            write: suspend (JSDataView, Int, Boolean, JSNumber, Interpreter) -> Unit,
         ) {
             prototype.defineDataProperty(
                 key = PropertyKey.Str(name),
@@ -127,10 +127,15 @@ object DataViewBuiltins {
                         elementSize = elementSize,
                         // 写入方法签名：(byteOffset, value, littleEndian)
                         littleEndianArgIndex = 2,
+                        valueArgIndex = 1,
                     )
-                    // 规范 SetViewValue：先完成 index/越界检查，再对 value 做 ToNumber
-                    val value = args.getOrElse(1) { JSUndefined }
-                    write(access.view, access.index, access.littleEndian, value, interpreter)
+                    write(
+                        access.view,
+                        access.index,
+                        access.littleEndian,
+                        requireNotNull(access.number),
+                        interpreter,
+                    )
                     JSUndefined
                 },
             )
@@ -205,14 +210,21 @@ object DataViewBuiltins {
         val index: Int,
         /** 是否小端（单字节方法恒为 false）。 */
         val littleEndian: Boolean,
+        /** 写入方法已转换的数值；读取方法为 null。 */
+        val number: JSNumber?,
     )
 
     /**
-     * 读写方法的公共前置检查（对应规范 GetViewValue / SetViewValue 的 1-10 步）：
-     * 品牌检查 → ToIndex(byteOffset) → ToBoolean(littleEndian) → 越界 RangeError。
+     * 读写方法的公共前置检查（对应规范 GetViewValue / SetViewValue 的前几步）：
+     * 品牌检查 → ToIndex(byteOffset) → ToBoolean(littleEndian)
+     * →（写入时）ToNumber(value) → 越界 RangeError。
+     *
+     * 规范中 SetViewValue 的 ToNumber(value) 早于越界检查，但晚于 byteOffset 的
+     * ToIndex，因此写入方法的 value 也必须在这里转换。
      *
      * @param littleEndianArgIndex littleEndian 在实参中的下标（读取方法为 1，写入方法为 2）；
      *   单字节方法传入 -1，不读取该参数（规范对 INT8/UINT8 传 true，无可观察差异）。
+     * @param valueArgIndex 写入方法中 value 的下标；读取方法传 -1，不做值转换。
      */
     private suspend fun prepareViewAccess(
         interpreter: Interpreter,
@@ -221,6 +233,7 @@ object DataViewBuiltins {
         methodName: String,
         elementSize: Int,
         littleEndianArgIndex: Int,
+        valueArgIndex: Int = -1,
     ): ViewAccess {
         val view = requireDataView(
             interpreter,
@@ -230,10 +243,15 @@ object DataViewBuiltins {
         val index = interpreter.toIndex(args.getOrElse(0) { JSUndefined })
         val littleEndian = elementSize > 1 && littleEndianArgIndex >= 0 &&
             interpreter.toBoolean(args.getOrElse(littleEndianArgIndex) { JSUndefined })
+        val number = if (valueArgIndex >= 0) {
+            JSNumber(interpreter.toNumber(args.getOrElse(valueArgIndex) { JSUndefined }))
+        } else {
+            null
+        }
         if (index + elementSize > view.byteLength.toLong()) {
             interpreter.rangeError("Offset is outside the bounds of the DataView")
         }
-        return ViewAccess(view, index.toInt(), littleEndian)
+        return ViewAccess(view, index.toInt(), littleEndian, number)
     }
 
     /** 品牌检查：DataView.prototype 上的方法只接受真正的 DataView。 */

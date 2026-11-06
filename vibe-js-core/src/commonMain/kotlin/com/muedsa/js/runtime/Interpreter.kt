@@ -106,6 +106,8 @@ import com.muedsa.js.runtime.value.JSRegExp
 import com.muedsa.js.runtime.value.JSSet
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSSymbol
+import com.muedsa.js.runtime.value.JSTypedArray
+import com.muedsa.js.runtime.value.JSTypedArrayType
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.JSWeakMap
@@ -567,6 +569,9 @@ class Interpreter(
     /** 严格相等。 */
     fun strictEquals(a: JSValue, b: JSValue): Boolean = conversions.strictEquals(a, b)
 
+    /** SameValueZero：NaN 视为相等，+0 与 -0 视为相同（includes / Map 键使用）。 */
+    fun sameValueZero(a: JSValue, b: JSValue): Boolean = conversions.sameValueZero(a, b)
+
     /** SameValue：NaN 视为相等，+0 与 -0 视为不同（Proxy 不变量与描述符比较使用）。 */
     fun sameValue(left: JSValue, right: JSValue): Boolean {
         if (left is JSNumber && right is JSNumber) {
@@ -731,7 +736,50 @@ class Interpreter(
             if (currentLength != null && !currentLength.writable && descriptor.writable) return false
             return objectValue.defineLength(newLength, descriptor.writable)
         }
+        if (objectValue is JSTypedArray) {
+            when (val classified = objectValue.classifyIndex(key)) {
+                // 非规范数字索引字符串：按普通自有属性定义（可以放置自定义属性）
+                JSTypedArray.IndexKey.NotIndex -> Unit
+                // 规范：非法数字索引的定义一律失败，且不执行值转换
+                JSTypedArray.IndexKey.Invalid -> return false
+                is JSTypedArray.IndexKey.Valid -> {
+                    // 规范：索引不允许改成访问器、不可配置、不可枚举或不可写
+                    if (descriptor.isAccessor ||
+                        !descriptor.configurable || !descriptor.enumerable || !descriptor.writable
+                    ) {
+                        return false
+                    }
+                    // 规范只使用 Desc.[[Value]]；描述符没有 value 字段时保持原值
+                    val value = descriptor.value ?: return true
+                    // ToNumber 可能触发 valueOf/toString，必须在挂起上下文完成
+                    setTypedArrayElement(objectValue, classified.index, value)
+                    return true
+                }
+            }
+        }
         return objectValue.defineOwnProperty(key, descriptor)
+    }
+
+    /**
+     * IntegerIndexedElementSet：写入 TypedArray 的元素。
+     *
+     * 调用方必须已完成下标合法性检查；规范要求越界时静默失败且不做 ToNumber，
+     * 因此越界路径不应调用本方法。元素类型转换规则：
+     * - 整数类型使用 ToInt32/ToUint32（Uint8Clamped 使用 ToUint8Clamp）；
+     * - 浮点类型使用 ToNumber 后按单/双精度存储。
+     */
+    suspend fun setTypedArrayElement(array: JSTypedArray, index: Int, value: JSValue) {
+        when (array.type) {
+            JSTypedArrayType.INT8, JSTypedArrayType.UINT8,
+            JSTypedArrayType.INT16, JSTypedArrayType.UINT16,
+            JSTypedArrayType.INT32,
+            -> array.setIntElement(index, toInt32(value))
+
+            JSTypedArrayType.UINT32 -> array.setUint32Element(index, toUint32(value))
+            JSTypedArrayType.UINT8_CLAMPED -> array.setUint8ClampedElement(index, toNumber(value))
+            JSTypedArrayType.FLOAT32 -> array.setFloat32Element(index, toNumber(value))
+            JSTypedArrayType.FLOAT64 -> array.setFloat64Element(index, toNumber(value))
+        }
     }
 
     /** [PropertyAccess] 实现：对象属性读取。 */
@@ -812,6 +860,14 @@ class Interpreter(
         var current: JSObject? = objectValue
         while (current != null) {
             if (current is JSProxy) return proxyHasProperty(current, key)
+            // 整数索引异质对象的 [[HasProperty]]：规范数字索引不进入普通原型链查询
+            if (current is JSTypedArray) {
+                when (current.classifyIndex(key)) {
+                    JSTypedArray.IndexKey.NotIndex -> Unit
+                    JSTypedArray.IndexKey.Invalid -> return false
+                    is JSTypedArray.IndexKey.Valid -> return true
+                }
+            }
             if (current.getOwnProperty(key) != null) return true
             current = current.prototype
         }
@@ -860,8 +916,33 @@ class Interpreter(
             }
             return result
         }
+        // 整数索引异质对象的 [[Set]]：规范数字索引由异质逻辑直接处理
+        if (target is JSTypedArray) {
+            when (val classified = target.classifyIndex(key)) {
+                JSTypedArray.IndexKey.NotIndex -> Unit
+                // 非法索引：接收者就是目标自身时失败；接收者不同则规范返回 true 且不写任何对象
+                JSTypedArray.IndexKey.Invalid -> return receiver !== target
+                is JSTypedArray.IndexKey.Valid -> {
+                    if (receiver === target) {
+                        setTypedArrayElement(target, classified.index, value)
+                        return true
+                    }
+                    // 接收者不同：OrdinarySet 把值定义到接收者上
+                    if (receiver !is JSObject) return false
+                    return definePropertyOnReceiver(receiver, key, value)
+                }
+            }
+        }
         var current: JSObject? = target
         while (current != null) {
+            // 原型链中的 TypedArray：非法数字索引直接判定成功（不创建属性）
+            if (current is JSTypedArray) {
+                when (current.classifyIndex(key)) {
+                    JSTypedArray.IndexKey.NotIndex -> Unit
+                    JSTypedArray.IndexKey.Invalid -> return true
+                    is JSTypedArray.IndexKey.Valid -> Unit
+                }
+            }
             val descriptor = internalGetOwnProperty(current, key)
             if (descriptor != null) {
                 if (descriptor.isAccessor) {
@@ -873,16 +954,7 @@ class Interpreter(
                 if (!descriptor.writable) return false
                 if (current === target) {
                     if (receiver !is JSObject) return false
-                    return internalDefineOwnProperty(
-                        receiver,
-                        key,
-                        PropertyDescriptor.data(
-                            value = value,
-                            writable = true,
-                            enumerable = descriptor.enumerable,
-                            configurable = descriptor.configurable,
-                        ),
-                    )
+                    return definePropertyOnReceiver(receiver, key, value)
                 }
                 break
             }
@@ -893,6 +965,43 @@ class Interpreter(
             receiver,
             key,
             PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
+        )
+    }
+
+    /**
+     * OrdinarySet 的接收者定义步骤。
+     *
+     * 接收者已有属性时只更新值并保留原属性标志；访问器或不可写属性直接失败。
+     * 接收者没有该属性时按 CreateDataProperty 创建可写/可枚举/可配置数据属性。
+     */
+    private suspend fun definePropertyOnReceiver(
+        receiver: JSObject,
+        key: PropertyKey,
+        value: JSValue,
+    ): Boolean {
+        val existing = internalGetOwnProperty(receiver, key)
+        if (existing != null) {
+            if (existing.isAccessor || !existing.writable) return false
+            return internalDefineOwnProperty(
+                receiver,
+                key,
+                PropertyDescriptor.data(
+                    value = value,
+                    writable = existing.writable,
+                    enumerable = existing.enumerable,
+                    configurable = existing.configurable,
+                ),
+            )
+        }
+        return internalDefineOwnProperty(
+            receiver,
+            key,
+            PropertyDescriptor.data(
+                value = value,
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            ),
         )
     }
 
@@ -1307,6 +1416,15 @@ class Interpreter(
                 current = current.target
                 continue
             }
+            // 整数索引异质对象的 [[Get]]：规范数字索引完全由异质逻辑处理，
+            // 非法索引直接返回 undefined，不继续沿原型链查找（也不触发原型 getter）
+            if (current is JSTypedArray) {
+                when (val classified = current.classifyIndex(key)) {
+                    JSTypedArray.IndexKey.NotIndex -> Unit
+                    JSTypedArray.IndexKey.Invalid -> return JSUndefined
+                    is JSTypedArray.IndexKey.Valid -> return current.getElement(classified.index)
+                }
+            }
             val descriptor = internalGetOwnProperty(current, key)
             if (descriptor != null) {
                 if (descriptor.isAccessor) {
@@ -1360,8 +1478,32 @@ class Interpreter(
             }
             return
         }
+        // 整数索引异质对象的 [[Set]]：规范数字索引直接写入元素或失败，不查原型链
+        if (objectValue is JSTypedArray) {
+            when (val classified = objectValue.classifyIndex(key)) {
+                JSTypedArray.IndexKey.NotIndex -> Unit
+                JSTypedArray.IndexKey.Invalid -> {
+                    // 越界/非法索引：规范 [[Set]] 返回 false，严格模式由赋值语义抛 TypeError
+                    if (strict) throw typeError("Cannot assign to read only property '$key'")
+                    return
+                }
+                is JSTypedArray.IndexKey.Valid -> {
+                    // ToNumber 在 [[Set]] 内完成，可能调用 valueOf/toString
+                    setTypedArrayElement(objectValue, classified.index, value)
+                    return
+                }
+            }
+        }
         var current: JSObject? = objectValue
         while (current != null) {
+            // 原型链中的 TypedArray：非法数字索引不再继续查找（等价于 [[Set]] 返回 true）
+            if (current is JSTypedArray) {
+                when (current.classifyIndex(key)) {
+                    JSTypedArray.IndexKey.NotIndex -> Unit
+                    JSTypedArray.IndexKey.Invalid -> return
+                    is JSTypedArray.IndexKey.Valid -> Unit
+                }
+            }
             val descriptor = internalGetOwnProperty(current, key)
             if (descriptor != null) {
                 if (descriptor.isAccessor) {

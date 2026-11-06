@@ -169,14 +169,7 @@ class Conversions(private val interpreter: Interpreter) {
     /**
      * ToUint32：按规范对 2^32 取模。
      */
-    suspend fun toUint32(value: JSValue): Long {
-        val number = toNumber(value)
-        if (number.isNaN() || number.isInfinite() || number == 0.0) return 0L
-        val truncated = kotlin.math.truncate(number)
-        val modulo = truncated % 4294967296.0
-        val normalized = if (modulo < 0) modulo + 4294967296.0 else modulo
-        return normalized.toLong() and 0xFFFFFFFFL
-    }
+    suspend fun toUint32(value: JSValue): Long = toUint32Number(toNumber(value))
 
     /** ToInt32：取 ToUint32 的低 32 位并按有符号解释。 */
     suspend fun toInt32(value: JSValue): Int = toUint32(value).toInt()
@@ -232,3 +225,20 @@ class Conversions(private val interpreter: Interpreter) {
         is JSObject -> 6
     }
 }
+
+/**
+ * ToUint32 的数值入口（输入已是 ToNumber 结果）。
+ *
+ * TypedArray 的非挂起定义路径需要它：值可能已是 JSNumber，但取模规则
+ * 必须与 JS 可见路径（[Conversions.toUint32]）完全一致，不能重复实现。
+ */
+internal fun toUint32Number(number: Double): Long {
+    if (number.isNaN() || number.isInfinite() || number == 0.0) return 0L
+    val truncated = kotlin.math.truncate(number)
+    val modulo = truncated % 4294967296.0
+    val normalized = if (modulo < 0) modulo + 4294967296.0 else modulo
+    return normalized.toLong() and 0xFFFFFFFFL
+}
+
+/** ToInt32 的数值入口（输入已是 ToNumber 结果）。 */
+internal fun toInt32Number(number: Double): Int = toUint32Number(number).toInt()

@@ -28,6 +28,8 @@ object CoreBuiltins {
         ArrayBufferBuiltins.install(registry)
         // DataView 依赖 %ArrayBuffer% 的内部数据槽
         DataViewBuiltins.install(registry)
+        // TypedArray 依赖 Array.prototype.toString 与 %ArrayBuffer% 的字节存储
+        TypedArrayBuiltins.install(registry)
         StringBuiltins.install(registry)
         NumberBuiltins.install(registry)
         BooleanBuiltins.install(registry)

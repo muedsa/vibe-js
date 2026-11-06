@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSSymbol
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSNativeFunction
+import com.muedsa.js.runtime.value.JSTypedArrayType
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyKey
@@ -79,6 +80,18 @@ class Intrinsics(val globalObject: GlobalObject) {
 
     /** %DataView% 构造器。 */
     lateinit var dataViewConstructor: JSNativeFunction
+
+    /** %TypedArray%.prototype：9 种 TypedArray 原型共享的抽象基类原型。 */
+    lateinit var typedArrayPrototype: JSObject
+
+    /** %TypedArray% 抽象构造器（不可直接调用/构造，只是 9 个构造器的 [[Prototype]]）。 */
+    lateinit var typedArrayConstructor: JSNativeFunction
+
+    /** 9 种 TypedArray 的实例原型（[[Prototype]] 均为 %TypedArray%.prototype%）。 */
+    lateinit var typedArrayPrototypes: Map<JSTypedArrayType, JSObject>
+
+    /** 9 种 TypedArray 构造器（用于 SpeciesConstructor 的默认值）。 */
+    lateinit var typedArrayConstructors: Map<JSTypedArrayType, JSNativeFunction>
 
     /** %IteratorPrototype%：所有迭代器共享的原型（含 @@iterator 与辅助方法）。 */
     lateinit var iteratorPrototype: JSObject
@@ -227,6 +240,11 @@ class Intrinsics(val globalObject: GlobalObject) {
         // 规范：%ArrayBuffer.prototype% 与 %DataView.prototype% 的 [[Prototype]] 是 %Object.prototype%
         arrayBufferPrototype = JSObject(prototype = objectPrototype)
         dataViewPrototype = JSObject(prototype = objectPrototype)
+        // 规范：%TypedArray%.prototype% 是普通对象，各类型原型以它为 [[Prototype]]
+        typedArrayPrototype = JSObject(prototype = objectPrototype)
+        typedArrayPrototypes = JSTypedArrayType.entries.associateWith {
+            JSObject(prototype = typedArrayPrototype)
+        }
         iteratorPrototype = JSObject(prototype = objectPrototype)
         asyncIteratorPrototype = JSObject(prototype = objectPrototype)
         arrayIteratorPrototype = JSObject(prototype = iteratorPrototype)
