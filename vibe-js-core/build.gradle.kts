@@ -81,8 +81,10 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            // 协程用于实现 async/await 与事件循环（KMP 通用）
-            implementation(libs.kotlinx.coroutines.core)
+            // 协程用于实现 async/await 与事件循环（KMP 通用）。
+            // EventLoop / CoroutineScheduler 的公开签名暴露 CoroutineScope，必须用 api 传递，
+            // 否则消费方无法在不额外声明协程依赖的情况下编译。
+            api(libs.kotlinx.coroutines.core)
         }
 
         val jvmBenchmark = getByName("jvmBenchmark") {
