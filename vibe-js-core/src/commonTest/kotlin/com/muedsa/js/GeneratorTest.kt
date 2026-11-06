@@ -799,27 +799,25 @@ class GeneratorTest {
     }
 
     @Test
-    fun `async 生成器语法可以解析但调用时报告不支持`() = runTest {
+    fun `async 生成器语法解析为 async generator 对象并可推进`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(
             """
             async function* declared() { yield 1; }
             var expression = async function*() { yield 2; };
-            var o = { async *gen() { yield 1; } };
-            class C { async *items() { yield 2; } }
-            function call(fn) {
-                try { fn(); } catch (e) { return e.name; }
-                return 'no-error';
+            var o = { async *gen() { yield 3; } };
+            class C { async *items() { yield 4; } }
+            var values = '';
+            async function collect() {
+                values += (await declared().next()).value;
+                values += (await expression().next()).value;
+                values += (await o.gen().next()).value;
+                values += (await new C().items().next()).value;
             }
-            var result = typeof declared + ',' + typeof expression + ',' + typeof o.gen + ':' +
-                call(declared) + ',' + call(expression) + ',' + call(o.gen) + ',' +
-                call(function () { return new C().items(); });
+            collect();
             """.trimIndent()
         )
-        assertEquals(
-            "function,function,function:TypeError,TypeError,TypeError,TypeError",
-            runtime.evalString("result"),
-        )
+        assertEquals("1234", runtime.evalString("values"))
     }
 
     @Test

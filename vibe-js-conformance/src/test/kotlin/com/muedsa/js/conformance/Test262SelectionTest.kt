@@ -143,9 +143,19 @@ class Test262SelectionTest {
     @Test
     fun `未支持特性按特性名跳过`() {
         val reason = Test262Selection.skipReason(
-            "var x = 1;", metadata(features = setOf("Reflect")), "es2015",
+            "var x = 1;", metadata(features = setOf("BigInt")), "es2015",
         )
-        assertEquals("unsupported feature: Reflect", reason)
+        assertEquals("unsupported feature: BigInt", reason)
+    }
+
+    @Test
+    fun `Reflect 特性用例已纳入 ES2015 子集`() {
+        // 核心库提供完整 Reflect：特性既不被筛选排除，也不按特性名跳过
+        val metadata = metadata(features = setOf("Reflect", "Reflect.construct"))
+        assertIs<SelectionDecision.Selected>(
+            Test262Selection.decide("test/language/x.js", metadata, "es2015", false, null)
+        )
+        assertNull(Test262Selection.skipReason("var x = 1;", metadata, "es2015"))
     }
 
     @Test

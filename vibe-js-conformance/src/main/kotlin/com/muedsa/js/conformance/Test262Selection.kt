@@ -198,6 +198,10 @@ internal object Test262Selection {
         "arrow-function", "class", "computed-property-names", "const", "let",
         "default-parameters", "destructuring-binding", "destructuring-assignment",
         "rest-parameters", "spread-syntax", "template", "tagged-template",
+        // 核心库已提供完整 Reflect（ReflectBuiltins）：L1.4 验证后纳入基线，
+        // 其中 GeneratorFunction/AsyncGeneratorFunction 的 is-a-constructor 用例
+        // 依赖 Reflect.construct 与 wellKnownIntrinsicObjects harness
+        "Reflect", "Reflect.construct",
         "for-of", "new.target", "super", "Symbol", "Symbol.iterator",
     "Symbol.asyncIterator",
         "Symbol.toPrimitive", "Symbol.toStringTag", "Symbol.hasInstance",
@@ -278,9 +282,9 @@ internal object Test262Selection {
         "test/built-ins/Object/seal/seal-biguint64array.js",
     )
 
-    /** 当前范围外或尚未实现的特性。 */
+    /** 当前范围外或尚未实现的特性（Reflect 已纳入支持范围）。 */
     private val unsupportedFeatures = setOf(
-        "Reflect.construct", "Reflect", "Proxy", "BigInt",
+        "Proxy", "BigInt",
         "TypedArray", "ArrayBuffer", "DataView", "SharedArrayBuffer", "Atomics",
         "Intl", "WeakRef", "FinalizationRegistry",
         "decorators",

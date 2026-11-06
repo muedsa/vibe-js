@@ -136,8 +136,13 @@ object GeneratorBuiltins {
         )
     }
 
-    /** Generator.prototype 方法的品牌检查：接收者必须是生成器对象。 */
-    private fun requireGenerator(interpreter: Interpreter, thisValue: JSValue): JSGenerator =
-        thisValue as? JSGenerator
-            ?: interpreter.typeError("Method called on incompatible receiver")
+    /** Generator.prototype 方法的品牌检查：接收者必须是同步生成器对象。 */
+    private fun requireGenerator(interpreter: Interpreter, thisValue: JSValue): JSGenerator {
+        val generator = thisValue as? JSGenerator
+        // async generator 是另一条原型链，不能借用同步 Generator 的方法
+        if (generator == null || generator.isAsync) {
+            interpreter.typeError("Method called on incompatible receiver")
+        }
+        return generator
+    }
 }

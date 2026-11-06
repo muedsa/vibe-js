@@ -19,6 +19,8 @@ object CoreBuiltins {
         AsyncFunctionBuiltins.install(registry)
         // 生成器内建依赖 Function.prototype 与 %IteratorPrototype%
         GeneratorBuiltins.install(registry)
+        // async generator 内建依赖 %AsyncIteratorPrototype% 与 Function.prototype
+        AsyncGeneratorBuiltins.install(registry)
         SymbolBuiltins.install(registry)
         IteratorBuiltins.install(registry)
         ArrayBuiltins.install(registry)

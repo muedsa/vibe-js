@@ -201,6 +201,14 @@ class Interpreter(
     private var generatorChannels: GeneratorChannels? = null
 
     /**
+     * 生成器函数体是否为 async generator。
+     *
+     * 与 [generatorChannels] 一样只在生成器体所在的独立解释器实例上为 true：
+     * 决定 `yield` 是否先 await 产出值、`yield*` 是否按异步迭代协议委托。
+     */
+    private var generatorIsAsync = false
+
+    /**
      * 语句、表达式和循环共用检查计数器，每 1024 个执行检查点观察一次取消。
      *
      * 避免为每个 AST 节点读取协程上下文；检查不挂起协程、不运行微任务，
@@ -1649,13 +1657,12 @@ class Interpreter(
         }
 
         if (function.isGenerator) {
-            // async generator 的语义依赖 L1.4（AsyncGenerator 原型与 Promise 化的 next），
-            // 语法层允许解析，调用时给出明确的不支持错误
-            if (function.isAsync) {
-                throw typeError("Async generators are not supported")
+            // async generator（L1.4）：调用同样只创建对象，next/return/throw 返回 Promise
+            return if (function.isAsync) {
+                createAsyncGeneratorObject(function, effectiveThis, args)
+            } else {
+                createGeneratorObject(function, effectiveThis, args)
             }
-            // 生成器函数调用只创建生成器对象，函数体延迟到首次 next() 执行
-            return createGeneratorObject(function, effectiveThis, args)
         }
         if (function.isAsync) {
             return callAsyncFunction(function, effectiveThis, args, callRange)
@@ -1682,6 +1689,25 @@ class Interpreter(
     )
 
     /**
+     * 创建 async generator 对象（AsyncGeneratorStart 的创建阶段）。
+     *
+     * 实例原型同样取函数当前的 `.prototype` 属性，不是对象时回退
+     * `%AsyncGeneratorPrototype%`；`next`/`return`/`throw` 由该原型提供 Promise 化实现。
+     */
+    private suspend fun createAsyncGeneratorObject(
+        function: JSFunction,
+        thisValue: JSValue,
+        args: List<JSValue>,
+    ): JSGenerator = JSGenerator(
+        interpreter = this,
+        function = function,
+        thisValue = thisValue,
+        arguments = args.toList(),
+        prototype = prototypeFromNewTarget(function, intrinsics.asyncGeneratorPrototype),
+        isAsync = true,
+    )
+
+    /**
      * 启动生成器函数体协程（首次 next 时调用）。
      *
      * 协程挂在事件循环作用域上而不是当前 run：生成器必须在多次脚本执行之间
@@ -1696,6 +1722,7 @@ class Interpreter(
                     generator.thisValue,
                     generator.arguments,
                     generator.channels,
+                    generator.isAsync,
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -1724,21 +1751,38 @@ class Interpreter(
     }
 
     /**
+     * 启动 async generator 的驱动协程（首次请求入队时调用）。
+     *
+     * 与 async 函数共用事件循环任务模型：驱动协程同步执行到函数体首个
+     * yield/await 后交还调用方，之后由微任务队列推进。
+     */
+    internal suspend fun launchAsyncGeneratorDriver(generator: JSGenerator) {
+        context.eventLoop.launchAsyncTask {
+            generator.driveAsyncQueue()
+        }
+    }
+
+    /**
      * 执行生成器函数体（在生成器协程中调用）。
      *
      * 使用独立解释器实例：函数体挂起期间调用方会继续执行其他脚本，不能复用
      * 调用方的词法帧与调用栈。函数体的所有完成（正常返回、return 请求、未捕获异常）
      * 都转换为 [GeneratorStep] 步骤交还给恢复方；只有宿主控制流（协程取消、
      * 步数耗尽）继续向上传播。
+     *
+     * @param isAsync async generator 的函数体：yield 会先 await 产出值，
+     *   yield* 按异步迭代协议委托
      */
     internal suspend fun executeGeneratorBody(
         function: JSFunction,
         thisValue: JSValue,
         args: List<JSValue>,
         channels: GeneratorChannels,
+        isAsync: Boolean = false,
     ) {
         val bodyInterpreter = forkForCallback()
         bodyInterpreter.generatorChannels = channels
+        bodyInterpreter.generatorIsAsync = isAsync
         try {
             val result = bodyInterpreter.executeUserFunction(function, thisValue, args)
             channels.steps.send(GeneratorStep.Returned(result))
@@ -2171,17 +2215,18 @@ class Interpreter(
         sourceInfo: SourceInfo = currentSourceInfo,
     ): JSFunction {
         // async 函数与普通方法不是构造器，没有 own "prototype" 属性；
-        // 生成器方法按规范仍然创建 .prototype（其 [[Prototype]] 是 %GeneratorPrototype%），
+        // 生成器（含 async generator）方法与函数按规范仍然创建 .prototype
+        // （其 [[Prototype]] 是 %GeneratorPrototype% / %AsyncGeneratorPrototype%），
         // 与生成器函数声明/表达式一致（规范 9.2.3）
-        val prototypeObject = if (isArrow || isAsync || (isMethod && !isGenerator)) {
+        val prototypeObject = if (isArrow || (isAsync && !isGenerator) || (isMethod && !isGenerator)) {
             null
         } else {
             functionPrototypeObject
                 ?: JSObject(
-                    prototype = if (isGenerator) {
-                        intrinsics.generatorPrototype
-                    } else {
-                        intrinsics.objectPrototype
+                    prototype = when {
+                        !isGenerator -> intrinsics.objectPrototype
+                        isAsync -> intrinsics.asyncGeneratorPrototype
+                        else -> intrinsics.generatorPrototype
                     },
                 )
         }
@@ -2192,9 +2237,11 @@ class Interpreter(
             closure = closure,
             strict = strict,
             // async 函数的 [[Prototype]] 是 %AsyncFunction.prototype%；
-            // 生成器函数是 %GeneratorFunction.prototype%
+            // 生成器函数是 %GeneratorFunction.prototype%；
+            // async generator 函数是 %AsyncGeneratorFunction.prototype%
             prototype = functionObjectPrototype
                 ?: when {
+                    isGenerator && isAsync -> intrinsics.asyncGeneratorFunctionPrototype
                     isAsync -> intrinsics.asyncFunctionPrototype
                     isGenerator -> intrinsics.generatorFunctionPrototype
                     else -> intrinsics.functionPrototype
@@ -2438,6 +2485,38 @@ class Interpreter(
             isGenerator = true,
             functionObjectPrototype = functionObjectPrototype,
             sourceInfo = SourceInfo("<GeneratorFunction>"),
+        )
+        created.sourceText = source.substring(1, source.length - 1)
+        return created
+    }
+
+    /**
+     * 动态创建 async generator 函数（AsyncGeneratorFunction 构造器）。
+     *
+     * 与 AsyncFunction/GeneratorFunction 一致：以全局环境作为闭包，
+     * 参数与函数体交给 Parser 校验；`async function*` 源码同时产生
+     * isAsync 与 isGenerator 标记（L1.4）。
+     */
+    fun createDynamicAsyncGeneratorFunction(
+        paramStrings: List<String>,
+        body: String,
+        functionObjectPrototype: JSObject? = null,
+    ): JSFunction {
+        val parameters = paramStrings.joinToString(",")
+        val source = "(async function* anonymous($parameters\n) {\n$body\n})"
+        val function = parseDynamicFunctionSource(source)
+        val created = createFunction(
+            name = function.name ?: "anonymous",
+            params = function.params,
+            body = function.body,
+            closure = context.globalEnvironment,
+            strict = function.strict,
+            varDeclarations = function.varDeclarations,
+            functionDeclarations = function.functionDeclarations,
+            isAsync = true,
+            isGenerator = true,
+            functionObjectPrototype = functionObjectPrototype,
+            sourceInfo = SourceInfo("<AsyncGeneratorFunction>"),
         )
         created.sourceText = source.substring(1, source.length - 1)
         return created
@@ -4696,6 +4775,22 @@ class Interpreter(
         return result
     }
 
+    /**
+     * async generator 中的 Await：只在值是 thenable 时等待。
+     *
+     * 规范对非 thenable 值的 Await 不产生可观察的额外微任务，
+     * 因此 yield 普通值不会推迟请求 Promise 的落定顺序。
+     */
+    private suspend fun awaitIfThenable(value: JSValue): JSValue {
+        if (value !is JSObject) return value
+        val then = getV(value, PropertyKey.Str("then"))
+        return if (isCallable(then)) awaitPromiseValue(value) else value
+    }
+
+    /** AsyncGeneratorAwaitReturn：async generator 的 return 完成值先经过 Await。 */
+    internal suspend fun awaitAsyncGeneratorReturnValue(value: JSValue): JSValue =
+        awaitIfThenable(value)
+
     /** 构造 SuppressedError 值（error 为新的主错误，suppressed 为先前累积错误）。 */
     private fun createSuppressedErrorValue(error: JSValue, suppressed: JSValue): JSValue {
         val objectValue = JSObject(prototype = intrinsics.suppressedErrorPrototype)
@@ -4842,6 +4937,9 @@ class Interpreter(
      * yield 是生成器函数体与恢复方之间的握手点：先交出产出值，再等待下一个恢复请求。
      * Next 请求的值成为 yield 表达式的值；Return 请求转换为内部控制流信号
      * [GeneratorReturn]（因此 finally 会正常执行）；Throw 请求转换为 JS 异常。
+     *
+     * async generator 的 yield 操作数先经过 Await（thenable 会被解包，
+     * 拒绝在函数体内传播，可被 try/catch 捕获）。
      */
     private suspend fun evaluateYield(expression: YieldExpression): JSValue {
         val channels = generatorChannels
@@ -4852,7 +4950,9 @@ class Interpreter(
             return evaluateYieldDelegate(argument, channels)
         }
         val value = if (argument != null) evaluate(argument) else JSUndefined
-        return when (val request = yieldAndReceive(channels, value)) {
+        // 规范：async generator 在交出产出值前执行 Await(value)
+        val yieldedValue = if (generatorIsAsync) awaitIfThenable(value) else value
+        return when (val request = yieldAndReceive(channels, yieldedValue)) {
             is GeneratorRequest.Next -> request.value
             is GeneratorRequest.Return -> throw GeneratorReturn(request.value)
             is GeneratorRequest.Throw -> throw JSException(request.value)
@@ -4871,19 +4971,29 @@ class Interpreter(
     /**
      * 求值 `yield*`：按迭代协议转发 next/throw/return。
      *
+     * 同步生成器使用同步迭代协议；async generator 使用异步迭代协议
+     * （GetIterator(async)：优先 `@@asyncIterator`，缺失时包装同步迭代器），
+     * 内部调用结果与产出值都按 Await 语义解包。
+     *
      * 委托结束（内部迭代器 done）时 yield* 的值是内部迭代器的返回值；
-     * 内部迭代器没有 return 方法时，return 请求直接作为外层生成器的返回值传播；
+     * 内部迭代器没有 return 方法、或 return 请求使内部迭代器结束时，
+     * 按 return 完成结束外层生成器（仍会执行 finally）；
      * 没有 throw 方法时先关闭迭代器再抛 TypeError。
      */
     private suspend fun evaluateYieldDelegate(
         argument: Expression,
         channels: GeneratorChannels,
     ): JSValue {
-        val record = getIterator(evaluate(argument))
+        val isAsync = generatorIsAsync
+        val record = if (isAsync) {
+            getAsyncIterator(evaluate(argument))
+        } else {
+            getIterator(evaluate(argument))
+        }
         val iterator = record.iterator
         var request: GeneratorRequest? = null
         while (true) {
-            val innerResult = when (val current = request) {
+            val rawInnerResult = when (val current = request) {
                 null -> callFunction(record.nextMethod, iterator, emptyList())
                 is GeneratorRequest.Next ->
                     callFunction(record.nextMethod, iterator, listOf(current.value))
@@ -4913,14 +5023,25 @@ class Interpreter(
                     callFunction(returnMethod, iterator, listOf(current.value))
                 }
             }
+            // 异步委托：next/throw/return 的返回可能是 Promise，先解包再读取 done/value
+            val innerResult = if (isAsync) awaitIfThenable(rawInnerResult) else rawInnerResult
             if (innerResult !is JSObject) {
                 throw typeError("Iterator result is not an object")
             }
-            if (toBoolean(getV(innerResult, PropertyKey.Str("done")))) {
-                return getV(innerResult, PropertyKey.Str("value"))
+            val done = toBoolean(getV(innerResult, PropertyKey.Str("done")))
+            val rawValue = getV(innerResult, PropertyKey.Str("value"))
+            // AsyncFromSync：同步迭代器的值同样按 Await 语义解包
+            val value = if (isAsync && record.awaitValue) awaitIfThenable(rawValue) else rawValue
+            if (done) {
+                // return 请求让内部迭代器结束：内部返回值成为外层生成器的 return 完成值
+                if (request is GeneratorRequest.Return) throw GeneratorReturn(value)
+                return value
             }
             // 产出内部迭代器的值，并等待下一个恢复请求
-            request = yieldAndReceive(channels, getV(innerResult, PropertyKey.Str("value")))
+            request = yieldAndReceive(
+                channels,
+                if (isAsync) awaitIfThenable(value) else value,
+            )
         }
     }
 
