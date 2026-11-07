@@ -13,6 +13,21 @@ import kotlin.test.assertFailsWith
 class ConversionAndAccessorTest {
 
     @Test
+    fun `ToNumeric 对对象使用 number 提示且 Date 算术保持数值`() = runTest {
+        val runtime = TestRuntime()
+        // Date 的默认 ToPrimitive 提示是 string，但 ToNumeric 必须按 number 提示取 valueOf
+        assertEquals(-1000.0, runtime.evalNumber("new Date(1000) - new Date(2000)"))
+        assertEquals(0.0, runtime.evalNumber("new Date(0) * 2"))
+        assertEquals(0.0, runtime.evalNumber("Number(new Date(0))"))
+        assertEquals(0.0, runtime.evalNumber("+new Date(0)"))
+        assertEquals(-1.0, runtime.evalNumber("-new Date(1)"))
+        assertEquals(-1.0, runtime.evalNumber("~new Date(0)"))
+        assertEquals(1.0, runtime.evalNumber("new Date(5) % 2"))
+        // ++/-- 也走 ToNumeric，日期对象被替换为数值
+        assertEquals("number|1", runtime.evalString("var d = new Date(0); d++; typeof d + '|' + d"))
+    }
+
+    @Test
     fun `Boolean 转换与装箱对象`() = runTest {
         val runtime = TestRuntime()
         assertEquals(false, runtime.evalBoolean("Boolean(0)"))

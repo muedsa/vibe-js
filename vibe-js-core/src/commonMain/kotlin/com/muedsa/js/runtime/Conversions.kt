@@ -107,7 +107,8 @@ class Conversions(private val interpreter: Interpreter) {
      * 对象先按 number 提示 ToPrimitive，再对结果做 ToNumber；
      * BigInt 原样返回，供算术/位运算判断类型是否一致。
      */
-    suspend fun toNumeric(value: JSValue): JSValue = toNumericFromPrimitive(toPrimitive(value))
+    suspend fun toNumeric(value: JSValue): JSValue =
+        toNumericFromPrimitive(toPrimitive(value, PreferredType.NUMBER))
 
     /** 已完成 ToPrimitive 的 ToNumeric 入口（关系比较等需要自行控制转换顺序）。 */
     suspend fun toNumericFromPrimitive(value: JSValue): JSValue = when (value) {
