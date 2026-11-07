@@ -1,5 +1,7 @@
 package com.muedsa.js.runtime.value
 
+import com.muedsa.js.runtime.Float32Math
+
 /**
  * DataView 对象：对 [JSArrayBuffer] 的一段窗口提供按类型读写。
  *
@@ -10,8 +12,9 @@ package com.muedsa.js.runtime.value
  * 分离语义（L3.5）：`buffer.isDetached` 为 true 时所有 get/set 方法按规范抛 TypeError，
  * `byteOffset`/`byteLength` 访问器返回 0；本类自身不再重复判断，避免两处逻辑漂移。
  *
- * 位模式转换使用 Kotlin 通用标准库的 [Float.fromBits] / [Double.fromBits]
- * 与 [Float.toRawBits] / [Double.toRawBits]，在 JVM/JS/Wasm/Native 上保持一致。
+ * 位模式转换：double 直接使用 [Double.fromBits] / [Double.toRawBits]；
+ * float32 统一走 [Float32Math]，不依赖 `Double.toFloat()`——Kotlin/JS 下该转换
+ * 是恒等的，不会执行 binary32 舍入。这样 JVM/JS/Wasm/Native 行为完全一致。
  */
 class JSDataView(
     prototype: JSObject?,
@@ -53,9 +56,9 @@ class JSDataView(
     internal fun getUint32(index: Int, littleEndian: Boolean): Long =
         readBits32(index, littleEndian).toLong() and 0xFFFFFFFFL
 
-    /** getFloat32：四个字节按 IEEE-754 单精度位模式解释。 */
+    /** getFloat32：四个字节按 IEEE-754 单精度位模式精确扩展为 double。 */
     internal fun getFloat32(index: Int, littleEndian: Boolean): Double =
-        Float.fromBits(readBits32(index, littleEndian)).toDouble()
+        Float32Math.fromBits(readBits32(index, littleEndian))
 
     /** getFloat64：八个字节按 IEEE-754 双精度位模式解释。 */
     internal fun getFloat64(index: Int, littleEndian: Boolean): Double =
@@ -103,9 +106,9 @@ class JSDataView(
         writeBits32(index, value.toInt(), littleEndian)
     }
 
-    /** setFloat32：把数值转成 IEEE-754 单精度位模式后写入。 */
+    /** setFloat32：按 roundTiesToEven 转成 IEEE-754 单精度位模式后写入。 */
     internal fun setFloat32(index: Int, value: Double, littleEndian: Boolean) {
-        writeBits32(index, value.toFloat().toRawBits(), littleEndian)
+        writeBits32(index, Float32Math.toBits(value), littleEndian)
     }
 
     /** setFloat64：把数值转成 IEEE-754 双精度位模式后写入。 */

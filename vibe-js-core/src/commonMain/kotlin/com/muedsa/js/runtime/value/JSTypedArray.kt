@@ -221,7 +221,7 @@ class JSTypedArray(
         view.setUint8(index * bytesPerElement, toUint8Clamp(value))
     }
 
-    /** 写入 Float32 元素（数值先转换为单精度）。 */
+    /** 写入 Float32 元素（binary32 舍入由 [JSDataView.setFloat32] 统一完成）。 */
     internal fun setFloat32Element(index: Int, value: Double) {
         if (buffer.isDetached) return
         view.setFloat32(index * bytesPerElement, value, LITTLE_ENDIAN)

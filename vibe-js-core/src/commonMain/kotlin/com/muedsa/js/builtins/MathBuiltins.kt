@@ -1,6 +1,7 @@
 package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
+import com.muedsa.js.runtime.Float32Math
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
@@ -128,7 +129,8 @@ object MathBuiltins {
         unary("exp") { value -> exp(value) }
         unary("expm1") { value -> expm1(value) }
         unary("floor") { value -> floor(value) }
-        unary("fround") { value -> value.toFloat().toDouble() }
+        // 不能使用 toFloat()：Kotlin/JS 下它是恒等转换，不会执行 binary32 舍入
+        unary("fround") { value -> Float32Math.round(value) }
         unary("log") { value -> ln(value) }
         unary("log1p") { value -> ln1p(value) }
         unary("log10") { value -> log10(value) }
