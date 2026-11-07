@@ -114,7 +114,7 @@ class Test262SelectionTest {
             Test262Selection.EXCLUDED_PATH,
             reasonOf(
                 Test262Selection.decide(
-                    "test/built-ins/ArrayBuffer/prototype/slice/x.js",
+                    "test/built-ins/SharedArrayBuffer/prototype/slice/x.js",
                     metadata(features = setOf("let")),
                     "es2015",
                     false,
@@ -169,16 +169,51 @@ class Test262SelectionTest {
     }
 
     @Test
-    fun `只使用 evalScript 的用例放行其余宿主钩子跳过`() {
+    fun `只使用 evalScript 与 detachArrayBuffer 的用例放行其余宿主钩子跳过`() {
         val allowed = Test262Selection.skipReason(
             "\$262.evalScript('var a = 1;');", metadata(), "es2015",
         )
         assertNull(allowed)
 
+        // L3.5：detachArrayBuffer 已成为 runner 提供的宿主钩子
+        val detachAllowed = Test262Selection.skipReason(
+            "\$262.detachArrayBuffer(buffer);",
+            metadata(includes = listOf("detachArrayBuffer.js")),
+            "es2015",
+        )
+        assertNull(detachAllowed)
+
         val skipped = Test262Selection.skipReason(
             "\$262.createRealm();", metadata(), "es2015",
         )
         assertEquals("unsupported harness: \$262", skipped)
+    }
+
+    @Test
+    fun `TypedArray ArrayBuffer DataView 特性已纳入 ES2015 子集`() {
+        // L3.5 实现 detach 语义后：三个特性既不被筛选排除，也不按特性名跳过，
+        // 对应的 built-ins 路径不再被路径排除
+        for (feature in listOf("TypedArray", "ArrayBuffer", "DataView")) {
+            val metadata = metadata(features = setOf(feature))
+            assertIs<SelectionDecision.Selected>(
+                Test262Selection.decide(
+                    "test/built-ins/$feature/x.js", metadata, "es2015", false, null,
+                )
+            )
+            assertNull(Test262Selection.skipReason("var x = 1;", metadata, "es2015"))
+        }
+        // ArrayBuffer 源码不再按文本排除；SharedArrayBuffer 仍未实现，继续跳过
+        assertNull(
+            Test262Selection.skipReason(
+                "var b = new ArrayBuffer(8);", metadata(features = setOf("ArrayBuffer")), "es2015",
+            )
+        )
+        assertEquals(
+            "unsupported feature: SharedArrayBuffer",
+            Test262Selection.skipReason(
+                "var b = new SharedArrayBuffer(8);", metadata(), "es2015",
+            ),
+        )
     }
 
     @Test

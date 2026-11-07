@@ -11,6 +11,7 @@ import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSTypedArray
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyDescriptor
@@ -428,6 +429,9 @@ internal object IteratorBuiltins {
     /**
      * 创建数组迭代器：按 [[NextIndex]] 实时读取目标对象的 length 与元素，
      * 支持 arguments 等 array-like 对象在迭代期间的长度变化。
+     *
+     * 目标是被迭代的 TypedArray 时额外执行规范第 8 步：底层缓冲区分离后
+     * 下一次 next 抛 TypeError（detach-typedarray-in-progress 用例）。
      */
     fun createArrayIterator(
         intrinsics: Intrinsics,
@@ -436,6 +440,9 @@ internal object IteratorBuiltins {
     ): JSObject {
         var index = 0L
         return createIteratorWithNext(intrinsics, intrinsics.arrayIteratorPrototype) { interpreter, _, _ ->
+            if (target is JSTypedArray && target.isDetached) {
+                interpreter.typeError("Array iterator target is a TypedArray with a detached buffer")
+            }
             val length = arrayLikeLength(interpreter, target)
             if (index >= length) return@createIteratorWithNext null
             val current = index

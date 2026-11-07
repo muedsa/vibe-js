@@ -15,10 +15,12 @@ import com.muedsa.js.runtime.value.PropertyKey
 /**
  * ArrayBuffer 构造器与 ArrayBuffer.prototype。
  *
- * 首版（L3.1）不支持 resizable / detachable / transfer：
- * - `byteLength` 为只读访问器；
- * - `slice` 通过 SpeciesConstructor 创建副本，默认回到 %ArrayBuffer%；
- * - `isView` 识别 DataView 与全部 TypedArray（含 BigInt64Array/BigUint64Array）。
+ * L3.5 起支持 detach 语义（分离状态由 [JSArrayBuffer] 维护）：
+ * - `byteLength` 为只读访问器，分离后按规范返回 0；
+ * - `slice` 在分离时抛 TypeError（含 species 构造期间被分离的复检）；
+ * - `isView` 识别 DataView 与全部 TypedArray（含 BigInt64Array/BigUint64Array），
+ *   分离后仍返回 true；
+ * - 仍不支持 resizable / transfer（L3.6）。
  */
 object ArrayBufferBuiltins {
 
@@ -85,6 +87,10 @@ object ArrayBufferBuiltins {
                     thisValue,
                     "ArrayBuffer.prototype.slice",
                 )
+                // 规范：第 4 步 IsDetachedBuffer 必须先于长度读取与参数转换
+                if (buffer.isDetached) {
+                    interpreter.typeError("ArrayBuffer.prototype.slice called on a detached ArrayBuffer")
+                }
                 val length = buffer.byteLength
                 val first = relativeIndex(
                     interpreter,
@@ -98,8 +104,7 @@ object ArrayBufferBuiltins {
                     relativeIndex(interpreter, endArgument, length)
                 }
                 val newLength = (last - first).coerceAtLeast(0L)
-                // SpeciesConstructor(O, %ArrayBuffer%)：读取 constructor / @@species；
-                // 简化点：不实现 IsDetachedBuffer 分支（首版没有分离能力）。
+                // SpeciesConstructor(O, %ArrayBuffer%)：读取 constructor / @@species
                 val species = interpreter.speciesConstructor(
                     buffer,
                     intrinsics.arrayBufferConstructor,
@@ -117,6 +122,10 @@ object ArrayBufferBuiltins {
                 }
                 if (result.byteLength.toLong() < newLength) {
                     interpreter.typeError("Species constructor returned a too-small ArrayBuffer")
+                }
+                // 规范：species 构造可能执行任意 JS（例如 detach 源缓冲区），拷贝前复检
+                if (buffer.isDetached) {
+                    interpreter.typeError("ArrayBuffer.prototype.slice called on a detached ArrayBuffer")
                 }
                 buffer.copyInto(
                     target = result,

@@ -6,6 +6,7 @@ import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.value.JSArrayBuffer
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSObject
@@ -279,6 +280,7 @@ private class Test262Runner(
     private fun activeHarnessShims(): List<String> = listOf(
         "Reflect 垫片：仅注入 Object/反射断言所需的最小 Reflect 对象",
         "\$262.evalScript 宿主钩子：同一 realm 内执行新 Script",
+        "\$262.detachArrayBuffer 宿主钩子：把 ArrayBuffer 置为分离（detach）状态",
         "\$DONE 注入：驱动 flags: [async] 用例",
         "iteratorZipUtils.prefixes：生成器替换为等价数组实现",
         "regExpUtils.buildString：改由宿主构造大码点字符串",
@@ -635,6 +637,27 @@ private class Test262Runner(
                     throw interpreter.syntaxError(error.message ?: "Invalid evalScript source")
                 }
                 engine.interpreter.runProgram(program, engine.context.globalEnvironment)
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        // $262.detachArrayBuffer：Test262 宿主钩子，调用 JSArrayBuffer 的内部 detach 状态。
+        // 规范没有把 detach 暴露给 JS，因此只能由运行器通过引擎内部 API 提供；
+        // 重复分离保持幂等，方便 harness 的 $DETACHBUFFER 被多次调用。
+        host.defineDataProperty(
+            key = PropertyKey.Str("detachArrayBuffer"),
+            value = JSNativeFunction(
+                name = "detachArrayBuffer",
+                length = 1,
+                prototype = engine.intrinsics.functionPrototype,
+            ) { interpreter, _, args ->
+                val buffer = args.getOrElse(0) { JSUndefined } as? JSArrayBuffer
+                    ?: interpreter.typeError(
+                        "\$262.detachArrayBuffer requires an ArrayBuffer argument"
+                    )
+                buffer.detach()
+                JSUndefined
             },
             writable = true,
             enumerable = false,

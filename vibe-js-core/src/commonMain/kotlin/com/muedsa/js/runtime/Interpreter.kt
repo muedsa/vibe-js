@@ -930,8 +930,10 @@ class Interpreter(
         if (target is JSTypedArray) {
             when (val classified = target.classifyIndex(key)) {
                 JSTypedArray.IndexKey.NotIndex -> Unit
-                // 非法索引：接收者就是目标自身时失败；接收者不同则规范返回 true 且不写任何对象
-                JSTypedArray.IndexKey.Invalid -> return receiver !== target
+                // 规范：分离缓冲区的 Integer-Indexed [[Set]] 静默成功（返回 true）；
+                // 普通越界索引在接收者为自身时失败（保持既有严格模式行为）
+                JSTypedArray.IndexKey.Invalid ->
+                    return if (target.isDetached) true else receiver !== target
                 is JSTypedArray.IndexKey.Valid -> {
                     if (receiver === target) {
                         setTypedArrayElement(target, classified.index, value)
@@ -1493,7 +1495,9 @@ class Interpreter(
             when (val classified = objectValue.classifyIndex(key)) {
                 JSTypedArray.IndexKey.NotIndex -> Unit
                 JSTypedArray.IndexKey.Invalid -> {
-                    // 越界/非法索引：规范 [[Set]] 返回 false，严格模式由赋值语义抛 TypeError
+                    // 规范：分离缓冲区的 [[Set]] 返回 true 且不写任何元素，严格模式也不抛错；
+                    // 普通越界/非法索引保持既有语义（严格模式由赋值语义抛 TypeError）
+                    if (objectValue.isDetached) return
                     if (strict) throw typeError("Cannot assign to read only property '$key'")
                     return
                 }

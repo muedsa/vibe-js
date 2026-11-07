@@ -43,8 +43,12 @@ object DataViewBuiltins {
                 ?: interpreter.typeError(
                     "First argument to DataView constructor must be an ArrayBuffer"
                 )
-            val bufferByteLength = buffer.byteLength.toLong()
+            // 规范顺序：ToIndex(byteOffset) 先于 IsDetachedBuffer 检查（可观察的 valueOf 已执行）
             val byteOffset = interpreter.toIndex(args.getOrElse(1) { JSUndefined })
+            if (buffer.isDetached) {
+                interpreter.typeError("First argument to DataView constructor must not be detached")
+            }
+            val bufferByteLength = buffer.byteLength.toLong()
             if (byteOffset > bufferByteLength) {
                 interpreter.rangeError(
                     "Start offset $byteOffset is outside the bounds of the DataView"
@@ -61,8 +65,14 @@ object DataViewBuiltins {
                 }
                 requested
             }
+            // 规范：OrdinaryCreateFromConstructor 可能执行用户代码（NewTarget.prototype
+            // getter）并分离缓冲区，返回实例前必须做最后一次 IsDetachedBuffer 检查
+            val instancePrototype = interpreter.prototypeFromNewTarget(newTarget, prototype)
+            if (buffer.isDetached) {
+                interpreter.typeError("First argument to DataView constructor must not be detached")
+            }
             JSDataView(
-                prototype = interpreter.prototypeFromNewTarget(newTarget, prototype),
+                prototype = instancePrototype,
                 buffer = buffer,
                 byteOffset = byteOffset.toInt(),
                 byteLength = byteLength.toInt(),
@@ -88,8 +98,9 @@ object DataViewBuiltins {
             )
         }
         defineGetter("buffer") { it.buffer }
-        defineGetter("byteOffset") { JSNumber(it.byteOffset.toDouble()) }
-        defineGetter("byteLength") { JSNumber(it.byteLength.toDouble()) }
+        // 规范：IsViewOutOfBounds（含分离）时 byteOffset / byteLength 返回 0
+        defineGetter("byteOffset") { JSNumber(if (it.isDetached) 0.0 else it.byteOffset.toDouble()) }
+        defineGetter("byteLength") { JSNumber(if (it.isDetached) 0.0 else it.byteLength.toDouble()) }
 
         /** 定义一个读取方法：签名固定为 (byteOffset, littleEndian)。 */
         fun defineReadMethod(
@@ -283,10 +294,11 @@ object DataViewBuiltins {
     /**
      * 读写方法的公共前置检查（对应规范 GetViewValue / SetViewValue 的前几步）：
      * 品牌检查 → ToIndex(byteOffset) → ToBoolean(littleEndian)
-     * →（写入时）ToNumber/ToBigInt(value) → 越界 RangeError。
+     * →（写入时）ToNumber/ToBigInt(value) → IsDetachedBuffer 检查 → 越界 RangeError。
      *
      * 规范中 SetViewValue 的值转换早于越界检查，但晚于 byteOffset 的 ToIndex，
-     * 因此写入方法的 value 也必须在这里转换。
+     * 因此写入方法的 value 也必须在这里转换；分离检查位于值转换之后，
+     * 保证 `setInt8(0, { valueOf() {...} })` 的可观察顺序与规范一致。
      *
      * @param littleEndianArgIndex littleEndian 在实参中的下标（读取方法为 1，写入方法为 2）；
      *   单字节方法传入 -1，不读取该参数（规范对 INT8/UINT8 传 true，无可观察差异）。
@@ -316,6 +328,11 @@ object DataViewBuiltins {
             convertValue(args.getOrElse(valueArgIndex) { JSUndefined })
         } else {
             null
+        }
+        // 规范：GetViewValue 在 ToIndex 之后、SetViewValue 在 ToNumber/ToBigInt 之后
+        // 检查 IsDetachedBuffer；分离时抛 TypeError（早于越界 RangeError）
+        if (view.isDetached) {
+            interpreter.typeError("$methodName called on a DataView with a detached buffer")
         }
         if (index + elementSize > view.byteLength.toLong()) {
             interpreter.rangeError("Offset is outside the bounds of the DataView")

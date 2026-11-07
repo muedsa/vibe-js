@@ -48,7 +48,9 @@ enum class JSTypedArrayType(
  * [ownPropertyKeys]）参考 Integer-Indexed Exotic Objects：
  * - 规范数字索引字符串（"-0" 除外）走异质路径，其余键走普通属性路径；
  * - 合法索引恒为 `{ writable: true, enumerable: true, configurable: true }`；
- * - 越界或非整数索引视为"不存在"，写入静默失败（严格模式由 Interpreter 抛 TypeError）。
+ * - 越界或非整数索引视为"不存在"，写入静默失败（严格模式由 Interpreter 抛 TypeError）；
+ * - 底层缓冲区分离后 IsValidIntegerIndex 恒为 false：读取 undefined、不存在索引键，
+ *   `length`/`byteLength` 访问器返回 0（访问器由 `TypedArrayBuiltins` 实现）。
  *
  * 字节读写复用 [JSDataView] 的位模式组合/拆分：内部持有一个覆盖同一字节区间的
  * 私有视图，元素索引乘元素宽度即为视图内字节偏移。TypedArray 固定使用小端序。
@@ -77,8 +79,21 @@ class JSTypedArray(
     /** 每个元素的字节宽度（`BYTES_PER_ELEMENT`）。 */
     val bytesPerElement: Int get() = type.bytesPerElement
 
-    /** [[ByteLength]]：视图占用的字节数。 */
+    /**
+     * [[ByteLength]]：视图占用的字节数。
+     *
+     * 这是对象构造时固定的原始长度；分离后内建访问器按规范返回 0，但本属性
+     * 保持不变，供 `subarray` 等需要"分离前长度"的算法使用。
+     */
     val byteLength: Int get() = length * type.bytesPerElement
+
+    /**
+     * 底层缓冲区是否已分离。
+     *
+     * 分离后 Integer-Indexed 异质对象的元素读写、`length`/`byteLength` 访问器
+     * 都按规范切换到 0/undefined 分支。
+     */
+    val isDetached: Boolean get() = buffer.isDetached
 
     /**
      * 内部字节视图：只用于按元素类型读写，不对外暴露。
@@ -113,10 +128,15 @@ class JSTypedArray(
      *
      * 规范数字索引字符串指 `ToString(ToNumber(s)) === s` 的字符串（"-0" 除外，
      * 因为 `ToString(-0)` 是 "0"）；命中后还要求是非负整数且小于 [length]。
+     *
+     * 底层缓冲区分离后 IsValidIntegerIndex 恒为 false，因此所有规范数字索引
+     * 都归入 [IndexKey.Invalid]：读取得到 undefined，属性不存在。
      */
     internal fun classifyIndex(key: PropertyKey): IndexKey {
         val text = (key as? PropertyKey.Str)?.value ?: return IndexKey.NotIndex
         val numeric = canonicalNumericIndexString(text) ?: return IndexKey.NotIndex
+        // IsValidIntegerIndex：分离缓冲区上的任何数字索引都无效
+        if (buffer.isDetached) return IndexKey.Invalid
         // IsInteger：NaN 与小数都不是合法下标
         if (numeric.isNaN() || numeric != floor(numeric)) return IndexKey.Invalid
         // IsValidIntegerIndex：-0、负数与越界都非法（-0 实际已在规范字符串判定被排除）
@@ -131,6 +151,9 @@ class JSTypedArray(
 
     /** 按元素类型读取下标 [index] 的值。 */
     internal fun getElement(index: Int): JSValue {
+        // 分离后 IsValidIntegerIndex 恒为 false，内建按规范读到 undefined；
+        // 回调中途分离缓冲区的用例（如 forEach 的 callbackfn-detachbuffer）依赖该分支。
+        if (buffer.isDetached) return JSUndefined
         val byteIndex = index * bytesPerElement
         return when (type) {
             JSTypedArrayType.INT8 -> JSNumber(view.getInt8(byteIndex).toDouble())
@@ -169,6 +192,8 @@ class JSTypedArray(
      * Uint32 走 [setUint32Element] 以保留无符号 32 位值。
      */
     internal fun setIntElement(index: Int, value: Int) {
+        // 分离后 Integer-Indexed [[Set]] 静默失败（规范返回 true），写入直接丢弃
+        if (buffer.isDetached) return
         val byteIndex = index * bytesPerElement
         when (type) {
             JSTypedArrayType.INT8, JSTypedArrayType.UINT8 ->
@@ -186,21 +211,25 @@ class JSTypedArray(
 
     /** 写入 Uint32 元素（低 32 位）。 */
     internal fun setUint32Element(index: Int, value: Long) {
+        if (buffer.isDetached) return
         view.setUint32(index * bytesPerElement, value, LITTLE_ENDIAN)
     }
 
     /** 写入 Uint8Clamped 元素：先按 ToUint8Clamp 舍入为 0..255。 */
     internal fun setUint8ClampedElement(index: Int, value: Double) {
+        if (buffer.isDetached) return
         view.setUint8(index * bytesPerElement, toUint8Clamp(value))
     }
 
     /** 写入 Float32 元素（数值先转换为单精度）。 */
     internal fun setFloat32Element(index: Int, value: Double) {
+        if (buffer.isDetached) return
         view.setFloat32(index * bytesPerElement, value, LITTLE_ENDIAN)
     }
 
     /** 写入 Float64 元素。 */
     internal fun setFloat64Element(index: Int, value: Double) {
+        if (buffer.isDetached) return
         view.setFloat64(index * bytesPerElement, value, LITTLE_ENDIAN)
     }
 
@@ -211,6 +240,7 @@ class JSTypedArray(
      * 因此这里不再做数值转换，直接按小端序写入 8 字节。
      */
     internal fun setBigInt64Element(index: Int, bits: Long) {
+        if (buffer.isDetached) return
         view.setBigInt64(index * bytesPerElement, bits, LITTLE_ENDIAN)
     }
 
@@ -221,6 +251,7 @@ class JSTypedArray(
      * 数学解释，低 64 位字节一致。
      */
     internal fun setBigUint64Element(index: Int, bits: Long) {
+        if (buffer.isDetached) return
         view.setBigUint64(index * bytesPerElement, bits, LITTLE_ENDIAN)
     }
 
@@ -310,9 +341,13 @@ class JSTypedArray(
     override fun ownPropertyKeys(): List<PropertyKey> {
         val ordinary = super.ownPropertyKeys()
         val keys = ArrayList<PropertyKey>(length + ordinary.size)
-        // 整数索引按升序排在普通字符串键之前
-        for (index in 0 until length) {
-            keys.add(PropertyKey.Str(index.toString()))
+        // 规范：分离缓冲区上的 [[OwnPropertyKeys]] 不产生任何整数索引键，
+        // 因此 Object.keys/for-in 在分离后只看到普通属性
+        if (!buffer.isDetached) {
+            // 整数索引按升序排在普通字符串键之前
+            for (index in 0 until length) {
+                keys.add(PropertyKey.Str(index.toString()))
+            }
         }
         for (key in ordinary) {
             // 规范数字索引字符串无法成为普通属性；过滤掉以防内部入口写入后泄漏

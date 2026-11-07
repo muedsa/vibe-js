@@ -4,8 +4,11 @@ package com.muedsa.js.runtime.value
  * DataView 对象：对 [JSArrayBuffer] 的一段窗口提供按类型读写。
  *
  * 本类只负责按 IEEE-754 位模式、64 位整数位模式与大小端组合/拆分字节；规范级前置检查
- * （品牌检查、ToIndex、越界 RangeError、参数 ToNumber/ToBigInt）全部由
- * `DataViewBuiltins` 完成。
+ * （品牌检查、IsDetachedBuffer、ToIndex、越界 RangeError、参数 ToNumber/ToBigInt）
+ * 全部由 `DataViewBuiltins` 完成。
+ *
+ * 分离语义（L3.5）：`buffer.isDetached` 为 true 时所有 get/set 方法按规范抛 TypeError，
+ * `byteOffset`/`byteLength` 访问器返回 0；本类自身不再重复判断，避免两处逻辑漂移。
  *
  * 位模式转换使用 Kotlin 通用标准库的 [Float.fromBits] / [Double.fromBits]
  * 与 [Float.toRawBits] / [Double.toRawBits]，在 JVM/JS/Wasm/Native 上保持一致。
@@ -19,6 +22,9 @@ class JSDataView(
     /** [[ByteLength]]：窗口长度。 */
     val byteLength: Int,
 ) : JSObject(prototype) {
+
+    /** 被查看的缓冲区是否已分离（供内建访问器与读写前置检查使用）。 */
+    val isDetached: Boolean get() = buffer.isDetached
 
     // ================================================================
     // 读取

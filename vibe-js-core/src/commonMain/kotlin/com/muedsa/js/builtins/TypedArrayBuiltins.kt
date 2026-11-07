@@ -267,9 +267,15 @@ internal object TypedArrayBuiltins {
             )
         }
         defineGetter("buffer") { it.buffer }
-        defineGetter("byteLength") { JSNumber(it.byteLength.toDouble()) }
-        defineGetter("byteOffset") { JSNumber(it.byteOffset.toDouble()) }
-        defineGetter("length") { JSNumber(it.length.toDouble()) }
+        // 规范：分离后 TypedArrayLength / TypedArrayByteLength 为 0，byteOffset 按
+        // IsTypedArrayOutOfBounds 分支返回 0（底层的原始长度/偏移仅在内部算法中使用）
+        defineGetter("byteLength") {
+            JSNumber(if (it.isDetached) 0.0 else it.byteLength.toDouble())
+        }
+        defineGetter("byteOffset") {
+            JSNumber(if (it.isDetached) 0.0 else it.byteOffset.toDouble())
+        }
+        defineGetter("length") { JSNumber(if (it.isDetached) 0.0 else it.length.toDouble()) }
 
         // 规范：%TypedArray%.prototype[@@toStringTag] 是 getter，
         // 只有 this 具有 [[TypedArrayName]] 内部槽时才返回类型名（各类型原型上不再单独定义）
@@ -306,6 +312,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("set", 1) { interpreter, thisValue, args ->
             val target = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.set")
+            requireAttached(interpreter, target, "TypedArray.prototype.set")
             setFromSource(
                 interpreter = interpreter,
                 target = target,
@@ -317,11 +324,14 @@ internal object TypedArrayBuiltins {
 
         defineMethod("subarray", 2) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.subarray")
+            // 规范不在入口处检查分离：begin/end 的 ToInteger 必须先执行，
+            // 分离缓冲区最终由 TypedArraySpeciesCreate 的默认构造器抛 TypeError。
             subarray(interpreter, array, args)
         }
 
         defineMethod("slice", 2) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.slice")
+            requireAttached(interpreter, array, "TypedArray.prototype.slice")
             val len = array.length
             val start = relativeIndex(interpreter, args.getOrElse(0) { JSUndefined }, len)
             val endArgument = args.getOrNull(1)
@@ -332,6 +342,11 @@ internal object TypedArrayBuiltins {
             }
             val count = (end - start).coerceAtLeast(0)
             val result = speciesCreate(interpreter, array, count)
+            // 规范：SpeciesCreate 可能执行任意 JS（例如在 @@species 构造器里分离源缓冲区），
+            // 拷贝前必须重新确认源缓冲区仍然可用；count 为 0 时无需拷贝，不抛错。
+            if (count > 0 && array.isDetached) {
+                interpreter.typeError("TypedArray.prototype.slice called on a detached TypedArray")
+            }
             var targetIndex = 0
             var sourceIndex = start
             while (sourceIndex < end) {
@@ -345,6 +360,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("fill", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.fill")
+            requireAttached(interpreter, array, "TypedArray.prototype.fill")
             val len = array.length
             // 规范顺序：先按 [[ContentType]] 执行 ToBigInt/ToNumber(value)，再归一 start/end
             val valueArgument = args.getOrElse(0) { JSUndefined }
@@ -360,6 +376,10 @@ internal object TypedArrayBuiltins {
             } else {
                 relativeIndex(interpreter, endArgument, len)
             }
+            // 规范：参数转换可能分离缓冲区（coerced-start/end/value-detach 用例），写入前复检
+            if (array.isDetached) {
+                interpreter.typeError("TypedArray.prototype.fill called on a detached TypedArray")
+            }
             var index = start
             while (index < end) {
                 interpreter.setTypedArrayElement(array, index, value)
@@ -371,6 +391,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("copyWithin", 2) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.copyWithin")
+            requireAttached(interpreter, array, "TypedArray.prototype.copyWithin")
             val len = array.length
             val target = relativeIndex(interpreter, args.getOrElse(0) { JSUndefined }, len)
             val start = relativeIndex(interpreter, args.getOrElse(1) { JSUndefined }, len)
@@ -379,6 +400,10 @@ internal object TypedArrayBuiltins {
                 len
             } else {
                 relativeIndex(interpreter, endArgument, len)
+            }
+            // 规范：target/start/end 的转换可能分离缓冲区（coerced-values-*-detached 用例）
+            if (array.isDetached) {
+                interpreter.typeError("TypedArray.prototype.copyWithin called on a detached TypedArray")
             }
             var count = min(end - start, len - target)
             if (count <= 0) {
@@ -410,6 +435,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("map", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.map")
+            requireAttached(interpreter, array, "TypedArray.prototype.map")
             val callback = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, callback, "TypedArray.prototype.map")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -432,6 +458,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("filter", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.filter")
+            requireAttached(interpreter, array, "TypedArray.prototype.filter")
             val callback = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, callback, "TypedArray.prototype.filter")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -457,6 +484,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("forEach", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.forEach")
+            requireAttached(interpreter, array, "TypedArray.prototype.forEach")
             val callback = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, callback, "TypedArray.prototype.forEach")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -473,6 +501,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("reduce", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.reduce")
+            requireAttached(interpreter, array, "TypedArray.prototype.reduce")
             val callback = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, callback, "TypedArray.prototype.reduce")
             val len = array.length
@@ -508,6 +537,7 @@ internal object TypedArrayBuiltins {
         defineMethod("reduceRight", 1) { interpreter, thisValue, args ->
             val array =
                 requireTypedArray(interpreter, thisValue, "TypedArray.prototype.reduceRight")
+            requireAttached(interpreter, array, "TypedArray.prototype.reduceRight")
             val callback = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, callback, "TypedArray.prototype.reduceRight")
             val len = array.length
@@ -542,6 +572,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("join", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.join")
+            requireAttached(interpreter, array, "TypedArray.prototype.join")
             val separatorArgument = args.getOrElse(0) { JSUndefined }
             val separator = if (separatorArgument is JSUndefined) {
                 ","
@@ -553,10 +584,14 @@ internal object TypedArrayBuiltins {
 
         defineMethod("indexOf", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.indexOf")
+            requireAttached(interpreter, array, "TypedArray.prototype.indexOf")
             val searchElement = args.getOrElse(0) { JSUndefined }
             val len = array.length
             if (len == 0) return@defineMethod JSNumber(-1.0)
             val fromIndex = toIntegerOrInfinity(interpreter, args.getOrElse(1) { JSUndefined })
+            // 规范：indexOf 逐项先用 HasProperty 判断；分离后所有整数索引都不存在，
+            // 因此 fromIndex 转换期间分离会得到 -1（元素本身不会被读取）
+            if (array.isDetached) return@defineMethod JSNumber(-1.0)
             if (fromIndex == Double.POSITIVE_INFINITY) return@defineMethod JSNumber(-1.0)
             var index = if (fromIndex >= 0.0) {
                 min(fromIndex, len.toDouble()).toInt()
@@ -575,6 +610,7 @@ internal object TypedArrayBuiltins {
         defineMethod("lastIndexOf", 1) { interpreter, thisValue, args ->
             val array =
                 requireTypedArray(interpreter, thisValue, "TypedArray.prototype.lastIndexOf")
+            requireAttached(interpreter, array, "TypedArray.prototype.lastIndexOf")
             val searchElement = args.getOrElse(0) { JSUndefined }
             val len = array.length
             if (len == 0) return@defineMethod JSNumber(-1.0)
@@ -584,6 +620,8 @@ internal object TypedArrayBuiltins {
             } else {
                 toIntegerOrInfinity(interpreter, args[1])
             }
+            // 与 indexOf 同理：分离后 HasProperty 恒为 false
+            if (array.isDetached) return@defineMethod JSNumber(-1.0)
             if (fromIndex == Double.NEGATIVE_INFINITY) return@defineMethod JSNumber(-1.0)
             var index = if (fromIndex >= 0.0) {
                 min(fromIndex, (len - 1).toDouble()).toInt()
@@ -601,6 +639,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("includes", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.includes")
+            requireAttached(interpreter, array, "TypedArray.prototype.includes")
             val searchElement = args.getOrElse(0) { JSUndefined }
             val len = array.length
             if (len == 0) return@defineMethod JSBoolean.getJsBoolean(false)
@@ -624,6 +663,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("find", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.find")
+            requireAttached(interpreter, array, "TypedArray.prototype.find")
             val predicate = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, predicate, "TypedArray.prototype.find")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -647,6 +687,7 @@ internal object TypedArrayBuiltins {
         defineMethod("findIndex", 1) { interpreter, thisValue, args ->
             val array =
                 requireTypedArray(interpreter, thisValue, "TypedArray.prototype.findIndex")
+            requireAttached(interpreter, array, "TypedArray.prototype.findIndex")
             val predicate = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, predicate, "TypedArray.prototype.findIndex")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -673,6 +714,7 @@ internal object TypedArrayBuiltins {
         defineMethod("findLast", 1) { interpreter, thisValue, args ->
             val array =
                 requireTypedArray(interpreter, thisValue, "TypedArray.prototype.findLast")
+            requireAttached(interpreter, array, "TypedArray.prototype.findLast")
             val predicate = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, predicate, "TypedArray.prototype.findLast")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -701,6 +743,7 @@ internal object TypedArrayBuiltins {
                 thisValue,
                 "TypedArray.prototype.findLastIndex",
             )
+            requireAttached(interpreter, array, "TypedArray.prototype.findLastIndex")
             val predicate = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, predicate, "TypedArray.prototype.findLastIndex")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -728,6 +771,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("some", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.some")
+            requireAttached(interpreter, array, "TypedArray.prototype.some")
             val predicate = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, predicate, "TypedArray.prototype.some")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -753,6 +797,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("every", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.every")
+            requireAttached(interpreter, array, "TypedArray.prototype.every")
             val predicate = args.getOrElse(0) { JSUndefined }
             requireCallback(interpreter, predicate, "TypedArray.prototype.every")
             val thisArg = args.getOrElse(1) { JSUndefined }
@@ -790,6 +835,7 @@ internal object TypedArrayBuiltins {
                 comparefnArgument
             }
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.sort")
+            requireAttached(interpreter, array, "TypedArray.prototype.sort")
             val len = array.length
             if (len <= 1) return@defineMethod array
             val values = ArrayList<JSValue>(len)
@@ -805,6 +851,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("reverse", 0) { interpreter, thisValue, _ ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.reverse")
+            requireAttached(interpreter, array, "TypedArray.prototype.reverse")
             val len = array.length
             val middle = len / 2
             var lower = 0
@@ -824,6 +871,7 @@ internal object TypedArrayBuiltins {
         defineMethod("toReversed", 0) { interpreter, thisValue, _ ->
             val array =
                 requireTypedArray(interpreter, thisValue, "TypedArray.prototype.toReversed")
+            requireAttached(interpreter, array, "TypedArray.prototype.toReversed")
             val len = array.length
             val result = createSameType(interpreter, array, len)
             var index = 0
@@ -853,6 +901,7 @@ internal object TypedArrayBuiltins {
             }
             val array =
                 requireTypedArray(interpreter, thisValue, "TypedArray.prototype.toSorted")
+            requireAttached(interpreter, array, "TypedArray.prototype.toSorted")
             val len = array.length
             val result = createSameType(interpreter, array, len)
             val values = ArrayList<JSValue>(len)
@@ -868,6 +917,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("with", 2) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.with")
+            requireAttached(interpreter, array, "TypedArray.prototype.with")
             val len = array.length
             val relativeIndex =
                 toIntegerOrInfinity(interpreter, args.getOrElse(0) { JSUndefined })
@@ -897,6 +947,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("at", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.at")
+            requireAttached(interpreter, array, "TypedArray.prototype.at")
             val len = array.length
             val relativeIndex = toIntegerOrInfinity(interpreter, args.getOrElse(0) { JSUndefined })
             val index = if (relativeIndex >= 0.0) relativeIndex else len + relativeIndex
@@ -909,6 +960,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("entries", 0) { interpreter, thisValue, _ ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.entries")
+            requireAttached(interpreter, array, "TypedArray.prototype.entries")
             IteratorBuiltins.createArrayIterator(
                 interpreter.intrinsics,
                 array,
@@ -918,6 +970,7 @@ internal object TypedArrayBuiltins {
 
         defineMethod("keys", 0) { interpreter, thisValue, _ ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.keys")
+            requireAttached(interpreter, array, "TypedArray.prototype.keys")
             IteratorBuiltins.createArrayIterator(
                 interpreter.intrinsics,
                 array,
@@ -929,6 +982,7 @@ internal object TypedArrayBuiltins {
         val valuesFunction = BuiltinHelpers.method(intrinsics, "values", 0) {
                 interpreter, thisValue, _ ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.values")
+            requireAttached(interpreter, array, "TypedArray.prototype.values")
             IteratorBuiltins.createArrayIterator(
                 interpreter.intrinsics,
                 array,
@@ -944,6 +998,7 @@ internal object TypedArrayBuiltins {
         defineMethod("toLocaleString", 0) { interpreter, thisValue, _ ->
             val array =
                 requireTypedArray(interpreter, thisValue, "TypedArray.prototype.toLocaleString")
+            requireAttached(interpreter, array, "TypedArray.prototype.toLocaleString")
             if (array.length == 0) {
                 JSString("")
             } else {
@@ -1040,6 +1095,11 @@ internal object TypedArrayBuiltins {
         source: JSTypedArray,
         prototype: JSObject,
     ): JSTypedArray {
+        // 规范：InitializeTypedArrayFromTypedArray 先检查 IsTypedArrayOutOfBounds，
+        // 分离缓冲区属于 out-of-bounds，直接抛 TypeError（不分配新缓冲区）
+        if (source.isDetached) {
+            interpreter.typeError("Cannot construct a TypedArray from a detached TypedArray")
+        }
         val result = allocate(interpreter, type, source.length.toLong(), prototype)
         if (source.type == type) {
             // 同类型按字节复制，与逐元素读取等价且更快（方向：source → result）
@@ -1063,8 +1123,12 @@ internal object TypedArrayBuiltins {
         defaultPrototype: JSObject,
     ): JSTypedArray {
         val elementSize = type.bytesPerElement
-        val bufferByteLength = buffer.byteLength.toLong()
         val byteOffset = interpreter.toIndex(args.getOrElse(1) { JSUndefined })
+        // 规范：ToIndex(byteOffset) 之后检查 IsDetachedBuffer（可观察的 valueOf 已执行）
+        if (buffer.isDetached) {
+            interpreter.typeError("First argument to TypedArray constructor must not be detached")
+        }
+        val bufferByteLength = buffer.byteLength.toLong()
         // 规范：起始偏移必须是元素宽度的整数倍
         if (byteOffset % elementSize != 0L) {
             interpreter.rangeError(
@@ -1088,6 +1152,10 @@ internal object TypedArrayBuiltins {
             remainingByteLength / elementSize
         } else {
             val requested = interpreter.toIndex(lengthArgument)
+            // 规范：ToIndex(length) 之后再次检查 IsDetachedBuffer
+            if (buffer.isDetached) {
+                interpreter.typeError("First argument to TypedArray constructor must not be detached")
+            }
             if (requested * elementSize > remainingByteLength) {
                 interpreter.rangeError("Invalid ${type.typeName} length")
             }
@@ -1210,8 +1278,14 @@ internal object TypedArrayBuiltins {
         if (targetOffset < 0.0) {
             interpreter.rangeError("offset is out of bounds")
         }
+        // 规范：ToIntegerOrInfinity(offset) 可能分离目标缓冲区，读取源之前必须复检
+        requireAttached(interpreter, target, "TypedArray.prototype.set")
         val targetLength = target.length
         if (source is JSTypedArray) {
+            // 规范：源 TypedArray 的缓冲区分离时抛 TypeError（先于长度与范围检查）
+            if (source.isDetached) {
+                interpreter.typeError("Source TypedArray has a detached buffer")
+            }
             val sourceLength = source.length
             if (targetOffset + sourceLength > targetLength.toDouble()) {
                 interpreter.rangeError("Source is too large")
@@ -1285,7 +1359,9 @@ internal object TypedArrayBuiltins {
         array: JSTypedArray,
         args: List<JSValue>,
     ): JSValue {
-        val sourceLength = array.length
+        // TypedArrayLength：缓冲区已分离时按规范取 0；此时若 species 使用默认构造器，
+        // 会因"绑定分离缓冲区"抛 TypeError，而自定义 species 仍可返回自己的结果。
+        val sourceLength = if (array.isDetached) 0 else array.length
         val begin = relativeIndex(interpreter, args.getOrElse(0) { JSUndefined }, sourceLength)
         val endArgument = args.getOrNull(1)
         val end = if (endArgument == null || endArgument is JSUndefined) {
@@ -1371,6 +1447,23 @@ internal object TypedArrayBuiltins {
         name: String,
     ): JSTypedArray = thisValue as? JSTypedArray
         ?: interpreter.typeError("$name requires that 'this' be a TypedArray")
+
+    /**
+     * ValidateTypedArray 的分离检查部分：底层缓冲区已分离时抛 TypeError。
+     *
+     * 大多数 %TypedArray%.prototype 方法在品牌检查后都会执行 ValidateTypedArray，
+     * 分离即视为 out-of-bounds；少数方法（buffer/byteOffset/byteLength/length/
+     * @@toStringTag 访问器与元素读写）不执行该检查，因此不能统一放在品牌检查里。
+     */
+    private fun requireAttached(
+        interpreter: Interpreter,
+        array: JSTypedArray,
+        name: String,
+    ) {
+        if (array.isDetached) {
+            interpreter.typeError("$name called on a TypedArray with a detached buffer")
+        }
+    }
 
     /** 回调参数校验。 */
     private fun requireCallback(interpreter: Interpreter, callback: JSValue, name: String) {

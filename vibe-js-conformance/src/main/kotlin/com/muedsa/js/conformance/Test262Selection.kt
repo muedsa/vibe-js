@@ -128,11 +128,12 @@ internal object Test262Selection {
             return SkipDecision("unsupported feature: $unsupportedFeature")
         }
         if (source.contains("\$262")) {
-            // 仅放行只使用 $262.evalScript 的用例；其余宿主钩子（agent/createRealm 等）仍跳过
+            // 当前只放行 runner 真正提供的宿主钩子：evalScript 与 detachArrayBuffer；
+            // 其余钩子（agent/createRealm 等）仍跳过
             val members = dollar262MemberPattern.findAll(source)
                 .map { it.groupValues[1] }
                 .toSet()
-            if (members.isEmpty() || members.any { it != "evalScript" }) {
+            if (members.isEmpty() || members.any { it !in supportedDollar262Members }) {
                 return SkipDecision("unsupported harness: \$262", textMatchOnly = true)
             }
         }
@@ -144,13 +145,12 @@ internal object Test262Selection {
         if (source.contains("propertyBagObserver")) {
             return SkipDecision("unsupported harness: Proxy", textMatchOnly = true)
         }
-        // ArrayBuffer 等宿主型内建明确排除，测试源码中可能直接构造
-        if (suite == "es2015" &&
-            (source.contains("new ArrayBuffer") || source.contains("new SharedArrayBuffer"))
-        ) {
-            return SkipDecision("unsupported feature: ArrayBuffer", textMatchOnly = true)
+        // 未实现的宿主型内建：测试源码中可能直接构造（ArrayBuffer 已支持，SharedArrayBuffer 仍排除）
+        if (suite == "es2015" && source.contains("new SharedArrayBuffer")) {
+            return SkipDecision("unsupported feature: SharedArrayBuffer", textMatchOnly = true)
         }
-        // ES2015 子集中排除 Proxy/Generator 内容（BigInt 已在 L3.3 纳入支持范围）
+        // ES2015 子集中排除 Proxy/Generator 内容（BigInt 已在 L3.3 纳入支持范围，
+        // TypedArray/ArrayBuffer/DataView 已在 L3.5 纳入）
         if (suite == "es2015" &&
             (source.contains("Proxy") ||
                 source.contains("function *") ||
@@ -179,9 +179,12 @@ internal object Test262Selection {
         """\bfunction\s*(?:/\*[\s\S]*?\*/\s*)*\*"""
     )
 
-    /** `$262.<member>` 访问的成员名：当前只放行 evalScript。 */
+    /** `$262.<member>` 访问的成员名：当前放行 evalScript 与 detachArrayBuffer。 */
     private val dollar262MemberPattern =
         Regex("""\$262\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)""")
+
+    /** runner 在 `$262` 上提供的宿主钩子；其余成员按不支持跳过。 */
+    private val supportedDollar262Members = setOf("evalScript", "detachArrayBuffer")
 
     /**
      * ES2015 子集选择：用例的全部 features 必须在此集合内。
@@ -197,6 +200,8 @@ internal object Test262Selection {
         "Reflect", "Reflect.construct",
         // L3.3 已实现 BigInt 运行时：字面量/typeof/算术/转换/内建与 Test262 BigInt 用例
         "BigInt",
+        // L3.5 已实现 ArrayBuffer detach、DataView 与 TypedArray（含 BigInt 视图）语义
+        "TypedArray", "ArrayBuffer", "DataView",
         "for-of", "new.target", "super", "Symbol", "Symbol.iterator",
     "Symbol.asyncIterator",
         "Symbol.toPrimitive", "Symbol.toStringTag", "Symbol.hasInstance",
@@ -240,20 +245,14 @@ internal object Test262Selection {
 
     /**
      * ES2015 子集中排除的路径片段：
-     * - 未实现的宿主型内建（ArrayBuffer/DataView/TypedArray 等）；
+     * - 未实现的宿主型内建（SharedArrayBuffer/Atomics 等）；
      * - 未实现的 AsyncIterator 原型；
-     * - 内容依赖 Generator 语法的计算属性名用例（Generator 明确排除）。
+     * - 内容依赖 Generator 语法的计算属性名用例（Generator 明确排除）；
+     * - 依赖 TypedArray 但不属于 L3.5 范围的 Object.seal 整数索引语义用例。
      */
     private val es2015ExcludedPathFragments = listOf(
-        "test/built-ins/ArrayBuffer/",
-        "test/built-ins/DataView/",
-        "test/built-ins/TypedArray/",
-        "test/built-ins/TypedArrayConstructors/",
         "test/built-ins/SharedArrayBuffer/",
         "test/built-ins/Atomics/",
-        // 依赖 TypedArray 的 concat 大型用例
-        "large-typed-array.js",
-        "small-typed-array.js",
         "test/built-ins/AsyncIteratorPrototype/",
         "-from-generator-function-declaration.js",
         "-from-yield-expression.js",
@@ -261,10 +260,8 @@ internal object Test262Selection {
         "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
         // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
         "test/language/expressions/optional-chaining/new-target-optional-call.js",
-        // 宿主型二进制内建（ArrayBuffer/Uint8Array）明确不在支持范围
-        "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/",
-        "test/language/statements/class/subclass/builtins.js",
-        // TypedArray 的 Object.seal 用例无 features 标注，依赖明确排除的 TypedArray
+        // TypedArray 的 Object.seal 用例无 features 标注，依赖 Object.seal 对整数索引
+        // 异质对象的完整语义（不在 L3.5 范围）
         "test/built-ins/Object/seal/seal-int8array.js",
         "test/built-ins/Object/seal/seal-int16array.js",
         "test/built-ins/Object/seal/seal-int32array.js",
@@ -274,15 +271,14 @@ internal object Test262Selection {
         "test/built-ins/Object/seal/seal-uint32array.js",
         "test/built-ins/Object/seal/seal-float32array.js",
         "test/built-ins/Object/seal/seal-float64array.js",
-        // BigInt64Array/BigUint64Array 依赖尚未实现的 BigInt TypedArray
         "test/built-ins/Object/seal/seal-bigint64array.js",
         "test/built-ins/Object/seal/seal-biguint64array.js",
     )
 
-    /** 当前范围外或尚未实现的特性（Reflect、BigInt 已纳入支持范围）。 */
+    /** 当前范围外或尚未实现的特性（Reflect、BigInt、TypedArray 已纳入支持范围）。 */
     private val unsupportedFeatures = setOf(
         "Proxy",
-        "TypedArray", "ArrayBuffer", "DataView", "SharedArrayBuffer", "Atomics",
+        "SharedArrayBuffer", "Atomics",
         "Intl", "WeakRef", "FinalizationRegistry",
         "decorators",
         "generator", "async-iteration",
