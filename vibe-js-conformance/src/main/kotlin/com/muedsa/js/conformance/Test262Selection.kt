@@ -39,7 +39,7 @@ internal data class SkipDecision(
  * Test262 用例的选择与跳过判定。
  *
  * 从运行器中抽出为纯函数，目的有两个：
- * - 报告能区分"筛选阶段没纳入"和"选中后跳过"，避免把 836 个跳过误当成全仓缺口；
+ * - 报告能区分"筛选阶段没纳入"和"选中后跳过"，避免把选中后跳过的用例误当成全仓缺口；
  * - 选择规则可以被单元测试直接覆盖，不必跑两万条语料。
  *
  * 本对象只做判定，不读文件、不执行脚本。
@@ -126,6 +126,8 @@ internal object Test262Selection {
         suite: String,
         relativePath: String = "",
     ): SkipDecision? {
+        // module 仍未支持；generator 为旧版语料的历史 flag（现行语料已改用
+        // features: [generators]），保留判定以兼容旧语料，不影响已纳入基线的生成器用例
         if (metadata.flags.any { it in setOf("module", "generator") }) {
             return SkipDecision("unsupported flag")
         }
@@ -243,8 +245,6 @@ internal object Test262Selection {
         "test/built-ins/Atomics/",
         // V8/最新规范允许子类实例调用 RegExp.prototype.compile，测试基于旧草案
         "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
-        // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
-        "test/language/expressions/optional-chaining/new-target-optional-call.js",
         // TypedArray 的 Object.seal 用例无 features 标注，依赖 Object.seal 对整数索引
         // 异质对象的完整语义（不在 L3.5 范围）
         "test/built-ins/Object/seal/seal-int8array.js",

@@ -125,6 +125,20 @@ class Test262SelectionTest {
     }
 
     @Test
+    fun `可选链 new target 用例在 Reflect 内建支持后不再路径排除`() {
+        // 旧规则以"项目明确排除 Reflect"为由排除该用例；Reflect 已由核心内建提供，
+        // 且该用例在 strict/sloppy 两种变体下均通过，移除路径排除可防止再次误排
+        val decision = Test262Selection.decide(
+            "test/language/expressions/optional-chaining/new-target-optional-call.js",
+            metadata(features = setOf("optional-chaining")),
+            "es2015",
+            includeEsid = false,
+            filter = null,
+        )
+        assertIs<SelectionDecision.Selected>(decision)
+    }
+
+    @Test
     fun `filter 不匹配的用例记为筛选排除`() {
         val decision = Test262Selection.decide(
             "test/language/statements/for-of/x.js", metadata(es5Id = "15.1"), "es5", false, filter = "Map",

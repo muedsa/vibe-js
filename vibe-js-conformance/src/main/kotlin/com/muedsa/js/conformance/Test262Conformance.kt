@@ -31,7 +31,8 @@ import kotlin.system.exitProcess
  * - `--suite es5`：test/language 与 test/built-ins 中带 `es5id` 的脚本；
  * - `--suite es2015`：非 ES5、特性全部受支持的用例（`--include-esid` 时纳入 esid 标注用例）；
  * - 支持 includes、negative（parse/runtime）、strict/sloppy/raw 变体与 `flags: [async]`；
- * - module/generator、未支持特性与部分 `$262` 宿主钩子由 `Test262Selection` 跳过并记录原因；
+ * - module、未支持特性与部分 `$262` 宿主钩子由 `Test262Selection` 跳过并记录原因；
+ * - 核心库已提供 Reflect/Proxy，运行器不再注入 Reflect 垫片；
  * - 每个变体使用独立 Engine，加载 sta.js/assert.js 与 metadata includes。
  */
 fun main(args: Array<String>) {
@@ -123,41 +124,17 @@ private class Test262Runner(
     /** 用例执行器：统一负责引擎创建、超时、分类与关闭。 */
     private val runtime = CaseRuntime(settings)
 
-    /** 仅用于测试断言的最小 Reflect 垫片（核心库明确不提供 Reflect）。 */
-    private val REFLECT_SHIM = """
-        if (typeof Reflect === 'undefined') {
-          var Reflect = {
-            ownKeys: function (o) {
-              return Object.getOwnPropertyNames(o).concat(Object.getOwnPropertySymbols(o));
-            },
-            getOwnPropertyDescriptor: function (o, k) {
-              return Object.getOwnPropertyDescriptor(o, k);
-            },
-            get: function (o, k) { return o[k]; },
-            has: function (o, k) { return k in o; },
-            set: function (o, k, v) { o[k] = v; return true; },
-            defineProperty: function (o, k, d) { Object.defineProperty(o, k, d); return true; }
-          };
-        }
-    """.trimIndent()
-
-    /** harness 文件只读取一次，供所有用例复用。 */
+    /**
+     * harness 文件只读取一次，供所有用例复用。
+     *
+     * 当前只对 regExpUtils.js 做注入：属性转义语料需要构造上百万码点的字符串，
+     * 解释执行原实现过慢，改为调用运行器注册的宿主实现。
+     */
     private val harnessSources: Map<String, String> by lazy {
         harnessDir.listFiles()
             ?.filter { it.isFile && it.name.endsWith(".js") }
             ?.associate { file ->
                 var source = file.readText().removePrefix("\uFEFF")
-                if (file.name == "iteratorZipUtils.js") {
-                    // 生成器语法明确排除；把 prefixes 生成器替换为等价的数组实现
-                    source = source.replace(
-                        Regex("""function\*\s+prefixes\(s\)\s*\{[\s\S]*?\n  \}"""),
-                        "function prefixes(s) {\n" +
-                            "    var result = [];\n" +
-                            "    for (var i = 0; i <= s.length; ++i) result.push(s.slice(0, i));\n" +
-                            "    return result;\n" +
-                            "  }",
-                    )
-                }
                 if (file.name == "regExpUtils.js") {
                     // 属性转义语料需要构造上百万码点的字符串；解释执行原实现过慢，
                     // 改为调用 runner 注入的宿主实现（语义保持一致）
@@ -276,13 +253,12 @@ private class Test262Runner(
      * 列出本次实际生效的 harness 替换与注入。
      *
      * 这些改写会影响"测试到底验证了什么"，必须在报告里单列，而不是只写在文档里。
+     * Reflect/Proxy 已由核心内建直接提供，运行器不再注入垫片，因此本节不再列出。
      */
     private fun activeHarnessShims(): List<String> = listOf(
-        "Reflect 垫片：仅注入 Object/反射断言所需的最小 Reflect 对象",
         "\$262.evalScript 宿主钩子：同一 realm 内执行新 Script",
         "\$262.detachArrayBuffer 宿主钩子：把 ArrayBuffer 置为分离（detach）状态",
         "\$DONE 注入：驱动 flags: [async] 用例",
-        "iteratorZipUtils.prefixes：生成器替换为等价数组实现",
         "regExpUtils.buildString：改由宿主构造大码点字符串",
         "严格模式前缀：strict 变体在源码前插入 \"use strict\"",
     )
@@ -565,11 +541,6 @@ private class Test262Runner(
             )
         }
         return try {
-            // joint-iteration 的 harness 通过 Reflect 观测结果对象属性；
-            // 核心库不提供 Reflect，这里仅注入测试断言所需的最小垫片。
-            val usesReflect = test.source.contains("Reflect") ||
-                includes.any { it.contains("Reflect") }
-            if (usesReflect) engine.run(REFLECT_SHIM)
             for (include in includes) {
                 engine.run(include)
             }
@@ -880,7 +851,7 @@ private data class Test262Report(
                 } else {
                     appendLine("- 范围：test/language + test/built-ins 中带 `es5id` 的脚本")
                 }
-                appendLine("- 跳过：module/async/generator、当前不支持特性、\$262、缺失 include")
+                appendLine("- 跳过：module 等不支持的 flag、当前不支持特性、运行器未提供的 \$262 钩子、缺失 include")
                 appendLine()
                 appendLine("| 指标 | 数值 |")
                 appendLine("|---|---:|")
@@ -1049,7 +1020,7 @@ private data class Test262Report(
     /**
      * 写出被跳过用例的明细。
      *
-     * 文本筛选（Generator/BigInt/Proxy）可能因注释或字符串误排，
+     * 文本筛选（`$262` 宿主钩子、`Array.print`、SharedArrayBuffer）可能因注释或字符串误排，
      * 把每条跳过记录落盘后，人工只需 grep 该文件即可复核。
      */
     fun writeSkippedList(directory: File) {

@@ -53,22 +53,24 @@ fun main(args: Array<String>) {
 }
 
 /**
- * 解析器允许列表（按文件名匹配）：项目明确排除的语法（当前为 Generator）
- * 在 strict 模式下不计为门禁失败。
+ * pass / pass-explicit 允许列表（按文件名匹配）：清单已清空，当前 0 条允许。
+ *
+ * strict 模式下，未列入清单的 pass 文件解析失败一律计为门禁失败；
+ * 清单保留用于记录经确认的语料/规范差异，新增条目必须先排除解析器回归。
  */
 private val parserPassAllowlist: Set<String> = loadParserPassAllowlist()
 
 /**
- * fail 负例允许列表（按文件名匹配）：语料早于 ES2022 公有字段，
- * 且部分负例属于现行 Annex B 允许的非严格模式语义；
- * 这类文件在现行规范下合法，strict 模式下不计为门禁失败。
+ * fail 负例允许列表（按文件名匹配）：语料按旧版规范标记为负例，
+ * 但现行规范已合法（ES2022 公有字段、非严格模式 \8/\9、
+ * Annex B 赋值目标与 for-in 初始化器）；strict 模式下这些文件被接受不计为门禁失败。
  */
 private val parserFailAllowlist: Set<String> = loadAllowlist("parser-fail-allowlist.txt")
 
 /**
  * early 允许列表（按文件名匹配）：语料按旧版规范标记为早期错误，
- * 但现行 Annex B 语义允许（块级重复函数声明、catch 参数与 for-var 同名）。
- * strict 模式下只有这些文件可以被接受，其余 early 文件必须被拒绝。
+ * 但现行 Annex B/规范语义允许（块级重复函数声明、catch 参数与 for-var 同名），
+ * 当前共 5 条。strict 模式下只有这些文件可以被接受，其余 early 文件必须被拒绝。
  */
 private val parserEarlyAllowlist: Set<String> = loadAllowlist("parser-early-allowlist.txt")
 
@@ -108,7 +110,6 @@ private class ParserConformanceRunner(
 
     private fun runExpectSuccess(name: String, directory: File): CategoryReport {
         val files = scriptFiles(directory)
-        val allowGenerator = name == "pass" || name == "pass-explicit"
         var passed = 0
         var failed = 0
         var allowed = 0
@@ -122,7 +123,7 @@ private class ParserConformanceRunner(
                 passed++
             } catch (error: ParseException) {
                 val item = failure(file, error)
-                if (allowGenerator && file.name in parserPassAllowlist) {
+                if (file.name in parserPassAllowlist) {
                     allowed++
                     allowedFailures.add(item)
                 } else {
@@ -131,7 +132,7 @@ private class ParserConformanceRunner(
                 }
             } catch (error: LexerException) {
                 val item = failure(file, error)
-                if (allowGenerator && file.name in parserPassAllowlist) {
+                if (file.name in parserPassAllowlist) {
                     allowed++
                     allowedFailures.add(item)
                 } else {
@@ -358,19 +359,32 @@ private data class ParserRunReport(
                     )
                 }
                 appendLine()
-                appendLine("“允许”为允许列表中的明确排除项（Generator 语法与公有字段的过期负例），不计入门禁失败。")
+                val passAllowed = categories
+                    .filter { it.name == "pass" || it.name == "pass-explicit" }
+                    .sumOf { it.allowed }
+                val failAllowed = categories.find { it.name == "fail" }?.allowed ?: 0
+                val passAllowlistNote = if (parserPassAllowlist.isEmpty()) {
+                    "，清单已清空"
+                } else {
+                    "，清单 ${parserPassAllowlist.size} 条"
+                }
+                appendLine(
+                    "“允许”为允许列表内的已知差异：pass/pass-explicit $passAllowed 条" +
+                        "$passAllowlistNote；fail $failAllowed 条（语料过期负例），不计入门禁失败。"
+                )
                 appendLine()
                 appendLine(
                     "早期错误用例（early）：共 ${early.total}，解析成功 ${early.parsed}，" +
                         "被拒绝 ${early.rejected}，崩溃 ${early.crashes}。"
                 )
                 appendLine(
-                    "其中允许列表 ${early.allowedFiles.size}（现行 Annex B 语义允许），" +
-                        "意外接受 ${early.unexpectedAcceptedFiles.size}（strict 门禁失败项）。"
+                    "其中允许列表 ${early.allowedFiles.size} 条（清单 ${parserEarlyAllowlist.size} 条，" +
+                        "均为现行 Annex B/规范允许、旧版语料仍标记为早期错误的用例），" +
+                        "意外接受 ${early.unexpectedAcceptedFiles.size} 条（strict 门禁失败项）。"
                 )
                 appendLine(
                     "strict 模式要求 early 只接受允许列表内的文件；" +
-                        "剩余 Generator 形参早期错误已全部拒绝。"
+                        "Generator 形参 yield、async 形参 await 等早期错误必须被拒绝。"
                 )
                 appendLine("模块用例跳过：$moduleSkipped。")
                 appendLine()

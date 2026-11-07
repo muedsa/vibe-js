@@ -68,7 +68,7 @@ val downloadParserCorpus = tasks.register<JavaExec>("downloadParserCorpus") {
  *
  * 默认只生成报告（退出码 0）；发生崩溃时退出码 2。
  * 使用 `-Pstrict` 时，允许列表（`src/main/resources/parser-pass-allowlist.txt`，
- * 当前为明确排除的 Generator）之外的任何正/负向语法不一致都会导致任务失败。
+ * 当前已清空、0 条允许）之外的任何正/负向语法不一致都会导致任务失败。
  */
 val parserConformance = tasks.register<JavaExec>("parserConformance") {
     group = "verification"
@@ -143,7 +143,7 @@ val test262Conformance = tasks.register<JavaExec>("test262Conformance") {
  * 运行 Test262 ES2015 特性子集（CI 门禁使用 -Pstrict）。
  *
  * 选择 test/language 与 test/built-ins 中 features 全部落在支持集合内的用例；
- * 未支持特性/Generator/模块等继续跳过，用于推进 ES2015 语义收敛。
+ * 未支持特性/模块等继续跳过，用于推进 ES2015 语义收敛。
  */
 val test262Es2015Conformance = tasks.register<JavaExec>("test262Es2015Conformance") {
     group = "verification"

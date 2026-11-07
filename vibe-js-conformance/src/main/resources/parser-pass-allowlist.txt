@@ -1,5 +1,5 @@
-# test262-parser-tests pass/pass-explicit 允许列表（尚未支持的 Generator 语法扩展）
-# 每行一个文件名（不含目录）；strict 模式下这些文件的解析失败不计为门禁失败。
-# 当前为空：同步 function* 声明/表达式、生成器方法（`*m() {}`、`async *m() {}`）
-# 与 `yield /re/` 的词法上下文均已实现，pass/pass-explicit 全部解析通过。
-# 更新方式：实现对应语法后删除对应行；新增误报需先确认不是回归。
+# test262-parser-tests pass / pass-explicit 允许列表（strict 门禁）
+# 每行一个文件名（不含目录）；strict 模式下只有这些文件允许解析失败。
+# 当前已清空（0 条允许）：Generator / async generator 语法、生成器方法与
+# `yield /re/` 词法上下文等此前缺口均已实现，pass / pass-explicit 全部解析通过。
+# 清单保留用于记录经确认的语料/规范差异；新增条目必须先确认不是解析器回归。
