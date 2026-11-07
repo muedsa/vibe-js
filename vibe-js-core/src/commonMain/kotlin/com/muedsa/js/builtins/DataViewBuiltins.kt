@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArrayBuffer
+import com.muedsa.js.runtime.value.JSBigInt
 import com.muedsa.js.runtime.value.JSDataView
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSString
@@ -15,8 +16,11 @@ import com.muedsa.js.runtime.value.PropertyKey
  *
  * 构造签名：`new DataView(buffer, byteOffset = 0, byteLength = buffer.byteLength - byteOffset)`；
  * 读写方法的签名：`getXxx(byteOffset, littleEndian = false)` 与
- * `setXxx(byteOffset, value, littleEndian = false)`。所有数值按 IEEE-754 位模式
- * 与大小端在 [JSDataView] 中完成。
+ * `setXxx(byteOffset, value, littleEndian = false)`。所有数值按 IEEE-754 位模式、
+ * 64 位整数位模式与大小端在 [JSDataView] 中完成。
+ *
+ * BigInt 方法（getBigInt64/getBigUint64/setBigInt64/setBigUint64）按规范使用
+ * ToBigInt64/ToBigUint64 转换写入值，读取返回 JSBigInt 原始值。
  */
 object DataViewBuiltins {
 
@@ -128,6 +132,8 @@ object DataViewBuiltins {
                         // 写入方法签名：(byteOffset, value, littleEndian)
                         littleEndianArgIndex = 2,
                         valueArgIndex = 1,
+                        // 规范：SetViewValue 先 ToNumber(value)，再检查越界
+                        convertValue = { JSNumber(interpreter.toNumber(it)) },
                     )
                     write(
                         access.view,
@@ -135,6 +141,42 @@ object DataViewBuiltins {
                         access.littleEndian,
                         requireNotNull(access.number),
                         interpreter,
+                    )
+                    JSUndefined
+                },
+            )
+        }
+
+        /**
+         * 定义一个 BigInt 写入方法：签名同样为 (byteOffset, value, littleEndian)。
+         *
+         * [convert] 决定使用 ToBigInt64 还是 ToBigUint64；两者都调用一次 ToBigInt，
+         * 因此必须在越界检查之前执行（保证可观察的转换顺序与规范一致）。
+         */
+        fun defineBigIntWriteMethod(
+            name: String,
+            elementSize: Int,
+            convert: suspend (Interpreter, JSValue) -> JSBigInt,
+            write: (JSDataView, Int, Boolean, JSBigInt) -> Unit,
+        ) {
+            prototype.defineDataProperty(
+                key = PropertyKey.Str(name),
+                value = BuiltinHelpers.method(intrinsics, name, 2) { interpreter, thisValue, args ->
+                    val access = prepareViewAccess(
+                        interpreter = interpreter,
+                        thisValue = thisValue,
+                        args = args,
+                        methodName = name,
+                        elementSize = elementSize,
+                        littleEndianArgIndex = 2,
+                        valueArgIndex = 1,
+                        convertValue = { convert(interpreter, it) },
+                    )
+                    write(
+                        access.view,
+                        access.index,
+                        access.littleEndian,
+                        requireNotNull(access.bigInt),
                     )
                     JSUndefined
                 },
@@ -191,6 +233,28 @@ object DataViewBuiltins {
             view.setFloat64(index, interpreter.toNumber(value), littleEndian)
         }
 
+        // BigInt 读写：读取返回 JSBigInt；写入先做 ToBigInt64/ToBigUint64 再写入位模式
+        defineReadMethod("getBigInt64", 8) { view, index, littleEndian ->
+            view.getBigInt64(index, littleEndian)
+        }
+        defineReadMethod("getBigUint64", 8) { view, index, littleEndian ->
+            view.getBigUint64(index, littleEndian)
+        }
+        defineBigIntWriteMethod(
+            name = "setBigInt64",
+            elementSize = 8,
+            convert = { interpreter, value -> interpreter.conversions.toBigInt64(value) },
+        ) { view, index, littleEndian, value ->
+            view.setBigInt64(index, value.toInt64Bits(), littleEndian)
+        }
+        defineBigIntWriteMethod(
+            name = "setBigUint64",
+            elementSize = 8,
+            convert = { interpreter, value -> interpreter.conversions.toBigUint64(value) },
+        ) { view, index, littleEndian, value ->
+            view.setBigUint64(index, value.toInt64Bits(), littleEndian)
+        }
+
         // @@toStringTag 写在原型上（规范：writable=false, enumerable=false, configurable=true）
         prototype.defineDataProperty(
             key = PropertyKey.Sym(intrinsics.symbolToStringTag),
@@ -210,21 +274,25 @@ object DataViewBuiltins {
         val index: Int,
         /** 是否小端（单字节方法恒为 false）。 */
         val littleEndian: Boolean,
-        /** 写入方法已转换的数值；读取方法为 null。 */
+        /** 写入方法已按 ToNumber 转换的值；读取方法或 BigInt 写入方法为 null。 */
         val number: JSNumber?,
+        /** 写入方法已按 ToBigInt64/ToBigUint64 转换的值；读取方法或 Number 写入方法为 null。 */
+        val bigInt: JSBigInt?,
     )
 
     /**
      * 读写方法的公共前置检查（对应规范 GetViewValue / SetViewValue 的前几步）：
      * 品牌检查 → ToIndex(byteOffset) → ToBoolean(littleEndian)
-     * →（写入时）ToNumber(value) → 越界 RangeError。
+     * →（写入时）ToNumber/ToBigInt(value) → 越界 RangeError。
      *
-     * 规范中 SetViewValue 的 ToNumber(value) 早于越界检查，但晚于 byteOffset 的
-     * ToIndex，因此写入方法的 value 也必须在这里转换。
+     * 规范中 SetViewValue 的值转换早于越界检查，但晚于 byteOffset 的 ToIndex，
+     * 因此写入方法的 value 也必须在这里转换。
      *
      * @param littleEndianArgIndex littleEndian 在实参中的下标（读取方法为 1，写入方法为 2）；
      *   单字节方法传入 -1，不读取该参数（规范对 INT8/UINT8 传 true，无可观察差异）。
      * @param valueArgIndex 写入方法中 value 的下标；读取方法传 -1，不做值转换。
+     * @param convertValue 写入方法的值转换器：Number 方法返回 JSNumber，
+     *   BigInt 方法返回 JSBigInt；读取方法为 null。
      */
     private suspend fun prepareViewAccess(
         interpreter: Interpreter,
@@ -234,6 +302,7 @@ object DataViewBuiltins {
         elementSize: Int,
         littleEndianArgIndex: Int,
         valueArgIndex: Int = -1,
+        convertValue: (suspend (JSValue) -> JSValue)? = null,
     ): ViewAccess {
         val view = requireDataView(
             interpreter,
@@ -243,15 +312,21 @@ object DataViewBuiltins {
         val index = interpreter.toIndex(args.getOrElse(0) { JSUndefined })
         val littleEndian = elementSize > 1 && littleEndianArgIndex >= 0 &&
             interpreter.toBoolean(args.getOrElse(littleEndianArgIndex) { JSUndefined })
-        val number = if (valueArgIndex >= 0) {
-            JSNumber(interpreter.toNumber(args.getOrElse(valueArgIndex) { JSUndefined }))
+        val converted = if (valueArgIndex >= 0 && convertValue != null) {
+            convertValue(args.getOrElse(valueArgIndex) { JSUndefined })
         } else {
             null
         }
         if (index + elementSize > view.byteLength.toLong()) {
             interpreter.rangeError("Offset is outside the bounds of the DataView")
         }
-        return ViewAccess(view, index.toInt(), littleEndian, number)
+        return ViewAccess(
+            view = view,
+            index = index.toInt(),
+            littleEndian = littleEndian,
+            number = converted as? JSNumber,
+            bigInt = converted as? JSBigInt,
+        )
     }
 
     /** 品牌检查：DataView.prototype 上的方法只接受真正的 DataView。 */

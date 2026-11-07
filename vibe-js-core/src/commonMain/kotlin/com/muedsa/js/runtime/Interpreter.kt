@@ -769,7 +769,8 @@ class Interpreter(
      * 调用方必须已完成下标合法性检查；规范要求越界时静默失败且不做 ToNumber，
      * 因此越界路径不应调用本方法。元素类型转换规则：
      * - 整数类型使用 ToInt32/ToUint32（Uint8Clamped 使用 ToUint8Clamp）；
-     * - 浮点类型使用 ToNumber 后按单/双精度存储。
+     * - 浮点类型使用 ToNumber 后按单/双精度存储；
+     * - BigInt64/BigUint64 使用 ToBigInt64/ToBigUint64 后写入低 64 位位模式。
      */
     suspend fun setTypedArrayElement(array: JSTypedArray, index: Int, value: JSValue) {
         when (array.type) {
@@ -782,6 +783,12 @@ class Interpreter(
             JSTypedArrayType.UINT8_CLAMPED -> array.setUint8ClampedElement(index, toNumber(value))
             JSTypedArrayType.FLOAT32 -> array.setFloat32Element(index, toNumber(value))
             JSTypedArrayType.FLOAT64 -> array.setFloat64Element(index, toNumber(value))
+            // BigInt 视图：Number 值会在 ToBigInt 抛 TypeError（规范要求的隐式转换限制）
+            JSTypedArrayType.BIGINT64 ->
+                array.setBigInt64Element(index, conversions.toBigInt64(value).toInt64Bits())
+
+            JSTypedArrayType.BIGUINT64 ->
+                array.setBigUint64Element(index, conversions.toBigUint64(value).toInt64Bits())
         }
     }
 

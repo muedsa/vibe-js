@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArrayBuffer
+import com.muedsa.js.runtime.value.JSBigInt
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNull
@@ -18,22 +19,25 @@ import kotlin.math.min
 import kotlin.math.truncate
 
 /**
- * %TypedArray% 抽象基类、9 个 TypedArray 构造器与 %TypedArray%.prototype。
+ * %TypedArray% 抽象基类、11 个 TypedArray 构造器与 %TypedArray%.prototype。
  *
  * 结构（与规范一致）：
  * - `%TypedArray%` 本身不是全局对象，只能通过 `Object.getPrototypeOf(Int8Array)` 取得；
  *   它不能被调用或构造，只提供 `@@species` 与全部原型方法；
- * - 9 个构造器的 [[Prototype]] 都是 `%TypedArray%`，各自的 `.prototype`
+ * - 11 个构造器的 [[Prototype]] 都是 `%TypedArray%`，各自的 `.prototype`
  *   以 `%TypedArray%.prototype` 为 [[Prototype]]；
  * - 实例的元素读写走 [JSTypedArray] 的整数索引异质方法，其余属性走普通属性表。
  *
  * 构造函数的四种签名：
  * `new T(length)`、`new T(typedArray)`、`new T(arrayBuffer, byteOffset?, length?)`、
  * `new T(iterable | arrayLike)`；species 用于 map/filter/slice/subarray。
+ *
+ * BigInt64Array/BigUint64Array 的元素是 BigInt：构造/写入时按 ToBigInt 转换，
+ * 读取返回 JSBigInt；Number 元素按规范抛 TypeError。
  */
 internal object TypedArrayBuiltins {
 
-    /** 创建 9 个构造器、它们各自的原型与全局绑定。 */
+    /** 创建 11 个构造器、它们各自的原型与全局绑定。 */
     fun install(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
         val basePrototype = intrinsics.typedArrayPrototype
@@ -64,7 +68,7 @@ internal object TypedArrayBuiltins {
             configurable = true,
         )
 
-        // 9 个具体构造器：[[Prototype]] 是 %TypedArray%，.prototype 是各自类型原型
+        // 11 个具体构造器：[[Prototype]] 是 %TypedArray%，.prototype 是各自类型原型
         val constructors = LinkedHashMap<JSTypedArrayType, JSNativeFunction>()
         for (type in JSTypedArrayType.entries) {
             val prototype = intrinsics.typedArrayPrototypes.getValue(type)
@@ -106,7 +110,7 @@ internal object TypedArrayBuiltins {
     }
 
     // ================================================================
-    // %TypedArray% 的静态方法（9 个构造器继承）
+    // %TypedArray% 的静态方法（11 个构造器继承）
     // ================================================================
 
     /** 安装 %TypedArray%.from 与 %TypedArray%.of。 */
@@ -342,8 +346,13 @@ internal object TypedArrayBuiltins {
         defineMethod("fill", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.fill")
             val len = array.length
-            // 规范顺序：先 ToNumber(value)，再归一 start/end
-            val value = JSNumber(interpreter.toNumber(args.getOrElse(0) { JSUndefined }))
+            // 规范顺序：先按 [[ContentType]] 执行 ToBigInt/ToNumber(value)，再归一 start/end
+            val valueArgument = args.getOrElse(0) { JSUndefined }
+            val value = if (array.type.isBigIntContent) {
+                interpreter.conversions.toBigInt(valueArgument)
+            } else {
+                JSNumber(interpreter.toNumber(valueArgument))
+            }
             val start = relativeIndex(interpreter, args.getOrElse(1) { JSUndefined }, len)
             val endArgument = args.getOrNull(2)
             val end = if (endArgument == null || endArgument is JSUndefined) {
@@ -863,10 +872,14 @@ internal object TypedArrayBuiltins {
             val relativeIndex =
                 toIntegerOrInfinity(interpreter, args.getOrElse(0) { JSUndefined })
             val actualIndex = if (relativeIndex >= 0.0) relativeIndex else len + relativeIndex
-            // 规范顺序：先 ToNumber(value)（可能抛错），再检查下标范围并复制
-            val numericValue = JSNumber(
-                interpreter.toNumber(args.getOrElse(1) { JSUndefined })
-            )
+            // 规范顺序：先按 [[ContentType]] 执行 ToBigInt/ToNumber(value)（可能抛错），
+            // 再检查下标范围并复制
+            val valueArgument = args.getOrElse(1) { JSUndefined }
+            val numericValue = if (array.type.isBigIntContent) {
+                interpreter.conversions.toBigInt(valueArgument)
+            } else {
+                JSNumber(interpreter.toNumber(valueArgument))
+            }
             if (actualIndex < 0.0 || actualIndex >= len.toDouble()) {
                 interpreter.rangeError("Invalid typed array index")
             }
@@ -1029,8 +1042,8 @@ internal object TypedArrayBuiltins {
     ): JSTypedArray {
         val result = allocate(interpreter, type, source.length.toLong(), prototype)
         if (source.type == type) {
-            // 同类型按字节复制，与逐元素读取等价且更快
-            source.copyElementsFrom(result, source.length)
+            // 同类型按字节复制，与逐元素读取等价且更快（方向：source → result）
+            result.copyElementsFrom(source, source.length)
         } else {
             for (index in 0 until source.length) {
                 interpreter.checkExecution()
@@ -1402,6 +1415,8 @@ internal object TypedArrayBuiltins {
             if (result.isNaN()) return 0
             return if (result < 0.0) -1 else if (result > 0.0) 1 else 0
         }
+        // BigInt 视图的元素没有 NaN/-0，直接按数学大小比较
+        if (left is JSBigInt && right is JSBigInt) return left.compareTo(right)
         val leftNumber = (left as JSNumber).value
         val rightNumber = (right as JSNumber).value
         // 规范：-0 排在 +0 之前（与数值比较相等的情况区分开）

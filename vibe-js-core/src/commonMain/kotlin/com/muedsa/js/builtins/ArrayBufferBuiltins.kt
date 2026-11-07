@@ -18,7 +18,7 @@ import com.muedsa.js.runtime.value.PropertyKey
  * 首版（L3.1）不支持 resizable / detachable / transfer：
  * - `byteLength` 为只读访问器；
  * - `slice` 通过 SpeciesConstructor 创建副本，默认回到 %ArrayBuffer%；
- * - `isView` 识别 DataView 与全部 TypedArray（L3.2 接入）。
+ * - `isView` 识别 DataView 与全部 TypedArray（含 BigInt64Array/BigUint64Array）。
  */
 object ArrayBufferBuiltins {
 
@@ -128,7 +128,7 @@ object ArrayBufferBuiltins {
             },
         )
 
-        // ArrayBuffer.isView(arg)：DataView 与 9 种 TypedArray 都是视图对象
+        // ArrayBuffer.isView(arg)：DataView 与 11 种 TypedArray 都是视图对象
         constructor.defineDataProperty(
             key = PropertyKey.Str("isView"),
             value = BuiltinHelpers.method(intrinsics, "isView", 1) { _, _, args ->

@@ -3,8 +3,8 @@ package com.muedsa.js.runtime.value
 /**
  * DataView 对象：对 [JSArrayBuffer] 的一段窗口提供按类型读写。
  *
- * 本类只负责按 IEEE-754 位模式与大小端组合/拆分字节；规范级前置检查
- * （品牌检查、ToIndex、越界 RangeError、参数 ToNumber）全部由
+ * 本类只负责按 IEEE-754 位模式、64 位整数位模式与大小端组合/拆分字节；规范级前置检查
+ * （品牌检查、ToIndex、越界 RangeError、参数 ToNumber/ToBigInt）全部由
  * `DataViewBuiltins` 完成。
  *
  * 位模式转换使用 Kotlin 通用标准库的 [Float.fromBits] / [Double.fromBits]
@@ -55,6 +55,14 @@ class JSDataView(
     internal fun getFloat64(index: Int, littleEndian: Boolean): Double =
         Double.fromBits(readBits64(index, littleEndian))
 
+    /** getBigInt64：八个字节按有符号 64 位整数解释。 */
+    internal fun getBigInt64(index: Int, littleEndian: Boolean): JSBigInt =
+        JSBigInt.of(readBits64(index, littleEndian))
+
+    /** getBigUint64：八个字节按无符号 64 位整数解释。 */
+    internal fun getBigUint64(index: Int, littleEndian: Boolean): JSBigInt =
+        JSBigInt.of(readBits64(index, littleEndian)).toUint64()
+
     // ================================================================
     // 写入
     // ================================================================
@@ -97,6 +105,16 @@ class JSDataView(
     /** setFloat64：把数值转成 IEEE-754 双精度位模式后写入。 */
     internal fun setFloat64(index: Int, value: Double, littleEndian: Boolean) {
         writeBits64(index, value.toRawBits(), littleEndian)
+    }
+
+    /** setBigInt64：写入已按 ToBigInt64 取出的低 64 位位模式。 */
+    internal fun setBigInt64(index: Int, bits: Long, littleEndian: Boolean) {
+        writeBits64(index, bits, littleEndian)
+    }
+
+    /** setBigUint64：写入已按 ToBigUint64 取出的低 64 位位模式（与 setBigInt64 相同）。 */
+    internal fun setBigUint64(index: Int, bits: Long, littleEndian: Boolean) {
+        writeBits64(index, bits, littleEndian)
     }
 
     // ================================================================

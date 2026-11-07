@@ -8,9 +8,19 @@ import kotlin.math.floor
  * TypedArray 的元素类型。
  *
  * [typeName] 是规范中的构造器/原型名称，同时用于 `Symbol.toStringTag` 与错误信息；
- * [bytesPerElement] 是每个元素的字节宽度，即 `BYTES_PER_ELEMENT` 的值。
+ * [bytesPerElement] 是每个元素的字节宽度，即 `BYTES_PER_ELEMENT` 的值；
+ * [isBigIntContent] 对应规范 Table 62 的 [[ContentType]]：BigInt 视图的元素读写
+ * 必须使用 ToBigInt 系列转换，而 Number 视图使用 ToNumber 系列转换。
+ *
+ * 类型顺序与规范 Table 62 一致（BigInt64/BigUint64 位于 Float32/Float64 之前），
+ * 安装构造器时按该顺序注册全局对象。
  */
-enum class JSTypedArrayType(val typeName: String, val bytesPerElement: Int) {
+enum class JSTypedArrayType(
+    val typeName: String,
+    val bytesPerElement: Int,
+    /** [[ContentType]] 是否为 BigInt（只有 BigInt64Array/BigUint64Array 为 true）。 */
+    val isBigIntContent: Boolean = false,
+) {
     INT8("Int8Array", 1),
     UINT8("Uint8Array", 1),
     UINT8_CLAMPED("Uint8ClampedArray", 1),
@@ -18,6 +28,8 @@ enum class JSTypedArrayType(val typeName: String, val bytesPerElement: Int) {
     UINT16("Uint16Array", 2),
     INT32("Int32Array", 4),
     UINT32("Uint32Array", 4),
+    BIGINT64("BigInt64Array", 8, isBigIntContent = true),
+    BIGUINT64("BigUint64Array", 8, isBigIntContent = true),
     FLOAT32("Float32Array", 4),
     FLOAT64("Float64Array", 8),
 }
@@ -40,6 +52,10 @@ enum class JSTypedArrayType(val typeName: String, val bytesPerElement: Int) {
  *
  * 字节读写复用 [JSDataView] 的位模式组合/拆分：内部持有一个覆盖同一字节区间的
  * 私有视图，元素索引乘元素宽度即为视图内字节偏移。TypedArray 固定使用小端序。
+ *
+ * BigInt64Array/BigUint64Array 的 [[ContentType]] 是 BigInt：`getElement` 返回
+ * [JSBigInt] 原始值，写入由调用方（解释器）先执行 ToBigInt64/ToBigUint64，
+ * 再把低 64 位位模式交给 `setBigInt64Element`/`setBigUint64Element`。
  */
 class JSTypedArray(
     prototype: JSObject?,
@@ -132,6 +148,12 @@ class JSTypedArray(
             JSTypedArrayType.UINT32 ->
                 JSNumber(view.getUint32(byteIndex, LITTLE_ENDIAN).toDouble())
 
+            JSTypedArrayType.BIGINT64 ->
+                view.getBigInt64(byteIndex, LITTLE_ENDIAN)
+
+            JSTypedArrayType.BIGUINT64 ->
+                view.getBigUint64(byteIndex, LITTLE_ENDIAN)
+
             JSTypedArrayType.FLOAT32 ->
                 JSNumber(view.getFloat32(byteIndex, LITTLE_ENDIAN))
 
@@ -180,6 +202,26 @@ class JSTypedArray(
     /** 写入 Float64 元素。 */
     internal fun setFloat64Element(index: Int, value: Double) {
         view.setFloat64(index * bytesPerElement, value, LITTLE_ENDIAN)
+    }
+
+    /**
+     * 写入 BigInt64 元素。
+     *
+     * [bits] 是调用方执行 ToBigInt64 后得到的低 64 位位模式（Long 的补码形式），
+     * 因此这里不再做数值转换，直接按小端序写入 8 字节。
+     */
+    internal fun setBigInt64Element(index: Int, bits: Long) {
+        view.setBigInt64(index * bytesPerElement, bits, LITTLE_ENDIAN)
+    }
+
+    /**
+     * 写入 BigUint64 元素。
+     *
+     * 与 [setBigInt64Element] 位模式完全相同：ToBigInt64 与 ToBigUint64 只差
+     * 数学解释，低 64 位字节一致。
+     */
+    internal fun setBigUint64Element(index: Int, bits: Long) {
+        view.setBigUint64(index * bytesPerElement, bits, LITTLE_ENDIAN)
     }
 
     /**
@@ -241,9 +283,17 @@ class JSTypedArray(
                     return false
                 }
                 val value = descriptor.value
-                if (value != null && value !is JSNumber && value !is JSUndefined) return false
-                val number = (value as? JSNumber)?.value ?: Double.NaN
-                writeNumber(classified.index, number)
+                if (type.isBigIntContent) {
+                    // BigInt 视图：值必须是 BigInt（Number 按规范应抛 TypeError，
+                    // JS 可见路径已在挂起端完成 ToBigInt，这里无法再执行转换）
+                    if (value != null && value !is JSBigInt && value !is JSUndefined) return false
+                    writeBigInt(classified.index, value as? JSBigInt ?: JSBigInt.ZERO)
+                } else {
+                    // Number 视图：值必须是 Number 或 undefined（BigInt 不得隐式转 Number）
+                    if (value != null && value !is JSNumber && value !is JSUndefined) return false
+                    val number = (value as? JSNumber)?.value ?: Double.NaN
+                    writeNumber(classified.index, number)
+                }
                 true
             }
         }
@@ -284,6 +334,24 @@ class JSTypedArray(
             JSTypedArrayType.UINT8_CLAMPED -> setUint8ClampedElement(index, value)
             JSTypedArrayType.FLOAT32 -> setFloat32Element(index, value)
             JSTypedArrayType.FLOAT64 -> setFloat64Element(index, value)
+            // BigInt 视图不接受 Number：调用方（defineOwnProperty）已分支到 writeBigInt
+            JSTypedArrayType.BIGINT64, JSTypedArrayType.BIGUINT64 ->
+                error("BigInt 视图不能写入 Number 值")
+        }
+    }
+
+    /**
+     * 把 BigInt 写入 BigInt64/BigUint64 元素（非挂起定义入口使用）。
+     *
+     * 入参已经过 JS 侧 ToBigInt 转换，这里只需取低 64 位位模式；
+     * ToBigInt64 与 ToBigUint64 的位模式相同。
+     */
+    private fun writeBigInt(index: Int, value: JSBigInt) {
+        val bits = value.toInt64Bits()
+        when (type) {
+            JSTypedArrayType.BIGINT64 -> setBigInt64Element(index, bits)
+            JSTypedArrayType.BIGUINT64 -> setBigUint64Element(index, bits)
+            else -> error("非 BigInt 视图不能写入 BigInt 值")
         }
     }
 }

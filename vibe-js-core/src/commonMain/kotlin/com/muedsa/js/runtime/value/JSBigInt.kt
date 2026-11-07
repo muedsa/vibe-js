@@ -273,6 +273,13 @@ class JSBigInt private constructor(
     }
 
     /**
+     * 取低 64 位位模式（负数为补码），供 DataView / TypedArray 的 BigInt 64 位写入使用。
+     *
+     * ToBigInt64 与 ToBigUint64 只在数值解释上不同，写入字节时都使用该位模式。
+     */
+    internal fun toInt64Bits(): Long = low64Bits()
+
+    /**
      * 转换为 Double（Number(bigint) / 数学比较使用）。
      *
      * 按 IEEE 754 的「最近偶数」舍入：保留最高 53 位，并根据舍入位与粘滞位决定进位。
@@ -958,7 +965,8 @@ class JSBigInt private constructor(
         var value = 0L
         val words = min(2, magnitude.size)
         for (index in 0 until words) {
-            value = value or (magnitude[index].toLong() shl (32 * index))
+            // limb 以 Int 存储但按无符号解释：先掩掉符号扩展位再移位
+            value = value or ((magnitude[index].toLong() and 0xFFFFFFFFL) shl (32 * index))
         }
         return if (sign < 0) -value else value
     }

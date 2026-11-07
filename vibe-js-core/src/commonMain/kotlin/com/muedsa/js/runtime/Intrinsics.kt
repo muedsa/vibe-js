@@ -83,16 +83,16 @@ class Intrinsics(val globalObject: GlobalObject) {
     /** %DataView% 构造器。 */
     lateinit var dataViewConstructor: JSNativeFunction
 
-    /** %TypedArray%.prototype：9 种 TypedArray 原型共享的抽象基类原型。 */
+    /** %TypedArray%.prototype：11 种 TypedArray 原型共享的抽象基类原型。 */
     lateinit var typedArrayPrototype: JSObject
 
-    /** %TypedArray% 抽象构造器（不可直接调用/构造，只是 9 个构造器的 [[Prototype]]）。 */
+    /** %TypedArray% 抽象构造器（不可直接调用/构造，只是 11 个构造器的 [[Prototype]]）。 */
     lateinit var typedArrayConstructor: JSNativeFunction
 
-    /** 9 种 TypedArray 的实例原型（[[Prototype]] 均为 %TypedArray%.prototype%）。 */
+    /** 11 种 TypedArray 的实例原型（[[Prototype]] 均为 %TypedArray%.prototype%）。 */
     lateinit var typedArrayPrototypes: Map<JSTypedArrayType, JSObject>
 
-    /** 9 种 TypedArray 构造器（用于 SpeciesConstructor 的默认值）。 */
+    /** 11 种 TypedArray 构造器（用于 SpeciesConstructor 的默认值）。 */
     lateinit var typedArrayConstructors: Map<JSTypedArrayType, JSNativeFunction>
 
     /** %IteratorPrototype%：所有迭代器共享的原型（含 @@iterator 与辅助方法）。 */
