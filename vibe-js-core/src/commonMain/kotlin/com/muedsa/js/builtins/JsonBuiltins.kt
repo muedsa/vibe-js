@@ -156,14 +156,17 @@ object JsonBuiltins {
         val value = interpreter.getV(holder, PropertyKey.Str(key))
 
         if (value is JSObject) {
-            if (value is JSArray) {
-                for (index in 0 until value.length) {
+            // 规范：IsArray 会穿透 Proxy（撤销的 Proxy 抛 TypeError）
+            if (interpreter.isArray(value)) {
+                val length = interpreter.lengthOfArrayLike(value)
+                for (index in 0 until length) {
                     val elementKey = index.toString()
                     val elementKeyRef = PropertyKey.Str(elementKey)
                     val newElement = internalize(
                         interpreter, value, elementKey, reviver, parser, rootHolder,
                     )
                     if (newElement is JSUndefined) {
+                        // 规范此处直接调用 [[Delete]]，删除失败不抛异常
                         interpreter.internalDeleteProperty(value, elementKeyRef)
                     } else {
                         createDataPropertyOrIgnore(interpreter, value, elementKeyRef, newElement)
@@ -214,7 +217,8 @@ object JsonBuiltins {
 
     /**
      * InternalizeJSONProperty 的 CreateDataProperty：
-     * 既有不可配置属性（或对象不可扩展）时返回 false，调用方忽略而不再覆盖。
+     * 完整数据描述符，定义失败（既有不可配置属性或对象不可扩展）时由调用方忽略。
+     * 必须走 [[DefineOwnProperty]] 而不是直接改存储，Proxy 的 defineProperty trap 才可观察。
      */
     private suspend fun createDataPropertyOrIgnore(
         interpreter: Interpreter,
@@ -222,8 +226,6 @@ object JsonBuiltins {
         key: PropertyKey,
         value: JSValue,
     ) {
-        val existing = interpreter.internalGetOwnProperty(objectValue, key)
-        if (existing != null && !existing.configurable) return
         interpreter.internalDefineOwnProperty(
             objectValue,
             key,
@@ -231,15 +233,17 @@ object JsonBuiltins {
         )
     }
 
-    /** replacer 为数组时构造属性白名单。 */
+    /** replacer 为数组时构造属性白名单（Proxy 数组同样按 IsArray 处理）。 */
     private suspend fun buildPropertyList(
         interpreter: Interpreter,
         replacer: JSValue?,
     ): List<String>? {
-        if (replacer !is JSArray) return null
+        if (replacer !is JSObject || !interpreter.isArray(replacer)) return null
         val keys = mutableListOf<String>()
-        for (index in 0 until replacer.length) {
-            val element = replacer.getElement(index) ?: continue
+        val length = interpreter.lengthOfArrayLike(replacer)
+        for (index in 0 until length) {
+            // 规范：通过 [[Get]] 读取（代理 replacer 可以观察到索引访问）
+            val element = interpreter.getV(replacer, PropertyKey.Str(index.toString()))
             val text = when (element) {
                 is JSString -> element.value
                 is JSNumber -> NumberFormatting.toString(element.value)
@@ -414,37 +418,29 @@ object JsonBuiltins {
         is JSBigInt -> interpreter.typeError("Do not know how to serialize a BigInt")
         is JSFunction, is JSNativeFunction -> null
 
-        is JSArray -> {
-            if (!seen.add(value)) {
-                interpreter.typeError("Converting circular structure to JSON")
-            }
-            try {
-                val childIndent = indent + gap
-                val parts = ArrayList<String>(value.length)
-                for (index in 0 until value.length) {
-                    val serialized = serializeProperty(
-                        interpreter = interpreter,
-                        holder = value,
-                        key = index.toString(),
-                        replacer = replacer,
-                        propertyList = propertyList,
-                        gap = gap,
-                        indent = childIndent,
-                        seen = seen,
-                    )
-                    parts.add(serialized ?: "null")
-                }
-                if (gap.isEmpty() || parts.isEmpty()) {
-                    "[${parts.joinToString(",")}]"
-                } else {
-                    "[\n$childIndent${parts.joinToString(",\n$childIndent")}\n$indent]"
-                }
-            } finally {
-                seen.remove(value)
-            }
-        }
+        is JSArray -> serializeJsonArray(
+            interpreter = interpreter,
+            array = value,
+            replacer = replacer,
+            propertyList = propertyList,
+            gap = gap,
+            indent = indent,
+            seen = seen,
+        )
 
         is JSObject -> {
+            // 规范：IsArray(value) 为真按数组序列化（Proxy 包数组也进入该分支）
+            if (interpreter.isArray(value)) {
+                return serializeJsonArray(
+                    interpreter = interpreter,
+                    array = value,
+                    replacer = replacer,
+                    propertyList = propertyList,
+                    gap = gap,
+                    indent = indent,
+                    seen = seen,
+                )
+            }
             if (!seen.add(value)) {
                 interpreter.typeError("Converting circular structure to JSON")
             }
@@ -477,6 +473,51 @@ object JsonBuiltins {
             } finally {
                 seen.remove(value)
             }
+        }
+    }
+
+    /**
+     * SerializeJSONArray：通过 [[Get]] 读取 length 与每个索引。
+     *
+     * 使用通用于 JSArray 与 Proxy 的路径：Proxy 数组必须触发 get trap，
+     * 且 length 按 LengthOfArrayLike 读取（可被 trap 覆盖）。
+     */
+    private suspend fun serializeJsonArray(
+        interpreter: Interpreter,
+        array: JSObject,
+        replacer: JSValue?,
+        propertyList: List<String>?,
+        gap: String,
+        indent: String,
+        seen: MutableSet<JSObject>,
+    ): String {
+        if (!seen.add(array)) {
+            interpreter.typeError("Converting circular structure to JSON")
+        }
+        try {
+            val length = interpreter.lengthOfArrayLike(array)
+            val childIndent = indent + gap
+            val parts = ArrayList<String>(length.toInt().coerceAtMost(1024))
+            for (index in 0 until length) {
+                val serialized = serializeProperty(
+                    interpreter = interpreter,
+                    holder = array,
+                    key = index.toString(),
+                    replacer = replacer,
+                    propertyList = propertyList,
+                    gap = gap,
+                    indent = childIndent,
+                    seen = seen,
+                )
+                parts.add(serialized ?: "null")
+            }
+            return if (gap.isEmpty() || parts.isEmpty()) {
+                "[${parts.joinToString(",")}]"
+            } else {
+                "[\n$childIndent${parts.joinToString(",\n$childIndent")}\n$indent]"
+            }
+        } finally {
+            seen.remove(array)
         }
     }
 

@@ -10,7 +10,6 @@ import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSPromise
-import com.muedsa.js.runtime.value.JSProxy
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
@@ -101,13 +100,6 @@ object ArrayBuiltins {
      * - 单个数字参数：指定长度的空数组
      * - 其他：以参数为元素
      */
-    /** IsArray：穿透 Proxy 检查 target（ECMAScript 7.2.2）。 */
-    private fun isArrayValue(value: JSValue?): Boolean = when (value) {
-        is JSArray -> true
-        is JSProxy -> isArrayValue(value.target)
-        else -> false
-    }
-
     private fun createArray(
         interpreter: Interpreter,
         arrayPrototype: JSObject,
@@ -302,10 +294,15 @@ object ArrayBuiltins {
             },
         )
 
+        // %Object.prototype.toString% 的内建实现：Array.prototype.toString 在 join
+        // 不可调用时必须调用该内建对象（即使 Object.prototype.toString 已被删除/改写）
+        val objectToStringIntrinsic =
+            intrinsics.objectPrototype.getOwnProperty(PropertyKey.Str("toString"))?.value
+
         arrayPrototype.defineDataProperty(
             key = PropertyKey.Str("toString"),
             value = BuiltinHelpers.method(intrinsics, "toString", 0) { interpreter, thisValue, _ ->
-                // 规范：ToObject 后 Get("join")；不可调用时退回 Object.prototype.toString
+                // 规范：ToObject 后 Get("join")；不可调用时退回 %Object.prototype.toString%
                 val objectValue = requireObject(interpreter, thisValue, "Array.prototype.toString")
                 val join = interpreter.getV(objectValue, PropertyKey.Str("join"))
                 if (interpreter.isCallable(join)) {
@@ -315,10 +312,8 @@ object ArrayBuiltins {
                         )
                     )
                 } else {
-                    val fallback = interpreter.getV(
-                        intrinsics.objectPrototype,
-                        PropertyKey.Str("toString"),
-                    )
+                    val fallback = objectToStringIntrinsic
+                        ?: interpreter.getV(intrinsics.objectPrototype, PropertyKey.Str("toString"))
                     JSString(
                         interpreter.toStringValue(
                             interpreter.callFunction(fallback, objectValue, emptyList())
@@ -467,8 +462,9 @@ object ArrayBuiltins {
                 var result = false
                 var index = fromIndex
                 while (index < length) {
-                    // 规范要求 includes 将数组空洞视为 undefined
-                    val element = elementAt(interpreter, objectValue, index) ?: JSUndefined
+                    // 规范：includes 直接 Get(O, ToString(k))，不调用 [[HasProperty]]，
+                    // 空洞因此按 undefined 处理
+                    val element = interpreter.getV(objectValue, PropertyKey.Str(index.toString()))
                     if (interpreter.conversions.sameValueZero(element, searchElement)) {
                         result = true
                         break
@@ -854,6 +850,11 @@ object ArrayBuiltins {
                     val lowerValue = if (lowerExists) interpreter.getV(objectValue, lowerKey) else null
                     val upperExists = interpreter.internalHasProperty(objectValue, upperKey)
                     val upperValue = if (upperExists) interpreter.getV(objectValue, upperKey) else null
+                    // 两端都不存在：规范不做任何写入/删除
+                    if (!lowerExists && !upperExists) {
+                        lower++
+                        continue
+                    }
                     if (upperExists) {
                         interpreter.putV(objectValue, lowerKey, upperValue!!, strict = true)
                     } else {
@@ -1302,8 +1303,9 @@ object ArrayBuiltins {
 
         arrayConstructor.defineDataProperty(
             key = PropertyKey.Str("isArray"),
-            value = BuiltinHelpers.method(intrinsics, "isArray", 1) { _, _, args ->
-                JSBoolean.getJsBoolean(isArrayValue(args.getOrNull(0)))
+            value = BuiltinHelpers.method(intrinsics, "isArray", 1) { interpreter, _, args ->
+                // 复用 Interpreter.isArray：穿透 Proxy，且已撤销的 Proxy 抛 TypeError
+                JSBoolean.getJsBoolean(interpreter.isArray(args.getOrNull(0)))
             },
         )
 
@@ -1724,7 +1726,8 @@ object ArrayBuiltins {
         length: Long,
     ): JSObject {
         val normalizedLength = if (length == 0L) 0L else length
-        if (originalArray !is JSArray) {
+        // IsArray 会穿透 Proxy：Proxy 数组必须读取 constructor/@@species
+        if (!interpreter.isArray(originalArray)) {
             return createArrayWithLength(interpreter, normalizedLength)
         }
         var constructor = interpreter.getV(originalArray, PropertyKey.CONSTRUCTOR)
@@ -1749,7 +1752,7 @@ object ArrayBuiltins {
             ?: interpreter.typeError("Species constructor did not return an object")
     }
 
-    /** CreateDataPropertyOrThrow：定义失败（不可扩展/不可配置）抛 TypeError。 */
+    /** CreateDataPropertyOrThrow：定义失败（不可扩展/不可配置/Proxy trap 返回 false）抛 TypeError。 */
     private suspend fun createDataPropertyOrThrow(
         interpreter: Interpreter,
         target: JSObject,
@@ -1757,17 +1760,9 @@ object ArrayBuiltins {
         value: JSValue,
     ) {
         val key = PropertyKey.Str(index.toString())
-        val existing = interpreter.internalGetOwnProperty(target, key)
-        if (existing != null) {
-            // 目标描述符是 {writable:true, enumerable:true, configurable:true}，
-            // 只有可配置的现有属性才能被这样覆盖
-            if (!existing.configurable) {
-                interpreter.typeError("Cannot redefine property: $key")
-            }
-        } else if (!target.extensible) {
-            interpreter.typeError("Cannot define property $index")
-        }
-        val success = interpreter.defineOwnPropertyOn(
+        // 规范 CreateDataProperty：直接调用 [[DefineOwnProperty]]，不做预检查；
+        // 这样 Proxy 的 defineProperty trap 只被调用一次，描述符也只会包含完整数据字段
+        val success = interpreter.internalDefineOwnProperty(
             target,
             key,
             PropertyDescriptor.data(value),
@@ -1785,7 +1780,8 @@ object ArrayBuiltins {
             PropertyKey.Sym(interpreter.intrinsics.symbolIsConcatSpreadable),
         )
         if (spreadable !is JSUndefined) return interpreter.toBoolean(spreadable)
-        return value is JSArray
+        // IsArray 穿透 Proxy，且撤销的 Proxy 抛 TypeError
+        return interpreter.isArray(value)
     }
 
     /** ToIntegerOrInfinity：向零截断，NaN → 0，超出 Long 范围饱和。 */
@@ -1833,12 +1829,13 @@ object ArrayBuiltins {
                         listOf(element, JSNumber(sourceIndex.toDouble()), source),
                     )
                 }
-                if (depth > 0 && element is JSArray) {
-                    val elementLength = lengthOf(interpreter, element)
+                if (depth > 0 && interpreter.isArray(element)) {
+                    val nestedArray = element as JSObject
+                    val elementLength = lengthOf(interpreter, nestedArray)
                     targetIndex = flattenIntoArray(
                         interpreter,
                         target,
-                        element,
+                        nestedArray,
                         elementLength,
                         targetIndex,
                         depth - 1,

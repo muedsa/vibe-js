@@ -73,7 +73,7 @@ class Test262SelectionTest {
 
         val unsupported = Test262Selection.decide(
             "test/language/x.js",
-            metadata(features = setOf("arrow-function", "Proxy")),
+            metadata(features = setOf("arrow-function", "Intl")),
             "es2015",
             includeEsid = false,
             filter = null,
@@ -217,13 +217,33 @@ class Test262SelectionTest {
     }
 
     @Test
+    fun `Proxy 特性用例已纳入 ES2015 子集`() {
+        // L2.4：Proxy 与 proxy-missing-checks 既不被筛选排除，也不按特性名/文本跳过
+        for (features in listOf(setOf("Proxy"), setOf("Proxy", "proxy-missing-checks"))) {
+            val metadata = metadata(features = features)
+            assertIs<SelectionDecision.Selected>(
+                Test262Selection.decide("test/built-ins/Proxy/x.js", metadata, "es2015", false, null)
+            )
+            assertNull(
+                Test262Selection.skipReason(
+                    "var p = new Proxy({}, {});", metadata, "es2015",
+                )
+            )
+        }
+    }
+
+    @Test
     fun `文本筛选按子集生效且能识别生成器`() {
         // ES5 子集不做 Generator/Proxy 文本过滤，保持 ES5 口径
         assertNull(
             Test262Selection.skipReason("function* g() {}", metadata(), "es5")
         )
+        // Proxy 已在 L2.4 支持：源码中出现 Proxy 不再触发文本排除
+        assertNull(
+            Test262Selection.skipReason("var p = new Proxy({}, {});", metadata(), "es2015")
+        )
         assertEquals(
-            "unsupported Proxy/Generator",
+            "unsupported Generator",
             Test262Selection.skipReason("function* g() {}", metadata(), "es2015"),
         )
         // BigInt 已支持：字面量不再触发文本排除
@@ -232,7 +252,7 @@ class Test262SelectionTest {
         )
         // 方法形式的生成器也要识别
         assertEquals(
-            "unsupported Proxy/Generator",
+            "unsupported Generator",
             Test262Selection.skipReason("var o = { *gen() {} };", metadata(), "es2015"),
         )
     }
@@ -257,14 +277,14 @@ class Test262SelectionTest {
     fun `文本匹配跳过会标记 textMatchOnly，元数据排除不标记`() {
         // 源码文本命中：features 没有标注，只能靠文本判断，标记为待复核
         val textMatched = Test262Selection.skipDecision("function* g() {}", metadata(), "es2015")
-        assertEquals("unsupported Proxy/Generator", textMatched?.reason)
+        assertEquals("unsupported Generator", textMatched?.reason)
         assertEquals(true, textMatched?.textMatchOnly)
 
         // features 明确标注：属于元数据排除，不需要文本复核
         val featureMatched = Test262Selection.skipDecision(
-            "", metadata(features = setOf("Proxy")), "es2015",
+            "", metadata(features = setOf("Intl")), "es2015",
         )
-        assertEquals("unsupported feature: Proxy", featureMatched?.reason)
+        assertEquals("unsupported feature: Intl", featureMatched?.reason)
         assertEquals(false, featureMatched?.textMatchOnly)
 
         // flag 排除同样不需要文本复核

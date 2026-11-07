@@ -920,8 +920,21 @@ internal object IteratorBuiltins {
         val iters = ArrayList<DirectIterator?>()
         val keys = ArrayList<PropertyKey>()
         if (keyed) {
-            for (key in iterablesArg.ownPropertyKeys()) {
-                val descriptor = iterablesArg.getOwnProperty(key) ?: continue
+            // 规范：iterables.[[OwnPropertyKeys]] 与 [[GetOwnProperty]] 可被 Proxy 观察；
+            // 任一 trap 抛出时按 IfAbruptCloseIterators 关闭已收集的迭代器
+            val ownKeys = try {
+                interpreter.internalOwnPropertyKeys(iterablesArg)
+            } catch (error: JSException) {
+                closeZipIters(interpreter, iters, error)
+                throw error
+            }
+            for (key in ownKeys) {
+                val descriptor = try {
+                    interpreter.internalGetOwnProperty(iterablesArg, key)
+                } catch (error: JSException) {
+                    closeZipIters(interpreter, iters, error)
+                    throw error
+                } ?: continue
                 if (!descriptor.enumerable) continue
                 val value = try {
                     interpreter.getV(iterablesArg, key)

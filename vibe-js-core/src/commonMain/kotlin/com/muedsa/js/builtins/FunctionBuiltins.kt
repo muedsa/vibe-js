@@ -8,6 +8,7 @@ import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSProxy
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
@@ -240,7 +241,15 @@ object FunctionBuiltins {
         functionPrototype.defineDataProperty(
             key = PropertyKey.Str("toString"),
             value = BuiltinHelpers.method(intrinsics, "toString", 0) { interpreter, thisValue, _ ->
-                if (thisValue is JSFunction || thisValue is JSNativeFunction) {
+                if (thisValue is JSProxy) {
+                    // 规范：可调用 Proxy 没有源码文本，返回 NativeFunction 形式；
+                    // 非可调用 Proxy 抛 TypeError。这里不能读取 target 的 toString，
+                    // 否则会意外执行用户代码。
+                    if (!interpreter.isCallable(thisValue)) {
+                        interpreter.typeError("Function.prototype.toString requires that 'this' be a Function")
+                    }
+                    JSString("function () { [native code] }")
+                } else if (thisValue is JSFunction || thisValue is JSNativeFunction) {
                     JSString(thisValue.toPrimitiveString())
                 } else {
                     interpreter.typeError("Function.prototype.toString requires that 'this' be a Function")

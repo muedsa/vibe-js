@@ -141,19 +141,14 @@ internal object Test262Selection {
         if (source.contains("Array.print")) {
             return SkipDecision("unsupported harness: print", textMatchOnly = true)
         }
-        // TemporalHelpers.propertyBagObserver 通过 Proxy/Reflect 观测属性访问
-        if (source.contains("propertyBagObserver")) {
-            return SkipDecision("unsupported harness: Proxy", textMatchOnly = true)
-        }
         // 未实现的宿主型内建：测试源码中可能直接构造（ArrayBuffer 已支持，SharedArrayBuffer 仍排除）
         if (suite == "es2015" && source.contains("new SharedArrayBuffer")) {
             return SkipDecision("unsupported feature: SharedArrayBuffer", textMatchOnly = true)
         }
-        // ES2015 子集中排除 Proxy/Generator 内容（BigInt 已在 L3.3 纳入支持范围，
-        // TypedArray/ArrayBuffer/DataView 已在 L3.5 纳入）
+        // ES2015 子集中排除 Generator 内容（Proxy 已在 L2.4 纳入支持范围，
+        // BigInt 已在 L3.3、TypedArray/ArrayBuffer/DataView 已在 L3.5 纳入）
         if (suite == "es2015" &&
-            (source.contains("Proxy") ||
-                source.contains("function *") ||
+            (source.contains("function *") ||
                 source.contains("function*") ||
                 generatorFunctionPattern.containsMatchIn(source) ||
                 source.contains("async *") ||
@@ -161,7 +156,7 @@ internal object Test262Selection {
                 source.contains("for await") ||
                 generatorMethodPattern.containsMatchIn(source))
         ) {
-            return SkipDecision("unsupported Proxy/Generator", textMatchOnly = true)
+            return SkipDecision("unsupported Generator", textMatchOnly = true)
         }
         if (metadata.negativePhase != null && metadata.negativePhase !in setOf("parse", "runtime")) {
             return SkipDecision("unsupported negative phase: ${metadata.negativePhase}")
@@ -198,6 +193,9 @@ internal object Test262Selection {
         // 其中 GeneratorFunction/AsyncGeneratorFunction 的 is-a-constructor 用例
         // 依赖 Reflect.construct 与 wellKnownIntrinsicObjects harness
         "Reflect", "Reflect.construct",
+        // L2.4 补齐 Proxy 不变量并启用 Test262 Proxy 用例；
+        // proxy-missing-checks 覆盖 GetOwnProperty/DefineOwnProperty/Delete 的补充校验
+        "Proxy", "proxy-missing-checks",
         // L3.3 已实现 BigInt 运行时：字面量/typeof/算术/转换/内建与 Test262 BigInt 用例
         "BigInt",
         // L3.5 已实现 ArrayBuffer detach、DataView 与 TypedArray（含 BigInt 视图）语义
@@ -275,9 +273,8 @@ internal object Test262Selection {
         "test/built-ins/Object/seal/seal-biguint64array.js",
     )
 
-    /** 当前范围外或尚未实现的特性（Reflect、BigInt、TypedArray 已纳入支持范围）。 */
+    /** 当前范围外或尚未实现的特性（Reflect、Proxy、BigInt、TypedArray 已纳入支持范围）。 */
     private val unsupportedFeatures = setOf(
-        "Proxy",
         "SharedArrayBuffer", "Atomics",
         "Intl", "WeakRef", "FinalizationRegistry",
         "decorators",

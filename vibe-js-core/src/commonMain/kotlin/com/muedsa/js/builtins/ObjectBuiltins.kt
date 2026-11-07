@@ -128,15 +128,14 @@ object ObjectBuiltins {
                 if (thisValue is JSNull) return@method JSString("[object Null]")
                 // 原始值按 ToObject 读取 @@toStringTag（Symbol 包装等）
                 val objectValue = interpreter.toObject(thisValue)
+                // 规范顺序：先计算内建标签（含 IsArray，撤销 Proxy 在此抛 TypeError），
+                // 再读取 @@toStringTag；get trap 期间撤销 Proxy 不影响已经算出的标签
+                val builtinTag = objectTag(interpreter, objectValue)
                 val tagValue = interpreter.getV(
                     objectValue,
                     PropertyKey.Sym(intrinsics.symbolToStringTag),
                 )
-                val tag = if (tagValue is JSString) {
-                    tagValue.value
-                } else {
-                    objectTag(intrinsics, thisValue)
-                }
+                val tag = if (tagValue is JSString) tagValue.value else builtinTag
                 JSString("[object $tag]")
             },
         )
@@ -584,13 +583,12 @@ object ObjectBuiltins {
                     }
 
                     is JSObject -> {
-                        for (key in interpreter.internalOwnPropertyKeys(value)) {
-                            val descriptor = interpreter.internalGetOwnProperty(value, key) ?: continue
-                            descriptor.configurable = false
-                            if (descriptor.isData) descriptor.writable = false
-                            interpreter.internalDefineOwnProperty(value, key, descriptor)
+                        // SetIntegrityLevel(O, frozen)：Proxy 的 preventExtensions /
+                        // ownKeys / getOwnPropertyDescriptor / defineProperty trap
+                        // 都可能被调用，失败必须抛 TypeError
+                        if (!interpreter.setIntegrityLevel(value, frozen = true)) {
+                            interpreter.typeError("Cannot freeze object")
                         }
-                        interpreter.internalPreventExtensions(value)
                     }
 
                     else -> Unit
@@ -614,12 +612,9 @@ object ObjectBuiltins {
                     }
 
                     is JSObject -> {
-                        for (key in interpreter.internalOwnPropertyKeys(value)) {
-                            val descriptor = interpreter.internalGetOwnProperty(value, key) ?: continue
-                            descriptor.configurable = false
-                            interpreter.internalDefineOwnProperty(value, key, descriptor)
+                        if (!interpreter.setIntegrityLevel(value, frozen = false)) {
+                            interpreter.typeError("Cannot seal object")
                         }
-                        interpreter.internalPreventExtensions(value)
                     }
 
                     else -> Unit
@@ -631,7 +626,9 @@ object ObjectBuiltins {
             key = PropertyKey.Str("preventExtensions"),
             value = BuiltinHelpers.method(intrinsics, "preventExtensions", 1) { interpreter, _, args ->
                 val value = args.getOrNull(0) ?: JSUndefined
-                if (value is JSObject) interpreter.internalPreventExtensions(value)
+                if (value is JSObject && !interpreter.internalPreventExtensions(value)) {
+                    interpreter.typeError("Cannot prevent extensions on object")
+                }
                 value
             },
         )
@@ -852,6 +849,16 @@ object ObjectBuiltins {
             }
         }
 
+        // 合并结果是完整描述符：按最终类型标记哪些字段"存在"，
+        // 供内部 ValidateAndApply 与 Proxy trap 的 FromPropertyDescriptor 使用
+        val finalAccessor = descriptor.isAccessor
+        descriptor.hasValue = !finalAccessor
+        descriptor.hasWritable = !finalAccessor
+        descriptor.hasGet = finalAccessor
+        descriptor.hasSet = finalAccessor
+        descriptor.hasEnumerable = true
+        descriptor.hasConfigurable = true
+
         return interpreter.internalDefineOwnProperty(objectValue, key, descriptor)
     }
 
@@ -1019,9 +1026,10 @@ object ObjectBuiltins {
         return result
     }
 
-    private fun objectTag(intrinsics: com.muedsa.js.runtime.Intrinsics, value: JSValue): String = when (value) {
-    // IsArray / 内建标签需要穿透 Proxy（ECMAScript 7.2.2 / 20.1.3.6）
-    is JSProxy -> objectTag(intrinsics, value.target)
+    private fun objectTag(
+        interpreter: com.muedsa.js.runtime.Interpreter,
+        value: JSValue,
+    ): String = when (value) {
         is JSUndefined -> "Undefined"
         is JSNull -> "Null"
         is JSBoolean -> "Boolean"
@@ -1043,15 +1051,23 @@ object ObjectBuiltins {
             // 规范的内建标签没有 [[BigIntData]] 分支：@@toStringTag 非字符串时回退 Object
             else -> "Object"
         }
+        is JSProxy -> when {
+            // 规范：Proxy 只有 IsArray / [[Call]] 两个穿透分支；
+            // Date/RegExp/Error 等内部槽不会被代理继承，因此回退 Object。
+            // 已撤销 Proxy 的 IsArray 抛 TypeError（规范 7.2.2）。
+            interpreter.isArray(value) -> "Array"
+            interpreter.isCallable(value) -> "Function"
+            else -> "Object"
+        }
         is JSObject -> when (value.prototype) {
-            intrinsics.stringPrototype -> "String"
-            intrinsics.numberPrototype -> "Number"
-            intrinsics.booleanPrototype -> "Boolean"
+            interpreter.intrinsics.stringPrototype -> "String"
+            interpreter.intrinsics.numberPrototype -> "Number"
+            interpreter.intrinsics.booleanPrototype -> "Boolean"
             else -> when (value) {
                 // 原型对象本身也是对应的内建包装对象（ES5 15.7.4/15.5.4）
-                intrinsics.stringPrototype -> "String"
-                intrinsics.numberPrototype -> "Number"
-                intrinsics.booleanPrototype -> "Boolean"
+                interpreter.intrinsics.stringPrototype -> "String"
+                interpreter.intrinsics.numberPrototype -> "Number"
+                interpreter.intrinsics.booleanPrototype -> "Boolean"
                 else -> "Object"
             }
         }

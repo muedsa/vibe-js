@@ -693,8 +693,10 @@ object PromiseBuiltins {
         val keys = ArrayList<PropertyKey>()
         val values = ArrayList<JSValue>()
         try {
-            for (key in promises.ownPropertyKeys()) {
-                val descriptor = promises.getOwnProperty(key) ?: continue
+            // 必须走内部方法：Proxy 的 ownKeys / getOwnPropertyDescriptor trap
+            // 可观察，异常按规范转为 Promise 拒绝
+            for (key in interpreter.internalOwnPropertyKeys(promises)) {
+                val descriptor = interpreter.internalGetOwnProperty(promises, key) ?: continue
                 if (!descriptor.enumerable) continue
                 keys.add(key)
                 values.add(interpreter.getV(promises, key))

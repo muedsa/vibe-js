@@ -541,22 +541,13 @@ class Interpreter(
     suspend fun toObject(value: JSValue): JSObject = conversions.toObject(value)
 
     /**
-     * 设置对象原型并阻止原型环（OrdinarySetPrototypeOf 的循环检查）。
-     * 返回 false 表示会形成环，调用方应抛 TypeError。
+     * 设置对象原型（OrdinarySetPrototypeOf 的包装）。
+     *
+     * 环检测已由 [internalSetPrototypeOf] 按规范处理（Proxy 处停止），
+     * 这里只做委托，避免对 Proxy 触发意外的 [[GetPrototypeOf]] trap。
      */
-    suspend fun setPrototypeOf(objectValue: JSObject, newPrototype: JSObject?): Boolean {
-        if (internalGetPrototypeOf(objectValue) === newPrototype) return true
-        var cursor: JSObject? = newPrototype
-        var fast: JSObject? = newPrototype
-        while (cursor != null) {
-            if (cursor === objectValue) return false
-            cursor = internalGetPrototypeOf(cursor)
-            // 宿主低层写入也可能构造已有环；快慢指针检测实际环，不误拒绝较长的合法链。
-            fast = fast?.let { internalGetPrototypeOf(it) }?.let { internalGetPrototypeOf(it) }
-            if (cursor != null && cursor === fast) return false
-        }
-        return internalSetPrototypeOf(objectValue, newPrototype)
-    }
+    suspend fun setPrototypeOf(objectValue: JSObject, newPrototype: JSObject?): Boolean =
+        internalSetPrototypeOf(objectValue, newPrototype)
 
     /** ToInt32。 */
     suspend fun toInt32(value: JSValue): Int = conversions.toInt32(value)
@@ -669,9 +660,15 @@ class Interpreter(
      */
     suspend fun putV(base: JSValue, key: PropertyKey, value: JSValue, strict: Boolean) {
         if (base !is JSObject) {
-            if (strict) {
-                throw typeError("Cannot create property '${key}' on ${typeOf(base)}")
+            // 规范 PutValue：原始值 base 先 ToObject，再以其包装对象执行 [[Set]]，
+            // 访问器 setter / 原型链上的 Proxy set trap 的 this 与 receiver 仍是原始值
+            if (base is JSNull || base is JSUndefined) {
+                if (strict) {
+                    throw typeError("Cannot create property '${key}' on ${typeOf(base)}")
+                }
+                return
             }
+            putProperty(wrapPrimitive(base), key, value, strict, receiver = base)
             return
         }
         putProperty(base, key, value, strict)
@@ -717,12 +714,13 @@ class Interpreter(
             }
         }
         if (objectValue is JSArray && key == PropertyKey.LENGTH) {
-            if (descriptor.isAccessor) return false
-            // ArraySetLength：先 ToUint32（可能触发 valueOf），再 ToNumber（再次触发）
-            val value = descriptor.value
-            val newLength = if (value == null) {
+            if (descriptor.hasAccessorFields) return false
+            // ArraySetLength：先 ToUint32（可能触发 valueOf），再 ToNumber（再次触发），
+            // 非法长度必须在该步抛 RangeError，早于不可配置等不变量检查
+            val newLength = if (!descriptor.hasValue) {
                 objectValue.lengthLong
             } else {
+                val value = descriptor.value ?: JSUndefined
                 toUint32(value)
                 val number = toNumber(value)
                 if (number.isNaN() || number < 0.0 || number > JSArray.MAX_LENGTH.toDouble() ||
@@ -732,12 +730,18 @@ class Interpreter(
                 }
                 number.toLong()
             }
-            // length 恒为不可枚举、不可配置
-            if (descriptor.enumerable || descriptor.configurable) return false
+            // length 恒为不可枚举、不可配置：只拒绝显式请求 true 的描述符
+            if (descriptor.hasEnumerable && descriptor.enumerable) return false
+            if (descriptor.hasConfigurable && descriptor.configurable) return false
             // ValidateAndApplyPropertyDescriptor：当前 length 不可写时不能请求 writable = true
             val currentLength = objectValue.getOwnProperty(PropertyKey.LENGTH)
-            if (currentLength != null && !currentLength.writable && descriptor.writable) return false
-            return objectValue.defineLength(newLength, descriptor.writable)
+            if (currentLength != null && !currentLength.writable &&
+                descriptor.hasWritable && descriptor.writable
+            ) {
+                return false
+            }
+            val writable = if (descriptor.hasWritable) descriptor.writable else currentLength?.writable ?: true
+            return objectValue.defineLength(newLength, writable)
         }
         if (objectValue is JSTypedArray) {
             when (val classified = objectValue.classifyIndex(key)) {
@@ -746,16 +750,15 @@ class Interpreter(
                 // 规范：非法数字索引的定义一律失败，且不执行值转换
                 JSTypedArray.IndexKey.Invalid -> return false
                 is JSTypedArray.IndexKey.Valid -> {
-                    // 规范：索引不允许改成访问器、不可配置、不可枚举或不可写
-                    if (descriptor.isAccessor ||
-                        !descriptor.configurable || !descriptor.enumerable || !descriptor.writable
-                    ) {
-                        return false
-                    }
+                    // 规范：索引不允许改成访问器，也不允许显式请求不可配置/不可枚举/不可写
+                    if (descriptor.hasAccessorFields) return false
+                    if (descriptor.hasConfigurable && !descriptor.configurable) return false
+                    if (descriptor.hasEnumerable && !descriptor.enumerable) return false
+                    if (descriptor.hasWritable && !descriptor.writable) return false
                     // 规范只使用 Desc.[[Value]]；描述符没有 value 字段时保持原值
-                    val value = descriptor.value ?: return true
+                    if (!descriptor.hasValue) return true
                     // ToNumber 可能触发 valueOf/toString，必须在挂起上下文完成
-                    setTypedArrayElement(objectValue, classified.index, value)
+                    setTypedArrayElement(objectValue, classified.index, descriptor.value ?: JSUndefined)
                     return true
                 }
             }
@@ -826,7 +829,51 @@ class Interpreter(
         descriptor: PropertyDescriptor,
     ): Boolean =
         if (objectValue is JSProxy) proxyDefineOwnProperty(objectValue, key, descriptor)
-        else defineOwnPropertyOn(objectValue, key, descriptor)
+        else validateAndApplyOwnProperty(objectValue, key, descriptor)
+
+    /**
+     * 普通对象的 ValidateAndApplyPropertyDescriptor + 写入。
+     *
+     * 这是 [[DefineOwnProperty]] 的规范入口：先按当前描述符校验兼容性，
+     * 再把调用方给出的部分描述符合并成完整描述符后写入存储。
+     * 数组 length、TypedArray 索引与 arguments 映射的专属规则仍由
+     * [defineOwnPropertyOn] 处理。
+     */
+    private suspend fun validateAndApplyOwnProperty(
+        objectValue: JSObject,
+        key: PropertyKey,
+        descriptor: PropertyDescriptor,
+    ): Boolean {
+        // 数组 length 的 ArraySetLength 自带转换顺序与不变量（RangeError 必须先于
+        // configurable 冲突），因此不进入通用 ValidateAndApply
+        if (objectValue is JSArray && key == PropertyKey.LENGTH) {
+            return defineOwnPropertyOn(objectValue, key, descriptor)
+        }
+        var current = objectValue.getOwnProperty(key)
+        // ES5 10.6：映射的 arguments 索引在描述符层面表现为可写数据属性，
+        // 否则访问器/数据属性的类型不变量会误拒绝合法的形参映射定义
+        if (objectValue is JSArguments && current != null && current.isAccessor) {
+            val mapping = objectValue.parameterMapping(key)
+            if (mapping != null) {
+                current = PropertyDescriptor.data(
+                    value = mapping.read(),
+                    writable = true,
+                    enumerable = current.enumerable,
+                    configurable = current.configurable,
+                )
+            }
+        }
+        val merged = validateAndApplyPropertyDescriptor(
+            objectValue = objectValue,
+            key = key,
+            extensible = objectValue.isExtensible(),
+            descriptor = descriptor,
+            current = current,
+        ) ?: return false
+        // 空描述符不改变属性：无需进入存储层，也避免触发 arguments 映射等副作用
+        if (descriptor.isEmpty) return true
+        return defineOwnPropertyOn(objectValue, key, merged)
+    }
 
     /** [[Delete]]：删除自有属性。 */
     suspend fun internalDeleteProperty(objectValue: JSObject, key: PropertyKey): Boolean =
@@ -843,11 +890,26 @@ class Interpreter(
         if (objectValue is JSProxy) proxyGetPrototypeOf(objectValue)
         else objectValue.prototype
 
-    /** [[SetPrototypeOf]]：设置原型（不可扩展且原型不同则失败）。 */
+    /**
+     * [[SetPrototypeOf]]：设置原型（不可扩展且原型不同则失败）。
+     *
+     * 普通对象按 OrdinarySetPrototypeOf 检查原型链环：V 沿 [[GetPrototypeOf]]
+     * 前进时若回到 O 则返回 false（`Object.setPrototypeOf` 据此抛 TypeError）。
+     */
     suspend fun internalSetPrototypeOf(objectValue: JSObject, proto: JSObject?): Boolean {
         if (objectValue is JSProxy) return proxySetPrototypeOf(objectValue, proto)
         if (objectValue.prototype === proto) return true
         if (!objectValue.isExtensible()) return false
+        // 按规范遍历候选原型链；Proxy 处停止（其 [[GetPrototypeOf]] 非普通内部方法）。
+        // 宿主低层写入可能已经制造环，用 visited 集合保证检测在有限步内结束。
+        val visited = HashSet<JSObject>()
+        var candidate: JSObject? = proto
+        while (candidate != null) {
+            if (candidate === objectValue) return false
+            if (candidate is JSProxy) break
+            if (!visited.add(candidate)) return false
+            candidate = candidate.prototype
+        }
         objectValue.prototype = proto
         return true
     }
@@ -861,6 +923,56 @@ class Interpreter(
     suspend fun internalPreventExtensions(objectValue: JSObject): Boolean {
         if (objectValue is JSProxy) return proxyPreventExtensions(objectValue)
         objectValue.preventExtensions()
+        return true
+    }
+
+    /**
+     * IsArray（ECMAScript 7.2.2）。
+     *
+     * Proxy 递归检查 target；已撤销的 Proxy 必须抛 TypeError
+     * （JSON.stringify / Array.isArray 等调用方依赖该行为）。
+     */
+    fun isArray(value: JSValue?): Boolean = when (value) {
+        is JSArray -> true
+        is JSProxy -> {
+            if (value.revoked) {
+                typeError("Cannot perform 'IsArray' on a proxy that has been revoked")
+            }
+            isArray(value.target)
+        }
+
+        else -> false
+    }
+
+    /** LengthOfArrayLike：读取 length 并按 ToLength 截断。 */
+    suspend fun lengthOfArrayLike(objectValue: JSObject): Long {
+        val number = toNumber(getV(objectValue, PropertyKey.LENGTH))
+        if (number.isNaN() || number <= 0.0) return 0L
+        if (number >= 9007199254740991.0) return 9007199254740991L
+        return kotlin.math.floor(number).toLong()
+    }
+
+    /**
+     * SetIntegrityLevel：冻结/密封的共享算法。
+     *
+     * 顺序必须与规范一致：先 [[PreventExtensions]]（失败返回 false，调用方抛
+     * TypeError），再取自有属性键，最后逐个 [[GetOwnProperty]] 后定义部分描述符。
+     * 部分描述符只带 configurable（冻结时数据属性再带 writable=false），
+     * Proxy 的 defineProperty trap 可以观察到字段缺失。
+     */
+    suspend fun setIntegrityLevel(objectValue: JSObject, frozen: Boolean): Boolean {
+        if (!internalPreventExtensions(objectValue)) return false
+        for (key in internalOwnPropertyKeys(objectValue)) {
+            val current = internalGetOwnProperty(objectValue, key) ?: continue
+            val descriptor = PropertyDescriptor.partial()
+            descriptor.hasConfigurable = true
+            descriptor.configurable = false
+            if (frozen && current.isData) {
+                descriptor.hasWritable = true
+                descriptor.writable = false
+            }
+            if (!internalDefineOwnProperty(objectValue, key, descriptor)) return false
+        }
         return true
     }
 
@@ -940,13 +1052,16 @@ class Interpreter(
                         return true
                     }
                     // 接收者不同：OrdinarySet 把值定义到接收者上
-                    if (receiver !is JSObject) return false
-                    return definePropertyOnReceiver(receiver, key, value)
+                    return ordinarySetOnReceiver(receiver, key, value)
                 }
             }
         }
         var current: JSObject? = target
         while (current != null) {
+            // 原型链遇到 Proxy：按 OrdinarySetWithOwnDescriptor 步骤 2.b 转发其 [[Set]]
+            if (current is JSProxy) {
+                return setWithReceiver(current, key, value, receiver)
+            }
             // 原型链中的 TypedArray：非法数字索引直接判定成功（不创建属性）
             if (current is JSTypedArray) {
                 when (current.classifyIndex(key)) {
@@ -965,55 +1080,40 @@ class Interpreter(
                 }
                 if (!descriptor.writable) return false
                 if (current === target) {
-                    if (receiver !is JSObject) return false
-                    return definePropertyOnReceiver(receiver, key, value)
+                    return ordinarySetOnReceiver(receiver, key, value)
                 }
                 break
             }
             current = internalGetPrototypeOf(current)
         }
-        if (receiver !is JSObject) return false
-        return internalDefineOwnProperty(
-            receiver,
-            key,
-            PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
-        )
+        return ordinarySetOnReceiver(receiver, key, value)
     }
 
     /**
-     * OrdinarySet 的接收者定义步骤。
+     * OrdinarySetWithOwnDescriptor 的接收者定义步骤。
      *
-     * 接收者已有属性时只更新值并保留原属性标志；访问器或不可写属性直接失败。
+     * 接收者已有属性时只更新值并保留原属性标志（Descriptor 只带 [[Value]]，
+     * Proxy 的 defineProperty trap 因此能看到部分描述符）；访问器或不可写属性失败。
      * 接收者没有该属性时按 CreateDataProperty 创建可写/可枚举/可配置数据属性。
      */
-    private suspend fun definePropertyOnReceiver(
-        receiver: JSObject,
+    private suspend fun ordinarySetOnReceiver(
+        receiver: JSValue,
         key: PropertyKey,
         value: JSValue,
     ): Boolean {
-        val existing = internalGetOwnProperty(receiver, key)
+        val receiverObject = receiver as? JSObject ?: return false
+        val existing = internalGetOwnProperty(receiverObject, key)
         if (existing != null) {
             if (existing.isAccessor || !existing.writable) return false
-            return internalDefineOwnProperty(
-                receiver,
-                key,
-                PropertyDescriptor.data(
-                    value = value,
-                    writable = existing.writable,
-                    enumerable = existing.enumerable,
-                    configurable = existing.configurable,
-                ),
-            )
+            val valueDescriptor = PropertyDescriptor.partial()
+            valueDescriptor.hasValue = true
+            valueDescriptor.value = value
+            return internalDefineOwnProperty(receiverObject, key, valueDescriptor)
         }
         return internalDefineOwnProperty(
-            receiver,
+            receiverObject,
             key,
-            PropertyDescriptor.data(
-                value = value,
-                writable = true,
-                enumerable = true,
-                configurable = true,
-            ),
+            PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
         )
     }
 
@@ -1082,6 +1182,13 @@ class Interpreter(
         val hasSet = internalHasProperty(value, PropertyKey.Str("set"))
         val hasEnumerable = internalHasProperty(value, PropertyKey.Str("enumerable"))
         val hasConfigurable = internalHasProperty(value, PropertyKey.Str("configurable"))
+        // 记录字段是否存在：Proxy trap 的 Desc 参数与 FromPropertyDescriptor 依赖该信息
+        descriptor.hasValue = hasValue
+        descriptor.hasWritable = hasWritable
+        descriptor.hasGet = hasGet
+        descriptor.hasSet = hasSet
+        descriptor.hasEnumerable = hasEnumerable
+        descriptor.hasConfigurable = hasConfigurable
         if (hasValue) descriptor.value = getV(value, PropertyKey.Str("value"))
         if (hasWritable) descriptor.writable = toBoolean(getV(value, PropertyKey.Str("writable")))
         if (hasGet) {
@@ -1107,41 +1214,208 @@ class Interpreter(
         return descriptor
     }
 
-    /** FromPropertyDescriptor：把描述符转换为普通对象。 */
+    /** FromPropertyDescriptor：把描述符转换为普通对象（只包含显式存在的字段）。 */
     internal fun fromPropertyDescriptor(descriptor: PropertyDescriptor): JSObject {
         val result = JSObject(prototype = intrinsics.objectPrototype)
-        if (descriptor.isAccessor) {
-            result.defineDataProperty(PropertyKey.Str("get"), descriptor.get ?: JSUndefined, true, true, true)
-            result.defineDataProperty(PropertyKey.Str("set"), descriptor.set ?: JSUndefined, true, true, true)
-        } else {
-            result.defineDataProperty(PropertyKey.Str("value"), descriptor.value ?: JSUndefined, true, true, true)
+        if (descriptor.hasValue) {
+            result.defineDataProperty(
+                PropertyKey.Str("value"),
+                descriptor.value ?: JSUndefined,
+                true, true, true,
+            )
+        }
+        if (descriptor.hasWritable) {
             result.defineDataProperty(
                 PropertyKey.Str("writable"),
                 JSBoolean.getJsBoolean(descriptor.writable),
                 true, true, true,
             )
         }
-        result.defineDataProperty(
-            PropertyKey.Str("enumerable"),
-            JSBoolean.getJsBoolean(descriptor.enumerable),
-            true, true, true,
-        )
-        result.defineDataProperty(
-            PropertyKey.Str("configurable"),
-            JSBoolean.getJsBoolean(descriptor.configurable),
-            true, true, true,
-        )
+        if (descriptor.hasGet) {
+            result.defineDataProperty(PropertyKey.Str("get"), descriptor.get ?: JSUndefined, true, true, true)
+        }
+        if (descriptor.hasSet) {
+            result.defineDataProperty(PropertyKey.Str("set"), descriptor.set ?: JSUndefined, true, true, true)
+        }
+        if (descriptor.hasEnumerable) {
+            result.defineDataProperty(
+                PropertyKey.Str("enumerable"),
+                JSBoolean.getJsBoolean(descriptor.enumerable),
+                true, true, true,
+            )
+        }
+        if (descriptor.hasConfigurable) {
+            result.defineDataProperty(
+                PropertyKey.Str("configurable"),
+                JSBoolean.getJsBoolean(descriptor.configurable),
+                true, true, true,
+            )
+        }
         return result
     }
 
-    /** [[GetOwnProperty]] 的 Proxy 分支。 */
+    /**
+     * CompletePropertyDescriptor：为缺失字段补默认值。
+     *
+     * [[GetOwnProperty]] 的 trap 结果必须先补全，再与 target 描述符比较；
+     * 补全规则按描述符类型区分（访问器补 get/set，数据属性补 value/writable）。
+     */
+    internal fun completePropertyDescriptor(descriptor: PropertyDescriptor): PropertyDescriptor {
+        val result = descriptor.copy()
+        val isAccessorDescriptor = result.hasAccessorFields
+        if (isAccessorDescriptor) {
+            if (!result.hasGet) result.get = null
+            if (!result.hasSet) result.set = null
+            result.hasGet = true
+            result.hasSet = true
+            result.accessor = true
+        } else {
+            if (!result.hasValue) result.value = JSUndefined
+            if (!result.hasWritable) result.writable = false
+            result.hasValue = true
+            result.hasWritable = true
+            result.accessor = false
+        }
+        if (!result.hasEnumerable) result.enumerable = false
+        if (!result.hasConfigurable) result.configurable = false
+        result.hasEnumerable = true
+        result.hasConfigurable = true
+        return result
+    }
+
+    /**
+     * IsCompatiblePropertyDescriptor(Extensible, Desc, Current)。
+     *
+     * 即 ValidateAndApplyPropertyDescriptor 只校验、不写入的分支；
+     * 返回 false 表示 Proxy 不变量被破坏（调用方抛 TypeError）。
+     */
+    internal fun isCompatiblePropertyDescriptor(
+        extensible: Boolean,
+        descriptor: PropertyDescriptor,
+        current: PropertyDescriptor?,
+    ): Boolean = validateAndApplyPropertyDescriptor(
+        objectValue = null,
+        key = null,
+        extensible = extensible,
+        descriptor = descriptor,
+        current = current,
+    ) != null
+
+    /**
+     * ValidateAndApplyPropertyDescriptor（不含异质对象的专属步骤）。
+     *
+     * @param objectValue null 表示只校验；否则返回合并后的完整描述符，由调用方写入存储
+     * @return 校验失败返回 null；成功返回应用后的完整描述符（`objectValue` 为 null 时
+     *   返回值仅表示可应用，不保证字段完整）
+     */
+    internal fun validateAndApplyPropertyDescriptor(
+        objectValue: JSObject?,
+        key: PropertyKey?,
+        extensible: Boolean,
+        descriptor: PropertyDescriptor,
+        current: PropertyDescriptor?,
+    ): PropertyDescriptor? {
+        if (current == null) {
+            if (!extensible) return null
+            if (objectValue == null) return descriptor
+            // 新属性：未提供的字段取默认值，类型由描述符是否包含访问器字段决定
+            val created = PropertyDescriptor()
+            created.accessor = descriptor.hasAccessorFields
+            if (created.accessor) {
+                created.get = if (descriptor.hasGet) descriptor.get else null
+                created.set = if (descriptor.hasSet) descriptor.set else null
+                created.hasGet = true
+                created.hasSet = true
+            } else {
+                created.value = if (descriptor.hasValue) descriptor.value else JSUndefined
+                created.writable = descriptor.hasWritable && descriptor.writable
+                created.hasValue = true
+                created.hasWritable = true
+            }
+            created.enumerable = descriptor.enumerable
+            created.configurable = descriptor.configurable
+            created.hasEnumerable = true
+            created.hasConfigurable = true
+            return created
+        }
+        if (descriptor.isEmpty) return current
+        if (!current.configurable) {
+            if (descriptor.hasConfigurable && descriptor.configurable) return null
+            if (descriptor.hasEnumerable && descriptor.enumerable != current.enumerable) return null
+            if (descriptor.hasAccessorFields && !current.isAccessor) return null
+            if (descriptor.hasDataFields && current.isAccessor) return null
+            if (current.isData) {
+                if (!current.writable) {
+                    if (descriptor.hasWritable && descriptor.writable) return null
+                    if (descriptor.hasValue &&
+                        !sameValue(descriptor.value ?: JSUndefined, current.value ?: JSUndefined)
+                    ) {
+                        return null
+                    }
+                }
+            } else {
+                if (descriptor.hasGet &&
+                    !sameValue(descriptor.get ?: JSUndefined, current.get ?: JSUndefined)
+                ) {
+                    return null
+                }
+                if (descriptor.hasSet &&
+                    !sameValue(descriptor.set ?: JSUndefined, current.set ?: JSUndefined)
+                ) {
+                    return null
+                }
+            }
+        }
+        if (objectValue == null) return descriptor
+        val merged = PropertyDescriptor()
+        val mergedAccessor = when {
+            descriptor.hasAccessorFields -> true
+            descriptor.hasDataFields -> false
+            else -> current.isAccessor
+        }
+        merged.accessor = mergedAccessor
+        if (mergedAccessor) {
+            // 转换为访问器时未提供的字段取 undefined；访问器之间保留旧值
+            if (!current.isAccessor) {
+                merged.get = if (descriptor.hasGet) descriptor.get else null
+                merged.set = if (descriptor.hasSet) descriptor.set else null
+            } else {
+                merged.get = if (descriptor.hasGet) descriptor.get else current.get
+                merged.set = if (descriptor.hasSet) descriptor.set else current.set
+            }
+            merged.hasGet = true
+            merged.hasSet = true
+        } else {
+            if (current.isAccessor) {
+                merged.value = if (descriptor.hasValue) descriptor.value else JSUndefined
+                merged.writable = descriptor.hasWritable && descriptor.writable
+            } else {
+                merged.value = if (descriptor.hasValue) descriptor.value else current.value
+                merged.writable = if (descriptor.hasWritable) descriptor.writable else current.writable
+            }
+            merged.hasValue = true
+            merged.hasWritable = true
+        }
+        merged.enumerable = if (descriptor.hasEnumerable) descriptor.enumerable else current.enumerable
+        merged.configurable = if (descriptor.hasConfigurable) descriptor.configurable else current.configurable
+        merged.hasEnumerable = true
+        merged.hasConfigurable = true
+        return merged
+    }
+
+    /** [[GetOwnProperty]] 的 Proxy 分支（ECMAScript 10.5.5）。 */
     private suspend fun proxyGetOwnProperty(proxy: JSProxy, key: PropertyKey): PropertyDescriptor? {
         val trap = proxyTrap(proxy, "getOwnPropertyDescriptor")
             ?: return internalGetOwnProperty(proxy.target, key)
         val result = callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, propertyKeyToValue(key)))
+        // 规范步骤顺序：先校验 trap 结果类型，再读取 target 描述符
+        if (result !is JSUndefined && result !is JSObject) {
+            throw typeError("'getOwnPropertyDescriptor' trap must return an object or undefined")
+        }
         val targetDescriptor = internalGetOwnProperty(proxy.target, key)
         if (result is JSUndefined) {
-            if (targetDescriptor != null && !targetDescriptor.configurable) {
+            if (targetDescriptor == null) return null
+            if (!targetDescriptor.configurable) {
                 throw typeError("'getOwnPropertyDescriptor' trap reported a non-configurable property as non-existent")
             }
             if (!internalIsExtensible(proxy.target)) {
@@ -1149,43 +1423,30 @@ class Interpreter(
             }
             return null
         }
-        val descriptor = toPropertyDescriptor(result)
-            ?: throw typeError("'getOwnPropertyDescriptor' trap must return an object or undefined")
-        if (targetDescriptor != null && !targetDescriptor.configurable) {
-            if (descriptor.configurable) {
-                throw typeError("'getOwnPropertyDescriptor' trap reported a non-configurable property as configurable")
+        val extensibleTarget = internalIsExtensible(proxy.target)
+        val resultDescriptor = completePropertyDescriptor(
+            toPropertyDescriptor(result)
+                ?: throw typeError("'getOwnPropertyDescriptor' trap must return an object or undefined")
+        )
+        if (!isCompatiblePropertyDescriptor(extensibleTarget, resultDescriptor, targetDescriptor)) {
+            throw typeError("'getOwnPropertyDescriptor' trap returned an incompatible descriptor")
+        }
+        if (!resultDescriptor.configurable) {
+            // 代理不能凭空报告一个不可配置属性：target 必须已有同名的不可配置属性
+            if (targetDescriptor == null || targetDescriptor.configurable) {
+                throw typeError("'getOwnPropertyDescriptor' trap reported a non-configurable property not present on the target")
             }
-            if (targetDescriptor.isData && !targetDescriptor.writable) {
-                if (!descriptor.isData || descriptor.writable) {
-                    throw typeError("'getOwnPropertyDescriptor' trap reported a non-configurable, non-writable property as writable")
-                }
-                if (!sameValue(descriptor.value ?: JSUndefined, targetDescriptor.value ?: JSUndefined)) {
-                    throw typeError("'getOwnPropertyDescriptor' trap reported a different value for a non-configurable, non-writable property")
-                }
-            }
-            if (targetDescriptor.isData && targetDescriptor.writable &&
-                descriptor.isData && !descriptor.writable
+            // 规范 10.5.5 步骤 17.b：target 可写而 trap 报告不可写同样违反不变量
+            if (resultDescriptor.hasWritable && !resultDescriptor.writable &&
+                targetDescriptor.isData && targetDescriptor.writable
             ) {
                 throw typeError("'getOwnPropertyDescriptor' trap reported a writable property as non-writable")
             }
-            if (targetDescriptor.isAccessor) {
-                if (!descriptor.isAccessor) {
-                    throw typeError("'getOwnPropertyDescriptor' trap reported an accessor property as a data property")
-                }
-                if (!sameValue(descriptor.get ?: JSUndefined, targetDescriptor.get ?: JSUndefined) ||
-                    !sameValue(descriptor.set ?: JSUndefined, targetDescriptor.set ?: JSUndefined)
-                ) {
-                    throw typeError("'getOwnPropertyDescriptor' trap reported different accessors")
-                }
-            }
         }
-        if (targetDescriptor == null && !internalIsExtensible(proxy.target)) {
-            throw typeError("'getOwnPropertyDescriptor' trap reported a property of a non-extensible target")
-        }
-        return descriptor
+        return resultDescriptor
     }
 
-    /** [[DefineOwnProperty]] 的 Proxy 分支。 */
+    /** [[DefineOwnProperty]] 的 Proxy 分支（ECMAScript 10.5.6）。 */
     private suspend fun proxyDefineOwnProperty(
         proxy: JSProxy,
         key: PropertyKey,
@@ -1193,88 +1454,85 @@ class Interpreter(
     ): Boolean {
         val trap = proxyTrap(proxy, "defineProperty")
             ?: return internalDefineOwnProperty(proxy.target, key, descriptor)
+        // FromPropertyDescriptor 只携带调用方显式给出的字段
         val descriptorObject = fromPropertyDescriptor(descriptor)
-        val result = toBoolean(callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, propertyKeyToValue(key), descriptorObject)))
+        val result = toBoolean(
+            callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, propertyKeyToValue(key), descriptorObject))
+        )
         val targetDescriptor = internalGetOwnProperty(proxy.target, key)
+        val extensibleTarget = internalIsExtensible(proxy.target)
+        val settingConfigFalse = descriptor.hasConfigurable && !descriptor.configurable
         if (!result) {
-            if (targetDescriptor != null && !targetDescriptor.configurable) {
-                throw typeError("'defineProperty' trap returned false for a non-configurable property")
-            }
-            if (!internalIsExtensible(proxy.target)) {
-                throw typeError("'defineProperty' trap returned false for a non-extensible target")
+            // trap 返回 false 时仍要拒绝与 target 不兼容的请求，但自身的 false 合法
+            if (targetDescriptor != null) {
+                if (!targetDescriptor.configurable) {
+                    throw typeError("'defineProperty' trap returned false for a non-configurable property")
+                }
+                if (!isCompatiblePropertyDescriptor(extensibleTarget, descriptor, targetDescriptor)) {
+                    throw typeError("'defineProperty' trap returned false with an incompatible descriptor")
+                }
             }
             return false
         }
-        if (targetDescriptor != null && !targetDescriptor.configurable) {
-            if (descriptor.configurable) {
-                throw typeError("'defineProperty' trap reported a non-configurable property as configurable")
+        if (targetDescriptor == null) {
+            if (!extensibleTarget) {
+                throw typeError("'defineProperty' trap reported a new property on a non-extensible target")
             }
-            if (targetDescriptor.isData && !targetDescriptor.writable) {
-                if (!descriptor.isData || descriptor.writable) {
-                    throw typeError("'defineProperty' trap reported a non-configurable, non-writable property as writable")
-                }
-                val descriptorValue = descriptor.value
-                if (descriptorValue != null &&
-                    !sameValue(descriptorValue, targetDescriptor.value ?: JSUndefined)
-                ) {
-                    throw typeError("'defineProperty' trap reported a different value for a non-configurable, non-writable property")
-                }
+            if (settingConfigFalse) {
+                throw typeError("'defineProperty' trap cannot define a non-configurable property on a target without it")
             }
-            if (targetDescriptor.isData && targetDescriptor.writable &&
-                descriptor.isData && !descriptor.writable
+        } else {
+            if (!isCompatiblePropertyDescriptor(extensibleTarget, descriptor, targetDescriptor)) {
+                throw typeError("'defineProperty' trap returned true for an incompatible descriptor")
+            }
+            if (settingConfigFalse && targetDescriptor.configurable) {
+                throw typeError("'defineProperty' trap reported a configurable property as non-configurable")
+            }
+            if (targetDescriptor.isData && !targetDescriptor.configurable &&
+                targetDescriptor.writable && descriptor.hasWritable && !descriptor.writable
             ) {
                 throw typeError("'defineProperty' trap reported a writable property as non-writable")
             }
-            if (targetDescriptor.isAccessor) {
-                if (!descriptor.isAccessor) {
-                    throw typeError("'defineProperty' trap reported an accessor property as a data property")
-                }
-                if (!sameValue(descriptor.get ?: JSUndefined, targetDescriptor.get ?: JSUndefined) ||
-                    !sameValue(descriptor.set ?: JSUndefined, targetDescriptor.set ?: JSUndefined)
-                ) {
-                    throw typeError("'defineProperty' trap reported different accessors")
-                }
-            }
-        }
-        if (targetDescriptor == null && !internalIsExtensible(proxy.target)) {
-            throw typeError("'defineProperty' trap reported a new property on a non-extensible target")
         }
         return true
     }
 
-    /** [[Delete]] 的 Proxy 分支。 */
+    /** [[Delete]] 的 Proxy 分支（ECMAScript 10.5.10）。 */
     private suspend fun proxyDeleteProperty(proxy: JSProxy, key: PropertyKey): Boolean {
         val trap = proxyTrap(proxy, "deleteProperty")
             ?: return internalDeleteProperty(proxy.target, key)
         val result = toBoolean(callProxyTrap(proxy, trap, listOf<JSValue>(proxy.target, propertyKeyToValue(key))))
-        if (!result) {
-            val targetDescriptor = internalGetOwnProperty(proxy.target, key)
-            if (targetDescriptor != null && !targetDescriptor.configurable) {
-                throw typeError("'deleteProperty' trap returned false for a non-configurable property")
-            }
-            if (!internalIsExtensible(proxy.target)) {
-                throw typeError("'deleteProperty' trap returned false for a non-extensible target")
-            }
+        // trap 返回 false 时直接失败；只有声称删除成功才需要校验 target
+        if (!result) return false
+        val targetDescriptor = internalGetOwnProperty(proxy.target, key)
+            ?: return true
+        if (!targetDescriptor.configurable) {
+            throw typeError("'deleteProperty' trap reported a non-configurable property as deleted")
         }
-        return result
+        if (!internalIsExtensible(proxy.target)) {
+            throw typeError("'deleteProperty' trap reported a property of a non-extensible target as deleted")
+        }
+        return true
     }
 
-    /** [[OwnPropertyKeys]] 的 Proxy 分支。 */
+    /** [[OwnPropertyKeys]] 的 Proxy 分支（ECMAScript 10.5.11）。 */
     private suspend fun proxyOwnPropertyKeys(proxy: JSProxy): List<PropertyKey> {
         val trap = proxyTrap(proxy, "ownKeys")
             ?: return internalOwnPropertyKeys(proxy.target)
         val result = callProxyTrap(proxy, trap, listOf(proxy.target))
         if (result !is JSObject) throw typeError("'ownKeys' trap must return an object")
-        val lengthValue = toNumber(getV(result, PropertyKey.LENGTH))
-        val length = when {
-            lengthValue.isNaN() || lengthValue <= 0.0 -> 0L
-            lengthValue >= 9007199254740991.0 -> 9007199254740991L
-            else -> kotlin.math.floor(lengthValue).toLong()
-        }
+        val length = lengthOfArrayLike(result)
         val keys = ArrayList<PropertyKey>(length.toInt().coerceAtMost(1024))
         val seen = HashSet<PropertyKey>()
         for (index in 0 until length) {
-            val key = toPropertyKey(getV(result, PropertyKey.Str(index.toString())))
+            // CreateListFromArrayLike 只接受 String/Symbol：其他类型必须抛 TypeError，
+            // 不能像 ToPropertyKey 那样把数字/布尔值静默转成字符串
+            val element = getV(result, PropertyKey.Str(index.toString()))
+            val key = when (element) {
+                is JSString -> PropertyKey.Str(element.value)
+                is JSSymbol -> PropertyKey.Sym(element)
+                else -> throw typeError("'ownKeys' trap result must contain only strings and symbols")
+            }
             if (!seen.add(key)) throw typeError("'ownKeys' trap returned duplicate keys")
             keys.add(key)
         }
@@ -1457,12 +1715,13 @@ class Interpreter(
         key: PropertyKey,
         value: JSValue,
         strict: Boolean,
+        receiver: JSValue = objectValue,
     ) {
         if (objectValue is JSProxy) {
             val trap = proxyTrap(objectValue, "set")
             if (trap != null) {
                 val result = toBoolean(
-                    callProxyTrap(objectValue, trap, listOf<JSValue>(objectValue.target, propertyKeyToValue(key), value, objectValue))
+                    callProxyTrap(objectValue, trap, listOf<JSValue>(objectValue.target, propertyKeyToValue(key), value, receiver))
                 )
                 if (!result) {
                     if (strict) throw typeError("'set' trap returned falsish")
@@ -1484,7 +1743,7 @@ class Interpreter(
                 return
             }
             // 无 trap：OrdinarySet(target, P, V, Receiver = proxy)
-            val success = setWithReceiver(objectValue.target, key, value, objectValue)
+            val success = setWithReceiver(objectValue.target, key, value, receiver)
             if (!success && strict) {
                 throw typeError("Cannot assign to property '$key'")
             }
@@ -1510,6 +1769,15 @@ class Interpreter(
         }
         var current: JSObject? = objectValue
         while (current != null) {
+            // 原型链遇到 Proxy：按 OrdinarySetWithOwnDescriptor 步骤 2.b 转发其 [[Set]]，
+            // Receiver 仍是最初被赋值的对象/原始值
+            if (current is JSProxy) {
+                val success = setWithReceiver(current, key, value, receiver)
+                if (!success && strict) {
+                    throw typeError("Cannot assign to property '$key'")
+                }
+                return
+            }
             // 原型链中的 TypedArray：非法数字索引不再继续查找（等价于 [[Set]] 返回 true）
             if (current is JSTypedArray) {
                 when (current.classifyIndex(key)) {
@@ -1526,7 +1794,7 @@ class Interpreter(
                         if (strict) throw typeError("Cannot set property '${key}' which has only a getter")
                         return
                     }
-                    callFunction(setter, objectValue, listOf(value))
+                    callFunction(setter, receiver, listOf(value))
                     return
                 }
                 if (!descriptor.writable) {
@@ -1534,14 +1802,7 @@ class Interpreter(
                     return
                 }
                 if (current === objectValue) {
-                    val updated = internalDefineOwnProperty(current, key,
-                        PropertyDescriptor.data(
-                            value = value,
-                            writable = true,
-                            enumerable = descriptor.enumerable,
-                            configurable = descriptor.configurable,
-                        )
-                    )
+                    val updated = ordinarySetOnReceiver(receiver, key, value)
                     if (!updated && strict) {
                         throw typeError("Cannot assign to read only property '${key}'")
                     }
@@ -1551,11 +1812,7 @@ class Interpreter(
             }
             current = internalGetPrototypeOf(current)
         }
-        val created = internalDefineOwnProperty(
-            objectValue,
-            key,
-            PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
-        )
+        val created = ordinarySetOnReceiver(receiver, key, value)
         if (!created && strict) {
             throw typeError("Cannot add property '${key}', object is not extensible")
         }
@@ -1606,7 +1863,13 @@ class Interpreter(
     suspend fun prototypeFromNewTarget(newTarget: JSValue, fallback: JSObject): JSObject {
         if (newTarget is JSUndefined) return fallback
         val proto = getV(newTarget, PropertyKey.PROTOTYPE)
-        return proto as? JSObject ?: fallback
+        if (proto is JSObject) return proto
+        // GetPrototypeFromConstructor 步骤 4：prototype 不是对象时 GetFunctionRealm(newTarget)，
+        // 已撤销的 Proxy 必须在此抛 TypeError
+        if (newTarget is JSProxy && newTarget.revoked) {
+            throw typeError("Cannot get function realm from a revoked proxy")
+        }
+        return fallback
     }
 
     /**
@@ -2382,8 +2645,8 @@ class Interpreter(
         }
         // 必须在构造时读取当前的 F.prototype，而不是创建函数时捕获的对象；
         // Reflect.construct 允许 newTarget 与 constructor 不同。
-        val prototypeValue = getV(newTarget, PropertyKey.PROTOTYPE)
-        val instancePrototype = prototypeValue as? JSObject ?: intrinsics.objectPrototype
+        // 同时处理 GetPrototypeFromConstructor 的 GetFunctionRealm 分支（撤销 Proxy）。
+        val instancePrototype = prototypeFromNewTarget(newTarget, intrinsics.objectPrototype)
         val instance = JSObject(prototype = instancePrototype)
 
         val derived = function.isClassConstructor && function.superConstructor != null
@@ -4405,12 +4668,10 @@ class Interpreter(
     }
 
     /** DefineField：CreateDataPropertyOrThrow 语义，定义失败时抛 TypeError。 */
-    private fun defineFieldOrThrow(receiver: JSObject, key: PropertyKey, value: JSValue) {
-        val existing = receiver.getOwnProperty(key)
-        if (existing != null && !existing.configurable) {
-            throw typeError("Cannot define property '${key}'")
-        }
-        val defined = receiver.defineOwnProperty(
+    /** DefineField：通过 [[DefineOwnProperty]] 定义公有字段（Proxy trap 可观察）。 */
+    private suspend fun defineFieldOrThrow(receiver: JSObject, key: PropertyKey, value: JSValue) {
+        val defined = internalDefineOwnProperty(
+            receiver,
             key,
             PropertyDescriptor.data(
                 value = value,
@@ -5854,6 +6115,8 @@ class Interpreter(
         kind: DeclarationKind?,
         environment: Environment?,
         reference: MemberReference? = null,
+        /** 键控解构绑定在 GetV 之前解析出的 var 绑定环境（InitializeReferencedBinding） */
+        bindingOwnerOverride: Environment? = null,
     ) {
         when (pattern) {
             is Identifier -> {
@@ -5863,8 +6126,12 @@ class Interpreter(
                     val targetEnvironment = environment
                         ?: throw syntaxError("Invalid destructuring environment")
                     when (kind) {
-                        DeclarationKind.VAR ->
-                            targetEnvironment.findVarScope().createVarBinding(pattern.name, value)
+                        DeclarationKind.VAR -> {
+                            // 键控解构已在 GetV 之前完成 ResolveBinding（HasBinding 可观察），
+                            // 若解析到绑定则用该环境初始化
+                            val owner = bindingOwnerOverride ?: targetEnvironment.findVarScope()
+                            owner.createVarBinding(pattern.name, value)
+                        }
 
                         DeclarationKind.LET -> {
                             if (!initializeLexicalIfDeclared(targetEnvironment, pattern.name, value)) {
@@ -6004,12 +6271,21 @@ class Interpreter(
                             } else {
                                 null
                             }
+                            // KeyedBindingInitialization：ResolveBinding 先于 GetV，
+                            // with/Proxy 环境的 HasBinding 因此可以观察到顺序
+                            val bindingOwner = if (kind == DeclarationKind.VAR) {
+                                destructuringBindingTargetIdentifier(element.value)
+                                    ?.let { findBindingOwner(it.name) }
+                            } else {
+                                null
+                            }
                             bindPattern(
                                 element.value,
                                 getV(source, key),
                                 kind,
                                 environment,
                                 targetReference,
+                                bindingOwner,
                             )
                         }
 
@@ -6049,6 +6325,18 @@ class Interpreter(
 
             else -> throw syntaxError("Invalid destructuring target")
         }
+    }
+
+    /**
+     * 解构绑定目标中的直接标识符：
+     * - `{a}` → a
+     * - `{a = 1}` → a
+     * 其他模式（成员表达式、嵌套模式）返回 null。
+     */
+    private fun destructuringBindingTargetIdentifier(pattern: Expression): Identifier? = when (pattern) {
+        is Identifier -> pattern
+        is AssignmentExpr -> destructuringBindingTargetIdentifier(pattern.target)
+        else -> null
     }
 
     /**

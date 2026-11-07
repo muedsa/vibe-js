@@ -243,8 +243,10 @@ object ErrorBuiltins {
                 if (thisValue === intrinsics.errorPrototype) {
                     interpreter.typeError("Cannot set Error.prototype.stack")
                 }
-                if (thisValue.getOwnProperty(stackKey) == null) {
-                    val defined = interpreter.defineOwnPropertyOn(
+                // SetterThatIgnoresPrototypeProperties：
+                // 必须走内部方法，Proxy receiver 的 gopd/defineProperty/set trap 才可观察
+                if (interpreter.internalGetOwnProperty(thisValue, stackKey) == null) {
+                    val defined = interpreter.internalDefineOwnProperty(
                         thisValue,
                         stackKey,
                         PropertyDescriptor.data(
