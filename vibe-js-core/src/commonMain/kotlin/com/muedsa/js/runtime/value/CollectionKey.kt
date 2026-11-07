@@ -58,6 +58,8 @@ internal class CollectionKey(val value: JSValue) {
                 }
             }
             is JSString -> value.value.hashCode()
+            // BigInt 是原始值，按数值哈希/相等（JSBigInt 已重写 hashCode）
+            is JSBigInt -> value.hashCode()
             // 对象、函数、Symbol：引用身份，同一对象哈希稳定
             else -> value.hashCode()
         }
@@ -74,6 +76,7 @@ internal class CollectionKey(val value: JSValue) {
                 a is JSNumber && b is JSNumber ->
                     a.value == b.value || (a.value.isNaN() && b.value.isNaN())
                 a is JSString && b is JSString -> a.value == b.value
+                a is JSBigInt && b is JSBigInt -> a == b
                 // undefined/null 是单例（上面已由 === 处理）；Symbol/对象只按引用相等
                 else -> false
             }

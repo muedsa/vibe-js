@@ -2811,13 +2811,14 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
-    fun `BigInt 字面量可被解析但求值抛出 TypeError`() = runTest {
+    fun `BigInt 字面量在解析与求值阶段均可用`() = runTest {
         val runtime = TestRuntime()
-        // 保留语法识别以便解析包含 BigInt 字面量的宿主脚本
+        // L3.3 起 BigInt 字面量具备完整运行时语义（此前仅保留语法识别）
         assertEquals("function", runtime.evalString(
             "var f = function () { return 2n; }; typeof f"
         ))
-        assertFailsWith<JSException> { runtime.eval("1n;") }
+        assertEquals("2", runtime.evalString("String((function () { return 2n; })())"))
+        assertEquals("bigint", runtime.evalString("typeof 1n"))
     }
 
     @Test

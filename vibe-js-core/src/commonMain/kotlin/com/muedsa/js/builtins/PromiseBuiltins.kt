@@ -41,11 +41,17 @@ object PromiseBuiltins {
             val promise = JSPromise(interpreter.prototypeFromNewTarget(newTarget, prototype))
             // CreateResolvingFunctions：共享 [[AlreadyResolved]]，重复 resolve/reject 被忽略
             val (resolveFunction, rejectFunction) = PromiseSupport.createResolvingFunctions(interpreter, promise)
+            // 执行器是用户代码：期间必须清除 nativeConstructCall，
+            // 否则执行器内调用 Symbol() 等按 new 语义检查的内建会误判
+            val previousConstructCall = interpreter.nativeConstructCall
+            interpreter.nativeConstructCall = false
             try {
                 interpreter.callFunction(executor, JSUndefined, listOf(resolveFunction, rejectFunction))
             } catch (error: JSException) {
                 // 使用带 [[AlreadyResolved]] 守卫的拒绝函数：已解析后的异常被忽略
                 PromiseSupport.callReject(interpreter, rejectFunction, error)
+            } finally {
+                interpreter.nativeConstructCall = previousConstructCall
             }
             promise
         }

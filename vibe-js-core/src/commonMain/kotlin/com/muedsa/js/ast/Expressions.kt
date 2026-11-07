@@ -17,8 +17,7 @@ class NumberLiteral(
 /**
  * BigInt 字面量（如 `2n`）。
  *
- * 项目明确不支持 BigInt 运行时；保留语法识别以便解析包含该语法的宿主脚本，
- * 求值时统一抛出 TypeError。
+ * 运行时解析为 [com.muedsa.js.runtime.value.JSBigInt]；数字分隔符 `_` 在解析时移除。
  */
 class BigIntLiteral(
     val raw: String,

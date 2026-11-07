@@ -6,7 +6,7 @@ import com.muedsa.js.runtime.BuiltinRegistry
  * ECMAScript 标准内建模块的安装入口。
  *
  * 安装顺序有依赖关系：
- * Object -> Function -> Array -> String -> Number -> Boolean
+ * Object -> Function -> Array -> String -> Number -> Boolean -> BigInt
  * -> Error -> Math -> JSON -> Global。
  */
 object CoreBuiltins {
@@ -33,6 +33,8 @@ object CoreBuiltins {
         StringBuiltins.install(registry)
         NumberBuiltins.install(registry)
         BooleanBuiltins.install(registry)
+        // BigInt 依赖 Symbol.toStringTag 与 Object.prototype
+        BigIntBuiltins.install(registry)
         RegExpBuiltins.install(registry)
         DateBuiltins.install(registry)
         MapBuiltins.install(registry)

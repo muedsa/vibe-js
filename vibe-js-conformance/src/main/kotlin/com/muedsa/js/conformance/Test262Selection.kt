@@ -100,7 +100,7 @@ internal object Test262Selection {
     /**
      * 判定选中后的用例是否跳过，返回跳过原因。
      *
-     * 这里的判断包含对源码的文本匹配（Generator/BigInt/Proxy 等），
+     * 这里的判断包含对源码的文本匹配（Proxy/Generator 等），
      * 因此可能因注释或字符串误排；[Test262Conformance] 会把每条跳过原因落盘，
      * 便于人工审计误排。
      *
@@ -150,20 +150,18 @@ internal object Test262Selection {
         ) {
             return SkipDecision("unsupported feature: ArrayBuffer", textMatchOnly = true)
         }
-        // ES2015 子集中排除 BigInt/Proxy/Generator 内容（项目明确排除）
+        // ES2015 子集中排除 Proxy/Generator 内容（BigInt 已在 L3.3 纳入支持范围）
         if (suite == "es2015" &&
-            (source.contains("BigInt") ||
-                source.contains("Proxy") ||
+            (source.contains("Proxy") ||
                 source.contains("function *") ||
                 source.contains("function*") ||
                 generatorFunctionPattern.containsMatchIn(source) ||
                 source.contains("async *") ||
                 source.contains("async*") ||
                 source.contains("for await") ||
-                generatorMethodPattern.containsMatchIn(source) ||
-                bigIntLiteralPattern.containsMatchIn(source))
+                generatorMethodPattern.containsMatchIn(source))
         ) {
-            return SkipDecision("unsupported BigInt/Proxy/Generator", textMatchOnly = true)
+            return SkipDecision("unsupported Proxy/Generator", textMatchOnly = true)
         }
         if (metadata.negativePhase != null && metadata.negativePhase !in setOf("parse", "runtime")) {
             return SkipDecision("unsupported negative phase: ${metadata.negativePhase}")
@@ -185,11 +183,6 @@ internal object Test262Selection {
     private val dollar262MemberPattern =
         Regex("""\$262\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)""")
 
-    /** BigInt 字面量检测（项目明确排除 BigInt）。 */
-    private val bigIntLiteralPattern = Regex(
-        """(?<![A-Za-z0-9_$])(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*)n\b"""
-    )
-
     /**
      * ES2015 子集选择：用例的全部 features 必须在此集合内。
      * 该集合只列出项目已实现并愿意纳入基线的特性。
@@ -202,6 +195,8 @@ internal object Test262Selection {
         // 其中 GeneratorFunction/AsyncGeneratorFunction 的 is-a-constructor 用例
         // 依赖 Reflect.construct 与 wellKnownIntrinsicObjects harness
         "Reflect", "Reflect.construct",
+        // L3.3 已实现 BigInt 运行时：字面量/typeof/算术/转换/内建与 Test262 BigInt 用例
+        "BigInt",
         "for-of", "new.target", "super", "Symbol", "Symbol.iterator",
     "Symbol.asyncIterator",
         "Symbol.toPrimitive", "Symbol.toStringTag", "Symbol.hasInstance",
@@ -279,12 +274,14 @@ internal object Test262Selection {
         "test/built-ins/Object/seal/seal-uint32array.js",
         "test/built-ins/Object/seal/seal-float32array.js",
         "test/built-ins/Object/seal/seal-float64array.js",
+        // BigInt64Array/BigUint64Array 依赖尚未实现的 BigInt TypedArray
+        "test/built-ins/Object/seal/seal-bigint64array.js",
         "test/built-ins/Object/seal/seal-biguint64array.js",
     )
 
-    /** 当前范围外或尚未实现的特性（Reflect 已纳入支持范围）。 */
+    /** 当前范围外或尚未实现的特性（Reflect、BigInt 已纳入支持范围）。 */
     private val unsupportedFeatures = setOf(
-        "Proxy", "BigInt",
+        "Proxy",
         "TypedArray", "ArrayBuffer", "DataView", "SharedArrayBuffer", "Atomics",
         "Intl", "WeakRef", "FinalizationRegistry",
         "decorators",

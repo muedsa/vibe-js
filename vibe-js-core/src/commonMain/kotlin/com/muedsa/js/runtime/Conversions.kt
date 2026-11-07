@@ -1,5 +1,6 @@
 package com.muedsa.js.runtime
 
+import com.muedsa.js.runtime.value.JSBigInt
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSDate
@@ -12,6 +13,7 @@ import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.NumberFormatting
 import com.muedsa.js.runtime.value.PropertyKey
+import com.muedsa.js.runtime.value.trimJsWhitespace
 
 /** ToPrimitive 的偏好类型。 */
 enum class PreferredType {
@@ -84,6 +86,9 @@ class Conversions(private val interpreter: Interpreter) {
 
     /**
      * ToNumber。
+     *
+     * 注意 BigInt 按规范不能隐式转换为 Number（`1n + 1` 等由 ToNumeric 处理），
+     * 显式转换 `Number(1n)` 在 Number 构造器里单独实现。
      */
     suspend fun toNumber(value: JSValue): Double = when (value) {
         is JSNumber -> value.value
@@ -92,8 +97,62 @@ class Conversions(private val interpreter: Interpreter) {
         is JSNull -> 0.0
         is JSUndefined -> Double.NaN
         is JSSymbol -> interpreter.typeError("Cannot convert a Symbol value to a number")
+        is JSBigInt -> interpreter.typeError("Cannot convert a BigInt value to a number")
         is JSObject -> toNumber(toPrimitive(value, PreferredType.NUMBER))
     }
+
+    /**
+     * ToNumeric：返回 Number 或 BigInt 原始值。
+     *
+     * 对象先按 number 提示 ToPrimitive，再对结果做 ToNumber；
+     * BigInt 原样返回，供算术/位运算判断类型是否一致。
+     */
+    suspend fun toNumeric(value: JSValue): JSValue = toNumericFromPrimitive(toPrimitive(value))
+
+    /** 已完成 ToPrimitive 的 ToNumeric 入口（关系比较等需要自行控制转换顺序）。 */
+    suspend fun toNumericFromPrimitive(value: JSValue): JSValue = when (value) {
+        is JSBigInt -> value
+        is JSNumber -> value
+        is JSObject -> toNumeric(value)
+        else -> JSNumber.of(toNumber(value))
+    }
+
+    /**
+     * ToBigInt：把值转换为 BigInt。
+     *
+     * - BigInt 原样返回；
+     * - Boolean 转 1n/0n；
+     * - String 按 StringToBigInt 解析（空串为 0n），非法格式抛 SyntaxError；
+     * - Number 按规范抛 TypeError（显式转换应使用 `BigInt(n)`）；
+     * - undefined/null/Symbol 抛 TypeError；对象先 ToPrimitive。
+     */
+    suspend fun toBigInt(value: JSValue): JSBigInt = when (value) {
+        is JSBigInt -> value
+        is JSBoolean -> if (value.value) JSBigInt.ONE else JSBigInt.ZERO
+        is JSString -> stringToBigInt(value.value)
+            ?: interpreter.syntaxError("Cannot convert ${value.value} to a BigInt")
+
+        is JSNumber -> interpreter.typeError("Cannot convert a Number value to a BigInt")
+        is JSNull -> interpreter.typeError("Cannot convert null to a BigInt")
+        is JSUndefined -> interpreter.typeError("Cannot convert undefined to a BigInt")
+        is JSSymbol -> interpreter.typeError("Cannot convert a Symbol value to a BigInt")
+        is JSObject -> toBigInt(toPrimitive(value, PreferredType.NUMBER))
+    }
+
+    /**
+     * StringToBigInt：先去除首尾空白，空串为 0n；无法解析返回 null。
+     */
+    fun stringToBigInt(text: String): JSBigInt? {
+        val trimmed = text.trimJsWhitespace()
+        if (trimmed.isEmpty()) return JSBigInt.ZERO
+        return JSBigInt.parse(trimmed)
+    }
+
+    /** ToBigInt64：BigInt 模 2^64 后有符号解释。 */
+    suspend fun toBigInt64(value: JSValue): JSBigInt = toBigInt(value).toInt64()
+
+    /** ToBigUint64：BigInt 模 2^64 后无符号解释。 */
+    suspend fun toBigUint64(value: JSValue): JSBigInt = toBigInt(value).toUint64()
 
     /**
      * 已完成 ToNumber 后的 ToIntegerOrInfinity：NaN/零归零，有限值向零截断。
@@ -135,6 +194,7 @@ class Conversions(private val interpreter: Interpreter) {
     suspend fun toString(value: JSValue): String = when (value) {
         is JSString -> value.value
         is JSNumber -> NumberFormatting.toString(value.value)
+        is JSBigInt -> value.toString(10)
         is JSBoolean -> value.value.toString()
         is JSNull -> "null"
         is JSUndefined -> "undefined"
@@ -158,7 +218,7 @@ class Conversions(private val interpreter: Interpreter) {
     suspend fun toObject(value: JSValue): JSObject {
         return when (value) {
             is JSObject -> value
-            is JSString, is JSNumber, is JSBoolean, is JSSymbol ->
+            is JSString, is JSNumber, is JSBoolean, is JSSymbol, is JSBigInt ->
                 interpreter.wrapPrimitive(value)
 
             is JSNull, is JSUndefined ->
@@ -181,6 +241,8 @@ class Conversions(private val interpreter: Interpreter) {
         a is JSBoolean -> b is JSBoolean && a.value == b.value
         a is JSNumber -> b is JSNumber && a.value == b.value // NaN !== NaN
         a is JSString -> b is JSString && a.value == b.value
+        // BigInt 是原始值：按数值比较，而不是对象身份
+        a is JSBigInt -> b is JSBigInt && a == b
         a is JSSymbol -> a === b
         a is JSObject -> a === b
         else -> false
@@ -204,6 +266,12 @@ class Conversions(private val interpreter: Interpreter) {
             a is JSUndefined && b is JSNull -> true
             // 规范：null/undefined 与其他类型（含对象）宽松比较直接为 false，不做 ToPrimitive
             a is JSNull || a is JSUndefined || b is JSNull || b is JSUndefined -> false
+            // BigInt 与 String：使用 StringToBigInt 而不是 ToNumber（"1.0" 不相等）
+            a is JSBigInt && b is JSString -> stringToBigInt(b.value)?.let { strictEquals(a, it) } ?: false
+            a is JSString && b is JSBigInt -> stringToBigInt(a.value)?.let { strictEquals(it, b) } ?: false
+            // BigInt 与 Number：按数学值精确比较（NaN 恒为 false）
+            a is JSBigInt && b is JSNumber -> JSBigInt.compareToDouble(a, b.value) == 0
+            a is JSNumber && b is JSBigInt -> JSBigInt.compareToDouble(b, a.value) == 0
             a is JSNumber && b is JSString -> a.value == b.toPrimitiveNumber()
             a is JSString && b is JSNumber -> a.toPrimitiveNumber() == b.value
             a is JSBoolean -> abstractEquals(JSNumber(if (a.value) 1.0 else 0.0), b)
@@ -222,7 +290,8 @@ class Conversions(private val interpreter: Interpreter) {
         is JSNumber -> 3
         is JSString -> 4
         is JSSymbol -> 5
-        is JSObject -> 6
+        is JSBigInt -> 6
+        is JSObject -> 7
     }
 }
 

@@ -386,6 +386,7 @@ open class JSArray(
             }
             left is JSString && right is JSString -> left.value == right.value
             left is JSBoolean && right is JSBoolean -> left.value == right.value
+            left is JSBigInt && right is JSBigInt -> left == right
             left is JSSymbol && right is JSSymbol -> left === right
             else -> left === right
         }

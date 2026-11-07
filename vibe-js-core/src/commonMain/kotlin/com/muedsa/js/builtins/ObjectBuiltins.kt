@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArguments
+import com.muedsa.js.runtime.value.JSBigInt
 import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
@@ -1026,6 +1027,8 @@ object ObjectBuiltins {
         is JSBoolean -> "Boolean"
         is JSNumber -> "Number"
         is JSString -> "String"
+        // 规范的内建标签没有 BigInt 分支：@@toStringTag 非字符串时回退 Object
+        is JSBigInt -> "Object"
         is JSSymbol -> "Object"
         is JSArray -> "Array"
         is JSFunction, is JSNativeFunction -> "Function"
@@ -1037,6 +1040,7 @@ object ObjectBuiltins {
             is JSNumber -> "Number"
             is JSString -> "String"
             is JSBoolean -> "Boolean"
+            // 规范的内建标签没有 [[BigIntData]] 分支：@@toStringTag 非字符串时回退 Object
             else -> "Object"
         }
         is JSObject -> when (value.prototype) {

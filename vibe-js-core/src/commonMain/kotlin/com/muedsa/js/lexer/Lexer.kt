@@ -711,6 +711,11 @@ class Lexer(private val input: String) {
         if (peek() == 'n' &&
             sb.indexOf('.') < 0 && sb.indexOf('e') < 0 && sb.indexOf('E') < 0
         ) {
+            // 十进制 BigInt 字面量禁止前导零（09n/012348n 等为早期语法错误；
+            // 00n/01n/07n 已在前面的旧式八进制分支被拒绝）
+            if (sb.length > 1 && sb[0] == '0') {
+                throw lexerError("Invalid BigInt literal", startLine, startColumn, startOffset)
+            }
             sb.append('n')
             advance()
             rejectIdentifierAfterNumber(startLine, startColumn, startOffset)

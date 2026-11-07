@@ -2,6 +2,7 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.value.JSBigInt
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSNumber
@@ -28,7 +29,15 @@ object NumberBuiltins {
             length = 1,
             prototypeObject = numberPrototype,
         ) { interpreter, _, args, _ ->
-            if (args.isEmpty()) JSNumber.ZERO else JSNumber(interpreter.toNumber(args[0]))
+            if (args.isEmpty()) {
+                JSNumber.ZERO
+            } else {
+                // 规范：Number(value) 先 ToNumeric；BigInt 显式转换为最接近的 Number
+                when (val numeric = interpreter.conversions.toNumeric(args[0])) {
+                    is JSBigInt -> JSNumber.of(numeric.toDouble())
+                    else -> numeric
+                }
+            }
         }
 
         numberPrototype.defineDataProperty(

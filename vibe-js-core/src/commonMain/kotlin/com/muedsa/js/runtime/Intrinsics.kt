@@ -50,6 +50,8 @@ class Intrinsics(val globalObject: GlobalObject) {
     lateinit var numberPrototype: JSObject
     lateinit var booleanPrototype: JSObject
     lateinit var symbolPrototype: JSObject
+    /** %BigInt.prototype%：BigInt 包装对象实例原型，[[Prototype]] 为 Object.prototype。 */
+    lateinit var bigIntPrototype: JSObject
     lateinit var regexpPrototype: JSObject
     lateinit var datePrototype: JSObject
     lateinit var errorPrototype: JSObject
@@ -202,6 +204,8 @@ class Intrinsics(val globalObject: GlobalObject) {
         numberPrototype = JSObject(prototype = objectPrototype)
         booleanPrototype = JSObject(prototype = objectPrototype)
         symbolPrototype = JSObject(prototype = objectPrototype)
+        // 规范：%BigInt.prototype% 是普通对象，[[Prototype]] 为 %Object.prototype%
+        bigIntPrototype = JSObject(prototype = objectPrototype)
         // RegExp.prototype 是普通对象；source/global 等由 RegExpBuiltins 安装为访问器
         regexpPrototype = JSObject(prototype = objectPrototype)
         datePrototype = JSObject(prototype = objectPrototype)

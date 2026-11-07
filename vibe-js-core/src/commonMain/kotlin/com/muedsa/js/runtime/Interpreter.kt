@@ -90,6 +90,7 @@ import com.muedsa.js.runtime.value.GeneratorStep
 import com.muedsa.js.runtime.value.InstanceField
 import com.muedsa.js.runtime.value.JSArguments
 import com.muedsa.js.runtime.value.JSArray
+import com.muedsa.js.runtime.value.JSBigInt
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSError
@@ -626,6 +627,7 @@ class Interpreter(
         is JSNumber -> "number"
         is JSString -> "string"
         is JSSymbol -> "symbol"
+        is JSBigInt -> "bigint"
         is JSFunction, is JSNativeFunction -> "function"
         is JSProxy -> if (isCallable(value)) "function" else "object"
         is JSObject -> "object"
@@ -657,6 +659,7 @@ class Interpreter(
         is JSNumber -> getPropertyFrom(intrinsics.numberPrototype, key, base)
         is JSBoolean -> getPropertyFrom(intrinsics.booleanPrototype, key, base)
         is JSSymbol -> getPropertyFrom(intrinsics.symbolPrototype, key, base)
+        is JSBigInt -> getPropertyFrom(intrinsics.bigIntPrototype, key, base)
         is JSNull -> throw typeError("Cannot read properties of null (reading '${key}')")
         is JSUndefined -> throw typeError("Cannot read properties of undefined (reading '${key}')")
     }
@@ -1679,6 +1682,7 @@ class Interpreter(
             is JSNumber -> intrinsics.numberPrototype
             is JSBoolean -> intrinsics.booleanPrototype
             is JSSymbol -> intrinsics.symbolPrototype
+            is JSBigInt -> intrinsics.bigIntPrototype
             else -> intrinsics.objectPrototype
         }
         val wrapper = JSBoxedPrimitive(value, prototype)
@@ -3939,7 +3943,8 @@ class Interpreter(
                 ?: throw referenceError("${expression.name} is not defined")
 
             is NumberLiteral -> JSNumber.of(expression.value)
-            is BigIntLiteral -> throw typeError("BigInt literals are not supported")
+            is BigIntLiteral -> JSBigInt.parseLiteral(expression.raw)
+                ?: throw syntaxError("Invalid BigInt literal ${expression.raw}")
             is StringLiteral -> JSString(expression.value)
             is BooleanLiteral -> JSBoolean.getJsBoolean(expression.value)
             is NullLiteral -> JSNull
@@ -4219,6 +4224,8 @@ class Interpreter(
         is Identifier -> key.name
         is StringLiteral -> key.value
         is NumberLiteral -> NumberFormatting.toString(key.value)
+        // BigInt 字面量属性名使用十进制字符串（如 `{ 1n: true }` 的键是 "1"）
+        is BigIntLiteral -> JSBigInt.parseLiteral(key.raw)?.toString(10) ?: ""
         else -> ""
     }
 
@@ -6060,16 +6067,37 @@ class Interpreter(
         else -> false
     }
 
+    /**
+     * ++/-- 的数值更新：BigInt 走 BigInt 加一/减一，其余按 ToNumber。
+     *
+     * @return 新值与规范化后的旧值（后缀表达式返回旧值）
+     */
+    private suspend fun computeUpdate(oldValue: JSValue, delta: Double): Pair<JSValue, JSValue> =
+        when (val numeric = conversions.toNumeric(oldValue)) {
+            is JSBigInt -> {
+                val newValue = if (delta > 0.0) {
+                    numeric.add(JSBigInt.ONE)
+                } else {
+                    numeric.subtract(JSBigInt.ONE)
+                }
+                newValue to numeric
+            }
+
+            else -> {
+                val oldNumber = (numeric as JSNumber).value
+                JSNumber.of(oldNumber + delta) to numeric
+            }
+        }
+
     private suspend fun evaluateUpdate(expression: UpdateExpr): JSValue {
         val delta = if (expression.operator == "++") 1.0 else -1.0
         return when (val target = expression.target) {
             is Identifier -> {
                 val owner = findBindingOwner(target.name)
                 val oldValue = readIdentifierReference(owner, target.name)
-                val oldNumber = toNumber(oldValue)
-                val newValue = JSNumber.of(oldNumber + delta)
+                val (newValue, numericOldValue) = computeUpdate(oldValue, delta)
                 writeIdentifierReference(owner, target.name, newValue)
-                if (expression.prefix) newValue else (oldValue as? JSNumber ?: JSNumber.of(oldNumber))
+                if (expression.prefix) newValue else numericOldValue
             }
 
             is MemberExpr -> {
@@ -6087,29 +6115,26 @@ class Interpreter(
                         PropertyKey.Str((target.property as Identifier).name)
                     }
                     val oldValue = getV(base, key)
-                    val oldNumber = toNumber(oldValue)
-                    val newValue = JSNumber.of(oldNumber + delta)
+                    val (newValue, numericOldValue) = computeUpdate(oldValue, delta)
                     putSuperProperty(
                         base, currentFrame.thisValue, key, newValue, currentFrame.strict,
                     )
-                    return if (expression.prefix) newValue else (oldValue as? JSNumber ?: JSNumber.of(oldNumber))
+                    return if (expression.prefix) newValue else numericOldValue
                 }
                 val base = evaluate(target.obj)
                 val privateMember = (target.property as? PrivateIdentifier)?.name
                 if (privateMember != null) {
                     val name = resolvePrivateName(privateMember)
                     val oldValue = getPrivateMember(base, name)
-                    val oldNumber = toNumber(oldValue)
-                    val newValue = JSNumber.of(oldNumber + delta)
+                    val (newValue, numericOldValue) = computeUpdate(oldValue, delta)
                     setPrivateMember(base, name, newValue)
-                    if (expression.prefix) newValue else (oldValue as? JSNumber ?: JSNumber.of(oldNumber))
+                    if (expression.prefix) newValue else numericOldValue
                 } else {
                     val key = memberKey(target)
                     val oldValue = getV(base, key)
-                    val oldNumber = toNumber(oldValue)
-                    val newValue = JSNumber.of(oldNumber + delta)
+                    val (newValue, numericOldValue) = computeUpdate(oldValue, delta)
                     putV(base, key, newValue, currentFrame.strict)
-                    if (expression.prefix) newValue else (oldValue as? JSNumber ?: JSNumber.of(oldNumber))
+                    if (expression.prefix) newValue else numericOldValue
                 }
             }
 
@@ -6140,10 +6165,25 @@ class Interpreter(
         val operand = evaluate(expression.operand)
         return when (operator) {
             "typeof" -> JSString(typeOf(operand))
-            "+" -> (operand as? JSNumber ?: JSNumber.of(toNumber(operand)))
-            "-" -> JSNumber.of(-toNumber(operand))
+            // 一元 + 是 ToNumber，BigInt 按规范抛 TypeError
+            "+" -> when (operand) {
+                is JSBigInt -> throw typeError("Cannot convert a BigInt value to a number")
+                is JSNumber -> operand
+                else -> JSNumber.of(toNumber(operand))
+            }
+
+            // 一元 - / ~ 使用 ToNumeric，包装对象解出 BigInt 后仍按 BigInt 运算
+            "-" -> when (val numeric = conversions.toNumeric(operand)) {
+                is JSBigInt -> numeric.negate()
+                else -> JSNumber.of(-(numeric as JSNumber).value)
+            }
+
             "!" -> JSBoolean.getJsBoolean(!toBoolean(operand))
-            "~" -> JSNumber.of(toInt32(operand).inv().toDouble())
+            "~" -> when (val numeric = conversions.toNumeric(operand)) {
+                is JSBigInt -> numeric.not()
+                else -> JSNumber.of(toInt32Number((numeric as JSNumber).value).inv().toDouble())
+            }
+
             "void" -> JSUndefined
             "await" -> {
                 // 规范 Await：非 Promise 值先经 PromiseResolve 采纳（thenable 通过微任务调用 then）
@@ -6283,15 +6323,76 @@ class Interpreter(
                             conversions.toString(rightPrimitive)
                     )
                 } else {
-                    JSNumber.of(conversions.toNumber(leftPrimitive) + conversions.toNumber(rightPrimitive))
+                    val (leftNumeric, rightNumeric) =
+                        numericOperands(leftPrimitive, rightPrimitive)
+                    if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                        leftNumeric.add(rightNumeric)
+                    } else {
+                        JSNumber.of(
+                            (leftNumeric as JSNumber).value + (rightNumeric as JSNumber).value
+                        )
+                    }
                 }
             }
 
-            "-" -> JSNumber.of(toNumber(left) - toNumber(right))
-            "*" -> JSNumber.of(toNumber(left) * toNumber(right))
-            "/" -> JSNumber.of(toNumber(left) / toNumber(right))
-            "%" -> JSNumber.of(toNumber(left) % toNumber(right))
-            "**" -> JSNumber.of(toNumber(left).pow(toNumber(right)))
+            "-" -> {
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                    leftNumeric.subtract(rightNumeric)
+                } else {
+                    JSNumber.of(
+                        (leftNumeric as JSNumber).value - (rightNumeric as JSNumber).value
+                    )
+                }
+            }
+
+            "*" -> {
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                    leftNumeric.multiply(rightNumeric)
+                } else {
+                    JSNumber.of(
+                        (leftNumeric as JSNumber).value * (rightNumeric as JSNumber).value
+                    )
+                }
+            }
+
+            "/" -> {
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                    if (rightNumeric.isZero) throw rangeError("Division by zero")
+                    leftNumeric.divide(rightNumeric)
+                } else {
+                    JSNumber.of(
+                        (leftNumeric as JSNumber).value / (rightNumeric as JSNumber).value
+                    )
+                }
+            }
+
+            "%" -> {
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                    if (rightNumeric.isZero) throw rangeError("Division by zero")
+                    leftNumeric.remainder(rightNumeric)
+                } else {
+                    JSNumber.of(
+                        (leftNumeric as JSNumber).value % (rightNumeric as JSNumber).value
+                    )
+                }
+            }
+
+            "**" -> {
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                    // 负指数按规范抛 RangeError；结果超过实现上限同样抛 RangeError
+                    leftNumeric.pow(rightNumeric)
+                        ?: throw rangeError("Maximum BigInt size exceeded")
+                } else {
+                    JSNumber.of(
+                        (leftNumeric as JSNumber).value.pow((rightNumeric as JSNumber).value)
+                    )
+                }
+            }
 
             "<" -> JSBoolean.getJsBoolean(compareRelational(left, right) == -1)
             "<=" -> {
@@ -6310,25 +6411,62 @@ class Interpreter(
             "===" -> JSBoolean.getJsBoolean(strictEquals(left, right))
             "!==" -> JSBoolean.getJsBoolean(!strictEquals(left, right))
 
-            "&" -> JSNumber.of((toInt32(left) and toInt32(right)).toDouble())
-            "|" -> JSNumber.of((toInt32(left) or toInt32(right)).toDouble())
-            "^" -> JSNumber.of((toInt32(left) xor toInt32(right)).toDouble())
+            "&", "|", "^" -> {
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                    when (operator) {
+                        "&" -> leftNumeric.and(rightNumeric)
+                        "|" -> leftNumeric.or(rightNumeric)
+                        else -> leftNumeric.xor(rightNumeric)
+                    }
+                } else {
+                    val leftInt = toInt32Number((leftNumeric as JSNumber).value)
+                    val rightInt = toInt32Number((rightNumeric as JSNumber).value)
+                    JSNumber.of(
+                        when (operator) {
+                            "&" -> (leftInt and rightInt).toDouble()
+                            "|" -> (leftInt or rightInt).toDouble()
+                            else -> (leftInt xor rightInt).toDouble()
+                        }
+                    )
+                }
+            }
+
             "<<" -> {
-                // 规范顺序：先 ToInt32(left)，再 ToUint32(right)
-                val leftInt = toInt32(left)
-                val shift = (toUint32(right) and 31L).toInt()
-                JSNumber.of((leftInt shl shift).toDouble())
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                    val shift = bigIntShiftCount(rightNumeric)
+                    leftNumeric.shiftLeft(shift)
+                        ?: throw rangeError("Maximum BigInt size exceeded")
+                } else {
+                    // 规范顺序：先 ToInt32(left)，再 ToUint32(right)
+                    val leftInt = toInt32Number((leftNumeric as JSNumber).value)
+                    val shift = (toUint32Number((rightNumeric as JSNumber).value) and 31L).toInt()
+                    JSNumber.of((leftInt shl shift).toDouble())
+                }
             }
 
             ">>" -> {
-                val leftInt = toInt32(left)
-                val shift = (toUint32(right) and 31L).toInt()
-                JSNumber.of((leftInt shr shift).toDouble())
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+                    val shift = bigIntShiftCount(rightNumeric)
+                    leftNumeric.shiftRight(shift)
+                        ?: throw rangeError("Maximum BigInt size exceeded")
+                } else {
+                    val leftInt = toInt32Number((leftNumeric as JSNumber).value)
+                    val shift = (toUint32Number((rightNumeric as JSNumber).value) and 31L).toInt()
+                    JSNumber.of((leftInt shr shift).toDouble())
+                }
             }
 
             ">>>" -> {
-                val leftInt = toUint32(left)
-                val shift = (toUint32(right) and 31L).toInt()
+                val (leftNumeric, rightNumeric) = numericOperands(left, right)
+                if (leftNumeric is JSBigInt || rightNumeric is JSBigInt) {
+                    // BigInt 没有无符号右移
+                    throw typeError("BigInts have no unsigned right shift, use >> instead")
+                }
+                val leftInt = toUint32Number((leftNumeric as JSNumber).value)
+                val shift = (toUint32Number((rightNumeric as JSNumber).value) and 31L).toInt()
                 JSNumber.of((leftInt shr shift).toDouble())
             }
 
@@ -6343,6 +6481,35 @@ class Interpreter(
 
             else -> throw syntaxError("Unsupported binary operator '$operator'")
         }
+    }
+
+    /**
+     * 二元算术/位运算的 ToNumeric 处理。
+     *
+     * BigInt 与 Number 混用按规范抛 TypeError（`+` 的字符串拼接分支在此之前处理）。
+     */
+    private suspend fun numericOperands(
+        left: JSValue,
+        right: JSValue,
+    ): Pair<JSValue, JSValue> {
+        val leftNumeric = conversions.toNumeric(left)
+        val rightNumeric = conversions.toNumeric(right)
+        if ((leftNumeric is JSBigInt) != (rightNumeric is JSBigInt)) {
+            throw typeError("Cannot mix BigInt and other types, use explicit conversions")
+        }
+        return leftNumeric to rightNumeric
+    }
+
+    /**
+     * 把 BigInt 移位量转换为 Long；超出 Long 的移位量按实现上限处理。
+     *
+     * 左移超限会抛 RangeError；右移超限按符号收敛到 0n/-1n。
+     */
+    private fun bigIntShiftCount(value: JSBigInt): Long {
+        value.toLongOrNull()?.let { return it }
+        // 无法放入 Long 的移位量收敛为一个足够大的值（避免 Long.MIN_VALUE 取负溢出）
+        val limit = (JSBigInt.MAX_RESULT_BITS + 1).toLong()
+        return if (value.isNegative) -limit else limit
     }
 
     /** instanceof：优先使用 Symbol.hasInstance，否则沿原型链查找构造器的 .prototype。 */
@@ -6385,8 +6552,33 @@ class Interpreter(
             return if (comparison < 0) -1 else if (comparison > 0) 1 else 0
         }
 
-        val leftNumber = conversions.toNumber(leftPrimitive)
-        val rightNumber = conversions.toNumber(rightPrimitive)
+        // BigInt 与 String：规范按 StringToBigInt 转换（不是 ToNumber）；
+        // 因此 "0."、"1e0" 等不是合法 BigInt 的字符串视为不可比（返回 null → false）
+        if (leftPrimitive is JSBigInt && rightPrimitive is JSString) {
+            val rightBigInt = conversions.stringToBigInt(rightPrimitive.value) ?: return null
+            return leftPrimitive.compareTo(rightBigInt)
+        }
+        if (leftPrimitive is JSString && rightPrimitive is JSBigInt) {
+            val leftBigInt = conversions.stringToBigInt(leftPrimitive.value) ?: return null
+            return leftBigInt.compareTo(rightPrimitive)
+        }
+
+        val leftNumeric = conversions.toNumericFromPrimitive(leftPrimitive)
+        val rightNumeric = conversions.toNumericFromPrimitive(rightPrimitive)
+        // 两侧都是 BigInt：直接数值比较
+        if (leftNumeric is JSBigInt && rightNumeric is JSBigInt) {
+            return leftNumeric.compareTo(rightNumeric)
+        }
+        // BigInt 与 Number 混用：按数学值精确比较，NaN 时不可比
+        if (leftNumeric is JSBigInt) {
+            return JSBigInt.compareToDouble(leftNumeric, (rightNumeric as JSNumber).value)
+        }
+        if (rightNumeric is JSBigInt) {
+            val comparison = JSBigInt.compareToDouble(rightNumeric, (leftNumeric as JSNumber).value)
+            return comparison?.let { -it }
+        }
+        val leftNumber = (leftNumeric as JSNumber).value
+        val rightNumber = (rightNumeric as JSNumber).value
         if (leftNumber.isNaN() || rightNumber.isNaN()) return null
         return if (leftNumber < rightNumber) -1 else if (leftNumber > rightNumber) 1 else 0
     }

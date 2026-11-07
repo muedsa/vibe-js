@@ -4,7 +4,7 @@ package com.muedsa.js.runtime.value
  * JavaScript 运行时值的基类。
  *
  * 设计说明：
- * - 原始值（Number/String/Boolean/Null/Undefined/Symbol）直接继承 [JSValue]，
+ * - 原始值（Number/String/Boolean/Null/Undefined/Symbol/BigInt）直接继承 [JSValue]，
  *   不再像旧实现那样继承 JSObject；成员访问通过"包装对象/原型查找"完成，
  *   这样 `===`、`typeof`、属性可枚举性等语义更接近规范。
  * - 对象的属性存储、原型链由 [JSObject] 负责。

@@ -2889,7 +2889,8 @@ class Parser(
     private fun parseExponentiation(): Expression {
         val base = parseUnary()
         if (!check(TokenType.EXPONENT)) return base
-        if (base is UnaryOp) {
+        // 括号包裹会消除“一元表达式不能作为 ** 左操作数”的限制：(-1n) ** 2n 合法
+        if (base is UnaryOp && base.range !in parenthesizedRanges) {
             throw error("Unary expression cannot be used as the left operand of '**'")
         }
         advance()

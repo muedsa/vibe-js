@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArray
+import com.muedsa.js.runtime.value.JSBigInt
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSBoxedPrimitive
 import com.muedsa.js.runtime.value.JSFunction
@@ -300,8 +301,9 @@ object JsonBuiltins {
     ): String? {
         var value = interpreter.getV(holder, PropertyKey.Str(key))
 
-        // toJSON
-        if (value is JSObject) {
+        // 规范 SerializeJSONProperty 步骤 2：Object 或 BigInt 都要读取 toJSON；
+        // BigInt 通过 GetV 从其原型读取，调用时 this 仍是 BigInt 原始值
+        if (value is JSObject || value is JSBigInt) {
             val toJson = interpreter.getV(value, PropertyKey.Str("toJSON"))
             if (interpreter.isCallable(toJson)) {
                 value = interpreter.callFunction(toJson, value, listOf(JSString(key)))
@@ -376,6 +378,9 @@ object JsonBuiltins {
                     seen,
                 )
 
+                // BigInt 包装对象按内部槽取出后与 BigInt 原始值一样抛 TypeError
+                is JSBigInt -> interpreter.typeError("Do not know how to serialize a BigInt")
+
                 else -> Unit
             }
         }
@@ -405,6 +410,8 @@ object JsonBuiltins {
         is JSNumber -> if (value.value.isFinite()) NumberFormatting.toString(value.value) else "null"
         is JSString -> quote(value.value)
         is JSSymbol -> null
+        // JSON 文本无法无损表示 BigInt，规范要求抛 TypeError
+        is JSBigInt -> interpreter.typeError("Do not know how to serialize a BigInt")
         is JSFunction, is JSNativeFunction -> null
 
         is JSArray -> {
