@@ -2575,6 +2575,174 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    // MobX 6 的 observable 对象由 Proxy 拦截读写，并依赖 Reflect/Symbol 等 ES2015 内建。
+    // 该库在浏览器 UMD 构建中直接挂到全局 `mobx`，适合验证 Proxy 与响应式系统的协作。
+    LibrarySpec(
+        name = "mobx",
+        url = "https://cdn.jsdelivr.net/npm/mobx@6.13.4/dist/mobx.umd.production.min.js",
+        globalName = "mobx",
+        cases = listOf(
+            SmokeCase(
+                "observable proxy",
+                assertion(
+                    "(function () {" +
+                        " var state = mobx.observable({ count: 1, nested: { v: 2 } });" +
+                        " mobx.runInAction(function () { state.count = 5; state.nested.v = 6; });" +
+                        " return state.count === 5 && state.nested.v === 6 && mobx.isObservable(state);" +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "autorun reaction",
+                assertion(
+                    "(function () {" +
+                        " var state = mobx.observable({ n: 1 });" +
+                        " var seen = [];" +
+                        " var dispose = mobx.autorun(function () { seen.push(state.n); });" +
+                        " mobx.runInAction(function () { state.n = 2; });" +
+                        " dispose();" +
+                        " mobx.runInAction(function () { state.n = 3; });" +
+                        " return seen.join(',') === '1,2';" +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "computed value",
+                assertion(
+                    "(function () {" +
+                        " var state = mobx.observable({ a: 2 });" +
+                        " var double = mobx.computed(function () { return state.a * 2; });" +
+                        " var first = double.get();" +
+                        " mobx.runInAction(function () { state.a = 3; });" +
+                        " return first === 4 && double.get() === 6;" +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "toJS plain copy",
+                assertion(
+                    "(function () {" +
+                        " var state = mobx.observable({ list: [1, 2], map: { x: 1 } });" +
+                        " var plain = mobx.toJS(state);" +
+                        " return JSON.stringify(plain) === '{\"list\":[1,2],\"map\":{\"x\":1}}' &&" +
+                        " mobx.isObservable(state.list);" +
+                        "})()"
+                ),
+            ),
+        ),
+    ),
+    // Immer 9 的 produce 使用 Proxy/Reflect 生成结构化共享的草稿对象，并自动冻结结果。
+    LibrarySpec(
+        name = "immer",
+        url = "https://cdn.jsdelivr.net/npm/immer@9.0.21/dist/immer.umd.production.min.js",
+        globalName = "immer",
+        cases = listOf(
+            SmokeCase(
+                "produce update",
+                assertion(
+                    "(function () {" +
+                        " var base = { count: 1, list: [1, 2] };" +
+                        " var next = immer.produce(base, function (draft) {" +
+                        "   draft.count += 1; draft.list.push(3); });" +
+                        " return next.count === 2 && next.list.join(',') === '1,2,3' &&" +
+                        " base.count === 1 && base.list.length === 2 && next !== base;" +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "draft proxy",
+                assertion(
+                    "(function () {" +
+                        " var base = { a: { b: 1 } };" +
+                        " var seenDraft = false;" +
+                        " var next = immer.produce(base, function (draft) {" +
+                        "   seenDraft = immer.isDraft(draft) && immer.isDraft(draft.a);" +
+                        "   draft.a.b = 2;" +
+                        " });" +
+                        " return seenDraft && next.a.b === 2 && base.a.b === 1;" +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "original base",
+                assertion(
+                    "(function () {" +
+                        " var base = { a: 1 };" +
+                        " var same = false;" +
+                        " immer.produce(base, function (draft) {" +
+                        "   same = immer.original(draft) === base; draft.a = 2; });" +
+                        " return same;" +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "no change identity",
+                assertion(
+                    "(function () {" +
+                        " var base = { a: 1 };" +
+                        " return immer.produce(base, function () {}) === base;" +
+                        "})()"
+                ),
+            ),
+        ),
+    ),
+    // regenerator-runtime 是 Babel 生成器代码的运行时；它自行构造 Generator 原型链，
+    // 加载与执行可验证 Object.defineProperty/Symbol.iterator/生成器状态机协作。
+    LibrarySpec(
+        name = "regenerator-runtime",
+        url = "https://cdn.jsdelivr.net/npm/regenerator-runtime@0.14.1/runtime.js",
+        globalName = "regeneratorRuntime",
+        cases = listOf(
+            SmokeCase(
+                "generator state machine",
+                assertion(
+                    "(function () {" +
+                        " var gen = regeneratorRuntime.mark(function gen() {" +
+                        "   return regeneratorRuntime.wrap(function gen$(_context) {" +
+                        "     while (1) switch (_context.prev = _context.next) {" +
+                        "       case 0: _context.next = 2; return 1;" +
+                        "       case 2: _context.next = 4; return 2;" +
+                        "       case 4: return _context.abrupt('return', 3);" +
+                        "       case 5: case 'end': return _context.stop();" +
+                        "     }" +
+                        "   }, gen);" +
+                        " });" +
+                        " var it = gen();" +
+                        " var a = it.next(); var b = it.next(); var c = it.next(); var d = it.next();" +
+                        " return a.value === 1 && !a.done && b.value === 2 &&" +
+                        " c.value === 3 && c.done && d.done;" +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "iterator protocol",
+                assertion(
+                    "(function () {" +
+                        " var gen = regeneratorRuntime.mark(function gen() {" +
+                        "   return regeneratorRuntime.wrap(function gen$(_context) {" +
+                        "     while (1) switch (_context.prev = _context.next) {" +
+                        "       case 0: _context.next = 2; return 1;" +
+                        "       case 2: case 'end': return _context.stop();" +
+                        "     }" +
+                        "   }, gen);" +
+                        " });" +
+                        " var it = gen();" +
+                        " return typeof it[Symbol.iterator] === 'function' &&" +
+                        " it[Symbol.iterator]() === it && Array.from(gen()).join(',') === '1';" +
+                        "})()"
+                ),
+            ),
+            SmokeCase(
+                "native generator detection",
+                assertion(
+                    "(function () {" +
+                        " function* native() {}" +
+                        " return regeneratorRuntime.isGeneratorFunction(native) === true;" +
+                        "})()"
+                ),
+            ),
+        ),
+    ),
 )
 
 

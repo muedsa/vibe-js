@@ -246,9 +246,11 @@ private class DifferentialRunner(
 
     suspend fun run(): DifferentialReport {
         val startedAt = System.nanoTime()
-        val cases = differentialCases + extraDifferentialCases
+        // S2 的 L 系列用例单独成文件，再与既有语料合并
+        val cases = differentialCases + extraDifferentialCases + lSeriesDifferentialCases
+        val asyncCases = asyncDifferentialCases + lSeriesAsyncDifferentialCases
         // 名称重复会导致 Node 结果按名称合并后错配，直接在运行前拒绝
-        val duplicateNames = (cases.map { it.name } + asyncDifferentialCases.map { it.name })
+        val duplicateNames = (cases.map { it.name } + asyncCases.map { it.name })
             .groupingBy { it }.eachCount().filterValues { it > 1 }.keys
         require(duplicateNames.isEmpty()) {
             "duplicate differential case names: ${duplicateNames.joinToString()}"
@@ -259,7 +261,7 @@ private class DifferentialRunner(
         //（例如 microtask-state-set 设置、microtask-state-read 读取并删除），
         // 因此不能按用例重建。超时只取消当前 run，引擎随后仍可复用；
         // 若超时后引擎可能残留任务，则重建引擎避免后续用例被阻塞。
-        var engine = Engine(limits = settings.limits)
+        var engine = createEngine()
         try {
             for (case in cases) {
                 when (val outcome = runtime.runUnderTimeout { evaluateSync(engine, case.expression) }) {
@@ -272,7 +274,7 @@ private class DifferentialRunner(
                         )
                         if (outcome.kind == FailureKind.TIMEOUT) {
                             runtime.closeEngine(engine)?.let { cleanupErrors.add("${case.name}：$it") }
-                            engine = Engine(limits = settings.limits)
+                            engine = createEngine()
                         }
                     }
                 }
@@ -280,7 +282,7 @@ private class DifferentialRunner(
         } finally {
             runtime.closeEngine(engine)?.let { cleanupErrors.add("共享引擎：$it") }
         }
-        for (case in asyncDifferentialCases) {
+        for (case in asyncCases) {
             val display = case.source.replace('\n', ' ').replace('\t', ' ')
             vibeResults.add(Triple(case.name, display, evaluateAsyncInVibe(case, cleanupErrors)))
         }
@@ -290,7 +292,7 @@ private class DifferentialRunner(
             val version = runNodeProcess(listOf("--version"), settings.nodeTimeoutMillis).trim()
             val script = File.createTempFile("vibe-diff-", ".js")
             try {
-                script.writeText(buildNodeScript(cases, asyncDifferentialCases))
+                script.writeText(buildNodeScript(cases, asyncCases))
                 val output = runNodeProcess(listOf(script.absolutePath), settings.nodeTimeoutMillis)
                 version to output.lineSequence()
                     .filter { it.isNotBlank() }
@@ -347,6 +349,15 @@ private class DifferentialRunner(
     }
 
     /**
+     * 创建差分引擎并安装运行器宿主钩子。
+     *
+     * `__detach` 与 Node 侧注入的同名函数一致，用于覆盖 ArrayBuffer 分离语义；
+     * 核心内建不包含该函数。
+     */
+    private fun createEngine(): Engine =
+        Engine(limits = settings.limits).also { it.install(DifferentialDetachModule) }
+
+    /**
      * 同步用例：在共享引擎中求值并序列化。
      *
      * JS 抛错保留原有的 `THROW:` 前缀，以便与 Node 侧结果直接比较。
@@ -372,6 +383,8 @@ private class DifferentialRunner(
         cleanupErrors: MutableList<String>,
     ): String {
         val run = runtime.withEngine { engine ->
+            // 异步用例同样需要 detach 钩子，保证与 Node 每个 vm 上下文一致
+            engine.install(DifferentialDetachModule)
             try {
                 engine.run(case.source)
                 when (val value = engine.run("JSON.stringify(globalThis.__diffResult)")) {
@@ -405,6 +418,8 @@ private class DifferentialRunner(
     ): String {
         val builder = StringBuilder()
         builder.appendLine("const vm = require('vm');")
+        // 与 Vibe 侧 __detach 宿主钩子对齐：transfer 会分离原缓冲区
+        builder.appendLine("const detachBuffer = (buffer) => { structuredClone(buffer, { transfer: [buffer] }); };")
         builder.appendLine("const cases = [")
         for (case in cases) {
             builder.append("  [")
@@ -416,7 +431,7 @@ private class DifferentialRunner(
         builder.appendLine("];")
         builder.appendLine(
             """
-            const syncContext = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
+            const syncContext = vm.createContext({ __detach: detachBuffer }, { microtaskMode: 'afterEvaluate' });
             for (const [name, expression] of cases) {
               try {
                 // 与 Vibe 一致：在裸上下文执行 JSON.stringify((expression))
@@ -444,7 +459,7 @@ private class DifferentialRunner(
                 (async () => {
                   for (const [name, source] of asyncCases) {
                     // 每个异步用例使用独立 vm 上下文，与 Vibe 每例新建 Engine 对齐
-                    const context = vm.createContext({});
+                    const context = vm.createContext({ __detach: detachBuffer });
                     try {
                       vm.runInContext(source, context);
                       // 冲刷所有已入队的微任务（宏任务边界）
