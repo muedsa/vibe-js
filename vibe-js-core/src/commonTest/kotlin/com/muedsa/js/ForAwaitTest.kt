@@ -375,4 +375,69 @@ class ForAwaitTest {
         // AsyncFromSyncIteratorContinuation 在第 6/13 步关闭同步迭代器，原错误继续传播
         assertEquals("closed,caught:value-reject", runtime.evalString("log.join(',')"))
     }
+
+    @Test
+    fun `for await 包装同步迭代器时按规范读取 Promise constructor`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var index = 0;
+            var iterable = {
+                [Symbol.iterator]() {
+                    return {
+                        next() {
+                            log.push('next');
+                            index += 1;
+                            if (index === 1) {
+                                return { value: Promise.resolve(0), done: false };
+                            }
+                            return { done: true };
+                        }
+                    };
+                }
+            };
+            Object.defineProperty(Promise.prototype, 'constructor', {
+                get: function () { log.push('constructor'); return Promise; },
+                configurable: true
+            });
+            (async function () {
+                for await (var value of iterable) {
+                    log.push('loop');
+                }
+                log.push('post');
+            })();
+            """.trimIndent()
+        )
+        // value 的 PromiseResolve 与 Await(nextResult) 各读取一次 constructor；
+        // done 迭代只有 Await(nextResult) 读取
+        assertEquals(
+            "next,constructor,constructor,loop,next,constructor,post",
+            runtime.evalString("log.join(',')"),
+        )
+    }
+
+    @Test
+    fun `for await 同步迭代器 next 未传参时不补 undefined`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var lengths = [];
+            var iterable = {
+                [Symbol.iterator]() {
+                    return {
+                        next() {
+                            lengths.push(arguments.length);
+                            return { done: true };
+                        }
+                    };
+                }
+            };
+            (async function () {
+                for await (var value of iterable) {}
+            })();
+            """.trimIndent()
+        )
+        assertEquals("0", runtime.evalString("lengths.join(',')"))
+    }
 }

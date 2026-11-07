@@ -750,12 +750,13 @@ class GeneratorTest {
     }
 
     @Test
-    fun `生成器函数的 prototype 上存在 constructor 指回函数自身`() = runTest {
+    fun `生成器函数的 prototype 是没有自有 constructor 的普通对象`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(
             """
             function* g() { yield 1; }
-            var result = g.prototype.constructor === g;
+            var result = Object.getOwnPropertyNames(g.prototype).length === 0 &&
+                !g.prototype.hasOwnProperty('constructor');
             """.trimIndent()
         )
         assertTrue(runtime.evalBoolean("result"))
@@ -879,7 +880,7 @@ class GeneratorTest {
             var result = Object.prototype.toString.call(o.g) + ':' +
                 Object.prototype.toString.call(it) + ':' +
                 (Object.getPrototypeOf(it) === o.g.prototype) + ':' +
-                (o.g.prototype.constructor === o.g) + ':' +
+                (Object.getOwnPropertyNames(o.g.prototype).length === 0) + ':' +
                 (Object.getPrototypeOf(o.g.prototype) === Object.getPrototypeOf(declared.prototype)) + ':' +
                 (o.g.prototype !== o.h.prototype);
             """.trimIndent()
@@ -1202,5 +1203,58 @@ class GeneratorTest {
             """.trimIndent()
         )
         assertEquals("true,0,7,1,undefined,true", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器 return 触发解构 IteratorClose 时传播 return 方法异常`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var iterator = {
+                return: function () {
+                    log.push('return');
+                    throw new Error('close-error');
+                }
+            };
+            var iterable = {};
+            iterable[Symbol.iterator] = function () { return iterator; };
+            function* g() {
+                for ([ {}[yield] ] of [iterable]) { log.push('body'); }
+            }
+            var it = g();
+            it.next();
+            var message = '';
+            try { it.return(); } catch (e) { message = e.message; }
+            var result = log.join(',') + '|' + message;
+            """.trimIndent()
+        )
+        // return 完成不是 throw 完成：IteratorClose 的 return() 异常必须覆盖控制流信号
+        assertEquals("return|close-error", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器 return 时解构 IteratorClose 要求 return 返回对象`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var iterator = {
+                next: function () { log.push('next'); return { done: false, value: undefined }; },
+                return: function () { log.push('return'); return null; }
+            };
+            var iterable = {};
+            iterable[Symbol.iterator] = function () { return iterator; };
+            function* g() {
+                for ([ {} = yield ] of [iterable]) { log.push('body'); }
+            }
+            var it = g();
+            it.next();
+            var name = '';
+            try { it.return(); } catch (e) { name = e.name; }
+            var result = log.join(',') + '|' + name;
+            """.trimIndent()
+        )
+        assertEquals("next,return|TypeError", runtime.evalString("result"))
     }
 }

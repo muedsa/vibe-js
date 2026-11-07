@@ -530,4 +530,34 @@ class ParserEdgeTest {
         parse("/\\u{1F600}/u;")
         parse("/(a)\\1/u;")
     }
+
+    @Test
+    fun `async 函数与 async generator 表达式名不能是 await`() {
+        // AsyncFunctionExpression/AsyncGeneratorExpression 的 BindingIdentifier 早期错误；
+        // 声明形式在 sloppy 下允许（与 V8/Node 一致）
+        assertFailsWith<ParseException> { parse("(async function await() {});") }
+        assertFailsWith<ParseException> { parse("(async function* await() {});") }
+        // 转义写法按 StringValue 判定，同样非法
+        assertFailsWith<ParseException> { parse("(async function* aw\\u0061it() {});") }
+        parse("async function await() {}")
+        parse("async function* await() {}")
+    }
+
+    @Test
+    fun `class 字段名 get 或 set 后换行接生成器方法`() {
+        // 访问器与生成器不能组合：`get`/`set` 应作为字段名，由 ASI 结束字段
+        parse("class A { get\n*a() {} }")
+        parse("class B { static get\n*a() {} }")
+        parse("class C { set\n*a(x) {} }")
+        parse("class D { static set\n*a(x) {} }")
+        // 同一行缺少 ASI 时仍是语法错误
+        assertFailsWith<ParseException> { parse("class E { get *a() {} }") }
+    }
+
+    @Test
+    fun `for await 的左值允许标识符 async`() {
+        // for-await-of 的 Lookahead 限制不包含 async；for-of 仍然禁止裸 async 左值
+        parse("async function f() { for await (async of [7]); }")
+        assertFailsWith<ParseException> { parse("for (async of [7]);") }
+    }
 }

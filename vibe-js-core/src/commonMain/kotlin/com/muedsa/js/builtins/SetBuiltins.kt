@@ -291,12 +291,17 @@ object SetBuiltins {
                 if (set.liveSize > record.size) {
                     return@method JSBoolean.FALSE
                 }
-                for (value in set.liveValues()) {
+                var result = true
+                // 规范使用接收者的 SetIterator：has 回调中删除/新增的值按实时迭代语义处理
+                iterateSetValuesLive(set) { value ->
                     if (!hasInSetLike(interpreter, record, value)) {
-                        return@method JSBoolean.FALSE
+                        result = false
+                        false
+                    } else {
+                        true
                     }
                 }
-                JSBoolean.TRUE
+                JSBoolean.getJsBoolean(result)
             },
         )
         setPrototype.defineDataProperty(
@@ -325,12 +330,18 @@ object SetBuiltins {
                 val set = requireSet(interpreter, thisValue, "Set.prototype.isDisjointFrom")
                 val record = getSetRecord(interpreter, args.getOrElse(0) { JSUndefined })
                 if (set.liveSize <= record.size) {
-                    for (value in set.liveValues()) {
+                    // 接收者更小：按接收者的实时迭代顺序用 has 过滤；
+                    // has 回调中的删除必须立即生效，不能遍历快照
+                    var disjoint = true
+                    iterateSetValuesLive(set) { value ->
                         if (hasInSetLike(interpreter, record, value)) {
-                            return@method JSBoolean.FALSE
+                            disjoint = false
+                            false
+                        } else {
+                            true
                         }
                     }
-                    return@method JSBoolean.TRUE
+                    return@method JSBoolean.getJsBoolean(disjoint)
                 }
                 var result = true
                 iterateSetRecord(interpreter, record) { value ->
@@ -346,6 +357,31 @@ object SetBuiltins {
         )
 
         registry.defineGlobal("Set", setConstructor)
+    }
+
+    /**
+     * 按 Set 的实时迭代顺序访问接收者（对应规范的 SetIterator）。
+     *
+     * 与 [JSSet.liveValues] 快照不同：回调执行期间的 delete/clear 会让后续
+     * 访问立即跳过对应值，add 的值按插入顺序追加访问；这保证
+     * `isSubsetOf`/`isDisjointFrom` 的 has 回调修改接收者时行为符合规范。
+     *
+     * @param action 返回 false 时提前结束迭代
+     */
+    private suspend fun iterateSetValuesLive(set: JSSet, action: suspend (JSValue) -> Boolean) {
+        set.beginIteration()
+        try {
+            var index = set.iterationStartIndex
+            while (index < set.iterationEndIndex) {
+                // 嵌套 clear 会推进逻辑起点，游标需要跳到新起点
+                index = maxOf(index, set.iterationStartIndex)
+                val value = set.valueAtIterationIndex(index)
+                index++
+                if (value != null && !action(value)) return
+            }
+        } finally {
+            set.endIteration()
+        }
     }
 
     /** GetSetRecord：校验 set-like 的 size/has/keys。 */

@@ -1137,14 +1137,18 @@ class Parser(
                 if (peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
                     canStartClassMember(1)
                 ) {
+                    // `get`/`set` 后跟 `*` 时不是访问器：访问器与生成器不能组合。
+                    // 按规范这里应把 get/set 解析成字段名，再由 ASI 结束字段
+                    // （见 grammar-field-named-get-followed-by-generator-asi 用例）。
+                    val generatorMarkerNext = peek(1).type == TokenType.MULTIPLY
                     when (peek().value) {
-                        "get" -> {
+                        "get" -> if (!generatorMarkerNext) {
                             kind = ClassMemberKind.GET
                             modifierStart = peek().range.start
                             advance()
                         }
 
-                        "set" -> {
+                        "set" -> if (!generatorMarkerNext) {
                             kind = ClassMemberKind.SET
                             modifierStart = peek().range.start
                             advance()
@@ -1499,6 +1503,15 @@ class Parser(
         // 函数表达式名属于函数自身绑定作用域：静态块内的 await 限制在此不适用
         nameToken?.let {
             withGeneratorContext(nameGeneratorContext) { validateIdentifierToken(it) }
+        }
+        // AsyncFunctionExpression / AsyncGeneratorExpression 的 BindingIdentifier
+        // 不得为 await（即使外层不是 async 语境）；声明形式在 sloppy 下允许，
+        // 因此只在表达式路径上做这条早期错误检查。
+        if (isAsync && nameToken?.value == "await") {
+            throw ParseException(
+                "await is not a valid binding identifier for async function expressions",
+                nameToken.range,
+            )
         }
         val params = withFunctionContext(false, false, true) {
             withGeneratorContext(isGenerator) {
@@ -2270,8 +2283,9 @@ class Parser(
                 throw error("Invalid left-hand side in for-in/of")
             }
             // for-of 左值不允许裸 async（Lookahead 限制）；
+            // for-await-of 的 Lookahead 限制不包含 async，`for await (async of ...)` 合法。
             // 转义写法或括号包裹是不同 token 序列，允许作为普通标识符
-            if (isOf && expression is Identifier && expression.name == "async" &&
+            if (isOf && !isAwait && expression is Identifier && expression.name == "async" &&
                 !targetStartToken.containsEscape && expression.range !in parenthesizedRanges
             ) {
                 throw error("The left-hand side of a for-of loop may not be 'async'")

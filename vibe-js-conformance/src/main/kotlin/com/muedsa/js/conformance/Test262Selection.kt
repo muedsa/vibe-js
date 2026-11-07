@@ -100,13 +100,13 @@ internal object Test262Selection {
     /**
      * 判定选中后的用例是否跳过，返回跳过原因。
      *
-     * 这里的判断包含对源码的文本匹配（Proxy/Generator 等），
+     * 判断仍包含少量源码文本匹配（SharedArrayBuffer、`$262` 宿主钩子等），
      * 因此可能因注释或字符串误排；[Test262Conformance] 会把每条跳过原因落盘，
      * 便于人工审计误排。
      *
      * @param source 去掉 metadata 后的可执行源码
      * @param suite 当前子集
-     * @param relativePath 相对语料根目录的路径；用于已修复路径的定向放行
+     * @param relativePath 相对语料根目录的路径（保留给路径相关的定向规则，当前未使用）
      */
     fun skipReason(
         source: String,
@@ -155,45 +155,11 @@ internal object Test262Selection {
         if (suite == "es2015" && source.contains("new SharedArrayBuffer")) {
             return SkipDecision("unsupported feature: SharedArrayBuffer", textMatchOnly = true)
         }
-        // ES2015 子集中排除 Generator 内容（Proxy 已在 L2.4 纳入支持范围，
-        // BigInt 已在 L3.3、TypedArray/ArrayBuffer/DataView 已在 L3.5 纳入）。
-        // 例外：L1.6 已实现 %AsyncIteratorPrototype% 的 @@asyncIterator/@@asyncDispose，
-        // 该目录用例虽然使用 async generator 语法，仍纳入基线以保持修复项的回归覆盖。
-        if (suite == "es2015" &&
-            !relativePath.startsWith(asyncIteratorPrototypePath) &&
-            (source.contains("function *") ||
-                source.contains("function*") ||
-                generatorFunctionPattern.containsMatchIn(source) ||
-                source.contains("async *") ||
-                source.contains("async*") ||
-                source.contains("for await") ||
-                generatorMethodPattern.containsMatchIn(source))
-        ) {
-            return SkipDecision("unsupported Generator", textMatchOnly = true)
-        }
         if (metadata.negativePhase != null && metadata.negativePhase !in setOf("parse", "runtime")) {
             return SkipDecision("unsupported negative phase: ${metadata.negativePhase}")
         }
         return null
     }
-
-    /** 生成器方法语法（`*keys() {}` / `*[Symbol.iterator]() {}`），项目未实现。 */
-    private val generatorMethodPattern = Regex(
-        """(?m)(?:^\s*|[{(,;]\s*|\*/\s*|\bstatic\s+|\basync\s+)\*\s*(?:/\*[\s\S]*?\*/\s*)*(?:[A-Za-z_$][A-Za-z0-9_$]*|\[[^\]]*\]|#[^\s(]*)\s*(?:/\*[\s\S]*?\*/\s*)*\("""
-    )
-
-    /** 生成器函数声明/表达式（允许 function 与 * 之间夹注释）。 */
-    private val generatorFunctionPattern = Regex(
-        """\bfunction\s*(?:/\*[\s\S]*?\*/\s*)*\*"""
-    )
-
-    /**
-     * 已由 L1.6 修复并纳入基线的异步迭代器路径。
-     *
-     * 该目录的用例验证 `%AsyncIteratorPrototype%` 上的 @@asyncIterator/@@asyncDispose
-     * 语义，源码使用 async generator 语法；放行后由常规特性筛选与其它跳过规则继续约束。
-     */
-    internal const val asyncIteratorPrototypePath = "test/built-ins/AsyncIteratorPrototype/"
 
     /** `$262.<member>` 访问的成员名：当前放行 evalScript 与 detachArrayBuffer。 */
     private val dollar262MemberPattern =
@@ -260,21 +226,21 @@ internal object Test262Selection {
         "object-rest", "object-spread", "optional-chaining",
         "numeric-separator-literal",
         "u-flag", "y-flag", "unicode-escapes",
+        // L1.6（第二批）：Generator / async generator / for-await-of 已纳入基线。
+        // 之前按源码文本排除 Generator 的规则已删除，改由 features 精确筛选。
+        "generators", "async-iteration",
     )
 
     /**
      * ES2015 子集中排除的路径片段：
      * - 未实现的宿主型内建（SharedArrayBuffer/Atomics 等）；
-     * - 内容依赖 Generator 语法的计算属性名用例（Generator 明确排除）；
      * - 依赖 TypedArray 但不属于 L3.5 范围的 Object.seal 整数索引语义用例。
      *
-     * %AsyncIteratorPrototype% 已在 L1.6 实现，路径排除已移除（见 [asyncIteratorPrototypePath]）。
+     * Generator 已纳入基线，原先针对计算属性名用例的 Generator 派生路径排除已移除。
      */
     private val es2015ExcludedPathFragments = listOf(
         "test/built-ins/SharedArrayBuffer/",
         "test/built-ins/Atomics/",
-        "-from-generator-function-declaration.js",
-        "-from-yield-expression.js",
         // V8/最新规范允许子类实例调用 RegExp.prototype.compile，测试基于旧草案
         "test/annexB/built-ins/RegExp/prototype/compile/this-subclass-instance.js",
         // 可选链用例中使用 Reflect.construct（项目明确排除 Reflect）
@@ -299,7 +265,6 @@ internal object Test262Selection {
         "SharedArrayBuffer", "Atomics",
         "Intl", "WeakRef", "FinalizationRegistry",
         "decorators",
-        "generator", "async-iteration",
         "dynamic-import", "import-attributes", "top-level-await",
         "resizable-arraybuffer", "arraybuffer-transfer", "Float16Array",
         "Temporal",

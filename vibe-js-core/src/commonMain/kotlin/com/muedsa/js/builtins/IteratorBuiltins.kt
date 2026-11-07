@@ -306,11 +306,13 @@ internal object IteratorBuiltins {
             if (rejectStrings || value !is JSString) {
                 interpreter.typeError("Iterator.from argument is not iterable")
             }
-            val stringIteratorMethod = getMethod(
-                interpreter,
-                interpreter.intrinsics.stringPrototype,
-                PropertyKey.Sym(interpreter.intrinsics.symbolIterator),
-            ) ?: interpreter.typeError("String is not iterable")
+            // GetV(primitive, @@iterator)：属性读取以原始字符串为 receiver，
+            // 因此 @@iterator getter 中的 this 仍是 string（Test262 iterable-primitives 期望）。
+            val iteratorKey = PropertyKey.Sym(interpreter.intrinsics.symbolIterator)
+            val stringIteratorMethod = interpreter.getV(value, iteratorKey)
+            if (!interpreter.isCallable(stringIteratorMethod)) {
+                interpreter.typeError("String is not iterable")
+            }
             val result = interpreter.callFunction(stringIteratorMethod, value, emptyList())
             val iterator = result as? JSObject
                 ?: interpreter.typeError("Iterator method did not return an object")

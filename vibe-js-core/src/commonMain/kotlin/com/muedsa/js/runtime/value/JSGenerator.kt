@@ -32,14 +32,8 @@ internal sealed class GeneratorStep {
      */
     class Yielded(val value: JSValue, val resultObject: JSObject? = null) : GeneratorStep()
 
-    /**
-     * 函数体正常返回（含 return 完成与生成器边界捕获的 GeneratorReturn）。
-     *
-     * @property awaited async generator 的恢复值是否已在 yield 处等待过
-     *   （AsyncGeneratorUnwrapYieldResumption）：已等待时不再重复执行 Await，
-     *   否则 thenable 的 then 会被读取两次
-     */
-    class Returned(val value: JSValue, val awaited: Boolean = false) : GeneratorStep()
+    /** 函数体正常返回（含 return 完成与生成器边界捕获的 GeneratorReturn）。 */
+    class Returned(val value: JSValue) : GeneratorStep()
 
     /** 函数体抛出未被捕获的 JS 异常。 */
     class Threw(val exception: JSException) : GeneratorStep()
@@ -260,6 +254,10 @@ class JSGenerator internal constructor(
                 } catch (error: ExecutionLimitException) {
                     // 配额耗尽不属于 JS 错误，交给事件循环的终止边界
                     throw error
+                } catch (error: JSException) {
+                    // JS 异常（例如 return() 恢复值的 Await 拒绝）以请求 Promise
+                    // 的拒绝呈现，不能包装成 InternalError。
+                    GeneratorStep.Threw(error)
                 } catch (error: Throwable) {
                     // 与 async 函数边界一致：内部错误转换为 InternalError 拒绝
                     GeneratorStep.Threw(internalError(error))
@@ -291,14 +289,20 @@ class JSGenerator internal constructor(
     private suspend fun advanceAsync(request: GeneratorRequest): GeneratorStep = when (state) {
         GeneratorState.COMPLETED -> when (request) {
             is GeneratorRequest.Next -> GeneratorStep.Returned(JSUndefined)
-            is GeneratorRequest.Return -> GeneratorStep.Returned(request.value)
+            // AsyncGeneratorAwaitReturn：即使生成器已完成，return(value) 的值也要经过 Await
+            is GeneratorRequest.Return -> GeneratorStep.Returned(
+                interpreter.awaitAsyncGeneratorReturnValue(request.value),
+            )
+
             is GeneratorRequest.Throw -> GeneratorStep.Threw(JSException(request.value))
         }
 
         GeneratorState.SUSPENDED_START -> when (request) {
             is GeneratorRequest.Return -> {
+                // 尚未启动：AsyncGeneratorAwaitReturn 先等待恢复值再完成生成器
+                val awaited = interpreter.awaitAsyncGeneratorReturnValue(request.value)
                 state = GeneratorState.COMPLETED
-                GeneratorStep.Returned(request.value)
+                GeneratorStep.Returned(awaited)
             }
 
             is GeneratorRequest.Throw -> {
@@ -315,53 +319,40 @@ class JSGenerator internal constructor(
     }
 
     /**
-     * 在独立微任务中落定请求的 Promise（AsyncGeneratorResolve/Reject）。
+     * 落定请求的 Promise（AsyncGeneratorResolve/Reject）。
      *
-     * 规范把结果解析放在 Promise 作业里：即使在调用 `next()` 的同步栈上就取到了值，
-     * 也必须多经过一轮微任务才可观察。这里用 capability 的 resolve/reject 函数，
-     * 保持与 `Promise` 内建一致的落定时机与拒绝诊断。
+     * 规范在驱动步骤中同步调用 capability 的 resolve/reject；调用方注册的
+     * `.then` 回调仍会作为微任务延后。这里不再额外包一层微任务，否则
+     * `next()`/`return()` 的落定会晚于外部 Promise 链（见 tick 时序用例）。
      */
-    private fun settleAsync(
+    private suspend fun settleAsync(
         entry: AsyncRequest,
         value: JSValue,
         done: Boolean,
         error: JSException?,
     ) {
-        interpreter.context.eventLoop.enqueueMicrotask {
-            // 微任务可能在其他解释器执行期间运行，使用独立调用帧避免栈信息互相覆盖
-            val settleInterpreter = interpreter.forkForCallback()
-            if (error != null) {
-                PromiseSupport.callReject(settleInterpreter, entry.capability.reject, error)
-            } else {
-                settleInterpreter.callFunction(
-                    entry.capability.resolve,
-                    JSUndefined,
-                    listOf(createIterResult(value, done)),
-                )
-            }
+        // 回调可能在其他解释器执行期间运行，使用独立调用帧避免栈信息互相覆盖
+        val settleInterpreter = interpreter.forkForCallback()
+        if (error != null) {
+            PromiseSupport.callReject(settleInterpreter, entry.capability.reject, error)
+        } else {
+            settleInterpreter.callFunction(
+                entry.capability.resolve,
+                JSUndefined,
+                listOf(createIterResult(value, done)),
+            )
         }
     }
 
     /**
-     * 函数体以 return 完成时落定请求（AsyncGeneratorAwaitReturn）。
+     * 函数体以 return 完成时落定请求。
      *
-     * 规范要求 return 完成值先经过 Await：thenable 会被解包，
-     * 拒绝则以该原因拒绝本次请求的 Promise。
-     * 生成器在 yield 处恢复时，恢复值已在 AsyncGeneratorUnwrapYieldResumption 中
-     * 等待过（[GeneratorStep.Returned.awaited]），此时直接落定，避免重复读取 then。
+     * 需要 Await 的 return 值已在函数体内处理：显式 `return expr` 在
+     * ReturnStatement 求值时等待，`return()` 恢复值在挂起点等待（yieldAndReceive），
+     * 因此这里直接落定，不能再重复读取 then。
      */
     private suspend fun settleReturnAsync(entry: AsyncRequest, step: GeneratorStep.Returned) {
-        if (step.awaited) {
-            settleAsync(entry, step.value, done = true, error = null)
-            return
-        }
-        val awaited = try {
-            interpreter.awaitAsyncGeneratorReturnValue(step.value)
-        } catch (error: JSException) {
-            settleAsync(entry, JSUndefined, done = false, error = error)
-            return
-        }
-        settleAsync(entry, awaited, done = true, error = null)
+        settleAsync(entry, step.value, done = true, error = null)
     }
 
     /** 内部错误转换为可被 JS 捕获的 InternalError（与 async 函数边界一致）。 */

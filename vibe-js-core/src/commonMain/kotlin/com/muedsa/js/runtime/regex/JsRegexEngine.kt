@@ -2009,7 +2009,11 @@ class JsRegexEngine(
                         } else if (unicode) {
                             throw IllegalArgumentException("Invalid control escape")
                         } else {
-                            ClassItem.Single('c'.code)
+                            // Annex B ClassAtomNoDash :: `\` 返回单个反斜杠字符；
+                            // 后面的 'c' 作为独立 ClassAtom 继续解析。
+                            // 位置已越过 'c'，回退一个码元让外层重新读取它。
+                            position--
+                            ClassItem.Single('\\'.code)
                         }
                     }
 

@@ -94,4 +94,18 @@ class JsRegexEngineTest {
         assertTrue(values.contains("a"))
         assertTrue(values.contains(""))
     }
+
+    @Test
+    fun `字符类中无效控制转义按字面反斜杠与 c 解析`() {
+        // Annex B ClassAtomNoDash :: `\`：[\c ] 匹配反斜杠、c 与空格
+        val engine = JsRegexEngine("[\\c ]")
+        assertNotNull(engine.find("\\"))
+        assertNotNull(engine.find("c"))
+        assertNotNull(engine.find(" "))
+        assertNull(engine.find("x"))
+        // 合法控制转义（字母）仍产生控制字符
+        val control = JsRegexEngine("[\\cA]")
+        assertNotNull(control.find("\u0001"))
+        assertNull(control.find("A"))
+    }
 }

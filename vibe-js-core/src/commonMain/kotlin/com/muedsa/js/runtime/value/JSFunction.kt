@@ -164,14 +164,19 @@ class JSFunction(
                 enumerable = false,
                 configurable = false,
             )
-            // 双向连接：Foo.prototype.constructor === Foo
-            functionPrototypeObject.defineDataProperty(
-                PropertyKey.CONSTRUCTOR,
-                this,
-                writable = true,
-                enumerable = false,
-                configurable = true,
-            )
+            // 双向连接：Foo.prototype.constructor === Foo。
+            // 生成器函数例外：规范（GeneratorFunctionCreate / AsyncGeneratorFunctionCreate）
+            // 只创建 [[Prototype]] 为 %GeneratorPrototype% / %AsyncGeneratorPrototype%
+            // 的普通对象，不在其上定义 constructor（Test262 25.2.4.2 期望 0 个自有属性）。
+            if (!isGenerator) {
+                functionPrototypeObject.defineDataProperty(
+                    PropertyKey.CONSTRUCTOR,
+                    this,
+                    writable = true,
+                    enumerable = false,
+                    configurable = true,
+                )
+            }
         }
     }
 }

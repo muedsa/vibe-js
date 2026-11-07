@@ -99,6 +99,13 @@ sealed class Environment(val parent: Environment?) {
 class DeclarativeEnvironment(
     parent: Environment? = null,
     override val isVarScope: Boolean = false,
+    /**
+     * 是否为 catch 子句参数环境。
+     *
+     * Annex B.3.5 允许 catch 块内直接 eval 的 var/function 声明重声明 catch 参数，
+     * 其它词法环境仍按 EvalDeclarationInstantiation 抛 SyntaxError。
+     */
+    val isCatchEnvironment: Boolean = false,
 ) : Environment(parent) {
 
     private val bindings: MutableMap<String, Binding> = LinkedHashMap()

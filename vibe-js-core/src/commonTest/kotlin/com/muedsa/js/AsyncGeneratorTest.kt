@@ -568,7 +568,7 @@ class AsyncGeneratorTest {
                 asyncGeneratorPrototype[Symbol.asyncIterator].call(it) === it,
                 typeof Object.getPrototypeOf(asyncGeneratorPrototype)[Symbol.asyncIterator] === 'function',
                 Object.prototype.hasOwnProperty.call(asyncGeneratorPrototype, Symbol.asyncIterator),
-                Object.prototype.hasOwnProperty.call(g.prototype, 'constructor')
+                Object.getOwnPropertyNames(g.prototype).length === 0
             ].join(',');
             """.trimIndent()
         )
@@ -1143,5 +1143,34 @@ class AsyncGeneratorTest {
         )
         // AsyncGeneratorUnwrapYieldResumption：恢复值的 Await 失败在 yield 处变成 JS 异常
         assertEquals("caught:return-await,step:recovered:true", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
+    fun `async 生成器 yield 的 Await 让 return 的 then 读取晚于外部微任务`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var actual = [];
+            async function* f() {
+                actual.push('start');
+                yield 1;
+            }
+            Promise.resolve(0)
+                .then(function () { actual.push('tick 1'); })
+                .then(function () { actual.push('tick 2'); });
+            var it = f();
+            it.next();
+            it.return({
+                get then() {
+                    actual.push('get then');
+                }
+            });
+            """.trimIndent()
+        )
+        // AsyncGeneratorYield 的 Await(1) 先让出一个微任务，return() 恢复值随后才被等待
+        assertEquals(
+            "start,tick 1,get then,tick 2",
+            runtime.evalString("actual.join(',')"),
+        )
     }
 }

@@ -233,27 +233,27 @@ class Test262SelectionTest {
     }
 
     @Test
-    fun `文本筛选按子集生效且能识别生成器`() {
-        // ES5 子集不做 Generator/Proxy 文本过滤，保持 ES5 口径
+    fun `生成器语法在 ES2015 子集中不再按文本排除`() {
+        // ES5 子集本来就不做文本过滤，保持 ES5 口径
         assertNull(
             Test262Selection.skipReason("function* g() {}", metadata(), "es5")
         )
-        // Proxy 已在 L2.4 支持：源码中出现 Proxy 不再触发文本排除
+        // Generator / async generator / for-await 已纳入基线：任何源码文本都不再排除
         assertNull(
-            Test262Selection.skipReason("var p = new Proxy({}, {});", metadata(), "es2015")
+            Test262Selection.skipReason("function* g() {}", metadata(), "es2015")
         )
-        assertEquals(
-            "unsupported Generator",
-            Test262Selection.skipReason("function* g() {}", metadata(), "es2015"),
+        assertNull(
+            Test262Selection.skipReason("var o = { *gen() {} };", metadata(), "es2015")
+        )
+        assertNull(
+            Test262Selection.skipReason("async function* g() { yield 1; }", metadata(), "es2015")
+        )
+        assertNull(
+            Test262Selection.skipReason("for await (var x of xs) {}", metadata(), "es2015")
         )
         // BigInt 已支持：字面量不再触发文本排除
         assertNull(
             Test262Selection.skipReason("var n = 1n;", metadata(), "es2015")
-        )
-        // 方法形式的生成器也要识别
-        assertEquals(
-            "unsupported Generator",
-            Test262Selection.skipReason("var o = { *gen() {} };", metadata(), "es2015"),
         )
     }
 
@@ -286,7 +286,7 @@ class Test262SelectionTest {
                 null,
             )
         )
-        // L1.6 已实现 @@asyncIterator/@@asyncDispose：目录内使用 async generator 语法也放行
+        // Generator 文本排除整体关闭：目录内外的 async generator 语法都不再跳过
         assertNull(
             Test262Selection.skipReason(
                 "async function* generator() {}",
@@ -295,9 +295,7 @@ class Test262SelectionTest {
                 relativePath,
             )
         )
-        // 其它路径仍按生成器文本排除
-        assertEquals(
-            "unsupported Generator",
+        assertNull(
             Test262Selection.skipReason(
                 "async function* generator() {}",
                 metadata(),
@@ -310,8 +308,10 @@ class Test262SelectionTest {
     @Test
     fun `文本匹配跳过会标记 textMatchOnly，元数据排除不标记`() {
         // 源码文本命中：features 没有标注，只能靠文本判断，标记为待复核
-        val textMatched = Test262Selection.skipDecision("function* g() {}", metadata(), "es2015")
-        assertEquals("unsupported Generator", textMatched?.reason)
+        val textMatched = Test262Selection.skipDecision(
+            "var b = new SharedArrayBuffer(8);", metadata(), "es2015",
+        )
+        assertEquals("unsupported feature: SharedArrayBuffer", textMatched?.reason)
         assertEquals(true, textMatched?.textMatchOnly)
 
         // features 明确标注：属于元数据排除，不需要文本复核

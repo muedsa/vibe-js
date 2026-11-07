@@ -364,8 +364,9 @@ internal object RegexNamedGroups {
                                 builder.append("\\c")
                                 index += 2
                             } else if (inClass) {
-                                // 字符类内非法控制转义是 IdentityEscape 'c'
-                                builder.append('c')
+                                // Annex B ClassAtomNoDash :: `\`：字符类内非法控制转义
+                                // 产生字面反斜杠，后面的 c 作为独立 ClassAtom。
+                                builder.append("\\\\c")
                                 index += 2
                             } else {
                                 // 字符类外 Annex B：非字母控制转义匹配字面反斜杠 + c

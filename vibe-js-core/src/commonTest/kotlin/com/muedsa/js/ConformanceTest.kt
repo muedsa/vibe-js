@@ -473,4 +473,98 @@ class ConformanceTest {
         assertEquals("||1", runtime.evalString("[null, undefined, 1].join('|')"))
         assertEquals(",", runtime.evalString("'' + [null, undefined]"))
     }
+
+    @Test
+    fun `catch 块内直接 eval 的 var 与 function 可重声明 catch 参数`() = runTest {
+        val runtime = TestRuntime()
+        // Annex B.3.5：只对 catch 参数环境放宽；其它词法环境的 EvalDeclarationInstantiation 仍报错
+        runtime.eval(
+            """
+            try {
+                throw null;
+            } catch (err) {
+                eval('function err() {}');
+                eval('function* err() {}');
+                eval('async function err() {}');
+                eval('async function* err() {}');
+                eval('var err;');
+                eval('for (var err; false; ) {}');
+                eval('for (var err in []) {}');
+                eval('for (var err of []) {}');
+            }
+            var result = 'ok';
+            """.trimIndent()
+        )
+        assertEquals("ok", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `Set 的 isSubsetOf 与 isDisjointFrom 使用实时迭代观察接收者修改`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var baseSet = new Set(['a', 'b', 'c']);
+            var evilSetLike = {
+                size: 3,
+                has: function (v) {
+                    if (v === 'a') {
+                        baseSet.delete('b');
+                        baseSet.delete('c');
+                        baseSet.add('b');
+                        return false;
+                    }
+                    if (v === 'b') { return false; }
+                    throw new Error('unexpected has: ' + v);
+                },
+                keys: function () { return [][Symbol.iterator](); }
+            };
+            var disjoint = baseSet.isDisjointFrom(evilSetLike);
+            var afterDisjoint = Array.from(baseSet).join(',');
+
+            var subsetSet = new Set(['a', 'b', 'c']);
+            var evilSubsetLike = {
+                size: 3,
+                has: function (v) {
+                    if (v === 'a') { subsetSet.delete('c'); }
+                    return ['x', 'a', 'b'].indexOf(v) !== -1;
+                },
+                keys: function () { return [][Symbol.iterator](); }
+            };
+            var subset = subsetSet.isSubsetOf(evilSubsetLike);
+            var afterSubset = Array.from(subsetSet).join(',');
+
+            var result = [disjoint, afterDisjoint, subset, afterSubset].join('|');
+            """.trimIndent()
+        )
+        // has 回调中删除的值不再访问；重删重加作为新记录访问
+        assertEquals("true|a,b|true|a,b", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `Iterator 的 from 只把字符串原始值转为对象`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var observed;
+            var original = String.prototype[Symbol.iterator];
+            Object.defineProperty(String.prototype, Symbol.iterator, {
+                get: function () {
+                    'use strict';
+                    observed = typeof this;
+                    return original;
+                },
+                configurable: true
+            });
+            Iterator.from('');
+            var primitiveObserved = observed;
+            Iterator.from(new String(''));
+            var objectObserved = observed;
+            var numberThrows = false;
+            try { Iterator.from(5); } catch (e) { numberThrows = e.name === 'TypeError'; }
+            var result = [primitiveObserved, objectObserved, numberThrows].join(',');
+            """.trimIndent()
+        )
+        // @@iterator 以原始字符串为 receiver 读取（getter 中的 this 仍是 string）
+        assertEquals("string,object,true", runtime.evalString("result"))
+    }
 }

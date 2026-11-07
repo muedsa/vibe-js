@@ -212,6 +212,15 @@ class Interpreter(
     private var generatorIsAsync = false
 
     /**
+     * 当前生成器体对应的函数对象。
+     *
+     * 生成器体内部调用普通函数时复用同一解释器实例，[generatorIsAsync]
+     * 仍为 true；return 语句必须据此判断自己属于生成器体还是嵌套函数，
+     * 否则嵌套函数的 `return expr` 会被错误地按 async generator 规则 Await。
+     */
+    private var generatorFunction: JSFunction? = null
+
+    /**
      * 语句、表达式和循环共用检查计数器，每 1024 个执行检查点观察一次取消。
      *
      * 避免为每个 AST 节点读取协程上下文；检查不挂起协程、不运行微任务，
@@ -459,9 +468,13 @@ class Interpreter(
             var environment: Environment? = lexicalEnvironment
             while (environment != null) {
                 if (environment is DeclarativeEnvironment && environment.hasOwnLexicalBinding(name)) {
-                    throw JSException(
-                        JSError("SyntaxError", "Identifier '$name' has already been declared")
-                    )
+                    // Annex B.3.5：catch 参数环境中的同名绑定不构成早期错误，
+                    // 直接 eval 的 var/function 声明按 var 作用域正常提升。
+                    if (!environment.isCatchEnvironment) {
+                        throw JSException(
+                            JSError("SyntaxError", "Identifier '$name' has already been declared")
+                        )
+                    }
                 }
                 if (environment.isVarScope) break
                 environment = environment.parent
@@ -2249,6 +2262,7 @@ class Interpreter(
         val bodyInterpreter = forkForCallback()
         bodyInterpreter.generatorChannels = generator.channels
         bodyInterpreter.generatorIsAsync = generator.isAsync
+        bodyInterpreter.generatorFunction = generator.function
         try {
             val result = bodyInterpreter.executeSuspendedGeneratorBody(
                 function = generator.function,
@@ -2258,11 +2272,8 @@ class Interpreter(
             generator.channels.steps.send(GeneratorStep.Returned(result))
         } catch (signal: GeneratorReturn) {
             // 生成器边界：return() 的控制流信号转换为 { done: true } 的返回步骤。
-            // async generator 的恢复值已在 yield 处按 AsyncGeneratorUnwrapYieldResumption
-            // 等待过，标记 awaited 避免 AsyncGeneratorAwaitReturn 再次读取 then
-            generator.channels.steps.send(
-                GeneratorStep.Returned(signal.value, awaited = generator.isAsync)
-            )
+            // async generator 的恢复值已在挂起点按 AsyncGeneratorUnwrapYieldResumption 等待过
+            generator.channels.steps.send(GeneratorStep.Returned(signal.value))
         } catch (error: JSException) {
             generator.channels.steps.send(GeneratorStep.Threw(error))
         } catch (error: CancellationException) {
@@ -3383,7 +3394,17 @@ class Interpreter(
                 val value = statement.value?.let {
                     evaluate(it, tail = canUseTailCall())
                 } ?: JSUndefined
-                Completion.Return(value)
+                // 规范 13.10.1：async generator 自身的 return 表达式值先经过 Await。
+                // 必须是当前生成器体这一层：嵌套普通函数复用同一解释器实例，
+                // 它们的 return 不受 async generator 规则影响。
+                val asyncGeneratorReturn = generatorIsAsync && statement.value != null &&
+                    generatorFunction != null && currentFrame.function === generatorFunction
+                val result = if (asyncGeneratorReturn) {
+                    awaitPromiseValue(value)
+                } else {
+                    value
+                }
+                Completion.Return(result)
             }
 
             is ThrowStatement -> {
@@ -4257,7 +4278,10 @@ class Interpreter(
             normalizeErrorValue(exception.value)
             val handler = statement.handler
             if (handler != null) {
-                val catchEnvironment = DeclarativeEnvironment(parent = currentFrame.lexicalEnv)
+                val catchEnvironment = DeclarativeEnvironment(
+                    parent = currentFrame.lexicalEnv,
+                    isCatchEnvironment = true,
+                )
                 if (handler.param != null) {
                     catchEnvironment.createLetBinding(handler.param, exception.value)
                 } else if (handler.pattern != null) {
@@ -5344,36 +5368,10 @@ class Interpreter(
     }
 
     /**
-     * async generator 中的条件 Await：只在值的 then 可调用时等待。
-     *
-     * 规范对非 thenable 值的 Await 不产生可观察的额外微任务，
-     * 因此 yield 普通值不会推迟请求 Promise 的落定顺序；
-     * then 只读取一次，再交给 NewPromiseResolveThenableJob 调用，避免 getter 被触发两次。
-     */
-    private suspend fun awaitIfThenable(value: JSValue): JSValue {
-        if (value !is JSObject) return value
-        // 已是 Promise：走 PromiseResolve 的快速路径（同时读取 constructor）
-        if (value is JSPromise) return awaitPromiseValue(value)
-        val then = getV(value, PropertyKey.Str("then"))
-        if (!isCallable(then)) return value
-        val promise = JSPromise(intrinsics.promisePrototype)
-        PromiseSupport.resolveThenable(this, promise, value, then)
-        val result = try {
-            promise.awaitResult()
-        } catch (error: JSException) {
-            context.eventLoop.awaitMicrotask()
-            throw error
-        }
-        context.eventLoop.awaitMicrotask()
-        return result
-    }
-
-    /**
      * AsyncGeneratorAwaitReturn：async generator 的 return 完成值先经过 Await。
      *
-     * 与 [awaitIfThenable] 不同，这里使用完整的 Await 语义：
-     * 即使 return 值是普通值也要经过 PromiseResolve（读取 constructor 等可观察副作用），
-     * thenable 的拒绝成为本次请求 Promise 的拒绝原因。
+     * 使用完整的 Await 语义：即使 return 值是普通值也要经过 PromiseResolve
+     * （读取 constructor 等可观察副作用），thenable 的拒绝成为本次请求 Promise 的拒绝原因。
      */
     internal suspend fun awaitAsyncGeneratorReturnValue(value: JSValue): JSValue =
         awaitPromiseValue(value)
@@ -5541,8 +5539,10 @@ class Interpreter(
             return evaluateYieldDelegate(argument, channels)
         }
         val value = if (argument != null) evaluate(argument) else JSUndefined
-        // 规范：async generator 在交出产出值前执行 Await(value)
-        val yieldedValue = if (generatorIsAsync) awaitIfThenable(value) else value
+        // 规范 AsyncGeneratorYield step 5：async generator 在交出产出值前执行 Await(value)。
+        // 即使 value 不是 thenable，Await 也会让出一个微任务周期（PromiseResolve），
+        // 这决定了 return()/next() 与外部 Promise 链的交错顺序。
+        val yieldedValue = if (generatorIsAsync) awaitPromiseValue(value) else value
         return when (val request = yieldAndReceive(channels, yieldedValue)) {
             is GeneratorRequest.Next -> request.value
             // 恢复值已在 yieldAndReceive 中按 AsyncGeneratorUnwrapYieldResumption 等待
@@ -5657,21 +5657,10 @@ class Interpreter(
                 )
                 continue
             }
-            val rawValue = getV(innerResult, PropertyKey.Str("value"))
-            // AsyncFromSync：同步迭代器的值同样按 Await 语义解包；
-            // 等待失败时按 AsyncFromSyncIteratorContinuation 关闭同步迭代器（保留原错误）
-            val value = if (record.awaitValue) {
-                try {
-                    awaitPromiseValue(rawValue)
-                } catch (error: JSException) {
-                    iteratorClose(record, throwCompletion = true)
-                    throw error
-                }
-            } else {
-                rawValue
-            }
-            // 异步委托不再对值做额外等待
-            // （规范 yield* 只 Await 内部结果，手动实现的异步迭代器返回的 Promise 保持原样）
+            // 异步委托不再对值做额外等待：AsyncFromSync 包装器的 next() 已按
+            // AsyncFromSyncIteratorContinuation 解包 value；手动实现的异步迭代器
+            // 返回的 Promise 按规范保持原样（yield* 只 Await 内部结果）。
+            val value = getV(innerResult, PropertyKey.Str("value"))
             request = yieldAndReceive(channels, value)
         }
     }
@@ -6310,8 +6299,10 @@ class Interpreter(
                     }
                     if (!done) iteratorClose(record, throwCompletion = false)
                 } catch (signal: GeneratorReturn) {
-                    // 生成器 return() 在默认值/目标引用求值中触发：按 throw 完成关闭迭代器
-                    if (!done) iteratorClose(record, throwCompletion = true)
+                    // 生成器 return() 在目标引用/默认值求值中触发：规范把该完成记录
+                    // 传给 IteratorClose；return 完成不是 throw 完成，因此 return()
+                    // 自身的异常或非对象返回值必须继续向上传播（覆盖原信号）。
+                    if (!done) iteratorClose(record, throwCompletion = false)
                     throw signal
                 }
             }
@@ -6417,8 +6408,6 @@ class Interpreter(
         val nextMethod: JSValue,
         /** 异步迭代器：next()/return() 的返回值需要 await。 */
         val isAsync: Boolean = false,
-        /** AsyncFromSync 回退：每次取到的 value 也需要 await。 */
-        val awaitValue: Boolean = false,
     )
 
     /** GetIterator：要求对象具有可调用的 @@iterator。 */
@@ -6435,10 +6424,11 @@ class Interpreter(
         if (iteratorValue !is JSObject) {
             throw typeError("Result of the Symbol.iterator method is not an object")
         }
+        // GetIterator 只读取 next 方法，不在此校验可调用性：
+        // 规范把 TypeError 推迟到 IteratorNext 真正调用 next 时。
+        // 这样“目标引用求值中挂起”的赋值解构可以先取得迭代器再挂起，
+        // 之后 return() 触发 IteratorClose 时仍能按规范关闭（见 dstr 用例）。
         val nextMethod = getV(iteratorValue, PropertyKey.Str("next"))
-        if (!isCallable(nextMethod)) {
-            throw typeError("Iterator does not have a next method")
-        }
         return IteratorRecord(iteratorValue, nextMethod)
     }
 
@@ -6450,16 +6440,7 @@ class Interpreter(
             throw typeError("Iterator result is not an object")
         }
         if (toBoolean(getV(result, PropertyKey.Str("done")))) return null
-        val value = getV(result, PropertyKey.Str("value"))
-        if (!record.awaitValue) return value
-        // AsyncFromSyncIteratorContinuation：值等待失败时需要关闭同步迭代器，
-        // 并把原始失败作为完成（关闭本身的错误被忽略）
-        return try {
-            awaitPromiseValue(value)
-        } catch (error: JSException) {
-            iteratorClose(record, throwCompletion = true)
-            throw error
-        }
+        return getV(result, PropertyKey.Str("value"))
     }
 
     /**
@@ -6520,15 +6501,371 @@ class Interpreter(
             if (iteratorValue !is JSObject) {
                 throw typeError("Result of the Symbol.asyncIterator method is not an object")
             }
+            // 与同步 GetIterator 一致：next 的可调用性推迟到真正调用时校验
             val nextMethod = getV(iteratorValue, PropertyKey.Str("next"))
-            if (!isCallable(nextMethod)) {
-                throw typeError("Iterator does not have a next method")
-            }
             return IteratorRecord(iteratorValue, nextMethod, isAsync = true)
         }
-        // 没有 @@asyncIterator：按 AsyncFromSyncIterator 处理同步迭代器
+        // 没有 @@asyncIterator：按 AsyncFromSyncIterator 包装同步迭代器。
+        // 不能直接复用同步迭代器记录：包装器的 next() 必须返回 Promise，
+        // 且 value 经 PromiseResolve 等待（constructor 读取次数与微任务顺序可观察）。
         val sync = getIterator(value)
-        return IteratorRecord(sync.iterator, sync.nextMethod, isAsync = true, awaitValue = true)
+        return createAsyncFromSyncIterator(sync)
+    }
+
+    /**
+     * 创建 AsyncFromSyncIterator 包装器。
+     *
+     * 规范对象对外只有 next/return/throw 三个方法；包装器本身不需要暴露
+     * 同步迭代器。next() 返回的 Promise 在 value 经 Await 后兑现，
+     * 与 for-await / yield* 的 Await 组合后形成规范的 tick 顺序。
+     */
+    private fun createAsyncFromSyncIterator(sync: IteratorRecord): IteratorRecord {
+        val wrapper = JSObject(prototype = intrinsics.asyncIteratorPrototype)
+        val nextMethod = JSNativeFunction(
+            name = "next",
+            length = 1,
+            prototype = intrinsics.functionPrototype,
+        ) { interpreter, _, args ->
+            asyncFromSyncNext(
+                interpreter,
+                sync,
+                args.getOrElse(0) { JSUndefined },
+                argumentPresent = args.isNotEmpty(),
+            )
+        }
+        wrapper.defineDataProperty(
+            key = PropertyKey.Str("next"),
+            value = nextMethod,
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        val returnMethod = JSNativeFunction(
+            name = "return",
+            length = 1,
+            prototype = intrinsics.functionPrototype,
+        ) { interpreter, _, args ->
+            asyncFromSyncReturn(
+                interpreter,
+                sync,
+                args.getOrElse(0) { JSUndefined },
+                argumentPresent = args.isNotEmpty(),
+            )
+        }
+        wrapper.defineDataProperty(
+            key = PropertyKey.Str("return"),
+            value = returnMethod,
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        val throwMethod = JSNativeFunction(
+            name = "throw",
+            length = 1,
+            prototype = intrinsics.functionPrototype,
+        ) { interpreter, _, args ->
+            asyncFromSyncThrow(
+                interpreter,
+                sync,
+                args.getOrElse(0) { JSUndefined },
+                argumentPresent = args.isNotEmpty(),
+            )
+        }
+        wrapper.defineDataProperty(
+            key = PropertyKey.Str("throw"),
+            value = throwMethod,
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        return IteratorRecord(wrapper, nextMethod, isAsync = true)
+    }
+
+    /** AsyncFromSyncIteratorPrototype.next：同步 next + AsyncFromSyncIteratorContinuation。 */
+    private suspend fun asyncFromSyncNext(
+        interpreter: Interpreter,
+        sync: IteratorRecord,
+        argument: JSValue,
+        argumentPresent: Boolean,
+    ): JSValue {
+        val capability = PromiseSupport.newPromiseCapability(
+            interpreter,
+            interpreter.intrinsics.promiseConstructor,
+        )
+        val result = try {
+            interpreter.callFunction(
+                sync.nextMethod,
+                sync.iterator,
+                if (argumentPresent) listOf(argument) else emptyList(),
+            )
+        } catch (error: JSException) {
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        if (result !is JSObject) {
+            PromiseSupport.callReject(
+                interpreter,
+                capability.reject,
+                JSException(
+                    JSError(
+                        errorName = "TypeError",
+                        messageText = "Iterator result is not an object",
+                        prototype = interpreter.intrinsics.typeErrorPrototype,
+                    )
+                ),
+            )
+            return capability.promise
+        }
+        return asyncFromSyncContinuation(interpreter, sync, result, capability, closeOnRejection = true)
+    }
+
+    /** AsyncFromSyncIteratorPrototype.return：转发同步 return 并等待其结果。 */
+    private suspend fun asyncFromSyncReturn(
+        interpreter: Interpreter,
+        sync: IteratorRecord,
+        value: JSValue,
+        argumentPresent: Boolean,
+    ): JSValue {
+        val capability = PromiseSupport.newPromiseCapability(
+            interpreter,
+            interpreter.intrinsics.promiseConstructor,
+        )
+        val returnMethod = try {
+            interpreter.getV(sync.iterator, PropertyKey.Str("return"))
+        } catch (error: JSException) {
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        if (returnMethod is JSUndefined || returnMethod is JSNull) {
+            // 没有 return 方法：直接以 { value, done: true } 兑现
+            interpreter.callFunction(
+                capability.resolve,
+                JSUndefined,
+                listOf(createIteratorResult(interpreter, value, done = true)),
+            )
+            return capability.promise
+        }
+        if (!interpreter.isCallable(returnMethod)) {
+            PromiseSupport.callReject(
+                interpreter,
+                capability.reject,
+                JSException(
+                    JSError(
+                        errorName = "TypeError",
+                        messageText = "Iterator return is not a function",
+                        prototype = interpreter.intrinsics.typeErrorPrototype,
+                    )
+                ),
+            )
+            return capability.promise
+        }
+        val result = try {
+            interpreter.callFunction(
+                returnMethod,
+                sync.iterator,
+                if (argumentPresent) listOf(value) else emptyList(),
+            )
+        } catch (error: JSException) {
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        if (result !is JSObject) {
+            PromiseSupport.callReject(
+                interpreter,
+                capability.reject,
+                JSException(
+                    JSError(
+                        errorName = "TypeError",
+                        messageText = "Iterator result is not an object",
+                        prototype = interpreter.intrinsics.typeErrorPrototype,
+                    )
+                ),
+            )
+            return capability.promise
+        }
+        return asyncFromSyncContinuation(
+            interpreter,
+            sync,
+            result,
+            capability,
+            closeOnRejection = false,
+        )
+    }
+
+    /** AsyncFromSyncIteratorPrototype.throw：转发同步 throw；缺失时关闭同步迭代器。 */
+    private suspend fun asyncFromSyncThrow(
+        interpreter: Interpreter,
+        sync: IteratorRecord,
+        value: JSValue,
+        argumentPresent: Boolean,
+    ): JSValue {
+        val capability = PromiseSupport.newPromiseCapability(
+            interpreter,
+            interpreter.intrinsics.promiseConstructor,
+        )
+        val throwMethod = try {
+            interpreter.getV(sync.iterator, PropertyKey.Str("throw"))
+        } catch (error: JSException) {
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        if (throwMethod is JSUndefined || throwMethod is JSNull) {
+            // 规范：先用 normal 完成关闭同步迭代器；关闭抛出的错误优先拒绝，
+            // 否则以 TypeError 拒绝（协议违规）。
+            val closeError = try {
+                interpreter.iteratorClose(sync, throwCompletion = false)
+                null
+            } catch (error: JSException) {
+                error
+            }
+            if (closeError != null) {
+                PromiseSupport.callReject(interpreter, capability.reject, closeError)
+                return capability.promise
+            }
+            val error = JSException(
+                JSError(
+                    errorName = "TypeError",
+                    messageText = "The iterator does not provide a 'throw' method",
+                    prototype = interpreter.intrinsics.typeErrorPrototype,
+                )
+            )
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        if (!interpreter.isCallable(throwMethod)) {
+            PromiseSupport.callReject(
+                interpreter,
+                capability.reject,
+                JSException(
+                    JSError(
+                        errorName = "TypeError",
+                        messageText = "Iterator throw is not a function",
+                        prototype = interpreter.intrinsics.typeErrorPrototype,
+                    )
+                ),
+            )
+            return capability.promise
+        }
+        val result = try {
+            interpreter.callFunction(
+                throwMethod,
+                sync.iterator,
+                if (argumentPresent) listOf(value) else emptyList(),
+            )
+        } catch (error: JSException) {
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        if (result !is JSObject) {
+            PromiseSupport.callReject(
+                interpreter,
+                capability.reject,
+                JSException(
+                    JSError(
+                        errorName = "TypeError",
+                        messageText = "Iterator result is not an object",
+                        prototype = interpreter.intrinsics.typeErrorPrototype,
+                    )
+                ),
+            )
+            return capability.promise
+        }
+        return asyncFromSyncContinuation(
+            interpreter,
+            sync,
+            result,
+            capability,
+            // throw 的值等待失败时需要关闭同步迭代器
+            closeOnRejection = true,
+        )
+    }
+
+    /**
+     * AsyncFromSyncIteratorContinuation：读取 done/value，value 经 PromiseResolve
+     * 等待后再以 { value, done } 兑现请求 Promise。
+     */
+    private suspend fun asyncFromSyncContinuation(
+        interpreter: Interpreter,
+        sync: IteratorRecord,
+        result: JSObject,
+        capability: PromiseCapability,
+        closeOnRejection: Boolean,
+    ): JSValue {
+        // done 在异常路径也需要可见：valueWrapper 的 abrupt 完成只有在
+        // 尚未完成时才关闭同步迭代器（规范 step 6 的 done is false 条件）。
+        var done = false
+        try {
+            done = interpreter.toBoolean(interpreter.getV(result, PropertyKey.Str("done")))
+            val value = interpreter.getV(result, PropertyKey.Str("value"))
+            val valueWrapper = PromiseSupport.promiseResolve(interpreter, value)
+            val onFulfilled = JSNativeFunction(
+                name = "",
+                length = 1,
+                prototype = interpreter.intrinsics.functionPrototype,
+            ) { inner, _, args ->
+                createIteratorResult(
+                    inner,
+                    args.getOrElse(0) { JSUndefined },
+                    done,
+                )
+            }
+            val onRejected = JSNativeFunction(
+                name = "",
+                length = 1,
+                prototype = interpreter.intrinsics.functionPrototype,
+            ) { inner, _, args ->
+                // 值等待失败：按 closeOnRejection 关闭同步迭代器后拒绝
+                if (closeOnRejection) closeSyncIteratorQuietly(inner, sync)
+                val reason = args.getOrElse(0) { JSUndefined }
+                PromiseSupport.callReject(inner, capability.reject, JSException(reason))
+                JSUndefined
+            }
+            PromiseSupport.performThen(
+                interpreter,
+                valueWrapper,
+                onFulfilled,
+                onRejected,
+                capability,
+            )
+        } catch (error: JSException) {
+            // 值等待/结果属性读取失败：按 closeOnRejection 关闭同步迭代器
+            if (closeOnRejection && !done) closeSyncIteratorQuietly(interpreter, sync)
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+        }
+        return capability.promise
+    }
+
+    /** 关闭同步迭代器并忽略关闭本身的异常（AsyncFromSync 拒绝路径）。 */
+    private suspend fun closeSyncIteratorQuietly(interpreter: Interpreter, sync: IteratorRecord) {
+        try {
+            interpreter.iteratorClose(sync, throwCompletion = true)
+        } catch (_: JSException) {
+            // 关闭失败不能覆盖原始拒绝原因
+        }
+    }
+
+    /** CreateIterResultObject：{ value, done }（属性顺序与规范一致）。 */
+    private fun createIteratorResult(
+        interpreter: Interpreter,
+        value: JSValue,
+        done: Boolean,
+    ): JSObject {
+        val result = JSObject(prototype = interpreter.intrinsics.objectPrototype)
+        result.defineDataProperty(
+            key = PropertyKey.Str("value"),
+            value = value,
+            writable = true,
+            enumerable = true,
+            configurable = true,
+        )
+        result.defineDataProperty(
+            key = PropertyKey.Str("done"),
+            value = JSBoolean.getJsBoolean(done),
+            writable = true,
+            enumerable = true,
+            configurable = true,
+        )
+        return result
     }
 
     /** 是否具有可调用的 @@iterator（Array.from 的数组式回退判断）。 */
