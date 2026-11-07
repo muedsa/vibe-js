@@ -23,11 +23,23 @@ internal sealed class GeneratorRequest {
 
 /** 生成器执行步骤（函数体交还给恢复方的完成记录）。 */
 internal sealed class GeneratorStep {
-    /** `yield value`：函数体在 yield 处挂起，value 为产出值。 */
-    class Yielded(val value: JSValue) : GeneratorStep()
+    /**
+     * `yield value`：函数体在 yield 处挂起，value 为产出值。
+     *
+     * @property resultObject 同步 `yield*` 委托时直接交出的内层 IteratorResult 对象：
+     *   规范对同步委托使用 `Yield(innerResult)`，外层的 next() 返回的正是该对象本身
+     *   （因此 done 属性、value getter 的访问次数都与内层结果一致）
+     */
+    class Yielded(val value: JSValue, val resultObject: JSObject? = null) : GeneratorStep()
 
-    /** 函数体正常返回（含 return 完成与生成器边界捕获的 GeneratorReturn）。 */
-    class Returned(val value: JSValue) : GeneratorStep()
+    /**
+     * 函数体正常返回（含 return 完成与生成器边界捕获的 GeneratorReturn）。
+     *
+     * @property awaited async generator 的恢复值是否已在 yield 处等待过
+     *   （AsyncGeneratorUnwrapYieldResumption）：已等待时不再重复执行 Await，
+     *   否则 thenable 的 then 会被读取两次
+     */
+    class Returned(val value: JSValue, val awaited: Boolean = false) : GeneratorStep()
 
     /** 函数体抛出未被捕获的 JS 异常。 */
     class Threw(val exception: JSException) : GeneratorStep()
@@ -186,7 +198,10 @@ class JSGenerator internal constructor(
 
     /** 把函数体步骤转换为同步生成器的 { value, done } 结果对象。 */
     private fun stepResult(step: GeneratorStep): JSObject = when (step) {
-        is GeneratorStep.Yielded -> createIterResult(step.value, done = false)
+        // 同步 yield* 委托直接把内层 IteratorResult 交给调用方（规范 Yield(innerResult)）
+        is GeneratorStep.Yielded -> step.resultObject
+            ?: createIterResult(step.value, done = false)
+
         is GeneratorStep.Returned -> createIterResult(step.value, done = true)
         is GeneratorStep.Threw -> throw step.exception
         is GeneratorStep.LimitReached -> throw step.exception
@@ -253,7 +268,7 @@ class JSGenerator internal constructor(
                     is GeneratorStep.Yielded ->
                         settleAsync(entry, step.value, done = false, error = null)
 
-                    is GeneratorStep.Returned -> settleReturnAsync(entry, step.value)
+                    is GeneratorStep.Returned -> settleReturnAsync(entry, step)
 
                     is GeneratorStep.Threw ->
                         settleAsync(entry, JSUndefined, done = false, error = step.exception)
@@ -332,10 +347,16 @@ class JSGenerator internal constructor(
      *
      * 规范要求 return 完成值先经过 Await：thenable 会被解包，
      * 拒绝则以该原因拒绝本次请求的 Promise。
+     * 生成器在 yield 处恢复时，恢复值已在 AsyncGeneratorUnwrapYieldResumption 中
+     * 等待过（[GeneratorStep.Returned.awaited]），此时直接落定，避免重复读取 then。
      */
-    private suspend fun settleReturnAsync(entry: AsyncRequest, value: JSValue) {
+    private suspend fun settleReturnAsync(entry: AsyncRequest, step: GeneratorStep.Returned) {
+        if (step.awaited) {
+            settleAsync(entry, step.value, done = true, error = null)
+            return
+        }
         val awaited = try {
-            interpreter.awaitAsyncGeneratorReturnValue(value)
+            interpreter.awaitAsyncGeneratorReturnValue(step.value)
         } catch (error: JSException) {
             settleAsync(entry, JSUndefined, done = false, error = error)
             return

@@ -106,16 +106,26 @@ internal object Test262Selection {
      *
      * @param source 去掉 metadata 后的可执行源码
      * @param suite 当前子集
+     * @param relativePath 相对语料根目录的路径；用于已修复路径的定向放行
      */
-    fun skipReason(source: String, metadata: Metadata, suite: String): String? =
-        skipDecision(source, metadata, suite)?.reason
+    fun skipReason(
+        source: String,
+        metadata: Metadata,
+        suite: String,
+        relativePath: String = "",
+    ): String? = skipDecision(source, metadata, suite, relativePath)?.reason
 
     /**
      * 判定选中后的用例是否跳过，并标记该判定是否只依赖源码文本。
      *
      * 与 [skipReason] 的区别：调用方可以据此把"文本匹配排除"单独落盘复核。
      */
-    fun skipDecision(source: String, metadata: Metadata, suite: String): SkipDecision? {
+    fun skipDecision(
+        source: String,
+        metadata: Metadata,
+        suite: String,
+        relativePath: String = "",
+    ): SkipDecision? {
         if (metadata.flags.any { it in setOf("module", "generator") }) {
             return SkipDecision("unsupported flag")
         }
@@ -146,8 +156,11 @@ internal object Test262Selection {
             return SkipDecision("unsupported feature: SharedArrayBuffer", textMatchOnly = true)
         }
         // ES2015 子集中排除 Generator 内容（Proxy 已在 L2.4 纳入支持范围，
-        // BigInt 已在 L3.3、TypedArray/ArrayBuffer/DataView 已在 L3.5 纳入）
+        // BigInt 已在 L3.3、TypedArray/ArrayBuffer/DataView 已在 L3.5 纳入）。
+        // 例外：L1.6 已实现 %AsyncIteratorPrototype% 的 @@asyncIterator/@@asyncDispose，
+        // 该目录用例虽然使用 async generator 语法，仍纳入基线以保持修复项的回归覆盖。
         if (suite == "es2015" &&
+            !relativePath.startsWith(asyncIteratorPrototypePath) &&
             (source.contains("function *") ||
                 source.contains("function*") ||
                 generatorFunctionPattern.containsMatchIn(source) ||
@@ -173,6 +186,14 @@ internal object Test262Selection {
     private val generatorFunctionPattern = Regex(
         """\bfunction\s*(?:/\*[\s\S]*?\*/\s*)*\*"""
     )
+
+    /**
+     * 已由 L1.6 修复并纳入基线的异步迭代器路径。
+     *
+     * 该目录的用例验证 `%AsyncIteratorPrototype%` 上的 @@asyncIterator/@@asyncDispose
+     * 语义，源码使用 async generator 语法；放行后由常规特性筛选与其它跳过规则继续约束。
+     */
+    internal const val asyncIteratorPrototypePath = "test/built-ins/AsyncIteratorPrototype/"
 
     /** `$262.<member>` 访问的成员名：当前放行 evalScript 与 detachArrayBuffer。 */
     private val dollar262MemberPattern =
@@ -244,14 +265,14 @@ internal object Test262Selection {
     /**
      * ES2015 子集中排除的路径片段：
      * - 未实现的宿主型内建（SharedArrayBuffer/Atomics 等）；
-     * - 未实现的 AsyncIterator 原型；
      * - 内容依赖 Generator 语法的计算属性名用例（Generator 明确排除）；
      * - 依赖 TypedArray 但不属于 L3.5 范围的 Object.seal 整数索引语义用例。
+     *
+     * %AsyncIteratorPrototype% 已在 L1.6 实现，路径排除已移除（见 [asyncIteratorPrototypePath]）。
      */
     private val es2015ExcludedPathFragments = listOf(
         "test/built-ins/SharedArrayBuffer/",
         "test/built-ins/Atomics/",
-        "test/built-ins/AsyncIteratorPrototype/",
         "-from-generator-function-declaration.js",
         "-from-yield-expression.js",
         // V8/最新规范允许子类实例调用 RegExp.prototype.compile，测试基于旧草案

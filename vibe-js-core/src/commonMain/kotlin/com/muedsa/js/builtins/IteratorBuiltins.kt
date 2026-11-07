@@ -3,6 +3,7 @@ package com.muedsa.js.builtins
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.Intrinsics
+import com.muedsa.js.runtime.PromiseSupport
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
@@ -374,6 +375,67 @@ internal object IteratorBuiltins {
         closeDirect(interpreter, DirectIterator(record, JSUndefined), throwCompletion = true)
     }
 
+    /**
+     * %AsyncIteratorPrototype%[@@asyncDispose]（explicit resource management）。
+     *
+     * 规范顺序与同步版本不同：
+     * 1. GetMethod(O, "return")：读取失败（含 this 为 null/undefined）以拒绝结果 Promise 呈现；
+     * 2. 没有 return 方法时兑现 undefined；
+     * 3. 否则调用 return，并把结果交给 PromiseResolve(%Promise%, result) 采纳；
+     * 4. 统一把兑现值解包为 undefined，拒绝原因原样传播。
+     *
+     * 任何一步的异常都转换为返回 Promise 的拒绝，而不是同步抛出。
+     */
+    private suspend fun asyncIteratorDispose(
+        interpreter: Interpreter,
+        thisValue: JSValue,
+    ): JSValue {
+        val capability = PromiseSupport.newPromiseCapability(
+            interpreter,
+            interpreter.intrinsics.promiseConstructor,
+        )
+        val returnMethod = try {
+            val method = interpreter.getV(thisValue, PropertyKey.Str("return"))
+            if (method is JSUndefined || method is JSNull) {
+                // 没有 return：直接兑现 undefined，不需要额外作业
+                interpreter.callFunction(
+                    capability.resolve,
+                    JSUndefined,
+                    listOf(JSUndefined),
+                )
+                return capability.promise
+            }
+            if (!interpreter.isCallable(method)) {
+                interpreter.typeError("Iterator return is not a function")
+            }
+            method
+        } catch (error: JSException) {
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        val result = try {
+            interpreter.callFunction(returnMethod, thisValue, emptyList())
+        } catch (error: JSException) {
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        val promise = try {
+            PromiseSupport.promiseResolve(interpreter, result)
+        } catch (error: JSException) {
+            PromiseSupport.callReject(interpreter, capability.reject, error)
+            return capability.promise
+        }
+        // PromiseResolve 之后接一个解包函数：兑现值被丢弃，统一以 undefined 兑现
+        PromiseSupport.performThen(
+            interpreter = interpreter,
+            promise = promise,
+            onFulfilled = BuiltinHelpers.method(interpreter.intrinsics, "", 1) { _, _, _ -> JSUndefined },
+            onRejected = null,
+            capability = capability,
+        )
+        return capability.promise
+    }
+
     /** 创建辅助迭代器：next/return 由共享原型方法分发到内部状态。 */
     internal fun createHelper(
         interpreter: Interpreter,
@@ -512,6 +574,16 @@ internal object IteratorBuiltins {
             key = PropertyKey.Sym(intrinsics.symbolAsyncIterator),
             value = BuiltinHelpers.method(intrinsics, "[Symbol.asyncIterator]", 0) { _, thisValue, _ ->
                 thisValue
+            },
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
+        // %AsyncIteratorPrototype%[@@asyncDispose]：await using 对异步迭代器调用 return() 并 await 结果
+        intrinsics.asyncIteratorPrototype.defineDataProperty(
+            key = PropertyKey.Sym(intrinsics.symbolAsyncDispose),
+            value = BuiltinHelpers.method(intrinsics, "[Symbol.asyncDispose]", 0) { interpreter, thisValue, _ ->
+                asyncIteratorDispose(interpreter, thisValue)
             },
             writable = true,
             enumerable = false,

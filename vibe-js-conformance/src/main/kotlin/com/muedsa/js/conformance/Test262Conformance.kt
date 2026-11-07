@@ -288,7 +288,7 @@ private class Test262Runner(
     )
 
     private suspend fun runOne(test: TestFile): TestOutcome {
-        Test262Selection.skipDecision(test.source, test.metadata, suite)
+        Test262Selection.skipDecision(test.source, test.metadata, suite, test.relativePath)
             ?.let { return TestOutcome.Skipped(test.relativePath, it.reason, it.textMatchOnly) }
         val includes = loadIncludes(test.metadata.includes)
             ?: return TestOutcome.Skipped(test.relativePath, "missing include")

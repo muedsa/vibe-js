@@ -1171,4 +1171,36 @@ class GeneratorTest {
         assertFailsWith<ParseException> { runtime.eval("var o = { *g(a, a) {} };") }
         assertFailsWith<ParseException> { runtime.eval("class C { *g(a, a) {} }") }
     }
+
+    @Test
+    fun `yield星号 同步委托交出内层结果对象且未完成时不读取 value`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var reads = 0;
+            var inner = { done: false };
+            Object.defineProperty(inner, 'value', {
+                get: function () { reads += 1; return 7; }
+            });
+            var iterable = {};
+            iterable[Symbol.iterator] = function () {
+                return { next: function () { return inner; } };
+            };
+            function* g() { yield* iterable; }
+            var it = g();
+            var first = it.next();
+            // 规范：同步 yield* 使用 Yield(innerResult)，外层 next() 交出的就是这个对象，
+            // 因此 done 属性与 value getter 访问次数都与内层结果一致
+            var identity = first === inner;
+            var readsBeforeValue = reads;
+            var value = String(first.value);
+            var readsAfterValue = reads;
+            inner.done = true;
+            var final = it.next();
+            var result = [identity, readsBeforeValue, value, readsAfterValue,
+                          String(final.value), final.done].join(',');
+            """.trimIndent()
+        )
+        assertEquals("true,0,7,1,undefined,true", runtime.evalString("result"))
+    }
 }

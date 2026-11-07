@@ -2257,8 +2257,12 @@ class Interpreter(
             )
             generator.channels.steps.send(GeneratorStep.Returned(result))
         } catch (signal: GeneratorReturn) {
-            // 生成器边界：return() 的控制流信号转换为 { done: true } 的返回步骤
-            generator.channels.steps.send(GeneratorStep.Returned(signal.value))
+            // 生成器边界：return() 的控制流信号转换为 { done: true } 的返回步骤。
+            // async generator 的恢复值已在 yield 处按 AsyncGeneratorUnwrapYieldResumption
+            // 等待过，标记 awaited 避免 AsyncGeneratorAwaitReturn 再次读取 then
+            generator.channels.steps.send(
+                GeneratorStep.Returned(signal.value, awaited = generator.isAsync)
+            )
         } catch (error: JSException) {
             generator.channels.steps.send(GeneratorStep.Threw(error))
         } catch (error: CancellationException) {
@@ -5320,15 +5324,15 @@ class Interpreter(
         return failure
     }
 
-    /** Await：至少让出一个微任务周期（与 AsyncDisposableStack 的释放语义一致）。 */
+    /**
+     * Await(value)：PromiseResolve(%Promise%, value) 后等待落定。
+     *
+     * value 已是 %Promise% 的 Promise 时直接等待（PromiseResolve 的快速路径会读取
+     * constructor，被篡改的 getter 使 Await 走 abrupt 分支），其他值先创建 Promise
+     * 再采纳；无论是否需要等待，都至少让出一个微任务周期。
+     */
     private suspend fun awaitPromiseValue(value: JSValue): JSValue {
-        val promise = if (value is JSPromise) {
-            value
-        } else {
-            val created = JSPromise(intrinsics.promisePrototype)
-            PromiseSupport.resolve(this, created, value)
-            created
-        }
+        val promise = PromiseSupport.promiseResolve(this, value)
         val result = try {
             promise.awaitResult()
         } catch (error: JSException) {
@@ -5340,20 +5344,39 @@ class Interpreter(
     }
 
     /**
-     * async generator 中的 Await：只在值是 thenable 时等待。
+     * async generator 中的条件 Await：只在值的 then 可调用时等待。
      *
      * 规范对非 thenable 值的 Await 不产生可观察的额外微任务，
-     * 因此 yield 普通值不会推迟请求 Promise 的落定顺序。
+     * 因此 yield 普通值不会推迟请求 Promise 的落定顺序；
+     * then 只读取一次，再交给 NewPromiseResolveThenableJob 调用，避免 getter 被触发两次。
      */
     private suspend fun awaitIfThenable(value: JSValue): JSValue {
         if (value !is JSObject) return value
+        // 已是 Promise：走 PromiseResolve 的快速路径（同时读取 constructor）
+        if (value is JSPromise) return awaitPromiseValue(value)
         val then = getV(value, PropertyKey.Str("then"))
-        return if (isCallable(then)) awaitPromiseValue(value) else value
+        if (!isCallable(then)) return value
+        val promise = JSPromise(intrinsics.promisePrototype)
+        PromiseSupport.resolveThenable(this, promise, value, then)
+        val result = try {
+            promise.awaitResult()
+        } catch (error: JSException) {
+            context.eventLoop.awaitMicrotask()
+            throw error
+        }
+        context.eventLoop.awaitMicrotask()
+        return result
     }
 
-    /** AsyncGeneratorAwaitReturn：async generator 的 return 完成值先经过 Await。 */
+    /**
+     * AsyncGeneratorAwaitReturn：async generator 的 return 完成值先经过 Await。
+     *
+     * 与 [awaitIfThenable] 不同，这里使用完整的 Await 语义：
+     * 即使 return 值是普通值也要经过 PromiseResolve（读取 constructor 等可观察副作用），
+     * thenable 的拒绝成为本次请求 Promise 的拒绝原因。
+     */
     internal suspend fun awaitAsyncGeneratorReturnValue(value: JSValue): JSValue =
-        awaitIfThenable(value)
+        awaitPromiseValue(value)
 
     /** 构造 SuppressedError 值（error 为新的主错误，suppressed 为先前累积错误）。 */
     private fun createSuppressedErrorValue(error: JSValue, suppressed: JSValue): JSValue {
@@ -5504,6 +5527,10 @@ class Interpreter(
      *
      * async generator 的 yield 操作数先经过 Await（thenable 会被解包，
      * 拒绝在函数体内传播，可被 try/catch 捕获）。
+     *
+     * 恢复值为 return 时同样先经过 Await（AsyncGeneratorUnwrapYieldResumption）：
+     * 等待失败在该 yield 处以异常形式抛出，因此可以被函数体的 try/catch 捕获，
+     * 而不是让请求 Promise 直接拒绝。yield* 的委托 return 路径复用同一规则。
      */
     private suspend fun evaluateYield(expression: YieldExpression): JSValue {
         val channels = generatorChannels
@@ -5518,18 +5545,32 @@ class Interpreter(
         val yieldedValue = if (generatorIsAsync) awaitIfThenable(value) else value
         return when (val request = yieldAndReceive(channels, yieldedValue)) {
             is GeneratorRequest.Next -> request.value
+            // 恢复值已在 yieldAndReceive 中按 AsyncGeneratorUnwrapYieldResumption 等待
             is GeneratorRequest.Return -> throw GeneratorReturn(request.value)
             is GeneratorRequest.Throw -> throw JSException(request.value)
         }
     }
 
-    /** 交出产出值并等待下一个恢复请求（不解释请求语义，供 yield* 复用）。 */
+    /**
+     * 交出产出值并等待下一个恢复请求（不解释请求语义，供 yield* 复用）。
+     *
+     * async generator 的 return 恢复值先经过 Await（对应规范的
+     * AsyncGeneratorUnwrapYieldResumption）：因此在 yield 与 yield* 的委托点，
+     * 上层拿到的都是已解包的值，thenable 的 then 不会被重复读取。
+     * 等待失败时该异常从 yield 表达式抛出，可被函数体的 try/catch 捕获。
+     */
     private suspend fun yieldAndReceive(
         channels: GeneratorChannels,
         value: JSValue,
+        resultObject: JSObject? = null,
     ): GeneratorRequest {
-        channels.steps.send(GeneratorStep.Yielded(value))
-        return channels.requests.receive()
+        channels.steps.send(GeneratorStep.Yielded(value, resultObject))
+        val request = channels.requests.receive()
+        return if (generatorIsAsync && request is GeneratorRequest.Return) {
+            GeneratorRequest.Return(awaitPromiseValue(request.value))
+        } else {
+            request
+        }
     }
 
     /**
@@ -5555,10 +5596,12 @@ class Interpreter(
             getIterator(evaluate(argument))
         }
         val iterator = record.iterator
+        // 规范：received 初值是 NormalCompletion(undefined)，因此首次 next 也带一个 undefined 参数；
+        // null 表示首次调用（与后续 Next 请求共用 next 方法，不再重复读取）
         var request: GeneratorRequest? = null
         while (true) {
             val rawInnerResult = when (val current = request) {
-                null -> callFunction(record.nextMethod, iterator, emptyList())
+                null -> callFunction(record.nextMethod, iterator, listOf(JSUndefined))
                 is GeneratorRequest.Next ->
                     callFunction(record.nextMethod, iterator, listOf(current.value))
 
@@ -5578,8 +5621,10 @@ class Interpreter(
                 is GeneratorRequest.Return -> {
                     val returnMethod = getV(iterator, PropertyKey.Str("return"))
                     if (returnMethod is JSUndefined || returnMethod is JSNull) {
-                        // 委托的 return 完成直接结束外层生成器（仍会执行 finally）
-                        throw GeneratorReturn(current.value)
+                        // 委托的 return 完成直接结束外层生成器（async 下恢复值先经过 Await）
+                        throw GeneratorReturn(
+                            if (isAsync) awaitPromiseValue(current.value) else current.value
+                        )
                     }
                     if (!isCallable(returnMethod)) {
                         throw typeError("Iterator return is not a function")
@@ -5587,25 +5632,47 @@ class Interpreter(
                     callFunction(returnMethod, iterator, listOf(current.value))
                 }
             }
-            // 异步委托：next/throw/return 的返回可能是 Promise，先解包再读取 done/value
-            val innerResult = if (isAsync) awaitIfThenable(rawInnerResult) else rawInnerResult
+            // 异步委托：next/throw/return 的返回先经过 Await，再读取 done/value
+            val innerResult = if (isAsync) awaitPromiseValue(rawInnerResult) else rawInnerResult
             if (innerResult !is JSObject) {
                 throw typeError("Iterator result is not an object")
             }
+            // 规范的读取顺序：先 IteratorComplete(done)，未完成时同步委托直接把
+            // 内层 IteratorResult 交给调用方（Yield(innerResult)），不读取 value
             val done = toBoolean(getV(innerResult, PropertyKey.Str("done")))
-            val rawValue = getV(innerResult, PropertyKey.Str("value"))
-            // AsyncFromSync：同步迭代器的值同样按 Await 语义解包
-            val value = if (isAsync && record.awaitValue) awaitIfThenable(rawValue) else rawValue
             if (done) {
+                val value = getV(innerResult, PropertyKey.Str("value"))
                 // return 请求让内部迭代器结束：内部返回值成为外层生成器的 return 完成值
-                if (request is GeneratorRequest.Return) throw GeneratorReturn(value)
+                if (request is GeneratorRequest.Return) {
+                    throw GeneratorReturn(if (isAsync) awaitPromiseValue(value) else value)
+                }
                 return value
             }
-            // 产出内部迭代器的值，并等待下一个恢复请求
-            request = yieldAndReceive(
-                channels,
-                if (isAsync) awaitIfThenable(value) else value,
-            )
+            if (!isAsync) {
+                // 同步 yield*：交出内层结果对象本身，value getter 的访问次数与内层一致
+                request = yieldAndReceive(
+                    channels,
+                    JSUndefined,
+                    resultObject = innerResult,
+                )
+                continue
+            }
+            val rawValue = getV(innerResult, PropertyKey.Str("value"))
+            // AsyncFromSync：同步迭代器的值同样按 Await 语义解包；
+            // 等待失败时按 AsyncFromSyncIteratorContinuation 关闭同步迭代器（保留原错误）
+            val value = if (record.awaitValue) {
+                try {
+                    awaitPromiseValue(rawValue)
+                } catch (error: JSException) {
+                    iteratorClose(record, throwCompletion = true)
+                    throw error
+                }
+            } else {
+                rawValue
+            }
+            // 异步委托不再对值做额外等待
+            // （规范 yield* 只 Await 内部结果，手动实现的异步迭代器返回的 Promise 保持原样）
+            request = yieldAndReceive(channels, value)
         }
     }
 
@@ -6384,7 +6451,15 @@ class Interpreter(
         }
         if (toBoolean(getV(result, PropertyKey.Str("done")))) return null
         val value = getV(result, PropertyKey.Str("value"))
-        return if (record.awaitValue) awaitPromiseValue(value) else value
+        if (!record.awaitValue) return value
+        // AsyncFromSyncIteratorContinuation：值等待失败时需要关闭同步迭代器，
+        // 并把原始失败作为完成（关闭本身的错误被忽略）
+        return try {
+            awaitPromiseValue(value)
+        } catch (error: JSException) {
+            iteratorClose(record, throwCompletion = true)
+            throw error
+        }
     }
 
     /**
@@ -6624,26 +6699,9 @@ class Interpreter(
             }
 
             "void" -> JSUndefined
-            "await" -> {
-                // 规范 Await：非 Promise 值先经 PromiseResolve 采纳（thenable 通过微任务调用 then）
-                val awaited = if (operand is JSPromise) {
-                    operand
-                } else {
-                    val promise = JSPromise(intrinsics.promisePrototype)
-                    PromiseSupport.resolve(this, promise, operand)
-                    promise
-                }
-                val value = try {
-                    awaited.awaitResult()
-                } catch (error: JSException) {
-                    // 拒绝同样要经过一个微任务周期后再抛给 JS 层
-                    context.eventLoop.awaitMicrotask()
-                    throw error
-                }
-                // await 至少让出一个微任务周期，即使等待值已就绪
-                context.eventLoop.awaitMicrotask()
-                value
-            }
+            // 规范 Await：PromiseResolve(%Promise%, value) 后等待落定，
+            // 非 Promise 值先被采纳（thenable 的 then 通过微任务调用）
+            "await" -> awaitPromiseValue(operand)
             else -> throw syntaxError("Unsupported unary operator '$operator'")
         }
     }

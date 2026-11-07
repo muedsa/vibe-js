@@ -97,24 +97,58 @@ object PromiseSupport {
                 return
             }
             if (interpreter.isCallable(thenValue)) {
-                val (resolveFunction, rejectFunction) = createResolvingFunctions(interpreter, promise)
-                // 规范 NewPromiseResolveThenableJob：then 的调用在微任务中进行，
-                // 保证 await thenable 与 Promise 链的交错顺序
-                interpreter.context.eventLoop.enqueueMicrotask {
-                    // 反应回调可能在原解释器挂起时执行，独立调用帧避免相互覆盖。
-                    val interpreter = interpreter.forkForCallback()
-                    try {
-                        interpreter.callFunction(thenValue, value, listOf(resolveFunction, rejectFunction))
-                    } catch (error: JSException) {
-                        // 使用本次 job 的带守卫拒绝函数：then 已解析后的异常被忽略
-                        callReject(interpreter, rejectFunction, error)
-                    }
-                }
+                resolveThenable(interpreter, promise, value, thenValue)
                 return
             }
         }
 
         fulfill(interpreter, promise, value)
+    }
+
+    /**
+     * 已完成 then 读取的 thenable 采纳（NewPromiseResolveThenableJob）。
+     *
+     * Await 判定 thenable 时已经读取过 then（该读取可能触发 getter），
+     * 调用方把同一个值传进来，保证 then 只被读取一次、调用延后到微任务；
+     * [thenValue] 必须是 value 上可调用的 then。
+     */
+    suspend fun resolveThenable(
+        interpreter: Interpreter,
+        promise: JSPromise,
+        value: JSValue,
+        thenValue: JSValue,
+    ) {
+        if (promise.state != JSPromise.State.PENDING) return
+        val (resolveFunction, rejectFunction) = createResolvingFunctions(interpreter, promise)
+        // 规范 NewPromiseResolveThenableJob：then 的调用在微任务中进行，
+        // 保证 await thenable 与 Promise 链的交错顺序
+        interpreter.context.eventLoop.enqueueMicrotask {
+            // 反应回调可能在原解释器挂起时执行，独立调用帧避免相互覆盖。
+            val jobInterpreter = interpreter.forkForCallback()
+            try {
+                jobInterpreter.callFunction(thenValue, value, listOf(resolveFunction, rejectFunction))
+            } catch (error: JSException) {
+                // 使用本次 job 的带守卫拒绝函数：then 已解析后的异常被忽略
+                callReject(jobInterpreter, rejectFunction, error)
+            }
+        }
+    }
+
+    /**
+     * PromiseResolve(%Promise%, value)。
+     *
+     * value 已经是 %Promise% 的 Promise 时原样返回；这一分支需要读取
+     * value.constructor（与规范一致，可被 getter 观察），getter 抛错时
+     * 原样向上抛出，对应 Await 的 abrupt 分支（拒绝而非兑现）。
+     */
+    suspend fun promiseResolve(interpreter: Interpreter, value: JSValue): JSPromise {
+        if (value is JSPromise) {
+            val constructor = interpreter.getV(value, PropertyKey.CONSTRUCTOR)
+            if (constructor === interpreter.intrinsics.promiseConstructor) return value
+        }
+        val promise = JSPromise(interpreter.intrinsics.promisePrototype)
+        resolve(interpreter, promise, value)
+        return promise
     }
 
     /** 兑现 Promise。 */

@@ -274,6 +274,40 @@ class Test262SelectionTest {
     }
 
     @Test
+    fun `AsyncIteratorPrototype 路径在异步迭代收尾后纳入基线`() {
+        val relativePath = "test/built-ins/AsyncIteratorPrototype/Symbol.asyncDispose/name.js"
+        // 路径排除已移除：目录不再按路径排除，仍按特性/文本规则处理
+        assertIs<SelectionDecision.Selected>(
+            Test262Selection.decide(
+                relativePath,
+                metadata(features = setOf("explicit-resource-management")),
+                "es2015",
+                false,
+                null,
+            )
+        )
+        // L1.6 已实现 @@asyncIterator/@@asyncDispose：目录内使用 async generator 语法也放行
+        assertNull(
+            Test262Selection.skipReason(
+                "async function* generator() {}",
+                metadata(features = setOf("explicit-resource-management")),
+                "es2015",
+                relativePath,
+            )
+        )
+        // 其它路径仍按生成器文本排除
+        assertEquals(
+            "unsupported Generator",
+            Test262Selection.skipReason(
+                "async function* generator() {}",
+                metadata(),
+                "es2015",
+                "test/language/statements/async-generator/x.js",
+            ),
+        )
+    }
+
+    @Test
     fun `文本匹配跳过会标记 textMatchOnly，元数据排除不标记`() {
         // 源码文本命中：features 没有标注，只能靠文本判断，标记为待复核
         val textMatched = Test262Selection.skipDecision("function* g() {}", metadata(), "es2015")

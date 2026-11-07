@@ -205,4 +205,174 @@ class ForAwaitTest {
         )
         assertEquals("type-error", runtime.evalString("kind"))
     }
+
+    @Test
+    fun `AsyncIteratorPrototype 提供 Symbol asyncDispose 并调用 return 解包结果`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            async function* generator() {}
+            var proto = Object.getPrototypeOf(Object.getPrototypeOf(generator.prototype));
+            var method = proto[Symbol.asyncDispose];
+            var descriptor = Object.getOwnPropertyDescriptor(proto, Symbol.asyncDispose);
+            var log = [];
+            log.push(typeof method);
+            log.push(method.name);
+            log.push(method.length);
+            log.push(descriptor.writable, descriptor.enumerable, descriptor.configurable);
+
+            // return 存在：调用一次并丢弃返回值，统一兑现为 undefined
+            var calls = 0;
+            var iterator = Object.create(proto);
+            iterator.return = function () { calls += 1; return Promise.resolve({ done: true }); };
+            var promise = iterator[Symbol.asyncDispose]();
+            log.push(promise instanceof Promise);
+
+            // 没有 return：直接兑现 undefined
+            var plain = Object.create(proto);
+            var failures = [];
+            (async function () {
+                log.push(String(await promise));
+                log.push(calls);
+                log.push(String(await plain[Symbol.asyncDispose]()));
+
+                // return 抛错 / 拒绝 / getter 抛错都变成结果 Promise 的拒绝
+                var throwing = Object.create(proto);
+                throwing.return = function () { throw new Error('close-throw'); };
+                try { await throwing[Symbol.asyncDispose](); } catch (e) { failures.push(e.message); }
+                var rejecting = Object.create(proto);
+                rejecting.return = function () { return Promise.reject(new Error('close-reject')); };
+                try { await rejecting[Symbol.asyncDispose](); } catch (e) { failures.push(e.message); }
+                var getterThrows = Object.create(proto);
+                Object.defineProperty(getterThrows, 'return', {
+                    get: function () { throw new Error('close-getter'); }
+                });
+                try { await getterThrows[Symbol.asyncDispose](); } catch (e) { failures.push(e.message); }
+                log.push(failures.join(','));
+            })();
+            """.trimIndent()
+        )
+        assertEquals(
+            "function,[Symbol.asyncDispose],0,true,false,true,true,undefined,1,undefined," +
+                "close-throw,close-reject,close-getter",
+            runtime.evalString("log.join(',')"),
+        )
+    }
+
+    @Test
+    fun `await using 异步生成器时通过继承的 asyncDispose 执行 return 并触发 finally`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            async function* gen() {
+                log.push('start');
+                try {
+                    yield 1;
+                    log.push('unreachable');
+                } finally {
+                    log.push('finally');
+                }
+            }
+            (async function () {
+                await using it = gen();
+                log.push('body:' + (await it.next()).value);
+                log.push('end');
+            })();
+            """.trimIndent()
+        )
+        // 释放发生在函数体结束之后：asyncDispose 调用 return() 并 await 其 Promise，
+        // 生成器在 finally 中完成，因此 finally 记录排在 end 之后
+        assertEquals("start,body:1,end,finally", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
+    fun `await using 对没有 return 的异步迭代器兑现 undefined 且不读取 dispose`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var proto = Object.getPrototypeOf(Object.getPrototypeOf((async function* () {}).prototype));
+            var iterator = Object.create(proto);
+            var result = 'pending';
+            (async function () {
+                await using resource = {
+                    [Symbol.asyncDispose]: function () {
+                        log.push('asyncDispose');
+                        return Promise.resolve().then(function () { log.push('settled'); });
+                    },
+                    [Symbol.dispose]: function () { log.push('syncDispose'); }
+                };
+                await using bare = iterator;
+                log.push('body');
+                result = await bare[Symbol.asyncDispose]();
+            })();
+            """.trimIndent()
+        )
+        // await using 优先 @@asyncDispose 并 await 返回值；裸异步迭代器没有 return 时兑现 undefined
+        assertEquals("body,asyncDispose,settled", runtime.evalString("log.join(',')"))
+        assertEquals("undefined", runtime.evalString("String(result)"))
+    }
+
+    @Test
+    fun `for of 的 await using 在每轮迭代结束时释放异步资源`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            function makeResource(name) {
+                return {
+                    [Symbol.asyncDispose]: function () {
+                        log.push('dispose:' + name);
+                        return Promise.resolve().then(function () { log.push('settled:' + name); });
+                    }
+                };
+            }
+            (async function () {
+                for (await using resource of [makeResource('a'), makeResource('b')]) {
+                    log.push('body');
+                }
+                log.push('after');
+            })();
+            """.trimIndent()
+        )
+        assertEquals(
+            "body,dispose:a,settled:a,body,dispose:b,settled:b,after",
+            runtime.evalString("log.join(',')"),
+        )
+    }
+
+    @Test
+    fun `for await 同步迭代器的值等待失败时关闭迭代器`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var iterable = {
+                [Symbol.iterator]() {
+                    return {
+                        next() {
+                            return { value: Promise.reject(new Error('value-reject')), done: false };
+                        },
+                        return() {
+                            log.push('closed');
+                            return {};
+                        }
+                    };
+                }
+            };
+            (async function () {
+                try {
+                    for await (const value of iterable) {
+                        log.push('unreachable');
+                    }
+                } catch (e) {
+                    log.push('caught:' + e.message);
+                }
+            })();
+            """.trimIndent()
+        )
+        // AsyncFromSyncIteratorContinuation 在第 6/13 步关闭同步迭代器，原错误继续传播
+        assertEquals("closed,caught:value-reject", runtime.evalString("log.join(',')"))
+    }
 }

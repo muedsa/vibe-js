@@ -119,13 +119,13 @@ object GeneratorBuiltins {
             enumerable = false,
             configurable = true,
         )
-        // 规范：prototype 指向 %GeneratorPrototype%，不可写、不可配置
+        // 规范：prototype 指向 %GeneratorPrototype%，不可写、不可枚举、可配置
         generatorFunctionPrototype.defineDataProperty(
             key = PropertyKey.PROTOTYPE,
             value = generatorPrototype,
             writable = false,
             enumerable = false,
-            configurable = false,
+            configurable = true,
         )
         generatorFunctionPrototype.defineDataProperty(
             key = PropertyKey.Sym(intrinsics.symbolToStringTag),

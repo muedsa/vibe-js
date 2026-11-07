@@ -703,22 +703,32 @@ class AsyncGeneratorTest {
             } catch (e) {
                 results.push(e.name);
             }
-            // 同步生成器原型的 next 无法处理 async generator 的 Promise 语义
+            // 同步生成器原型的方法对错误接收者同步抛 TypeError
+            try {
+                generatorPrototype.next.call({});
+            } catch (e) {
+                results.push(e.name);
+            }
+            // async 生成器方法的品牌检查按规范拒绝返回的 Promise，而不是同步抛错
             var asyncGeneratorPrototype = Object.getPrototypeOf(asyncGen.prototype);
-            try {
-                asyncGeneratorPrototype.next.call(syncInstance);
-            } catch (e) {
-                results.push(e.name);
-            }
-            try {
-                asyncGeneratorPrototype.return.call({});
-            } catch (e) {
-                results.push(e.name);
-            }
-            var result = results.join(',');
+            asyncGeneratorPrototype.next.call(syncInstance).then(
+                function () { results.push('next-resolved'); },
+                function (e) { results.push('next:' + e.name); }
+            );
+            asyncGeneratorPrototype.return.call({}).then(
+                function () { results.push('return-resolved'); },
+                function (e) { results.push('return:' + e.name); }
+            );
+            asyncGeneratorPrototype.throw.call(undefined).then(
+                function () { results.push('throw-resolved'); },
+                function (e) { results.push('throw:' + e.name); }
+            );
             """.trimIndent()
         )
-        assertEquals("TypeError,TypeError,TypeError", runtime.evalString("result"))
+        assertEquals(
+            "TypeError,TypeError,next:TypeError,return:TypeError,throw:TypeError",
+            runtime.evalString("results.join(',')"),
+        )
     }
 
     @Test
@@ -791,5 +801,347 @@ class AsyncGeneratorTest {
             """.trimIndent()
         )
         assertEquals("1,2,3,undefined,true", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
+    fun `async 生成器 return 的 thenable 完成值只读取一次 then 并被解包`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var thenable = {
+                get then() {
+                    log.push('get then');
+                    return function (resolve) {
+                        log.push('call then');
+                        resolve('unwrapped');
+                    };
+                }
+            };
+            async function* g() {
+                log.push('body');
+                yield 1;
+            }
+            var it = g();
+            var value = '';
+            var done = null;
+            (async function () {
+                log.push('started:' + (await it.next()).value);
+                var step = await it.return(thenable);
+                value = step.value;
+                done = step.done;
+            })();
+            """.trimIndent()
+        )
+        // AsyncGeneratorAwaitReturn：return 完成值先经 PromiseResolve 采纳，
+        // then 只读取一次，调用发生在微任务中
+        assertEquals("body,started:1,get then,call then", runtime.evalString("log.join(',')"))
+        assertEquals("unwrapped", runtime.evalString("value"))
+        assertEquals(true, runtime.evalBoolean("done"))
+    }
+
+    @Test
+    fun `async 生成器 return 的 thenable 拒绝传播到请求 Promise`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            async function* g() { yield 1; }
+            var it = g();
+            var first = '';
+            (async function () {
+                await it.next();
+                try {
+                    await it.return({ then: function (resolve, reject) { reject(new Error('thenable-return')); } });
+                    log.push('no-rejection');
+                } catch (e) {
+                    log.push(e.message);
+                }
+                // 生成器已完成后再次 return 同样先经过 Await（这里是已拒绝的 Promise）
+                try {
+                    await it.return(Promise.reject(new Error('promise-return')));
+                } catch (e) {
+                    log.push(e.message);
+                }
+                first = (await it.next()).done;
+            })();
+            """.trimIndent()
+        )
+        assertEquals("thenable-return,promise-return", runtime.evalString("log.join(',')"))
+        assertEquals(true, runtime.evalBoolean("first"))
+    }
+
+    @Test
+    fun `yield星号 异步委托首次 next 传入 undefined 且后续 next 传入恢复值`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var args = [];
+            var iterable = {};
+            iterable[Symbol.asyncIterator] = function () {
+                return {
+                    next: function (value) {
+                        args.push(arguments.length + ':' + String(value));
+                        if (args.length === 1) {
+                            return Promise.resolve({ value: 'first', done: false });
+                        }
+                        return Promise.resolve({ value: 'second', done: true });
+                    }
+                };
+            };
+            var collected = [];
+            async function* g() {
+                var result = yield* iterable;
+                collected.push('result:' + result);
+            }
+            (async function () {
+                var it = g();
+                collected.push((await it.next()).value);
+                var step = await it.next('resume-value');
+                collected.push(step.done);
+            })();
+            """.trimIndent()
+        )
+        // 规范：received 初值是 NormalCompletion(undefined)，首次 next 同样有一个 undefined 参数
+        assertEquals("1:undefined|1:resume-value", runtime.evalString("args.join('|')"))
+        assertEquals("first,result:second,true", runtime.evalString("collected.join(',')"))
+    }
+
+    @Test
+    fun `yield星号 异步委托转发 return 参数并在内部未完成时继续产出`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var iterable = {};
+            iterable[Symbol.asyncIterator] = function () {
+                return {
+                    next: function () {
+                        return Promise.resolve({ value: 1, done: false });
+                    },
+                    return: function (value) {
+                        log.push('return:' + String(value) + ':' + arguments.length);
+                        if (value === 'final') {
+                            return Promise.resolve({ value: 'inner-done', done: true });
+                        }
+                        return Promise.resolve({ value: 'inner-return', done: false });
+                    }
+                };
+            };
+            async function* g() {
+                yield* iterable;
+                log.push('after-delegate');
+            }
+            var step = '';
+            var terminal = '';
+            (async function () {
+                var it = g();
+                await it.next();
+                var pending = await it.return('outer');
+                step = pending.value + ':' + pending.done;
+                var finished = await it.return('final');
+                terminal = finished.value + ':' + finished.done;
+            })();
+            """.trimIndent()
+        )
+        // 内部 return 未完成时把内部结果作为 yield 值交给 return 请求；完成后成为外层 return 完成值
+        assertEquals("return:outer:1,return:final:1", runtime.evalString("log.join(',')"))
+        assertEquals("inner-return:false", runtime.evalString("step"))
+        assertEquals("inner-done:true", runtime.evalString("terminal"))
+    }
+
+    @Test
+    fun `yield星号 异步委托缺少 throw 方法时关闭迭代器后抛 TypeError`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var iterable = {};
+            iterable[Symbol.asyncIterator] = function () {
+                return {
+                    next: function () {
+                        return Promise.resolve({ value: 1, done: false });
+                    },
+                    return: function () {
+                        log.push('closed');
+                        return Promise.resolve({ done: true });
+                    }
+                };
+            };
+            async function* g() {
+                try {
+                    yield* iterable;
+                    log.push('unreachable');
+                } catch (e) {
+                    log.push(e.name);
+                }
+                log.push('after-catch');
+            }
+            var done = null;
+            (async function () {
+                var it = g();
+                await it.next();
+                var step = await it.throw(new Error('boom'));
+                done = step.done;
+            })();
+            """.trimIndent()
+        )
+        // IteratorClose 使用正常完成：先 await 内部 return，再抛出 TypeError 并被函数体捕获
+        assertEquals("closed,TypeError,after-catch", runtime.evalString("log.join(',')"))
+        assertEquals(true, runtime.evalBoolean("done"))
+    }
+
+    @Test
+    fun `yield星号 异步委托按 done value 顺序读取 thenable 结果并只读取一次 then`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var iterable = {};
+            iterable[Symbol.asyncIterator] = function () {
+                return {
+                    next: function () {
+                        return {
+                            get then() {
+                                log.push('get then');
+                                return function (resolve) {
+                                    log.push('call then');
+                                    resolve({
+                                        get done() { log.push('get done'); return false; },
+                                        get value() { log.push('get value'); return 'delegated'; }
+                                    });
+                                };
+                            }
+                        };
+                    }
+                };
+            };
+            var collected = [];
+            async function* g() { yield* iterable; }
+            (async function () {
+                var it = g();
+                var step = await it.next();
+                collected.push(step.value, step.done);
+            })();
+            """.trimIndent()
+        )
+        assertEquals("get then,call then,get done,get value", runtime.evalString("log.join(',')"))
+        assertEquals("delegated,false", runtime.evalString("collected.join(',')"))
+    }
+
+    @Test
+    fun `yield星号 对 AsyncFromSync 的 thenable 值执行 await`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var thenable = {
+                get then() {
+                    log.push('get then');
+                    return function (resolve) {
+                        log.push('call then');
+                        resolve('awaited');
+                    };
+                }
+            };
+            var collected = [];
+            async function* g() { yield* [thenable, 'plain']; }
+            (async function () {
+                for await (const value of g()) {
+                    collected.push(value);
+                }
+            })();
+            """.trimIndent()
+        )
+        // 同步迭代器结果按 AsyncFromSyncIterator 语义等待：then 只读取一次，thenable 被解包
+        assertEquals("get then,call then", runtime.evalString("log.join(',')"))
+        assertEquals("awaited,plain", runtime.evalString("collected.join(',')"))
+    }
+
+    @Test
+    fun `yield星号 不对手动实现的异步迭代器返回值做额外 await`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var inner = Promise.resolve('inner');
+            var iterable = {
+                [Symbol.asyncIterator]() { return this; },
+                next() { return { done: false, value: inner }; }
+            };
+            var collected = [];
+            async function* g() { yield* iterable; }
+            (async function () {
+                var step = await g().next();
+                collected.push(step.value === inner, step.done);
+            })();
+            """.trimIndent()
+        )
+        // 规范 yield* 只 Await 内部结果，手动实现的异步迭代器返回的 Promise 原样产出
+        assertEquals("true,false", runtime.evalString("collected.join(',')"))
+    }
+
+    @Test
+    fun `yield星号 同步迭代器的值等待失败时关闭迭代器并把异常抛进函数体`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            var iterable = {
+                [Symbol.iterator]() {
+                    return {
+                        next() {
+                            return { value: Promise.reject(new Error('value-reject')), done: false };
+                        },
+                        return() {
+                            log.push('closed');
+                            return {};
+                        }
+                    };
+                }
+            };
+            async function* g() {
+                try {
+                    yield* iterable;
+                } catch (e) {
+                    log.push('caught:' + e.message);
+                }
+            }
+            (async function () {
+                var step = await g().next();
+                log.push(step.done);
+            })();
+            """.trimIndent()
+        )
+        // AsyncFromSyncIteratorContinuation：值等待失败先关闭同步迭代器，再以原错误继续
+        assertEquals("closed,caught:value-reject,true", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
+    fun `async 生成器 return 的 thenable 拒绝在 yield 处以异常传播并可被捕获`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var log = [];
+            async function* g() {
+                try {
+                    yield 1;
+                    return 'unreachable';
+                } catch (e) {
+                    log.push('caught:' + e.message);
+                    return 'recovered';
+                }
+            }
+            (async function () {
+                var it = g();
+                await it.next();
+                var step = await it.return({
+                    then: function (resolve, reject) { reject(new Error('return-await')); }
+                });
+                log.push('step:' + step.value + ':' + step.done);
+            })();
+            """.trimIndent()
+        )
+        // AsyncGeneratorUnwrapYieldResumption：恢复值的 Await 失败在 yield 处变成 JS 异常
+        assertEquals("caught:return-await,step:recovered:true", runtime.evalString("log.join(',')"))
     }
 }

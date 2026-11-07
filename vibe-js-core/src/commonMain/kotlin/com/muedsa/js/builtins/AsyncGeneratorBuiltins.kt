@@ -2,6 +2,9 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.PromiseSupport
+import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSGenerator
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
@@ -27,11 +30,16 @@ object AsyncGeneratorBuiltins {
 
         // ---------------- %AsyncGeneratorPrototype% ----------------
 
+        // 品牌检查失败时按规范拒绝返回的 Promise，而不是同步抛错
         asyncGeneratorPrototype.defineDataProperty(
             key = PropertyKey.Str("next"),
             value = BuiltinHelpers.method(intrinsics, "next", 1) { interpreter, thisValue, args ->
-                requireAsyncGenerator(interpreter, thisValue)
-                    .nextAsync(args.getOrElse(0) { JSUndefined })
+                val generator = asyncGeneratorOrNull(thisValue)
+                if (generator == null) {
+                    rejectedTypeError(interpreter)
+                } else {
+                    generator.nextAsync(args.getOrElse(0) { JSUndefined })
+                }
             },
             writable = true,
             enumerable = false,
@@ -40,8 +48,12 @@ object AsyncGeneratorBuiltins {
         asyncGeneratorPrototype.defineDataProperty(
             key = PropertyKey.Str("return"),
             value = BuiltinHelpers.method(intrinsics, "return", 1) { interpreter, thisValue, args ->
-                requireAsyncGenerator(interpreter, thisValue)
-                    .returnAsync(args.getOrElse(0) { JSUndefined })
+                val generator = asyncGeneratorOrNull(thisValue)
+                if (generator == null) {
+                    rejectedTypeError(interpreter)
+                } else {
+                    generator.returnAsync(args.getOrElse(0) { JSUndefined })
+                }
             },
             writable = true,
             enumerable = false,
@@ -50,8 +62,12 @@ object AsyncGeneratorBuiltins {
         asyncGeneratorPrototype.defineDataProperty(
             key = PropertyKey.Str("throw"),
             value = BuiltinHelpers.method(intrinsics, "throw", 1) { interpreter, thisValue, args ->
-                requireAsyncGenerator(interpreter, thisValue)
-                    .throwAsync(args.getOrElse(0) { JSUndefined })
+                val generator = asyncGeneratorOrNull(thisValue)
+                if (generator == null) {
+                    rejectedTypeError(interpreter)
+                } else {
+                    generator.throwAsync(args.getOrElse(0) { JSUndefined })
+                }
             },
             writable = true,
             enumerable = false,
@@ -120,13 +136,13 @@ object AsyncGeneratorBuiltins {
             enumerable = false,
             configurable = true,
         )
-        // 规范：prototype 指向 %AsyncGeneratorPrototype%，不可写、不可配置
+        // 规范：prototype 指向 %AsyncGeneratorPrototype%，不可写、不可枚举、可配置
         asyncGeneratorFunctionPrototype.defineDataProperty(
             key = PropertyKey.PROTOTYPE,
             value = asyncGeneratorPrototype,
             writable = false,
             enumerable = false,
-            configurable = false,
+            configurable = true,
         )
         asyncGeneratorFunctionPrototype.defineDataProperty(
             key = PropertyKey.Sym(intrinsics.symbolToStringTag),
@@ -138,11 +154,34 @@ object AsyncGeneratorBuiltins {
     }
 
     /** AsyncGenerator.prototype 方法的品牌检查：接收者必须是 async generator 对象。 */
-    private fun requireAsyncGenerator(interpreter: Interpreter, thisValue: JSValue): JSGenerator {
-        val generator = thisValue as? JSGenerator
-        if (generator == null || !generator.isAsync) {
-            interpreter.typeError("Method called on incompatible receiver")
-        }
-        return generator
+    private fun asyncGeneratorOrNull(thisValue: JSValue): JSGenerator? {
+        val generator = thisValue as? JSGenerator ?: return null
+        return if (generator.isAsync) generator else null
+    }
+
+    /**
+     * 品牌检查失败时的错误呈现。
+     *
+     * 规范 AsyncGeneratorEnqueue 在缺少 [[AsyncGeneratorState]] 内部槽时
+     * 把新创建的 TypeError 交给 capability 的 reject（返回已拒绝的 Promise），
+     * 因此 next/return/throw 对任意 this 都返回 Promise 而不是同步抛错。
+     */
+    private suspend fun rejectedTypeError(interpreter: Interpreter): JSValue {
+        val capability = PromiseSupport.newPromiseCapability(
+            interpreter,
+            interpreter.intrinsics.promiseConstructor,
+        )
+        PromiseSupport.callReject(
+            interpreter,
+            capability.reject,
+            JSException(
+                JSError(
+                    errorName = "TypeError",
+                    messageText = "Method called on incompatible receiver",
+                    prototype = interpreter.intrinsics.typeErrorPrototype,
+                )
+            ),
+        )
+        return capability.promise
     }
 }
