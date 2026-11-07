@@ -1,0 +1,14 @@
+# test262-parser-tests early 允许列表（strict 门禁）
+# 每行一个文件名（不含目录）；strict 模式下只有这些 early 文件可以被解析器接受。
+# 当前 5 条均为现行 Annex B 语义允许、但旧版语料仍标记为早期错误的用例：
+# - 0f5f47108da5c34e.js：catch 参数与 catch 块内 for-var 同名（允许）
+# - 12a74c60f52a60de.js：块级重复函数声明（sloppy Annex B 允许）
+# - 1aff49273f3e3a98.js：函数作用域与块级重复函数声明混用（sloppy Annex B 允许）
+# - be7329119eaa3d47.js：块级重复函数声明并调用（sloppy Annex B 允许）
+# - ec31fa5e521c5df4.js：块级重复函数声明与函数作用域声明混用（sloppy Annex B 允许）
+# Generator 形参 yield/async 形参 await 等早期错误不属于允许项，必须被拒绝。
+0f5f47108da5c34e.js
+12a74c60f52a60de.js
+1aff49273f3e3a98.js
+be7329119eaa3d47.js
+ec31fa5e521c5df4.js

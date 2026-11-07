@@ -1,8 +1,10 @@
 package com.muedsa.js
 
+import com.muedsa.js.parser.ParseException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -41,6 +43,180 @@ class AsyncGeneratorTest {
     }
 
     @Test
+    fun `async 生成器调用时求值默认参数且首次 next 不重复绑定`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var calls = 0;
+            async function* g(a = (calls++, 10)) { yield a; yield calls; }
+            var it = g();
+            var afterCall = calls;
+            var result = '';
+            (async function () {
+                var first = await it.next();
+                var second = await it.next();
+                result = afterCall + ':' + first.value + ':' + calls + ':' + second.value;
+            })();
+            """.trimIndent()
+        )
+        // 默认值只在调用时求值一次；首次 next 恢复函数体时不得重复求值
+        assertEquals("1:10:1:1", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `async 生成器默认参数中的 this 与 arguments 在首次 next 前已绑定`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var seen = '';
+            async function* g(a = (seen = this.tag + ':' + arguments.length, 0)) { yield a; }
+            var host = { tag: 'async-host', run: g };
+            var it = host.run(undefined, 2, 3);
+            var beforeNext = seen;
+            var result = '';
+            (async function () {
+                result = beforeNext + ':' + (await it.next()).value;
+            })();
+            """.trimIndent()
+        )
+        assertEquals("async-host:3:0", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `async 生成器默认参数在调用时捕获参数值`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var outer = 1;
+            async function* g(a = outer) { yield a; }
+            var it = g();
+            outer = 2;
+            var result = '';
+            (async function () {
+                result = String((await it.next()).value);
+            })();
+            """.trimIndent()
+        )
+        assertEquals("1", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `async 生成器 return 前未启动时参数已经完成绑定`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var calls = 0;
+            async function* g(a = calls++) { yield 1; }
+            var it = g();
+            var afterCall = calls;
+            var result = '';
+            (async function () {
+                var step = await it.return(5);
+                result = afterCall + ':' + calls + ':' + step.value + ':' + step.done;
+            })();
+            """.trimIndent()
+        )
+        assertEquals("1:1:5:true", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `async 生成器默认参数抛错在调用时传播而不是首次 next`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var calls = 0;
+            function boom() { throw new Error('async-param'); }
+            async function* g(a = (calls++, boom())) { yield 1; }
+            var message = '';
+            var created = 'yes';
+            var it = null;
+            try {
+                it = g();
+            } catch (e) {
+                message = e.message;
+                created = 'no';
+            }
+            var result = message + ':' + calls + ':' + created + ':' + String(it);
+            """.trimIndent()
+        )
+        // async generator 的参数初始化同样同步完成，不会变成 next() 的 Promise 拒绝
+        assertEquals("async-param:1:no:null", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `async 生成器参数 TDZ 在调用时抛 ReferenceError`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            async function* g(a = b, b = 1) { yield a; }
+            var name = '';
+            try {
+                g();
+            } catch (e) {
+                name = e.name;
+            }
+            """.trimIndent()
+        )
+        assertEquals("ReferenceError", runtime.evalString("name"))
+    }
+
+    @Test
+    fun `async 生成器形参中的 await 早期错误在解析期被拒绝`() = runTest {
+        val runtime = TestRuntime()
+        assertFailsWith<ParseException> { runtime.eval("async function* g(a = await 1) {}") }
+        assertFailsWith<ParseException> { runtime.eval("async function* g({a = await 1}) {}") }
+        assertFailsWith<ParseException> { runtime.eval("async function* g([a = await 1]) {}") }
+        assertFailsWith<ParseException> { runtime.eval("async function* g({[await x]: a}) {}") }
+        assertFailsWith<ParseException> {
+            runtime.eval("var o = { async *g(a = await 1) {} };")
+        }
+        assertFailsWith<ParseException> {
+            runtime.eval("class C { async *g(a = await 1) {} }")
+        }
+        // 嵌套 async 箭头形参同样是 [+Await] 语境
+        assertFailsWith<ParseException> {
+            runtime.eval("async function* g() { var f = async (a = await 1) => a; }")
+        }
+    }
+
+    @Test
+    fun `async 生成器体内嵌套普通函数的形参可以包含 await 标识符`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            async function* g() {
+                function inner(await) { return await; }
+                var o = { m(await) { return await + 1; } };
+                class C { m(await) { return await + 2; } }
+                yield inner(7);
+                yield o.m(7);
+                yield new C().m(7);
+            }
+            var result = '';
+            (async function () {
+                var it = g();
+                var first = (await it.next()).value;
+                var second = (await it.next()).value;
+                var third = (await it.next()).value;
+                result = first + ',' + second + ',' + third;
+            })();
+            """.trimIndent()
+        )
+        // 嵌套普通函数/方法/class 方法是 [~Await] 语境：await 仍可作为绑定名与引用
+        assertEquals("7,8,9", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `async 生成器形参中的 await 在嵌套 async 箭头函数体内合法`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            async function* g(a = async () => await 1) { yield a; }
+            async function* h(a = function () { return 2; }()) { yield a; }
+            """.trimIndent()
+        )
+        assertEquals("function,function", runtime.evalString("typeof g + ',' + typeof h"))
+    }    @Test
     fun `async 生成器 next 返回的 Promise 在微任务中落定而不是同步`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(

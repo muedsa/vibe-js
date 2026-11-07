@@ -68,6 +68,16 @@ class Parser(
      */
     private var generatorContext = yieldContext
 
+    /**
+     * 当前是否正在解析形参列表（含默认值、解构模式与计算属性名）。
+     *
+     * 生成器形参是 [+Yield] 语境，但 YieldExpression 不允许出现在形参中；
+     * async 形参同理不允许 AwaitExpression（规范 Contains 静态语义）。
+     * 箭头函数的形参继承外层 [Yield]/[Await] 语境，因此不解除该标志；
+     * 普通函数/方法的函数体是新的 [~Yield, ~Await] 边界，解析函数体时会清除。
+     */
+    private var inFormalParameters = false
+
     /** 函数嵌套深度；顶层脚本为 0，用于检查 return 位置。 */
     private var functionDepth = 0
 
@@ -1604,6 +1614,7 @@ class Parser(
         val outerStrict = strict
         val outerAsync = asyncContext
         val outerGenerator = generatorContext
+        val outerInFormalParameters = inFormalParameters
         val outerSuperProperty = superPropertyAllowed
         val outerSuperCall = superCallAllowed
         val outerNewTarget = newTargetAllowed
@@ -1612,6 +1623,8 @@ class Parser(
         strict = outerStrict || bodyStrict
         asyncContext = isAsync
         generatorContext = isGenerator
+        // 函数体是形参早期错误规则的边界：yield/await 在此恢复为普通表达式语境
+        inFormalParameters = false
         superPropertyAllowed = allowSuperProperty
         superCallAllowed = allowSuperCall
         newTargetAllowed = allowNewTarget
@@ -1668,6 +1681,7 @@ class Parser(
             newTargetAllowed = outerNewTarget
             argumentsForbidden = outerArgumentsForbidden
             awaitIdentifierForbidden = outerAwaitForbidden
+            inFormalParameters = outerInFormalParameters
         }
         val innerStrict = strict
         strict = outerStrict
@@ -1754,11 +1768,15 @@ class Parser(
         }
     }
 
-    /** 在 async 上下文中解析参数（await 不能作为绑定名）。 */
+    /**
+     * 在 async 上下文中解析参数（await 不能作为绑定名）。
+     *
+     * 普通函数/方法的形参是 [~Await] 语境：即使外层是 async 函数体，
+     * 也必须显式切回 false，否则嵌套函数的形参会被错误地按 async 关键字处理。
+     */
     private inline fun <T> withAsyncContext(isAsync: Boolean, block: () -> T): T {
-        if (!isAsync) return block()
         val outer = asyncContext
-        asyncContext = true
+        asyncContext = isAsync
         return try {
             block()
         } finally {
@@ -1782,8 +1800,24 @@ class Parser(
         }
     }
 
-    /** 解析函数参数（左括号已消费），支持默认值、rest 与解构。 */
+    /**
+     * 解析函数参数（左括号已消费），支持默认值、rest 与解构。
+     *
+     * 解析期间置位 [inFormalParameters]：默认值/解构模式/计算属性名中的
+     * yield 与 await 需要按形参早期错误规则校验。
+     */
     private fun parseParametersAfterOpen(): List<Parameter> {
+        val outerInFormalParameters = inFormalParameters
+        inFormalParameters = true
+        return try {
+            parseParametersAfterOpenBody()
+        } finally {
+            inFormalParameters = outerInFormalParameters
+        }
+    }
+
+    /** 参数列表的实际解析（由 [parseParametersAfterOpen] 包裹上下文标志）。 */
+    private fun parseParametersAfterOpenBody(): List<Parameter> {
         val params = mutableListOf<Parameter>()
         if (!check(TokenType.RPAREN)) {
             do {
@@ -2583,6 +2617,14 @@ class Parser(
         if (token.type != TokenType.IDENTIFIER || token.value != "yield" || token.containsEscape) {
             return null
         }
+        // 生成器形参（含解构/默认值/计算属性名）不允许 YieldExpression；
+        // 嵌套箭头函数的形参继承外层 [+Yield]，由同一标志覆盖。
+        if (inFormalParameters) {
+            throw ParseException(
+                "Yield expression is not allowed in generator parameters",
+                token.range,
+            )
+        }
         val start = token.range.start
         advance() // yield
         if (check(TokenType.MULTIPLY) && !peek().precededByNewline) {
@@ -2744,6 +2786,9 @@ class Parser(
         awaitIdentifierForbidden = false
         val outerGenerator = generatorContext
         generatorContext = false
+        // 箭头表达式体是形参早期错误规则的边界：其中 yield/await 恢复为普通表达式语境
+        val outerInFormalParameters = inFormalParameters
+        inFormalParameters = false
         // 表达式体沿用当前严格模式上下文
         validateFunctionParameters(params, strict, isArrow = true)
         try {
@@ -2764,6 +2809,7 @@ class Parser(
             asyncContext = outerAsync
             awaitIdentifierForbidden = outerAwaitForbidden
             generatorContext = outerGenerator
+            inFormalParameters = outerInFormalParameters
         }
     }
 
@@ -2920,6 +2966,14 @@ class Parser(
     /** 一元运算与自增自减前缀。 */
     private fun parseUnary(): Expression {
         val token = peek()
+
+        // async 形参（含解构/默认值/计算属性名）不允许 AwaitExpression；
+        // 嵌套箭头函数的形参继承外层 [+Await]，由同一标志覆盖。
+        if (asyncContext && inFormalParameters && token.type == TokenType.IDENTIFIER &&
+            token.value == "await" && !token.containsEscape
+        ) {
+            throw error("Await expression is not allowed in async function parameters")
+        }
 
         // async 函数中的 await
         if (asyncContext && token.type == TokenType.IDENTIFIER && token.value == "await") {

@@ -392,7 +392,7 @@ class GeneratorTest {
     }
 
     @Test
-    fun `生成器参数绑定延迟到首次 next 且默认值按顺序求值`() = runTest {
+    fun `生成器调用时完成参数绑定且默认值按顺序求值`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(
             """
@@ -401,12 +401,248 @@ class GeneratorTest {
                 yield a + rest.length;
             }
             var it = g(undefined, 7, 8, 9);
-            var beforeNext = bindings;
+            var afterCall = bindings;
+            var value = it.next().value;
+            var result = afterCall + ':' + value;
+            """.trimIndent()
+        )
+        // 规范：生成器函数被调用时就完成参数绑定，首次 next 只执行函数体
+        assertEquals("1:4", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器调用时求值默认参数且首次 next 不重复绑定`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var calls = 0;
+            function* g(a = (calls++, 10)) { yield a; yield calls; }
+            var it = g();
+            var afterCall = calls;
+            var first = it.next().value;
+            var afterFirstNext = calls;
+            var second = it.next().value;
+            var result = afterCall + ':' + first + ':' + afterFirstNext + ':' + second;
+            """.trimIndent()
+        )
+        // 默认值只在调用时求值一次；首次 next 恢复函数体时不得重复求值
+        assertEquals("1:10:1:1", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器默认参数中的 this 与 arguments 在首次 next 前已绑定`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var seen = '';
+            function* g(a = (seen = this.tag + ':' + arguments.length, 0)) { yield a; }
+            var host = { tag: 'host', run: g };
+            var it = host.run(undefined, 2, 3);
+            var beforeNext = seen;
             var value = it.next().value;
             var result = beforeNext + ':' + value;
             """.trimIndent()
         )
-        assertEquals("0:4", runtime.evalString("result"))
+        // 默认值在调用阶段就能读取生成器的 this 与 arguments
+        assertEquals("host:3:0", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器方法默认参数在调用时可以使用 super`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            class Base {
+                label() { return 'base'; }
+            }
+            class Derived extends Base {
+                *m(a = super.label() + ':' + this.tag) {
+                    yield a;
+                }
+            }
+            var instance = new Derived();
+            instance.tag = 'derived';
+            var it = instance.m();
+            var result = it.next().value;
+            """.trimIndent()
+        )
+        // 参数绑定发生在调用阶段，此时方法帧已提供 homeObject/super 与 this
+        assertEquals("base:derived", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器 return 前未启动时参数已经完成绑定`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var calls = 0;
+            function* g(a = calls++) { yield 1; }
+            var it = g();
+            var afterCall = calls;
+            var step = it.return(5);
+            var result = afterCall + ':' + calls + ':' + step.value + ':' + step.done;
+            """.trimIndent()
+        )
+        // 即使从未 next，调用阶段也已经求值默认值；return 不执行函数体
+        assertEquals("1:1:5:true", runtime.evalString("result"))
+    }    @Test
+    fun `生成器默认参数在调用时捕获参数值`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var outer = 1;
+            function* g(a = outer) { yield a; }
+            var it = g();
+            outer = 2;
+            var result = it.next().value;
+            """.trimIndent()
+        )
+        // 参数值在调用时完成绑定，后续修改外层变量不会影响已绑定的参数
+        assertEquals(1.0, runtime.evalNumber("result"))
+    }
+
+    @Test
+    fun `生成器默认参数抛错在调用时传播而不是首次 next`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var calls = 0;
+            function boom() { throw new Error('param'); }
+            function* g(a = (calls++, boom())) { yield 1; }
+            var message = '';
+            var created = 'yes';
+            var it = null;
+            try {
+                it = g();
+            } catch (e) {
+                message = e.message;
+                created = 'no';
+            }
+            var result = message + ':' + calls + ':' + created + ':' + String(it);
+            """.trimIndent()
+        )
+        // 参数默认值异常属于调用阶段，生成器对象不会创建
+        assertEquals("param:1:no:null", runtime.evalString("result"))
+    }
+
+    @Test
+    fun `生成器参数 TDZ 在调用时抛 ReferenceError`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            function* g(a = b, b = 1) { yield a; }
+            var name = '';
+            try {
+                g();
+            } catch (e) {
+                name = e.name;
+            }
+            """.trimIndent()
+        )
+        assertEquals("ReferenceError", runtime.evalString("name"))
+    }
+
+    @Test
+    fun `生成器形参中的 yield 早期错误在解析期被拒绝`() = runTest {
+        val runtime = TestRuntime()
+        // 生成器自身形参：默认值、解构、计算属性名与绑定名
+        assertFailsWith<ParseException> { runtime.eval("function* g(a = yield) {}") }
+        assertFailsWith<ParseException> { runtime.eval("function* g(a = yield 1) {}") }
+        assertFailsWith<ParseException> { runtime.eval("function* g(a = yield* other()) {}") }
+        assertFailsWith<ParseException> { runtime.eval("function* g({a = yield}) {}") }
+        assertFailsWith<ParseException> { runtime.eval("function* g([a = yield]) {}") }
+        assertFailsWith<ParseException> { runtime.eval("function* g({[yield]: a}) {}") }
+        assertFailsWith<ParseException> { runtime.eval("function* g({yield}) {}") }
+        assertFailsWith<ParseException> { runtime.eval("function* g([yield]) {}") }
+        assertFailsWith<ParseException> { runtime.eval("function* g(yield) {}") }
+        assertFailsWith<ParseException> { runtime.eval("var f = function* (a = yield) {};") }
+        assertFailsWith<ParseException> { runtime.eval("var o = { *m(a = yield) {} };") }
+        assertFailsWith<ParseException> { runtime.eval("class C { *m(a = yield) {} }") }
+        // 生成器体内嵌套的生成器/生成器方法形参同样是 [+Yield] 语境
+        assertFailsWith<ParseException> {
+            runtime.eval("function* g() { function* h(a = yield) {} }")
+        }
+        assertFailsWith<ParseException> {
+            runtime.eval("function* g() { !function*(a = yield) {}; }")
+        }
+        assertFailsWith<ParseException> {
+            runtime.eval("function* g() { var o = { *m(a = yield) {} }; }")
+        }
+        assertFailsWith<ParseException> {
+            runtime.eval("function* g() { ({ *m(c = yield d) {} }); }")
+        }
+        // 箭头函数形参继承外层 [+Yield]：yield 表达式出现在形参中仍是早期错误
+        assertFailsWith<ParseException> { runtime.eval("function* g() { (a = yield) => 1; }") }
+        assertFailsWith<ParseException> { runtime.eval("function* g() { ([a = yield]) => 1; }") }
+        assertFailsWith<ParseException> {
+            runtime.eval("function* g() { ({[yield]: a}) => 1; }")
+        }
+        // 生成器体内的简写属性与绑定名不能使用 yield
+        assertFailsWith<ParseException> { runtime.eval("function* g() { var o = {yield}; }") }
+        assertFailsWith<ParseException> { runtime.eval("function* g() { var yield = 1; }") }
+        assertFailsWith<ParseException> { runtime.eval("function* g() { let yield = 1; }") }
+    }
+
+    @Test
+    fun `生成器体内嵌套普通函数与箭头体的 yield 仍是合法标识符`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            function* g() {
+                function helper(yield) { return yield + 1; }
+                var arrow = () => yield;
+                var method = { yield: 3, m() { return 4; } };
+                yield helper(41);
+            }
+            var it = g();
+            var result = it.next().value;
+            """.trimIndent()
+        )
+        // 嵌套普通函数是 [~Yield] 函数边界：形参名、箭头表达式体与对象属性名中的 yield 合法
+        assertEquals(42.0, runtime.evalNumber("result"))
+    }
+
+    @Test
+    fun `生成器体内嵌套生成器可以正常使用 yield 表达式`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            function* outer() {
+                function* inner() {
+                    var x = yield 5;
+                    yield x + 1;
+                }
+                var it = inner();
+                var first = it.next().value;
+                var second = it.next(10).value;
+                yield first + second;
+            }
+            var result = outer().next().value;
+            """.trimIndent()
+        )
+        assertEquals(16.0, runtime.evalNumber("result"))
+    }
+
+    @Test
+    fun `生成器参数默认值中的函数边界可以包含 yield`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            function* g(
+                a = function () { var yield = 1; return yield; }(),
+                b = function* () { yield 2; },
+                c = () => yield
+            ) {
+                yield a;
+                yield typeof b;
+                yield typeof c;
+            }
+            var it = g();
+            var result = it.next().value + ':' + it.next().value + ':' + it.next().value;
+            """.trimIndent()
+        )
+        // 普通函数体、生成器函数体与箭头表达式体都是新的 [~Yield] 语境
+        assertEquals("1:function:function", runtime.evalString("result"))
     }
 
     @Test

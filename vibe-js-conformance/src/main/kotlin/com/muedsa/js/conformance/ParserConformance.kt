@@ -45,6 +45,9 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
     if (strict && report.hasExpectedFailures()) {
+        System.err.println(
+            "解析一致性门禁失败：存在未允许的解析失败或 early 接受项，详见报告目录 ${reportDir.absolutePath}"
+        )
         exitProcess(1)
     }
 }
@@ -61,6 +64,13 @@ private val parserPassAllowlist: Set<String> = loadParserPassAllowlist()
  * 这类文件在现行规范下合法，strict 模式下不计为门禁失败。
  */
 private val parserFailAllowlist: Set<String> = loadAllowlist("parser-fail-allowlist.txt")
+
+/**
+ * early 允许列表（按文件名匹配）：语料按旧版规范标记为早期错误，
+ * 但现行 Annex B 语义允许（块级重复函数声明、catch 参数与 for-var 同名）。
+ * strict 模式下只有这些文件可以被接受，其余 early 文件必须被拒绝。
+ */
+private val parserEarlyAllowlist: Set<String> = loadAllowlist("parser-early-allowlist.txt")
 
 private object AllowlistResources
 
@@ -200,12 +210,23 @@ private class ParserConformanceRunner(
         var crashes = 0
         val crashSamples = mutableListOf<TestFailure>()
         val acceptedFiles = mutableListOf<String>()
+        val allowedFiles = mutableListOf<TestFailure>()
+        val unexpectedAcceptedFiles = mutableListOf<TestFailure>()
         val startedAt = System.nanoTime()
         for (file in files) {
             try {
                 parse(file)
                 parsed++
                 acceptedFiles.add(relativePath(file))
+                val item = TestFailure(
+                    path = relativePath(file),
+                    message = "期望早期错误，但解析器接受了该文件",
+                )
+                if (file.name in parserEarlyAllowlist) {
+                    allowedFiles.add(item)
+                } else {
+                    unexpectedAcceptedFiles.add(item)
+                }
             } catch (_: ParseException) {
                 rejected++
             } catch (_: LexerException) {
@@ -222,6 +243,8 @@ private class ParserConformanceRunner(
             crashes = crashes,
             crashSamples = crashSamples,
             acceptedFiles = acceptedFiles,
+            allowedFiles = allowedFiles,
+            unexpectedAcceptedFiles = unexpectedAcceptedFiles,
             elapsedMillis = elapsedMillis(startedAt),
         )
     }
@@ -294,6 +317,10 @@ private data class EarlyReport(
     val crashes: Int,
     val crashSamples: List<TestFailure>,
     val acceptedFiles: List<String>,
+    /** 允许列表内的已知差异（现行 Annex B 语义允许，语料仍标记为早期错误） */
+    val allowedFiles: List<TestFailure>,
+    /** 不在允许列表内、却被解析器接受的 early 文件（strict 门禁失败项） */
+    val unexpectedAcceptedFiles: List<TestFailure>,
     val elapsedMillis: Long,
 )
 
@@ -309,7 +336,8 @@ private data class ParserRunReport(
     val total: Int
         get() = categories.sumOf { it.total } + early.total
 
-    fun hasExpectedFailures(): Boolean = categories.any { it.failed > 0 }
+    fun hasExpectedFailures(): Boolean =
+        categories.any { it.failed > 0 } || early.unexpectedAcceptedFiles.isNotEmpty()
 
     fun writeMarkdown(file: File) {
         file.writeText(
@@ -335,6 +363,14 @@ private data class ParserRunReport(
                 appendLine(
                     "早期错误用例（early）：共 ${early.total}，解析成功 ${early.parsed}，" +
                         "被拒绝 ${early.rejected}，崩溃 ${early.crashes}。"
+                )
+                appendLine(
+                    "其中允许列表 ${early.allowedFiles.size}（现行 Annex B 语义允许），" +
+                        "意外接受 ${early.unexpectedAcceptedFiles.size}（strict 门禁失败项）。"
+                )
+                appendLine(
+                    "strict 模式要求 early 只接受允许列表内的文件；" +
+                        "剩余 Generator 形参早期错误已全部拒绝。"
                 )
                 appendLine("模块用例跳过：$moduleSkipped。")
                 appendLine()
@@ -386,8 +422,26 @@ private data class ParserRunReport(
                 appendLine("    \"total\": ${early.total},")
                 appendLine("    \"parsed\": ${early.parsed},")
                 appendLine("    \"rejected\": ${early.rejected},")
+                appendLine("    \"allowed\": ${early.allowedFiles.size},")
+                appendLine("    \"unexpectedAccepted\": ${early.unexpectedAcceptedFiles.size},")
                 appendLine("    \"crashes\": ${early.crashes},")
-                appendLine("    \"elapsedMillis\": ${early.elapsedMillis}")
+                appendLine("    \"elapsedMillis\": ${early.elapsedMillis},")
+                appendLine("    \"allowlistedPaths\": [")
+                early.allowedFiles.forEachIndexed { index, failure ->
+                    appendLine(
+                        "      \"${jsonEscape(failure.path)}\"" +
+                            if (index < early.allowedFiles.lastIndex) "," else ""
+                    )
+                }
+                appendLine("    ],")
+                appendLine("    \"unexpectedAcceptedPaths\": [")
+                early.unexpectedAcceptedFiles.forEachIndexed { index, failure ->
+                    appendLine(
+                        "      \"${jsonEscape(failure.path)}\"" +
+                            if (index < early.unexpectedAcceptedFiles.lastIndex) "," else ""
+                    )
+                }
+                appendLine("    ]")
                 appendLine("  }")
                 appendLine("}")
             }
@@ -416,6 +470,21 @@ private data class ParserRunReport(
         File(directory, "early-accepted.txt").writeText(
             early.acceptedFiles.joinToString(separator = "\n", postfix = if (early.acceptedFiles.isEmpty()) "" else "\n")
         )
+        // strict 门禁失败项：不在允许列表内、却被接受的 early 文件
+        File(directory, "failures-early-unexpected.txt").writeText(
+            buildString {
+                for (failure in early.unexpectedAcceptedFiles) {
+                    appendLine("${failure.path}\t${failure.message}")
+                }
+            }
+        )
+        File(directory, "allowlisted-early.txt").writeText(
+            buildString {
+                for (failure in early.allowedFiles) {
+                    appendLine("${failure.path}\t${failure.message}")
+                }
+            }
+        )
         File(directory, "failures-early-crashes.txt").writeText(
             buildString {
                 for (failure in early.crashSamples) {
@@ -436,8 +505,12 @@ private data class ParserRunReport(
         }
         println(
             "  early: 解析成功 ${early.parsed}/${early.total}, " +
-                "拒绝 ${early.rejected}, 崩溃 ${early.crashes}"
+                "拒绝 ${early.rejected}, 允许 ${early.allowedFiles.size}, " +
+                "意外接受 ${early.unexpectedAcceptedFiles.size}, 崩溃 ${early.crashes}"
         )
+        if (early.unexpectedAcceptedFiles.isNotEmpty()) {
+            println("  警告：检测到 ${early.unexpectedAcceptedFiles.size} 个未列入允许列表的 early 接受项")
+        }
         println("  module 跳过: $moduleSkipped")
         if (crashCount > 0) {
             println("  警告：检测到 $crashCount 个崩溃，详见报告")

@@ -1,5 +1,6 @@
 package com.muedsa.js.runtime.value
 
+import com.muedsa.js.runtime.FunctionScope
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.PromiseCapability
 import com.muedsa.js.runtime.PromiseSupport
@@ -42,7 +43,9 @@ internal sealed class GeneratorStep {
  * - [GeneratorChannels.requests]：恢复方投递 Next/Return/Throw；
  * - [GeneratorChannels.steps]：函数体投递 Yielded/Returned/Threw。
  *
- * 函数体在首次 `next()` 时才启动（[GeneratorState.SUSPENDED_START]），
+ * 函数体在首次 `next()` 时才启动（[GeneratorState.SUSPENDED_START]）；
+ * 参数环境、默认值与 this/arguments 的绑定已在调用生成器函数时完成
+ * （[FunctionScope]），首次 next 只恢复函数体执行，不重复绑定。
  * 在此之前调用 `return()`/`throw()` 不会执行任何函数体代码。
  *
  * 两种生成器复用同一状态机：同步版本直接在调用方协程里等待函数体步骤；
@@ -51,14 +54,14 @@ internal sealed class GeneratorStep {
  *
  * @property function 生成器函数对象
  * @property thisValue 创建时绑定的 this
- * @property arguments 创建时捕获的实参（参数绑定延迟到首次 next）
+ * @property scope 调用时完成参数绑定后的参数/var 环境，供首次 next 恢复函数体
  * @property isAsync 是否为 async generator（决定内建原型与 Promise 化的调用协议）
  */
 class JSGenerator internal constructor(
     private val interpreter: Interpreter,
     val function: JSFunction,
     internal val thisValue: JSValue,
-    internal val arguments: List<JSValue>,
+    internal val scope: FunctionScope,
     prototype: JSObject? = null,
     val isAsync: Boolean = false,
 ) : JSObject(prototype) {

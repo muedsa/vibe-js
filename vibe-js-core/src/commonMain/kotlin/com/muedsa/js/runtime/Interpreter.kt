@@ -1815,9 +1815,9 @@ class Interpreter(
         if (function.isGenerator) {
             // async generator（L1.4）：调用同样只创建对象，next/return/throw 返回 Promise
             return if (function.isAsync) {
-                createAsyncGeneratorObject(function, effectiveThis, args)
+                createAsyncGeneratorObject(function, effectiveThis, args, callRange)
             } else {
-                createGeneratorObject(function, effectiveThis, args)
+                createGeneratorObject(function, effectiveThis, args, callRange)
             }
         }
         if (function.isAsync) {
@@ -1829,6 +1829,8 @@ class Interpreter(
     /**
      * 创建生成器对象（GeneratorStart 的创建阶段）。
      *
+     * 规范要求生成器函数被调用时先完成 FunctionDeclarationInstantiation
+     * （参数默认值、this、arguments 与参数 TDZ），再创建 suspendedStart 的生成器。
      * 实例的 [[Prototype]] 取生成器函数当前的 `.prototype` 属性（脚本可改写），
      * 该属性不是对象时回退 `%GeneratorPrototype%`。
      */
@@ -1836,17 +1838,25 @@ class Interpreter(
         function: JSFunction,
         thisValue: JSValue,
         args: List<JSValue>,
-    ): JSGenerator = JSGenerator(
-        interpreter = this,
-        function = function,
-        thisValue = thisValue,
-        arguments = args.toList(),
-        prototype = prototypeFromNewTarget(function, intrinsics.generatorPrototype),
-    )
+        callRange: SourceRange? = null,
+    ): JSGenerator {
+        // 参数绑定可能执行用户代码（默认值）并抛出异常，必须在调用栈上同步完成
+        val scope = prepareGeneratorFunctionScope(function, thisValue, args, callRange)
+        return JSGenerator(
+            interpreter = this,
+            function = function,
+            thisValue = thisValue,
+            scope = scope,
+            // 规范顺序：参数初始化之后才读取函数的 .prototype
+            prototype = prototypeFromNewTarget(function, intrinsics.generatorPrototype),
+        )
+    }
 
     /**
      * 创建 async generator 对象（AsyncGeneratorStart 的创建阶段）。
      *
+     * 参数绑定时机与同步生成器一致：调用时求值默认值并创建参数环境，
+     * 参数默认值中的异常同步抛给调用方，而不是变成 next() 的 Promise 拒绝。
      * 实例原型同样取函数当前的 `.prototype` 属性，不是对象时回退
      * `%AsyncGeneratorPrototype%`；`next`/`return`/`throw` 由该原型提供 Promise 化实现。
      */
@@ -1854,14 +1864,59 @@ class Interpreter(
         function: JSFunction,
         thisValue: JSValue,
         args: List<JSValue>,
-    ): JSGenerator = JSGenerator(
-        interpreter = this,
-        function = function,
-        thisValue = thisValue,
-        arguments = args.toList(),
-        prototype = prototypeFromNewTarget(function, intrinsics.asyncGeneratorPrototype),
-        isAsync = true,
-    )
+        callRange: SourceRange? = null,
+    ): JSGenerator {
+        val scope = prepareGeneratorFunctionScope(function, thisValue, args, callRange)
+        return JSGenerator(
+            interpreter = this,
+            function = function,
+            thisValue = thisValue,
+            scope = scope,
+            prototype = prototypeFromNewTarget(function, intrinsics.asyncGeneratorPrototype),
+            isAsync = true,
+        )
+    }
+
+    /**
+     * 生成器调用阶段的 FunctionDeclarationInstantiation。
+     *
+     * 在调用方解释器的调用栈上创建参数环境、arguments 并绑定形参；默认值求值、
+     * 参数 TDZ 与 this/arguments 引用都发生在生成器对象返回之前。返回的
+     * [FunctionScope] 交给首次 next 的函数体协程继续使用，避免重复绑定。
+     */
+    private suspend fun prepareGeneratorFunctionScope(
+        function: JSFunction,
+        thisValue: JSValue,
+        args: List<JSValue>,
+        callRange: SourceRange?,
+    ): FunctionScope {
+        val scope = createFunctionScope(function)
+        val previousFrame = frame
+        val functionFrame = createFunctionExecutionContext(
+            function,
+            thisValue,
+            scope,
+            scope.calleeEnvironment,
+        )
+        if (callRange != null) currentRange = callRange
+        pushStackFrame(
+            function.name.ifEmpty { "anonymous" },
+            function.body?.range ?: function.expressionBody?.range,
+            sourceInfo = function.sourceInfo,
+        )
+        frame = functionFrame
+        try {
+            bindFunctionArgumentsAndParameters(function, args, scope.parameterEnvironment)
+            return scope
+        } catch (error: Throwable) {
+            // 参数初始化失败时异常沿普通调用路径传播（生成器对象尚未创建）
+            captureFailure(error)
+            throw error
+        } finally {
+            popStackFrame()
+            frame = previousFrame
+        }
+    }
 
     /**
      * 启动生成器函数体协程（首次 next 时调用）。
@@ -1873,13 +1928,7 @@ class Interpreter(
     internal fun launchGeneratorBody(generator: JSGenerator) {
         context.eventLoop.scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                executeGeneratorBody(
-                    generator.function,
-                    generator.thisValue,
-                    generator.arguments,
-                    generator.channels,
-                    generator.isAsync,
-                )
+                executeGeneratorBody(generator)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: ExecutionLimitException) {
@@ -1926,33 +1975,31 @@ class Interpreter(
      * 都转换为 [GeneratorStep] 步骤交还给恢复方；只有宿主控制流（协程取消、
      * 步数耗尽）继续向上传播。
      *
-     * @param isAsync async generator 的函数体：yield 会先 await 产出值，
-     *   yield* 按异步迭代协议委托
+     * 参数环境与 arguments 已由调用阶段的 [prepareGeneratorFunctionScope] 建立，
+     * 这里只恢复执行上下文并执行函数体，不会重新求值默认值。
      */
-    internal suspend fun executeGeneratorBody(
-        function: JSFunction,
-        thisValue: JSValue,
-        args: List<JSValue>,
-        channels: GeneratorChannels,
-        isAsync: Boolean = false,
-    ) {
+    internal suspend fun executeGeneratorBody(generator: JSGenerator) {
         val bodyInterpreter = forkForCallback()
-        bodyInterpreter.generatorChannels = channels
-        bodyInterpreter.generatorIsAsync = isAsync
+        bodyInterpreter.generatorChannels = generator.channels
+        bodyInterpreter.generatorIsAsync = generator.isAsync
         try {
-            val result = bodyInterpreter.executeUserFunction(function, thisValue, args)
-            channels.steps.send(GeneratorStep.Returned(result))
+            val result = bodyInterpreter.executeSuspendedGeneratorBody(
+                function = generator.function,
+                thisValue = generator.thisValue,
+                scope = generator.scope,
+            )
+            generator.channels.steps.send(GeneratorStep.Returned(result))
         } catch (signal: GeneratorReturn) {
             // 生成器边界：return() 的控制流信号转换为 { done: true } 的返回步骤
-            channels.steps.send(GeneratorStep.Returned(signal.value))
+            generator.channels.steps.send(GeneratorStep.Returned(signal.value))
         } catch (error: JSException) {
-            channels.steps.send(GeneratorStep.Threw(error))
+            generator.channels.steps.send(GeneratorStep.Threw(error))
         } catch (error: CancellationException) {
             throw error
         } catch (error: ExecutionLimitException) {
             throw error
         } catch (error: Throwable) {
-            channels.steps.send(
+            generator.channels.steps.send(
                 GeneratorStep.Threw(
                     JSException(
                         JSError(
@@ -1964,6 +2011,41 @@ class Interpreter(
                     )
                 )
             )
+        }
+    }
+
+    /**
+     * 在生成器协程中恢复函数体执行。
+     *
+     * 与 [executeUserFunction] 的差别：不再创建参数环境、不重新绑定 arguments、
+     * 不重新求值默认值；只建立函数体执行上下文并完成声明提升。
+     */
+    private suspend fun executeSuspendedGeneratorBody(
+        function: JSFunction,
+        thisValue: JSValue,
+        scope: FunctionScope,
+    ): JSValue {
+        val previousFrame = frame
+        val functionFrame = createFunctionExecutionContext(
+            function,
+            thisValue,
+            scope,
+            scope.variableEnvironment,
+        )
+        pushStackFrame(
+            function.name.ifEmpty { "anonymous" },
+            function.body?.range ?: function.expressionBody?.range,
+            sourceInfo = function.sourceInfo,
+        )
+        frame = functionFrame
+        try {
+            return executeFunctionBodyWithScope(function, scope)
+        } catch (error: Throwable) {
+            captureFailure(error)
+            throw error
+        } finally {
+            popStackFrame()
+            frame = previousFrame
         }
     }
 
@@ -2012,19 +2094,17 @@ class Interpreter(
         return promise
     }
 
-    /** 在给定 this 下执行函数体（普通函数 / 箭头函数共用）。 */
-    private suspend fun executeUserFunction(
-        function: JSFunction,
-        thisValue: JSValue,
-        args: List<JSValue>,
-        callRange: SourceRange? = null,
-    ): JSValue {
+    /**
+     * 创建函数调用的环境层级（FunctionDeclarationInstantiation 的环境部分）。
+     *
+     * 参数环境与函数体 var 环境：含参数表达式时分离（参数闭包看不到函数体 var）。
+     * 规范 10.2.11：参数初始化期间 VariableEnvironment 仍是函数的最外层环境，
+     * 其中 eval 声明的 var/function 对参数闭包与函数体均可见；参数绑定完成后才切到 var 环境。
+     */
+    private fun createFunctionScope(function: JSFunction): FunctionScope {
         val hasParameterExpressions = function.params.any {
             it.rest || it.defaultValue != null || it.pattern != null
         }
-        // 参数环境与函数体 var 环境：含参数表达式时分离（参数闭包看不到函数体 var）。
-        // 规范 10.2.11：参数初始化期间 VariableEnvironment 仍是函数的最外层环境，
-        // 其中 eval 声明的 var/function 对参数闭包与函数体均可见；参数绑定完成后才切到 var 环境。
         val calleeEnv = DeclarativeEnvironment(parent = function.closure, isVarScope = true)
         val parameterEnv: DeclarativeEnvironment
         val varEnv: DeclarativeEnvironment
@@ -2035,17 +2115,106 @@ class Interpreter(
             parameterEnv = calleeEnv
             varEnv = calleeEnv
         }
-        val previousFrame = frame
-        val functionFrame = ExecutionContext(
-            parameterEnv,
-            thisValue,
-            function.strict,
+        return FunctionScope(calleeEnv, parameterEnv, varEnv, hasParameterExpressions)
+    }
+
+    /**
+     * 为一次函数调用创建执行上下文。
+     *
+     * @param variableEnvironment 参数初始化阶段为最外层环境，函数体执行阶段为 var 环境
+     */
+    private fun createFunctionExecutionContext(
+        function: JSFunction,
+        thisValue: JSValue,
+        scope: FunctionScope,
+        variableEnvironment: Environment,
+    ): ExecutionContext = ExecutionContext(
+        scope.parameterEnvironment,
+        thisValue,
+        function.strict,
+        function,
+        newTarget = if (function.isArrow) function.lexicalNewTarget else null,
+        // 箭头函数继承 this 绑定的初始化状态
+        thisInitialized = function.lexicalThisSource?.thisBound ?: true,
+        variableEnv = variableEnvironment,
+        inParameterInitialization = scope.hasParameterExpressions,
+    )
+
+    /**
+     * 创建 arguments 对象并绑定形参（默认值/解构/rest 在参数环境中求值）。
+     *
+     * 生成器函数在调用时执行本方法，因此默认值中的副作用与异常都发生在
+     * 生成器对象返回之前；首次 next 不会再次调用。
+     */
+    private suspend fun bindFunctionArgumentsAndParameters(
+        function: JSFunction,
+        args: List<JSValue>,
+        parameterEnvironment: DeclarativeEnvironment,
+    ) {
+        if (!function.isArrow) {
+            // 规范 9.2.10：形参名重复时不建立 arguments 映射
+            val parameterNames = function.params.mapNotNull { it.name }
+            val mapped = !function.strict && function.params.all {
+                it.name != null && !it.rest && it.defaultValue == null && it.pattern == null
+            } && parameterNames.distinct().size == function.params.size
+            parameterEnvironment.createVarBinding(
+                "arguments",
+                createArgumentsObject(
+                    args = args,
+                    function = function,
+                    mappedEnvironment = if (mapped) parameterEnvironment else null,
+                    mappedParams = if (mapped) function.params else emptyList(),
+                ),
+            )
+        }
+        bindParameters(function, args, parameterEnvironment)
+    }
+
+    /**
+     * 执行已绑定参数的函数体：创建函数体词法环境并完成声明提升。
+     *
+     * 调用前必须已经建立执行上下文；本方法供普通调用与生成器首次 next 共用。
+     */
+    private suspend fun executeFunctionBodyWithScope(
+        function: JSFunction,
+        scope: FunctionScope,
+    ): JSValue {
+        // 函数体词法环境位于 var 环境之上；无词法声明（含箭头表达式体）时
+        // 复用 var 环境，避免每次调用分配一个空环境
+        val body = function.body
+        val bodyNeedsEnvironment = when {
+            body != null -> body.requiresEnvironment
+            function.expressionBody != null -> false
+            else -> true
+        }
+        val bodyEnv = if (bodyNeedsEnvironment) {
+            DeclarativeEnvironment(parent = scope.variableEnvironment)
+        } else {
+            scope.variableEnvironment
+        }
+        return executeFunctionBody(
             function,
-            newTarget = if (function.isArrow) function.lexicalNewTarget else null,
-            // 箭头函数继承 this 绑定的初始化状态
-            thisInitialized = function.lexicalThisSource?.thisBound ?: true,
-            variableEnv = calleeEnv,
-            inParameterInitialization = hasParameterExpressions,
+            bodyEnv,
+            scope.variableEnvironment,
+            scope.parameterEnvironment,
+            scope.hasParameterExpressions,
+        )
+    }
+
+    /** 在给定 this 下执行函数体（普通函数 / 箭头函数共用）。 */
+    private suspend fun executeUserFunction(
+        function: JSFunction,
+        thisValue: JSValue,
+        args: List<JSValue>,
+        callRange: SourceRange? = null,
+    ): JSValue {
+        val scope = createFunctionScope(function)
+        val previousFrame = frame
+        val functionFrame = createFunctionExecutionContext(
+            function,
+            thisValue,
+            scope,
+            scope.calleeEnvironment,
         )
         if (callRange != null) currentRange = callRange
         pushStackFrame(
@@ -2054,37 +2223,8 @@ class Interpreter(
         )
         frame = functionFrame
         try {
-            if (!function.isArrow) {
-                // 规范 9.2.10：形参名重复时不建立 arguments 映射
-                val parameterNames = function.params.mapNotNull { it.name }
-                val mapped = !function.strict && function.params.all {
-                    it.name != null && !it.rest && it.defaultValue == null && it.pattern == null
-                } && parameterNames.distinct().size == function.params.size
-                parameterEnv.createVarBinding(
-                    "arguments",
-                    createArgumentsObject(
-                        args = args,
-                        function = function,
-                        mappedEnvironment = if (mapped) parameterEnv else null,
-                        mappedParams = if (mapped) function.params else emptyList(),
-                    ),
-                )
-            }
-            bindParameters(function, args, parameterEnv)
-            // 函数体词法环境位于 var 环境之上；无词法声明（含箭头表达式体）时
-            // 复用 var 环境，避免每次调用分配一个空环境
-            val body = function.body
-            val bodyNeedsEnvironment = when {
-                body != null -> body.requiresEnvironment
-                function.expressionBody != null -> false
-                else -> true
-            }
-            val bodyEnv = if (bodyNeedsEnvironment) {
-                DeclarativeEnvironment(parent = varEnv)
-            } else {
-                varEnv
-            }
-            return executeFunctionBody(function, bodyEnv, varEnv, parameterEnv, hasParameterExpressions)
+            bindFunctionArgumentsAndParameters(function, args, scope.parameterEnvironment)
+            return executeFunctionBodyWithScope(function, scope)
         } catch (error: Throwable) {
             captureFailure(error)
             throw error
