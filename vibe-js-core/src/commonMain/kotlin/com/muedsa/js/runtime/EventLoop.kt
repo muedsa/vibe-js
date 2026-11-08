@@ -3,6 +3,8 @@ package com.muedsa.js.runtime
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.EventLoopClosedException
+import com.muedsa.js.runtime.exception.ResourceLimitException
+import com.muedsa.js.runtime.exception.ResourceLimitKind
 import com.muedsa.js.runtime.value.JSPromise
 import com.muedsa.js.runtime.value.JSValue
 
@@ -41,6 +43,8 @@ import kotlin.coroutines.CoroutineContext
 class EventLoop(
     private val scheduler: Scheduler = CoroutineScheduler(),
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+    /** 同时排队的微任务/定时器/拒绝通知总数上限；null 表示不限制。 */
+    private val maxPendingTasks: Int? = null,
 ) {
     /** 引擎拥有自己的子 Job；关闭不会取消调用方传入的整个宿主 scope。 */
     private val lifetime = SupervisorJob(scope.coroutineContext[Job])
@@ -70,6 +74,24 @@ class EventLoop(
 
     private fun pulse() { changes.update { it + 1 } }
     internal fun ensureOpen() { if (closed.load() || !lifetime.isActive) throw EventLoopClosedException() }
+
+    /**
+     * 在新增队列项前检查总排队任务数。
+     *
+     * 只统计尚未执行的微任务、定时器与未处理拒绝通知；正在执行的 async 协程和
+     * 宿主入口属于在途工作，不计入队列长度。
+     */
+    private fun ensureTaskQueueCapacity(additional: Int = 1) {
+        val limit = maxPendingTasks ?: return
+        val actual = microtasks.size + timers.value.size + unhandledRejections.size + additional
+        if (actual > limit) {
+            throw ResourceLimitException(
+                kind = ResourceLimitKind.PENDING_TASKS,
+                limitValue = limit.toLong(),
+                actualValue = actual.toLong(),
+            )
+        }
+    }
 
     /**
      * 宿主执行入口：完整调用互斥，所有恢复片段通过同一分段队列串行执行。
@@ -242,6 +264,7 @@ class EventLoop(
     /** 登记一个未处理的拒绝，等待本轮微任务结束后确认。 */
     fun trackUnhandledRejection(promise: JSPromise) {
         ensureOpen()
+        ensureTaskQueueCapacity()
         unhandledRejections.addLast(promise)
         if (closed.load()) { discardPendingMicrotasks(); throw EventLoopClosedException() }
         pulse()
@@ -267,6 +290,7 @@ class EventLoop(
     /** 排队一个微任务。 */
     fun enqueueMicrotask(task: suspend () -> Unit) {
         ensureOpen()
+        ensureTaskQueueCapacity()
         microtasks.addLast(task)
         if (closed.load()) { discardPendingMicrotasks(); throw EventLoopClosedException() }
         pulse()
@@ -372,6 +396,7 @@ class EventLoop(
     /** 排队一个宏任务；底层 Scheduler 只负责唤醒，实际执行统一进入 runTask。 */
     fun schedule(delayMillis: Long, task: suspend () -> Unit): ScheduledTask {
         ensureOpen()
+        ensureTaskQueueCapacity()
         val entry = TimerEntry()
         timers.update { it + entry }
         pulse()

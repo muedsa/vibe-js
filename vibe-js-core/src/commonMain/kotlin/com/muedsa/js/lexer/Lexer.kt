@@ -1,5 +1,7 @@
 package com.muedsa.js.lexer
 
+import com.muedsa.js.runtime.exception.ResourceLimitException
+import com.muedsa.js.runtime.exception.ResourceLimitKind
 import com.muedsa.js.runtime.regex.JsRegexEngine
 import com.muedsa.js.runtime.regex.JsRegexSyntax
 import com.muedsa.js.runtime.regex.RegexNamedGroups
@@ -17,10 +19,19 @@ import com.muedsa.js.runtime.regex.RegexSyntaxError
  * 说明：覆盖 ES5 与 ES2015 常用词法（含正则字面量、模板字符串、Unicode 标识符），
  * 新增语法时保持 Token 位置信息与 LexerException 的 range 语义。
  */
-class Lexer(private val input: String) {
+class Lexer(
+    private val input: String,
+    /** 语法嵌套深度上限；null 表示不检查（Parser 的模板子表达式会继承同一配置）。 */
+    private val maxNestingDepth: Int? = null,
+    /** 从外层模板表达式继承的起始嵌套深度。 */
+    private val initialNestingDepth: Int = 0,
+) {
 
     /** 当前读取位置（字符偏移）。 */
     private var pos = 0
+
+    /** 当前语法嵌套深度：括号、块、数组/对象字面量与模板表达式共同累计。 */
+    private var syntaxNestingDepth = initialNestingDepth
 
     /** 当前行号，从 1 开始。 */
     private var line = 1
@@ -104,6 +115,30 @@ class Lexer(private val input: String) {
         "extends" to TokenType.EXTENDS,
         "super" to TokenType.SUPER,
     )
+
+    /**
+     * 进入一层语法嵌套并检查上限。
+     *
+     * 超限抛出宿主控制异常 [ResourceLimitException]，而不是 LexerException：
+     * 资源耗尽必须直接中止本次执行，不能被 JavaScript catch 当作词法错误处理。
+     */
+    private fun enterNesting(atLine: Int = line, atColumn: Int = column) {
+        syntaxNestingDepth++
+        val limit = maxNestingDepth ?: return
+        if (syntaxNestingDepth > limit) {
+            throw ResourceLimitException(
+                kind = ResourceLimitKind.NESTING_DEPTH,
+                limitValue = limit.toLong(),
+                actualValue = syntaxNestingDepth.toLong(),
+                detail = "line $atLine, column $atColumn",
+            )
+        }
+    }
+
+    /** 退出一层语法嵌套；不越过继承的起始深度，容忍非法源码中的多余右括号。 */
+    private fun exitNesting() {
+        if (syntaxNestingDepth > initialNestingDepth) syntaxNestingDepth--
+    }
 
     /**
      * 扫描整个输入，返回 Token 列表（以 EOF 结尾）。
@@ -479,6 +514,7 @@ class Lexer(private val input: String) {
             }
 
             current == '(' -> {
+                enterNesting(startLine, startColumn)
                 parenDepth++
                 controlParenStack.add(lastTokenType in controlParenKeywords)
                 advance()
@@ -486,6 +522,7 @@ class Lexer(private val input: String) {
             }
 
             current == ')' -> {
+                exitNesting()
                 if (parenDepth > 0) parenDepth--
                 lastClosedControlParen = controlParenStack.removeLastOrNull() == true
                 advance()
@@ -493,6 +530,7 @@ class Lexer(private val input: String) {
             }
 
             current == '{' -> {
+                enterNesting(startLine, startColumn)
                 val isClassBody = pendingClassBody &&
                     parenDepth == classBodyParenDepth &&
                     bracketDepth == classBodyBracketDepth
@@ -509,18 +547,21 @@ class Lexer(private val input: String) {
             }
 
             current == '}' -> {
+                exitNesting()
                 lastClosedBraceWasBlock = braceStack.removeLastOrNull() ?: true
                 advance()
                 makeToken(TokenType.RBRACE, "}", startLine, startColumn, startOffset, newlineBefore)
             }
 
             current == '[' -> {
+                enterNesting(startLine, startColumn)
                 bracketDepth++
                 advance()
                 makeToken(TokenType.LBRACKET, "[", startLine, startColumn, startOffset, newlineBefore)
             }
 
             current == ']' -> {
+                exitNesting()
                 if (bracketDepth > 0) bracketDepth--
                 advance()
                 makeToken(TokenType.RBRACKET, "]", startLine, startColumn, startOffset, newlineBefore)
@@ -1193,8 +1234,14 @@ class Lexer(private val input: String) {
                     cookedValid = true
                     advance() // '$'
                     advance() // '{'
-                    val source = readTemplateExpressionSource()
-                    parts.add(TemplatePart.ExpressionSource(source))
+                    enterNesting(line, column)
+                    val expressionDepth = syntaxNestingDepth
+                    val source = try {
+                        readTemplateExpressionSource()
+                    } finally {
+                        exitNesting()
+                    }
+                    parts.add(TemplatePart.ExpressionSource(source, expressionDepth))
                 }
 
                 else -> {
@@ -1303,7 +1350,12 @@ class Lexer(private val input: String) {
 
                 peek() == '$' && peek(1) == '{' -> {
                     advance(); advance()
-                    readTemplateExpressionSource()
+                    enterNesting()
+                    try {
+                        readTemplateExpressionSource()
+                    } finally {
+                        exitNesting()
+                    }
                 }
 
                 else -> advance()

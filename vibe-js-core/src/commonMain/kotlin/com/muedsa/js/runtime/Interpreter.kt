@@ -346,8 +346,10 @@ class Interpreter(
         val callerFunction = caller.function
         // 直接 eval 的代码继承调用方的严格模式与 super 语法上下文
         val program = try {
+            // eval 源码同样受解析期资源限制约束，避免绕过 Engine.parse 的检查。
+            context.limits.checkSourceLength(source.length)
             Parser(
-                Lexer(source).tokenize(),
+                Lexer(source, maxNestingDepth = context.limits.maxNestingDepth).tokenize(),
                 strictContext = caller.strict,
                 superPropertyContext = callerFunction?.homeObject != null ||
                     callerFunction?.superBase != null,
@@ -364,6 +366,7 @@ class Interpreter(
                     names
                 } ?: emptySet(),
                 source = source,
+                maxNestingDepth = context.limits.maxNestingDepth,
             ).parseProgram()
         } catch (error: ParseException) {
             syntaxError(error.message ?: "Invalid eval code")
@@ -487,7 +490,12 @@ class Interpreter(
      */
     suspend fun evaluateIndirectEval(source: String): JSValue {
         val program = try {
-            Parser(Lexer(source).tokenize(), source = source).parseProgram()
+            context.limits.checkSourceLength(source.length)
+            Parser(
+                Lexer(source, maxNestingDepth = context.limits.maxNestingDepth).tokenize(),
+                source = source,
+                maxNestingDepth = context.limits.maxNestingDepth,
+            ).parseProgram()
         } catch (error: ParseException) {
             syntaxError(error.message ?: "Invalid eval code")
         } catch (error: LexerException) {
@@ -3103,7 +3111,12 @@ class Interpreter(
     /** 解析动态函数源码并返回函数表达式节点。 */
     private fun parseDynamicFunctionSource(source: String): FunctionExpression {
         val expression = try {
-            val program = Parser(Lexer(source).tokenize(), source = source).parseProgram()
+            context.limits.checkSourceLength(source.length)
+            val program = Parser(
+                Lexer(source, maxNestingDepth = context.limits.maxNestingDepth).tokenize(),
+                source = source,
+                maxNestingDepth = context.limits.maxNestingDepth,
+            ).parseProgram()
             val statement = program.body.singleOrNull()
             if (statement !is ExpressionStatement) {
                 throw syntaxError("Invalid dynamic function arguments")
@@ -7664,7 +7677,12 @@ class Interpreter(
         val namedGroupNeedsFallback = namedAnalysis.hasForwardReference ||
             namedAnalysis.names.keys.any { !it.matches(Regex("[A-Za-z][A-Za-z0-9]*")) }
         fun buildFallback(): JsRegex = try {
-            JsRegexEngine(enginePattern, flags, namedAnalysis.nameCandidates)
+            JsRegexEngine(
+                enginePattern,
+                flags,
+                namedAnalysis.nameCandidates,
+                maxSteps = context.limits.maxRegexSteps,
+            )
         } catch (fallbackError: Throwable) {
             val detail = fallbackError.message?.lineSequence()?.firstOrNull()?.trim()
             throw syntaxError(

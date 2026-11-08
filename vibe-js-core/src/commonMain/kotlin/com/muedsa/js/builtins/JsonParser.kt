@@ -12,19 +12,40 @@ import com.muedsa.js.runtime.value.JSValue
 internal class JsonParseException(message: String) : Exception(message)
 
 /**
+ * JSON 容器嵌套超过 EngineLimits.maxJsonDepth。
+ *
+ * JSON.parse 按现有错误模型把它转换为 JS RangeError（与宿主栈溢出同类），
+ * 与语法错误区分开，便于调用方判断是深度限制而非文本格式问题。
+ */
+internal class JsonDepthLimitException(
+    val maxDepth: Int,
+    val actualDepth: Int,
+    val position: Int,
+) : Exception(
+    "Maximum JSON nesting depth exceeded (maxJsonDepth=$maxDepth, actual=$actualDepth)" +
+        " at position $position"
+)
+
+/**
  * 严格 JSON 文本解析器（ES5 15.12.1.1 的 JSON 语法）。
  *
  * 不复用 JS 词法/语法分析器的原因：
  * - JSON 只接受双引号字符串，且字符串内不允许未转义的控制字符；
  * - JSON 只接受 4 种空白字符，不接受单引号、注释、尾随逗号、+号或十六进制数字。
+ *
+ * @param maxDepth 容器（对象/数组）最大嵌套层数；null 表示不限制。
  */
 internal class JsonParser(
     private val text: String,
     private val objectPrototype: JSObject?,
     private val arrayPrototype: JSObject?,
+    private val maxDepth: Int? = null,
 ) {
 
     private var index = 0
+
+    /** 当前容器嵌套深度：根容器为 1。 */
+    private var depth = 0
 
     /** 原始字面量：源码文本与解析得到的原始值。 */
     data class LiteralSource(val text: String, val value: JSValue)
@@ -57,8 +78,8 @@ internal class JsonParser(
     private fun parseValue(): JSValue {
         if (index >= text.length) fail("Unexpected end of JSON input")
         return when (val c = text[index]) {
-            '{' -> parseObject()
-            '[' -> parseArray()
+            '{' -> nested { parseObject() }
+            '[' -> nested { parseArray() }
             '"' -> JSString(parseString())
             't' -> {
                 expectLiteral("true")
@@ -75,6 +96,20 @@ internal class JsonParser(
             else -> {
                 if (c == '-' || c in '0'..'9') parseNumber() else fail("Unexpected token '$c'")
             }
+        }
+    }
+
+    /** 进入一层对象/数组嵌套并在超限时抛出深度限制异常。 */
+    private fun <T> nested(block: () -> T): T {
+        depth++
+        try {
+            val limit = maxDepth
+            if (limit != null && depth > limit) {
+                throw JsonDepthLimitException(limit, depth, index)
+            }
+            return block()
+        } finally {
+            depth--
         }
     }
 

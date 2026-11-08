@@ -7,8 +7,13 @@ sealed class TemplatePart {
     /** 字面文本段；[value] 为 null 表示含非法转义的 cooked=undefined（仅标签模板可用）。 */
     data class Text(val value: String?, val raw: String = value ?: "") : TemplatePart()
 
-    /** `${...}` 中的表达式源码（由 Parser 递归解析）。 */
-    data class ExpressionSource(val source: String) : TemplatePart()
+    /**
+     * `${...}` 中的表达式源码（由 Parser 递归解析）。
+     *
+     * @property nestingDepth 进入该表达式后的语法嵌套深度，供子 Lexer/Parser
+     * 继续累计 `maxNestingDepth`，避免跨模板层级时深度清零。
+     */
+    data class ExpressionSource(val source: String, val nestingDepth: Int = 0) : TemplatePart()
 }
 
 /**

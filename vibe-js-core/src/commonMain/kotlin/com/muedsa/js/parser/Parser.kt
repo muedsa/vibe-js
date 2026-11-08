@@ -8,6 +8,8 @@ import com.muedsa.js.lexer.SourceRange
 import com.muedsa.js.lexer.TemplatePart
 import com.muedsa.js.lexer.Token
 import com.muedsa.js.lexer.TokenType
+import com.muedsa.js.runtime.exception.ResourceLimitException
+import com.muedsa.js.runtime.exception.ResourceLimitKind
 
 /**
  * JavaScript 语法解析器（递归下降）。
@@ -34,7 +36,19 @@ class Parser(
     private val source: String? = null,
     /** 子表达式（模板字符串 ${...}）继承的生成器语境：其中 yield 仍是关键字。 */
     yieldContext: Boolean = false,
+    /** 语法嵌套深度上限；null 表示不检查（Lexer 会在括号/模板层先行检查）。 */
+    private val maxNestingDepth: Int? = null,
+    /** 从外层模板表达式继承的起始递归深度，避免跨模板层级时深度清零。 */
+    initialNestingDepth: Int = 0,
 ) {
+
+    /**
+     * 当前表达式递归深度。
+     *
+     * 顶层表达式从 0 开始，每个嵌套表达式层加 1；模板子解析器继承外层深度，
+     * 使跨模板层级的表达式嵌套仍能累计到同一上限。
+     */
+    private var syntaxNestingDepth = initialNestingDepth - 1
 
     /** 当前语句列表是否允许 using 声明（脚本体、eval 顶层与 case 子句不允许）。 */
     private var usingDeclarationAllowed = false
@@ -285,6 +299,33 @@ class Parser(
         TokenType.BITWISE_AND_ASSIGN,
         TokenType.BITWISE_OR_ASSIGN,
     )
+
+    /**
+     * 进入一层表达式递归并检查上限；超限抛宿主控制异常而不是语法错误。
+     *
+     * Lexer 已负责括号、块、数组/对象字面量与模板表达式的深度检查；
+     * 这里补足无括号的递归语法（如连续箭头函数、连续一元运算、条件表达式链），
+     * 保证在宿主栈溢出前给出可预期的资源限制异常。
+     */
+    private inline fun <T> withSyntaxNesting(block: () -> T): T {
+        val limit = maxNestingDepth ?: return block()
+        val next = syntaxNestingDepth + 1
+        if (next > limit) {
+            val token = peek()
+            throw ResourceLimitException(
+                kind = ResourceLimitKind.NESTING_DEPTH,
+                limitValue = limit.toLong(),
+                actualValue = next.toLong(),
+                detail = "line ${token.range.start.line}, column ${token.range.start.column}",
+            )
+        }
+        syntaxNestingDepth = next
+        try {
+            return block()
+        } finally {
+            syntaxNestingDepth = next - 1
+        }
+    }
 
     /**
      * 解析整个脚本，返回 Program 根节点。
@@ -2806,7 +2847,9 @@ class Parser(
         // 表达式体沿用当前严格模式上下文
         validateFunctionParameters(params, strict, isArrow = true)
         try {
-            val expression = parseAssignment()
+            // 箭头表达式体不会经过普通的一元/条件递归路径，需要单独计入嵌套深度，
+            // 否则 `x => x => ...` 这类无括号链会绕过 maxNestingDepth。
+            val expression = withSyntaxNesting { parseAssignment() }
             return ArrowFunction(
                 params = params,
                 body = null,
@@ -2978,7 +3021,9 @@ class Parser(
     }
 
     /** 一元运算与自增自减前缀。 */
-    private fun parseUnary(): Expression {
+    private fun parseUnary(): Expression = withSyntaxNesting { parseUnaryImpl() }
+
+    private fun parseUnaryImpl(): Expression {
         val token = peek()
 
         // async 形参（含解构/默认值/计算属性名）不允许 AwaitExpression；
@@ -3488,7 +3533,11 @@ class Parser(
                 }
                 is TemplatePart.ExpressionSource -> {
                     val subTokens = try {
-                        Lexer(part.source).tokenize()
+                        Lexer(
+                            part.source,
+                            maxNestingDepth = maxNestingDepth,
+                            initialNestingDepth = part.nestingDepth,
+                        ).tokenize()
                     } catch (error: LexerException) {
                         throw ParseException(error.message ?: "Invalid template expression", error.range)
                     }
@@ -3504,6 +3553,8 @@ class Parser(
                             argumentsForbiddenContext = argumentsForbidden,
                             evalPrivateNames = externalPrivateNames,
                             yieldContext = generatorContext,
+                            maxNestingDepth = maxNestingDepth,
+                            initialNestingDepth = part.nestingDepth,
                         ).parseExpressionInput()
                     )
                 }

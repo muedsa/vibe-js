@@ -2,6 +2,7 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSNull
@@ -1201,6 +1202,9 @@ object RegExpBuiltins {
 
         val match = try {
             regexp.matcher.find(input, start)
+        } catch (error: ExecutionLimitException) {
+            // 资源限制是宿主控制异常，不能被下面的宽泛捕获转换成 JS TypeError。
+            throw error
         } catch (_: Throwable) {
             interpreter.typeError("Regular expression execution failed")
         }

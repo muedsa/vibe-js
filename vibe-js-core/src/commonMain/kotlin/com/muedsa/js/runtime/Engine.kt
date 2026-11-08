@@ -50,7 +50,7 @@ class Engine(
     val registry = BuiltinRegistry(intrinsics, host)
 
     /** 事件循环。 */
-    val eventLoop = EventLoop(host.scheduler)
+    val eventLoop = EventLoop(host.scheduler, maxPendingTasks = limits.maxPendingTasks)
 
     /** 引擎上下文。 */
     val context = EngineContext(globalObject, intrinsics, registry, eventLoop, host, limits)
@@ -97,9 +97,15 @@ class Engine(
      * @param lineOffset 显示行号时增加的非负偏移；AST 行列仍相对于 source。
      */
     fun parse(source: String, sourceName: String = "<anonymous>", lineOffset: Int = 0): Program {
+        // 先在进入词法分析前拒绝超长源码，避免为不可信输入分配 Token 列表。
+        limits.checkSourceLength(source.length)
         val sourceInfo = SourceInfo(sourceName, lineOffset)
-        val tokens = Lexer(source).tokenize()
-        val parsed = Parser(tokens, source = source).parseProgram()
+        val tokens = Lexer(source, maxNestingDepth = limits.maxNestingDepth).tokenize()
+        val parsed = Parser(
+            tokens,
+            source = source,
+            maxNestingDepth = limits.maxNestingDepth,
+        ).parseProgram()
         return Program(
             parsed.body, parsed.strict, parsed.varDeclarations, parsed.functionDeclarations,
             parsed.range, parsed.hasUsingDeclaration, sourceInfo,

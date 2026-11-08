@@ -1,6 +1,8 @@
 package com.muedsa.js.runtime.regex
 
 import com.muedsa.js.runtime.UnicodeCaseMapping
+import com.muedsa.js.runtime.exception.ResourceLimitException
+import com.muedsa.js.runtime.exception.ResourceLimitKind
 
 /**
  * 纯 Kotlin 的 JS 正则回退引擎。
@@ -13,6 +15,8 @@ class JsRegexEngine(
     pattern: String,
     flags: String = "",
     initialNameCandidates: Map<String, List<Int>> = emptyMap(),
+    /** 单次 find/findAll 调用的最大回溯步数；null 表示不限制。 */
+    private val maxSteps: Long? = null,
 ) : JsRegex {
 
     private val unicode = 'u' in flags || 'v' in flags
@@ -88,7 +92,12 @@ class JsRegexEngine(
 
     override fun find(input: String, startIndex: Int): JsMatch? {
         if (startIndex < 0 || startIndex > input.length) return null
-        inputForMatch = input
+        beginMatch(input)
+        return findInternal(input, startIndex)
+    }
+
+    /** 供 find/findAll 共用：预算由入口统一重置，内部匹配不重复重置。 */
+    private fun findInternal(input: String, startIndex: Int): JsMatch? {
         singleClassRoot?.let { return findSingleClass(it, startIndex) }
         for (index in startIndex..input.length) {
             // 非多行的 ^ 锚定模式：起点 0 之后的尝试必然失败
@@ -147,6 +156,7 @@ class JsRegexEngine(
     private fun findSingleClass(node: Node.ClassNode, startIndex: Int): JsMatch? {
         var index = startIndex
         while (index <= inputForMatch.length) {
+            consumeStep()
             if (index == inputForMatch.length) return null
             // u 模式按码点推进，跳过代理对中间的位置
             if (unicode && index > 0 && inputForMatch[index].isLowSurrogate() &&
@@ -181,11 +191,37 @@ class JsRegexEngine(
     }
 
     override fun findAll(input: String): Sequence<JsMatch> = sequence {
+        beginMatch(input)
         var index = 0
         while (index <= input.length) {
-            val match = find(input, index) ?: break
+            // 整个 findAll 共用一个预算，避免全局替换按匹配次数反复重置。
+            val match = findInternal(input, index) ?: break
             yield(match)
             index = if (match.end > match.start) match.end else match.start + 1
+        }
+    }
+
+    /** 开始一次匹配：切换输入文本并重置本次匹配的步数预算。 */
+    private fun beginMatch(input: String) {
+        inputForMatch = input
+        consumedSteps = 0L
+    }
+
+    /**
+     * 消费一个回溯步并检查预算。
+     *
+     * 超限抛出宿主控制异常，Engine.run 会直接中止而不是把它转换为可被
+     * JavaScript catch 的 SyntaxError/TypeError。
+     */
+    private fun consumeStep() {
+        val limit = maxSteps ?: return
+        consumedSteps++
+        if (consumedSteps > limit) {
+            throw ResourceLimitException(
+                kind = ResourceLimitKind.REGEX_STEPS,
+                limitValue = limit,
+                actualValue = consumedSteps,
+            )
         }
     }
 
@@ -204,6 +240,8 @@ class JsRegexEngine(
         reverse: Boolean,
         continuation: (Int, Array<IntRange?>) -> Boolean,
     ): Boolean {
+        // 节点尝试是回溯的基本单位：每进入一个节点就消耗一步预算。
+        consumeStep()
         return when (node) {
             is Node.CharNode -> {
                 if (reverse) {
@@ -725,6 +763,7 @@ class JsRegexEngine(
         flags: MatchFlags,
         reverse: Boolean,
     ): Int {
+        consumeStep()
         var best = -1
         if (reverse) {
             if (pos > 0) {
@@ -762,6 +801,7 @@ class JsRegexEngine(
 
     /** 消费一个简单节点；不匹配返回 null。 */
     private fun simpleStep(node: Node, pos: Int, flags: MatchFlags, reverse: Boolean): Int? {
+        consumeStep()
         if (reverse) {
             if (pos <= 0) return null
             return when (node) {
@@ -966,6 +1006,9 @@ class JsRegexEngine(
 
     // find 期间保存输入，避免给每个节点传输入参数
     private var inputForMatch: String = ""
+
+    /** 本次匹配已消费的回溯步数；在每次 find/findAll 入口重置。 */
+    private var consumedSteps: Long = 0L
 
     // ================================================================
     // 模式解析

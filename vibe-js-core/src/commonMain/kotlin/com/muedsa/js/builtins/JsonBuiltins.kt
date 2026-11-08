@@ -45,10 +45,18 @@ object JsonBuiltins {
             key = PropertyKey.Str("parse"),
             value = BuiltinHelpers.method(intrinsics, "parse", 2) { interpreter, _, args ->
                 val text = interpreter.toStringValue(args.getOrElse(0) { JSUndefined })
-                val parser = JsonParser(text, intrinsics.objectPrototype, intrinsics.arrayPrototype)
+                val parser = JsonParser(
+                    text,
+                    intrinsics.objectPrototype,
+                    intrinsics.arrayPrototype,
+                    maxDepth = interpreter.context.limits.maxJsonDepth,
+                )
                 val value = try {
                     // 使用严格 JSON 语法，而不是宽松的 JS 表达式解析器
                     parser.parse()
+                } catch (error: JsonDepthLimitException) {
+                    // 与 V8 一致：深度超限按 RangeError 暴露，而不是文本语法错误。
+                    interpreter.rangeError(error.message ?: "Maximum JSON nesting depth exceeded")
                 } catch (error: JsonParseException) {
                     interpreter.syntaxError(error.message ?: "Invalid JSON")
                 }
@@ -81,7 +89,14 @@ object JsonBuiltins {
                     interpreter.syntaxError("Invalid raw JSON text")
                 }
                 val parsed = try {
-                    JsonParser(textValue, intrinsics.objectPrototype, intrinsics.arrayPrototype).parse()
+                    JsonParser(
+                        textValue,
+                        intrinsics.objectPrototype,
+                        intrinsics.arrayPrototype,
+                        maxDepth = interpreter.context.limits.maxJsonDepth,
+                    ).parse()
+                } catch (error: JsonDepthLimitException) {
+                    interpreter.rangeError(error.message ?: "Maximum JSON nesting depth exceeded")
                 } catch (error: JsonParseException) {
                     interpreter.syntaxError(error.message ?: "Invalid raw JSON text")
                 }
