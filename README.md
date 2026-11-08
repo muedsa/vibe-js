@@ -2,7 +2,7 @@
 
 Vibe JS 是一个使用 Kotlin 多平台从零实现的轻量级 JavaScript 运行时。
 
-- 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 `async/await`）；
+- 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 `async/await`、Generator / async generator），并已实现 Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView；模块侧已支持 `Parser.parseModule` 语法解析（含 `import.meta` / `import()` / 顶层 `await` 语法），但尚不能链接或执行；
 - 定位：通用 Kotlin 库，核心不绑定任何浏览器/平台原生 API；
 - 构建目标：JVM、Android、JS、Wasm、Linux、Windows、macOS、iOS、tvOS、watchOS；
 - 宿主能力（console、定时器、window、performance 等）位于独立的 `:vibe-js-host` 模块。
@@ -74,6 +74,90 @@ dependencies {
 ```
 
 发布目标为 JVM / JS / WasmJs / Android；Native（含 Apple 目标与 mingwX64）尚未发布到该仓库。
+
+### 能力示例
+
+以下 JavaScript 片段由 `engine.run(...)` 执行；detach 示例为宿主 Kotlin 代码。
+
+生成器与异步迭代：
+
+```js
+function* range(start, end) {
+    for (let i = start; i < end; i += 1) yield i;
+}
+[...range(1, 4)]; // [1, 2, 3]
+
+async function sum() {
+    let total = 0;
+    for await (const value of [Promise.resolve(1), 2, 3]) total += value;
+    return total;
+}
+sum().then(function (total) { globalThis.sumResult = total; });
+// 脚本结束后微任务被冲刷，globalThis.sumResult === 6
+```
+
+Proxy / Reflect：
+
+```js
+const target = { answer: 41 };
+const proxy = new Proxy(target, {
+    get(object, key, receiver) {
+        return Reflect.get(object, key, receiver) + 1;
+    },
+});
+proxy.answer; // 42
+```
+
+TypedArray / ArrayBuffer / DataView：
+
+```js
+const buffer = new ArrayBuffer(8);
+new DataView(buffer).setUint32(0, 0x01020304, true); // littleEndian = true
+new Uint8Array(buffer).join(","); // "4,3,2,1"
+
+const big = new BigInt64Array(buffer); // TypedArray 固定小端序
+big[0] = -1n; // 补码写入
+big[0]; // -1n
+```
+
+BigInt：
+
+```js
+const mask = (1n << 64n) - 1n;
+mask.toString(16); // "ffffffffffffffff"
+typeof mask; // "bigint"
+```
+
+分离（detach）语义由宿主触发，JS 没有公开 API；Test262 运行器使用 `$262.detachArrayBuffer`，
+库内可直接调用 `JSArrayBuffer.detach()`：
+
+```kotlin
+import com.muedsa.js.runtime.value.JSArrayBuffer
+
+val buffer = engine.run("new ArrayBuffer(8)") as JSArrayBuffer
+buffer.detach()
+// 分离后 byteLength 为 0；slice、DataView/TypedArray 读写按规范抛 TypeError
+```
+
+### 模块语法（仅解析）
+
+模块语法通过 `Parser.parseModule()` 解析，不会进入 `Engine.run`。可以读取静态表，
+但链接、求值、加载尚未实现（L4.2–L4.4）：
+
+```kotlin
+import com.muedsa.js.lexer.Lexer
+import com.muedsa.js.parser.Parser
+
+val module = Parser(
+    Lexer("import value from './value.js'; export default value;", moduleContext = true).tokenize(),
+).parseModule()
+module.requestedModules // ["./value.js"]
+module.strict // true
+```
+
+模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝
+`import` / `export`。模块执行入口、模块加载器与 CLI 不在当前实现内，详见
+[兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
 
 ### 取消与超时
 
@@ -213,7 +297,11 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
   成员访问、调用、`new`、赋值/复合赋值/逻辑赋值、自增自减、一元/二元/三元、`??`、
   逗号、可选链 `?.`、`typeof`、`delete/void/in/instanceof`
 - 严格模式：`"use strict"` 脚本/函数级切换
-- 异步：`async` 函数/箭头函数、`await`、Promise 微任务
+- 生成器：`function*`、`yield`、`yield*`、`return`/`throw`/`next`、生成器方法（含 `async *method()`）
+- 异步：`async` 函数/箭头函数、`await`、Promise 微任务、async generator
+- 异步迭代：`for await...of`、`Symbol.asyncIterator`、`%AsyncIteratorPrototype%` / `%AsyncGeneratorPrototype%`
+- BigInt：`123n` 字面量（含 `0x`/`0o`/`0b` 前缀与 `n` 后缀）、算术/位运算/比较/幂运算与 BigInt 转换
+- 模块语法（仅解析）：`import` / `export` 基础形式、`import.meta`、`import()` 表达式、模块顶层 `await` 语法；`Parser.parseModule()` 解析并预计算静态表，链接/求值/加载未实现
 - 资源管理：`using` / `await using`、DisposableStack / AsyncDisposableStack
 - 严格模式尾调用优化（含 try/catch/finally 的待处理语义阻断）
 
@@ -235,19 +323,26 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
   Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`）、`v` 扩展字符类（集合运算、属性字符串、`\q`）
 - **Date**：构造、`Date.now/parse/UTC`、常用 getter/setter、`toISOString/toJSON`；本地时间通过宿主 `utcOffsetMillis`（默认 UTC）换算
 - **Error**：`Error`、`TypeError`、`RangeError`、`ReferenceError`、`SyntaxError`、`EvalError`、`URIError`、`SuppressedError`、`AggregateError`、`Error.isError`
-- **Symbol**：`Symbol()`、`Symbol.for/keyFor`、知名 Symbol（iterator/toStringTag 等）
+- **Symbol**：`Symbol()`、`Symbol.for/keyFor`、知名 Symbol（iterator/asyncIterator/toStringTag 等）
+- **BigInt**：`BigInt()`、`asIntN/asUintN`、任意精度算术/位运算/移位/比较、`toString(radix)`；实现上限 `MAX_RESULT_BITS = 2^24` 位
+- **Proxy**：13 个 trap（`get/set/has/deleteProperty/ownKeys/getOwnPropertyDescriptor/defineProperty/getPrototypeOf/setPrototypeOf/isExtensible/preventExtensions/apply/construct`）、`Proxy.revocable`、撤销状态与不变量校验
+- **Reflect**：13 个方法（`apply/construct/defineProperty/deleteProperty/get/getOwnPropertyDescriptor/getPrototypeOf/has/isExtensible/ownKeys/preventExtensions/set/setPrototypeOf`）
+- **Generator / AsyncGenerator**：`%GeneratorPrototype%` / `%AsyncGeneratorPrototype%`、`next/return/throw` 协议、`yield*` 委托、异步生成器的 Promise 队列
+- **ArrayBuffer / DataView / TypedArray**：ArrayBuffer（`byteLength/slice/isView`、detach）、DataView 8 种数值 + 4 种 BigInt 读写（大小端由 `littleEndian` 参数控制）、11 种 TypedArray（9 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序）、构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；不支持 resizable / transfer / SharedArrayBuffer / Atomics
 - **集合**：`Map`、`Set`、`WeakMap`、`WeakSet`，配套迭代器协议
 - **Promise**：`resolve/reject/all/race/allSettled/any/allKeyed/allSettledKeyed`、`then/catch/finally`、`withResolvers/try`
-- **Iterator**：抽象构造器、`Iterator.from/concat/zip/zipKeyed` 与 helpers（map/filter/take/drop/flatMap/reduce/toArray 等）
-- **其他**：Symbol 知名方法、WeakMap/WeakSet、JSON 源文本、`RegExp.escape`、ES2025 Set 方法集
+- **Iterator**：抽象构造器、`Iterator.from/concat/zip/zipKeyed` 与 helpers（map/filter/take/drop/flatMap/reduce/toArray 等）；`%AsyncIteratorPrototype%` 与 `for await` 消费
+- **其他**：Symbol 知名方法、JSON 源文本、`RegExp.escape`、ES2025 Set 方法集
 
-### 已搁置与暂缓的能力
+### 当前未实现与延后
 
-以下能力**已明确不在当前路线内**（决策见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)），不再以"后续阶段"的形式承诺：
+当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
-- **无限期搁置**：Generator（`function*` / `yield`）、异步迭代 `for await...of` / AsyncIterator 原型、模块系统（`import` / `export`）、`Proxy` / `Reflect`、WeakMap/WeakSet 的真实弱引用语义；
-- **暂缓**：BigInt、Intl、TypedArray/ArrayBuffer/DataView；
-- **不在范围**：DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）、`ShadowRealm`、`Atomics`；
+- **模块仅解析**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法；链接、求值、加载、CLI 与 Test262 module harness 未实现，`Engine.run` 仍只执行 Script，不能运行模块；
+- **未实现**：顶层 await 的执行（L4.7，可选）、宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集，L4.5）、WeakRef / FinalizationRegistry；
+- **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
+- **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2）；BigInt 结果受 `MAX_RESULT_BITS` 限制；`import()` 零参数在语法层暂允许（执行期拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持；
+- **延后**：性能优化（B2）与 API 契约（PKG1）；完整资源约束（R1 第三批）见路线图；
 - **已知不完整**：完整 ASI 边界规则。
 
 Unicode 属性/标识符/归一化/大小写映射数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。
@@ -255,16 +350,24 @@ Unicode 属性/标识符/归一化/大小写映射数据表固定为 Unicode 17.
 ## 架构与扩展
 
 ```
-lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
+lexer -> parser -> AST (Program / ModuleProgram)
                          |
-                         +-> Environment / Intrinsics / Builtins
-                         +-> EventLoop / Promise / async-await
+                         +-> Program -> Executor(AstInterpreter) -> Engine
+                         |                +-> Environment / Intrinsics / Builtins
+                         |                +-> EventLoop / Promise / async-await
+                         |                +-> Generator channels / Proxy internal methods / binary views
+                         |
+                         +-> ModuleProgram -> Parser.parseModule（仅解析；链接/求值/加载待 L4.2–L4.4）
 ```
 
-- `Engine`：门面，持有全局对象、内建注册表、事件循环与解释器；
+- `Engine`：门面，持有全局对象、内建注册表、事件循环与解释器；当前只执行 Script；
+- `Parser.parseModule` / `ModuleProgram`：模块目标解析入口与独立 AST 层次（`ModuleItem` 不继承 `Statement`），预计算 `requestedModules` / `ImportEntry` / `ExportEntry`，不参与求值；
 - `Executor`：执行器接口，当前实现是 AST 解释器，后续可替换为编译执行器而不改语义；
 - `BuiltinModule`：内建模块注册接口；标准库（`CoreBuiltins`）与宿主模块（`HostModule`）都通过它安装；
 - `HostEnvironment`：宿主能力抽象（Console / Scheduler / Clock），并可注入 Date 时区偏移与 Promise 拒绝生命周期回调；
+- `JSGenerator`：Generator / async generator 对象，函数体与恢复方通过两条容量 1 的通道交换请求与步骤；
+- `JSProxy`：Proxy exotic 对象，只保存 target/handler/撤销状态，trap 与不变量由解释器内部方法分派；
+- `JSTypedArray` / `JSArrayBuffer` / `JSDataView`：二进制存储与视图，TypedArray 按整数索引 exotic 语义合成索引属性；
 - `EventLoop`：微任务/定时器调度、串行恢复、任务快照、空闲等待和关闭；
 - `PropertyDescriptor` + `JSObject`：属性描述符与原型链模型。
 
@@ -290,12 +393,12 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 # 基准测试：环境记录 + 全量运行（约 1.5 分钟）
 ./gradlew :vibe-js-core:benchmarkEnvironment
 ./gradlew :vibe-js-core:jvmBenchmarkBenchmark
-# 只跑某一组（六组见 docs/ARCHITECTURE.md §9.1）
+# 只跑某一组（七组见 docs/ARCHITECTURE.md §9.1）
 ./gradlew :vibe-js-core:jvmBenchmarkBenchmark -PbenchmarkFilter=CollectionBenchmark
 
-# 解析一致性基线（首次运行自动下载 test262-parser-tests）
+# 解析一致性基线（首次运行自动下载 test262-parser-tests；脚本 + 模块语料）
 ./gradlew :vibe-js-conformance:parserConformance
-# 存在语法不一致时失败（后续门禁使用）
+# 存在语法不一致时失败（脚本与模块共用 strict 门禁）
 ./gradlew :vibe-js-conformance:parserConformance -Pstrict
 
 # Test262 ES5 语义基线（首次运行自动下载 test262）
@@ -312,24 +415,46 @@ lexer -> parser -> AST -> Executor(AstInterpreter) -> Engine
 ./gradlew :vibe-js-conformance:differentialConformance
 ```
 
+当前基线（2026-11-08，代码基线 `1f8fa3d`）：
+
+| 检查 | 结果 |
+|---|---|
+| core JVM | **990 / 990** |
+| core JS（Node）/ Wasm（Node） | **881 / 881**（上次记录；新增 L4/R1/M2 用例后未复跑） |
+| host JVM / JS / Wasm | 各 **25 / 25** |
+| conformance 单元测试 | **39 / 39** |
+| parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
+| parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
+| Test262 ES5 | **15,248/15,248**（跳过 0） |
+| Test262 ES2015 | **61,786/61,786**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
+| Node 差分 / 真实库冒烟 | **545/545**、**320/320**（83 个库） |
+
+详细口径、跳过原因与推进顺序见 [docs/CONFORMANCE.md](docs/CONFORMANCE.md)。
+
 ## 目录结构
 
 - `vibe-js-core/`（Gradle 模块 `:vibe-js-core`）
   - `src/commonMain/kotlin/com/muedsa/js/`
     - `lexer/`：词法分析、Token、源码范围
-    - `parser/`：递归下降解析器
-    - `ast/`：不可变 AST 节点
-    - `runtime/`：引擎、执行器、环境、类型转换、事件循环、Promise、扩展点
-    - `runtime/value/`：JS 值、对象、函数、数组、集合、Promise、属性描述符
-    - `builtins/`：ECMAScript 标准内建
+    - `parser/`：递归下降解析器（`parseProgram` 脚本目标 / `parseModule` 模块目标）
+    - `ast/`：不可变 AST 节点（`Program` / `Statement` / `Expression`，以及 `Modules.kt` 的 `ModuleProgram` / `ModuleItem`）
+    - `runtime/`：引擎、执行器、环境、类型转换、事件循环、Promise、资源约束、扩展点
+    - `runtime/value/`：JS 值、对象、函数、数组、集合、Promise、Generator/Proxy/BigInt、二进制视图与属性描述符
+    - `builtins/`：ECMAScript 标准内建（Object/Function/Array/String/Number/BigInt/Proxy/Reflect/Generator/ArrayBuffer/TypedArray 等）
     - `diagnostics/`：结构化诊断适配层（词法/语法异常 → 类别、范围、来源）
   - `src/commonTest/`：核心单元测试
 - `vibe-js-host/`（Gradle 模块 `:vibe-js-host`）
-  - `src/commonMain/kotlin/com/muedsa/js/host/`：宿主模块（console/timer/window 等）
+  - `src/commonMain/kotlin/com/muedsa/js/host/`：宿主模块（console/timer/window 等；后续模块加载器/CLI 也放这里）
   - `src/commonTest/`：宿主模块测试
 - `vibe-js-conformance/`（Gradle 模块 `:vibe-js-conformance`）
-  - JVM-only 一致性基线：test262-parser-tests 运行器、语料下载与报告生成
+  - JVM-only 一致性基线：test262-parser-tests（脚本 + 模块）运行器、语料下载与报告生成
   - `docs/CONFORMANCE.md`：基线数字、已知缺口与推进顺序
+
+## 阶段状态
+
+- **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 基线。
+- **模块**：`Parser.parseModule` 语法解析与模块语料门禁已完成；链接、求值、加载、CLI 与 Test262 module harness 待后续路线。
+- **未完成/延后**：宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集）、WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约。
 
 ## 说明
 

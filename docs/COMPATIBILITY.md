@@ -2,11 +2,15 @@
 
 状态说明：✅ 支持　⚠️ 部分支持/有已知差异　❌ 尚未支持　⏳ 仅由 CI 覆盖
 
-> 当前覆盖 ES5 与 ES2015 的常用语法和内建，并已扩展部分 ES2016+ 特性。
-> 未实现的能力按[优化路线](OPTIMIZATION_ROADMAP.md)分为三类，都不以"后续阶段"承诺：
-> **无限期搁置**——Generator 与异步迭代（`for await` / AsyncIterator 原型）、模块系统、Proxy/Reflect、Weak 集合的真实弱引用语义；
-> **暂缓**——BigInt 运行时、Intl、TypedArray/ArrayBuffer；
-> **不在范围**——DOM/fetch 等真实 Web API。
+> 当前覆盖 ES5 与 ES2015 的常用语法和内建，并已实现部分 ES2016+ 特性。
+> Generator / async generator、`for await`、Proxy / Reflect、BigInt、
+> TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-08，`1f8fa3d`）。
+> 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
+> `import()` 表达式与模块顶层 `await` 语法，但**链接、求值、加载尚未实现，不能执行模块**。
+> 真实剩余差异集中在：模块执行、顶层 await、宿主生态（TextEncoder/TextDecoder、
+> structuredClone、URL 子集）、WeakRef / FinalizationRegistry、Intl、DOM/Web API、
+> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer，以及延后的
+> 资源约束第三批（R1）、性能优化（B2）与 API 契约（PKG1）。
 
 ## 1. 词法
 
@@ -23,7 +27,7 @@
 | 未闭合字符串/模板/正则 | ✅ | 抛出 `LexerException` |
 | 标识符：Unicode 字母、`\uXXXX`、`\u{...}` 与 astral | ✅ | Unicode 17.0.0 ID_Start/ID_Continue（含 Other_ID_* 与 ZWNJ/ZWJ） |
 | 自动分号插入（ASI） | ⚠️ | 覆盖 return/throw/break/continue/++/-- 换行与常规语句分隔；极少数边界未覆盖 |
-| BigInt 字面量 | ⚠️ | 仅语法识别（含 0x/0o/0b 后缀），求值抛 TypeError；BigInt 运行时明确排除 |
+| BigInt 字面量 | ✅ | 支持 `123n` 及 `0x`/`0o`/`0b` 前缀，求值得到 BigInt 原始值；任意精度上限见 §6 |
 
 ## 2. 语法
 
@@ -36,7 +40,7 @@
 | for-in / for-of | ✅ | 支持 var/let/const、解构左值、标签 break/continue；for-in 顺序遵循 OwnPropertyKeys 并按原型链去重 |
 | switch（default 任意位置） | ✅ | |
 | 标签语句、带标签 break/continue | ✅ | |
-| try/catch/finally、throw | ✅ | 支持可选 catch 绑定 `catch { }` | |
+| try/catch/finally、throw | ✅ | 支持可选 catch 绑定 `catch { }` |
 | 函数声明/表达式、闭包、arguments | ✅ | 命名函数表达式内部名、参数映射（sloppy）均已支持 |
 | 箭头函数（块体/表达式体、词法 this、词法 arguments） | ✅ | |
 | 默认参数、rest 参数（含解构 rest）、函数 length | ✅ | |
@@ -48,15 +52,18 @@
 | 对象字面量：简写/方法/getter/setter/计算键 | ✅ | |
 | 模板字符串 / 标签模板 | ✅ | 标签模板对象按 AST 站点缓存（每个 realm 一份，重复求值返回同一冻结对象，raw 冻结）；非法转义在标签模板中 cooked=undefined、raw 保留原文，普通模板仍为解析期 SyntaxError |
 | 正则字面量、String 正则方法 | ✅ | `d`/`s`/`u`/`v`/`y` 标志；命名捕获组、`(?ims-ims:...)` 作用域修饰符、未定长后向断言 `(?<=...)`/`(?<!...)`、Unicode 17.0.0 属性转义（`\p{...}`/`\P{...}`、i 折叠与 astral 码点）、`v` 扩展字符类（并集/交集/差集、嵌套类、属性字符串与 `\q{...}`）、`indices` 捕获区间与 hasIndices、ES2025 互斥分支重复命名组、Annex B 遗留静态访问器；source 按 EscapeRegExpPattern 转义、原型访问器接收者校验；非 u 模式 Annex B IdentityEscape（\x/\u 缺位、\c 等）；忽略大小写按规范 Canonicalize（非 u 单码点大写并保留 U+212A/U+017F 等，u 模式 CaseFolding 简单折叠），字面量、字符类、范围、`\w`/`\b`/反向引用一致；`$` 非 m 模式按 JS 只在输入末尾匹配（JVM 回退规避 Java 的末尾换行差异）；m 模式 ^/$ 按 JS 行终止符集合（CRLF 视为两个终止符、不含 NEL）；Annex B 转义按 JS：字符类内控制转义支持数字/下划线，类外非法控制转义为字面反斜杠，非法十六进制/Unicode 转义按 IdentityEscape，垂直制表符按 U+000B；非 v 模式字符类中的 && 按字面 & 处理；/\B 按 JS 的 ASCII 单词判定处理非 ASCII 输入（JVM 回退）；命名组名按 Unicode 17 ID_Start/Continue 校验（含 $/_、astral 与 ZWNJ）；\p{...} 在 i+u 下按简单大小写与折叠正反向匹配（含 ß/ẞ 与 astral 字母）；字符类单点/范围在 i+u/i+v 下同样按简单折叠匹配（含 astral、Kelvin、ß）；astral 字面量与反向引用按完整码点折叠（含后向断言）；v 模式 q 字符串在 i 下按码点简单折叠（V8 仅折叠 ASCII，见已知差异） |
-| 赋值/复合赋值/逻辑赋值（`??=`/`&&=`/`||=`/`**=` 等） | ✅ | |
+| 赋值/复合赋值/逻辑赋值（`??=`/`&&=`/`**=` 等） | ✅ | |
 | typeof、delete、void、in、instanceof | ✅ | 支持自定义 `Symbol.hasInstance`（沿原型链查找 `@@hasInstance`） |
 | 可选链 `?.` | ✅ | 含短路、this 保留与 delete |
 | Iterator helpers | ✅ | `Iterator.from`、map/filter/take/drop/flatMap/reduce/toArray/forEach/some/every/find；内建迭代器独立原型与访问器 |
-| 异步迭代（`for await...of` / AsyncIterator 原型） | ❌ | 支持 `Symbol.asyncIterator` 与 `Array.fromAsync` 的消费，但 `for await` 语句与 AsyncIterator 原型未实现 |
+| 异步迭代（`for await...of` / AsyncIterator 原型） | ✅ | `for await`、`Symbol.asyncIterator`、同步迭代器回退（AsyncFromSync）与值/结果 Await；`%AsyncIteratorPrototype%`、`%AsyncGeneratorPrototype%`；break/throw 触发 `return` 关闭 |
 | 私有字段/方法/访问器 | ✅ | 品牌检查、不可扩展与重复初始化报错、直接 eval 可见性 |
-| Generator（`function*` / `yield`） | ❌ | 明确排除 |
-| import / export | ❌ | 明确排除（单脚本目标） |
-| Proxy / Reflect | ❌ | 明确排除 |
+| Generator（`function*` / `yield`） | ✅ | 同步/异步生成器、`yield*` 委托、`return`/`throw`/`next`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定在调用时完成 |
+| BigInt（字面量与运算） | ✅ | `123n`、算术/位运算/移位/比较/幂运算、`BigInt()` / `asIntN` / `asUintN`、与 Number 混用抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制 |
+| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry` 与模块早期错误；**不能链接、求值或加载**，`Engine` 仍只执行 Script（L4.2–L4.4）。脚本目标继续拒绝 `import` / `export` |
+| 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；执行期分别报 `import.meta is only available in module code` 与 `Dynamic import is not supported`。`import()` 零参数在语法层暂允许，执行期按规范拒绝 |
+| 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 表达式；模块求值与异步求值未实现（L4.7），因此不能执行顶层 await |
+| Proxy / Reflect | ✅ | Proxy 13 个 trap、`Proxy.revocable`、撤销状态与完整不变量校验；Reflect 13 个方法；解释器属性/调用/构造内部方法统一分派 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
 | 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板），try/catch/finally 按待处理语义阻断 |
 
@@ -79,48 +86,71 @@
 | RegExp | ⚠️ | 字面量/构造器、exec/test/toString、lastIndex、Annex B compile 与旧式八进制数字转义、超大 `{m,n}` 量词与零宽迭代/捕获回滚、u+i 基于 CaseFolding.txt 的简单折叠、s/d 标志、Unicode 属性转义、v 标志扩展字符类（含属性字符串与 `\q`）；Kotlin Regex 主路径 + 纯 Kotlin 回退引擎 |
 | Date | ⚠️ | 构造、now/parse/UTC（MakeDay/MakeTime 双精度与 TimeClip）、ISO 缺省字段与 0..99 年映射差异（构造器/UTC 映射，setFullYear 不映射）、24:00 顺延次日与超长小数秒截断、时区偏移范围校验、常用 getter/setter（无效日期参数顺序、参数无效时内部时间同步失效、规范 length）、toString 本地格式/toUTCString 与负年份补零、toISOString（扩展年份符号 + 6 位数字）/toJSON；本地时间通过宿主 utcOffsetMillis（默认 UTC）换算，构造与无时区 ISO 解析采用两轮偏移修正，本地 setter/toString 按该偏移处理，无效日期的 setFullYear/setYear 以 UTC +0 为基准 |
 | Symbol | ✅ | Symbol()、for/keyFor、知名 Symbol、属性键 |
-| Map / Set / WeakMap / WeakSet | ✅ | 常用方法、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；SameValueZero 索引存储：get/set/has/delete 均摊 O(1)、size O(1)，墓碑在无活跃迭代器时压缩；forEach 与迭代器为实时语义（遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代、支持非注册 Symbol 键，但**底层是强引用存储，未实现 GC 弱语义**（无限期搁置），不能当作长期缓存的自动清理机制 |
+| BigInt | ✅ | `BigInt()`、`asIntN`/`asUintN`、任意精度算术/位运算/移位/比较、`toString(radix)`；与 Number 混用、`JSON.stringify` 直接序列化均抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制（超出抛 RangeError） |
+| Proxy | ✅ | 13 个 trap、`Proxy.revocable`、撤销状态；`getOwnPropertyDescriptor`/`defineProperty`/`deleteProperty`/`ownKeys`/`get`/`set`/`has`/`isExtensible`/`preventExtensions` 等不变量校验；撤销后所有操作抛 TypeError |
+| Reflect | ✅ | 13 个方法（apply/construct/defineProperty/deleteProperty/get/getOwnPropertyDescriptor/getPrototypeOf/has/isExtensible/ownKeys/preventExtensions/set/setPrototypeOf）；失败返回 false，target 参数错误抛 TypeError，支持 receiver |
+| ArrayBuffer / DataView / TypedArray | ✅ | ArrayBuffer（`byteLength`/`slice`/`isView`/detach）；DataView 8 种数值 + 4 种 BigInt 读写（大小端由 `littleEndian` 参数控制）；11 种 TypedArray（9 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序），构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；**不支持 resizable / transfer**（不在当前范围，见 §6） |
+| Generator / AsyncGenerator | ✅ | 同步/异步生成器、`yield`/`yield*`、`next`/`return`/`throw`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定与默认参数在调用生成器函数时完成 |
+| Map / Set / WeakMap / WeakSet | ✅ | 常用方法、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；SameValueZero 索引存储：get/set/has/delete 均摊 O(1)、size O(1)，墓碑在无活跃迭代器时压缩；forEach 与迭代器为实时语义（遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代、支持非注册 Symbol 键，但**底层是强引用存储，未实现 GC 弱语义**（M2），不能当作长期缓存的自动清理机制 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
 | Promise | ✅ | then/catch/finally、resolve/reject/all/race/allSettled/any、allKeyed/allSettledKeyed、withResolvers/try、thenable 与循环检测 |
 | DisposableStack | ✅ | DisposableStack/AsyncDisposableStack、use/adopt/defer/move/dispose/disposeAsync、Symbol.dispose/asyncDispose 与 SuppressedError |
 | using / await using 声明 | ✅ | 块/函数/for 头部资源作用域、逆序释放与 SuppressedError 聚合、for-of 每轮释放、异步释放 Await |
-| Generator | ❌ | 未实现（无限期搁置） |
-| TypedArray / ArrayBuffer / DataView | ❌ | 未实现（暂缓） |
 | Intl | ❌ | 未实现（不在当前路线） |
+| SharedArrayBuffer / Atomics | ❌ | 未实现（不在当前范围）；相关 Test262 用例按路径/特性跳过 |
+| WeakRef / FinalizationRegistry | ❌ | 未实现（M2 弱引用能力的一部分） |
 
 ## 4. 函数与对象语义
 
-| 特性 | 状态 |
-|---|---|
-| 闭包、递归、this（方法/普通调用/构造函数） | ✅ |
-| new 与 prototype 链、constructor 双向关联 | ✅ |
-| 原型链继承（Object.create / setPrototypeOf / `__proto__`） | ✅ |
-| getter/setter、属性描述符 | ⚠️ JS 路径（`Object.defineProperty`/`defineProperties`/`create`）按规范校验不可配置属性的字段冲突；低层存储 API（`JSObject.defineOwnProperty`）只做存储，不做不变量二次校验 |
-| instanceof、in、delete | ✅ |
+| 特性 | 状态 | 说明 |
+|---|---|---|
+| 闭包、递归、this（方法/普通调用/构造函数） | ✅ | |
+| new 与 prototype 链、constructor 双向关联 | ✅ | |
+| 原型链继承（Object.create / setPrototypeOf / `__proto__`） | ✅ | |
+| getter/setter、属性描述符 | ⚠️ | JS 路径（`Object.defineProperty`/`defineProperties`/`create`）按规范校验不可配置属性的字段冲突；低层存储 API（`JSObject.defineOwnProperty`）只做存储，不做不变量二次校验 |
+| instanceof、in、delete | ✅ | |
 | arguments | ✅ | 类数组对象；sloppy 参数映射与 defineProperty 联动（不可配置/不可枚举后仍保持映射，writable:false 或改为访问器时解除；描述符层面呈现为可写数据属性） |
 | 参数环境与函数体 var 环境 | ✅ | 非简单参数下分离参数环境与 var 环境；参数初始化阶段 eval var 对参数闭包/函数体可见、同名冲突 SyntaxError、同名 var 取形参当前值 |
 | Annex B B.3.3 块级函数 | ✅ | eval/function/global code 的 var 绑定预置与求值同步、同块重复函数、skip-early-err 词法/catch 解构冲突、function code 形参/arguments 跳过、if/else 单语句函数 |
 | Annex B 其他 web-compat | ✅ | HTMLCloseComment（多行注释后/行首定界注释序列）、CallExpression 作为 sloppy 赋值/自增/for-in/of 目标（运行时 ReferenceError，逻辑赋值仍早期错误）、for-in 旧式初始化器（先于 RHS 求值一次）、非 u 正则旧式八进制数字转义 |
-| 箭头函数词法 this/arguments | ✅ |
-| class 构造器调用限制、super、new.target | ✅ |
-| Symbol.toPrimitive | ✅ |
-| Symbol.hasInstance | ✅ |
+| 箭头函数词法 this/arguments | ✅ | |
+| class 构造器调用限制、super、new.target | ✅ | |
+| Symbol.toPrimitive | ✅ | |
+| Symbol.hasInstance | ✅ | |
 | Symbol.isConcatSpreadable / species | ✅ | |
+| Proxy 内部方法与不变量 | ✅ | 13 个 trap 覆盖属性/原型/可扩展性/调用/构造内部方法；trap 结果按规范校验不可配置属性、不可扩展 target、键集合与 get/set 约束；撤销后全部抛 TypeError；`with(proxy)`、`JSON.stringify`、`Array.isArray` 等走同一内部方法入口 |
+| TypedArray 整数索引 exotic | ✅ | 规范数字索引字符串（`"-0"` 除外）走异质路径；合法索引为可写可枚举可配置且不可删除；越界/非整数索引视为不存在、写入静默失败；分离后 `IsValidIntegerIndex` 恒为 false、索引键消失 |
+| Generator 状态机 | ✅ | suspendedStart / suspendedYield / executing / completed；重入抛 TypeError；首次 `next` 前 `return`/`throw` 不执行函数体；async generator 按 FIFO 队列串行恢复 |
+| BigInt 值模型与转换 | ✅ | BigInt 原始值、装箱、`typeof`、`===`/`==`、混用 TypeError、`ToBigInt64`/`ToBigUint64` 位模式读写 |
 
 ## 5. 平台
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 610 + 宿主 25 个测试（2026-11-06 记录） |
-| JS（Node） | ✅ | 核心 604 + 宿主 25 个测试（2026-11-06 记录） |
-| Wasm（Node） | ✅ | 核心 604 + 宿主 25 个测试（2026-11-06 记录） |
+| JVM | ✅ | 核心 **990** + 宿主 25 个测试（2026-11-08 记录，`1f8fa3d`） |
+| JS（Node） | ✅ | 核心 **881**（上次记录；新增 L4/R1/M2 用例后未复跑）+ 宿主 25 个测试 |
+| Wasm（Node） | ✅ | 核心 **881**（上次记录；新增 L4/R1/M2 用例后未复跑）+ 宿主 25 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
-| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-01 本地复跑 Windows mingwX64 通过 |
+| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-01 本地复跑 Windows mingwX64 通过（近期未重跑） |
 
-> 数字来自各平台测试报告，JVM 与其余平台的差集是 JVM 专属并发/超时用例；"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 990 包含 L4/R1/M2 新增的 commonTest 用例；JS/Wasm 的 881 是旧记录，新增用例后未复跑，因此 990 与 881 的差值不等于平台专属用例数。"仅由 CI 覆盖"表示本次未在本地复跑。
+
+当前一致性基线（2026-11-08，`1f8fa3d`）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **545/545**；真实库 **320/320**（83 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
+- 模块执行未实现：`Parser.parseModule` 已能解析 `import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表；但 `Engine` 仍只执行 Script，链接、求值、加载、CLI 与 Test262 module harness 均未实现（L4.2–L4.6b）。Test262 的 322 个 `flags: [module]` 用例因此跳过；
+- 模块语法已知宽松点：`import()` 零参数在语法层暂允许（执行期按规范拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持；
+- 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；
+- 顶层 await 只有语法解析，没有模块异步求值（L4.7，可选）；
+- 宿主生态未实现：TextEncoder/TextDecoder、structuredClone、URL/URLSearchParams 子集（L4.5）；真实 DOM / fetch / localStorage 等 Web API 不在范围；
+- WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 使用强引用存储，没有 GC 弱语义，不能用于长期缓存的自动回收（M2 暂缓）；
+- Intl、SharedArrayBuffer / Atomics、Temporal / Float16Array / 装饰器 / ShadowRealm 不在当前范围或明确延后；
+- ArrayBuffer 不支持 resizable / transfer：`ArrayBuffer.prototype.resize` / `transfer` 不存在；分离（detach）状态只能由宿主调用 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 触发，JS 语言本身没有公开 detach API；
+- BigInt 是任意精度实现，但 `MAX_RESULT_BITS = 2^24`（16,777,216 位）；超过上限的 `pow` / 左移 / `asIntN` / `asUintN` 抛 RangeError，这是规范允许的实现定义上限；
+- 其他已知行为/差异：TypedArray 固定小端序；`BigInt("")` 返回 `0n`；`toLocaleString` 使用十进制兜底；`Object.freeze` / `Object.seal` 对非空 TypedArray 不抛 TypeError（已知）；
+- R1 资源约束前两批已落地（源码/嵌套/AST/对象/JSON/正则/排队任务/微任务预算），第三批（计量口径、跨平台一致性、异常分类）仍为可选项；`EngineLimits` 不是进程级隔离；
+- B2 性能优化与 PKG1 API 契约尚未完成；S5 已记录属性读写、数组循环与引擎创建的回归，B2 恢复前需先做专项基准与复测；
 - `Date` 默认 `HostEnvironment.utcOffsetMillis` 返回 0（UTC）；宿主可按时刻返回毫秒偏移以启用本地时间，内核不内置 DST 规则；`toString` 的时区后缀显示为 `UTC±HH:MM`；
 - `Date.parse`/`new Date(string)` 仅接受 ISO 8601（含扩展年份）与自身 `toString`/`toUTCString` 格式；V8 额外接受的实现自定义本地格式（如 `2020/01/01`、`Jan 1 2020`）会返回 NaN，属规范允许的实现差异；
 - `JSON.parse` 使用独立严格 JSON 语法，不再复用宽松的 JS Parser；
@@ -162,7 +192,8 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `BasicExecutionTest` | 基础运算、作用域、闭包、控制流 |
 | `ConformanceTest` | 审查阶段 P0 问题回归 |
 | `RuntimeCancellationTest` / `RuntimeTimeoutTest`（JVM） | 协作式取消、异常透传、清理与复用；JVM 真实死循环超时 |
-| `RuntimeLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用 |
+| `RuntimeLimitsTest` / `ResourceLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用；源码长度/嵌套深度/AST 节点/对象数量/JSON 深度/正则步数/排队任务/单轮微任务预算与异常分类 |
+| `ParserModuleTest` | `Parser.parseModule` 的 import/export 基础形式、import.meta/import()、模块顶层 await、模块早期错误、脚本目标零影响 |
 | `PropertyAndPrototypeTest` | 属性描述符、原型链、访问器、call/apply/bind |
 | `StrictModeTest` | 严格/非严格模式差异 |
 | `BuiltinsTest` | 基础标准库 |
@@ -177,6 +208,11 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `BuiltinObjectDateRegExpTest` | Object 描述符与原型 API、Date 分量/setter/序列化、RegExp 标志/lastIndex/捕获组 |
 | `BuiltinCollectionSymbolTest` | Symbol 描述与标签、自定义迭代器、Map/Set 遍历、WeakMap/WeakSet 键校验、Error 层级 |
 | `AsyncSemanticsTest` | Promise 组合器、thenable 吸收、微任务顺序、async/await 时序 |
+| `GeneratorTest` / `AsyncGeneratorTest` / `ForAwaitTest` | 同步/异步生成器状态机、`yield*` 委托与 finally、参数绑定时机、`for await` 的 AsyncFromSync/关闭/异常传播 |
+| `ProxyTest` / `ProxyInvariantTest` / `ProxyReflectCompletionTest` | 13 个 trap、撤销、trap 结果不变量、跨内建边界（JSON/Array/Function.toString）与 Reflect 联动 |
+| `ReflectTest` | 13 个方法、receiver、失败返回 false、Proxy trap 触发 |
+| `BigIntTest` / `BigInt64ArrayTest` / `BigIntCrossCheckTest`（JVM） | BigInt 算术/转换/内建、BigInt64/BigUint64 视图与 DataView BigInt 读写、JVM 交叉校验 |
+| `ArrayBufferTest` / `ArrayBufferDetachTest` / `TypedArrayTest` / `Float32PrecisionTest` | ArrayBuffer/DataView/TypedArray 构造与读写、detach 后视图语义、11 种类型与整数索引 exotic、Float32 位级舍入 |
 | `ParserEdgeTest` | 正则/除号歧义、转义、非法语法、ASI、严格模式早期错误 |
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
 | `EventLoopLifecycleTest` / `EventLoopConcurrencyTest` / `HostEventLoopLifecycleTest` | 关闭、任务快照、空闲等待、在途取消、跨线程串行化、宿主定时器生命周期 |
@@ -185,4 +221,5 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `DiagnosticTest` | 词法/语法异常转换为结构化诊断（类别、纯描述、源码范围、来源文件名与行偏移），其他异常不产生诊断，原异常类型与 message 格式保持不变 |
+| `ParserConformanceTest` / `Test262SelectionTest` / `RunSupportTest` / `RunMetadataTest`（:vibe-js-conformance） | parser 脚本/模块允许列表与 strict 判定、Test262 筛选与跳过分类、运行器超时/关闭/失败分类、报告元数据 |
 | `HostModuleTest`（:vibe-js-host） | window/self 身份、console、定时器/setInterval（额外参数与延迟钳制）、queueMicrotask（重入排序、异常记录）、atob/btoa（WHATWG Latin-1 码元与宽松 base64 解码）、墙钟/单调时钟注入、performance 时间原点（安装时固定）、console.time/timeEnd 走单调时钟 |

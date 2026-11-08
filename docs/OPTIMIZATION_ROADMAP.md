@@ -1,405 +1,302 @@
-# Vibe JS 路线图
+# 后续路线（未完成工作）
 
-> 重写日期：2026-11-06。代码基线：`6677c14`。
+> 更新：2026-11-08。代码基线：`1f8fa3d`。
 >
-> 本文记录**全部在办工作**：原"暂缓/搁置"项已并入，不再有独立分区。P0–P4 只表示执行顺序与投入优先级，不是交付承诺。
-> 已完成的 C1–C3、T1、T2、M1、B1、H1、A1、D1 不列入任务清单，其约束收敛到 §2。
->
-> 证据口径：
-> - 单元测试、parser、ES5、ES2015、差分、真实库：2026-11-06 本地复跑（基线 `6677c14`）；
-> - 性能数字：2026-11-04 B1 全量基准（JDK 17、12 核、G1，预热 2×300ms，测量 3–10×300ms）。
-
-## 0. 优先级总览
-
-> 编号约定：顶层任务用字母前缀（`B2`/`PKG1`/`C4`/`R1`/`L1`…），子项统一为 `X.n`（如 `B2.1`、`PKG1.1`、`L1.3`）；顶层编号保持不变，与提交历史、已完成项引用连续。
-
-### P0 · 立即可做（低风险、高杠杆）
-
-| 顺序 | 编号 | 任务 | 人日 | 依据 |
-|---:|---|---|---:|---|
-| 1 | PKG1.1 | 协程依赖泄漏 | 0.5 | 消费方无法在不额外声明协程依赖的情况下编译 |
-| 2 | C4 | 一致性筛选口径 | 1–2 | 一致性数字的可信度依赖筛选可审计 |
-| 3 | B2.4 | 引擎创建与解析 | 3–6 | 低风险，基准可直接验证 |
-
-### P1 · 性能主线（数据驱动，按风险从低到高）
-
-| 顺序 | 编号 | 任务 | 人日 | 依据 |
-|---:|---|---|---:|---|
-| 4 | B2.3 | 事件循环与微任务 | 3–6 | 7.9 µs/微任务，单项成本高、风险中 |
-| 5 | B2.5 | 内建热路径 | 4–8 | Array/RegExp/String/JSON 3–4 µs/次，风险中低 |
-| 6 | B2.1 | 属性访问与对象存储 | 10–18 | 2.05 µs/次，最大单项收益，风险高 |
-| 7 | B2.2 | 环境查找槽位化 | 5–10 | 2.49 µs/次，依赖 Parser 改造，风险高 |
-
-### P2 · API 契约（正式版发布前）
-
-| 顺序 | 编号 | 任务 | 人日 | 依据 |
-|---:|---|---|---:|---|
-| 8 | PKG1.2 | explicit API | 3–5 | 冻结公共面，防止 API 漂移 |
-| 9 | PKG1.3 | Dokka | 1–2 | 公开 API 文档 |
-| 10 | PKG1.4 | BCV 与 CHANGELOG | 1–2 | 二进制兼容与变更记录 |
-| 11 | PKG1.5 | host Android 目标 | 1–2 | 与 core 目标对齐 |
-| 12 | PKG1.6 | 发布冒烟 | 1–2 | 验证 GitHub Packages 消费与快照覆盖 |
-
-> P2 必须在 P1 中会改公共 API 的部分（B2.1/B2.2）之后做，否则 `apiDump` 会反复变更。
-
-### P3 · 语言能力扩展（按解锁面/成本排序）
-
-| 顺序 | 编号 | 任务 | 人日 | 依据 |
-|---:|---|---|---:|---|
-| 13 | L1.3 | `for await` + AsyncIterator 原型 | 4–8 | 最便宜的语法补全，不需要 Generator |
-| 14 | L2.2 + L2.3 | 内部方法 suspend 化 + Proxy | 20–35 | 解锁 Vue 3/immer/mobx；顺带完成内部方法重构 |
-| 15 | L2.1 | Reflect 完整 API | 5–10 | Proxy 之后成本最低，避免返工 |
-| 16 | L3.1 + L3.2 | ArrayBuffer/DataView + TypedArray | 20–37 | 解锁二进制库与 TypedArray 用例 |
-| 17 | L3.3 | BigInt 运行时 | 12–22 | 独立，解锁大整数库 |
-| 18 | L1.1 + L1.2 | 同步 Generator + 委托清理 | 15–27 | 解锁 regenerator/co；对解释器侵入最深 |
-| 19 | L3.4 | BigInt64Array/BigUint64Array | 3–6 | 依赖 L3.1+L3.2 与 L3.3 |
-| 20 | L1.4 | async generator | 6–10 | 依赖 L1.1+L1.2 与 L1.3 |
-
-### P4 · 长期（按场景触发）
-
-| 顺序 | 编号 | 任务 | 人日 | 依据 |
-|---:|---|---|---:|---|
-| 21 | R1 | 资源约束扩展 | 15–30 | 只有执行不受信任脚本时才成为硬需求 |
-| 22 | M2 | 真实弱引用 | 3–5 + 未知 | 只有长期宿主出现内存增长时才需要 |
-| 23 | L4 | 模块系统与宿主生态 | 30–60 | 从单脚本目标转向多文件工程 |
-
-**排序依据。** 先修复"发布后立刻产生成本"的问题（P0），再用基准数据改善解释器核心（P1），随后在公共 API 稳定后补齐发布契约（P2），最后按"解锁面/成本"扩展语言能力（P3）；R1/M2/L4 只有在对应场景出现时才值得投入（P4）。
-
-**总投入。** 约 **167–314 人日**（含全部原暂缓/搁置项；P0 4.5–8.5、P1 22–42、P2 7–13、P3 85–155、P4 48–95）。
-
-### 0.1 当前已知缺口（必须如实披露）
-
-1. **Test262 口径**：ES2015 子集是"按已支持特性筛选"的 37,329 次执行，836 个文件被跳过；**不能对外宣称"完整 ES2015"**。
-2. **解析门禁保留 85 条允许项**：当前全部是 Generator 语法，`-Pstrict` 下不计为失败；L1.1 落地后应逐步移除。
-3. **真实库覆盖面有天花板**：Generator 与 Proxy 是最大的两个兼容缺口，regenerator/co、redux-saga、Vue 3 响应式、immer、mobx 一类库当前无法运行；L1/L2 落地后解除。
-4. **资源约束不完整**：不受信任脚本的解析、单次内建调用、正则回溯与内存分配都没有硬预算；R1 落地后解除。
-
-### 0.2 P4 的触发条件
-
-| 项目 | 触发条件 |
-|---|---|
-| R1 资源约束 | 需要执行**不受信任**的脚本，或出现解析/OOM 类事故 |
-| M2 真实弱引用 | 长期存活的宿主进程中 WeakMap/WeakSet 成为可观测的内存增长点 |
-| L4 模块 | 需要执行多文件 ES Module 工程 |
+> 本文只列**尚未完成**的工作。已实现能力只作为后续工作的依赖与不可破坏契约出现在文中，不再逐项重复；已完成项不再作为任务列出。
 
 ## 1. 当前基线
 
-### 1.1 能力概览
-
-- 语法：ES5 全量 + ES2015 常用语法（class、箭头函数、解构、模板、默认/rest、`let`/`const`、`for...of`、Symbol、async/await），并扩展到部分后续年份语法（`using`/`await using`、class 公有/私有字段与静态块、可选 catch 绑定、hashbang）。
-- 内建：Object/Function/Array/String/Number/Boolean/Math/JSON/Error/RegExp/Date/Symbol/Map/Set/WeakMap/WeakSet/Promise，以及 Iterator helpers、DisposableStack/AsyncDisposableStack、`Promise.withResolvers`/Keyed 组合、`RegExp.escape`、Set 的 7 个 ES2025 关系方法等。
-- 尚未实现（均在办，见 §0）：Generator 与 `for await`、模块系统、Proxy/Reflect、BigInt 运行时、TypedArray/ArrayBuffer。
-- 不在范围：Intl、真实 DOM/Web API。
-- 架构约束不变：核心全部位于 `commonMain`、不引用平台原生 API；执行方法均为 `suspend`；属性读写走 `Interpreter.getV`/`putV`；类型转换走 `Conversions`；宿主能力通过 `BuiltinModule` 注册。
-
-### 1.2 验证基线
-
-| 检查 | 结果 | 生成时间 | 说明 |
-|---|---|---|---|
-| core JVM 单元测试 | 610 | 2026-11-06 | 含 JVM 专属并发/超时 6 例 |
-| core JS / Wasm / Windows Native | 各 604 | 2026-11-06 | 与 JVM 的差集为 JVM 专属用例 |
-| host JVM / JS / Wasm / Native | 各 25 | 2026-11-06 | |
-| conformance 单元测试 | 26 | 2026-11-06 | `RunSupportTest` / `Test262SelectionTest` / `RunMetadataTest` |
-| parser pass | 1,822 通过 / 85 允许（共 1,907） | 2026-11-06 | 允许项为 Generator 语法 |
-| parser fail | 674 通过 / 8 允许（共 682） | 2026-11-06 | |
-| parser early | 600 拒绝 / 5 接受（共 605） | 2026-11-06 | 模块用例跳过 262 |
-| Test262 ES5 子集 | 15,244 / 15,244 | 2026-11-06 | 选中 8,088 文件，跳过 2 |
-| Test262 ES2015 子集 | 37,329 / 37,329 | 2026-11-06 | 选中 20,374 文件，跳过 836 |
-| Node 差分 | 492 / 492 | 2026-11-06 | Node v24.12.0 |
-| 真实库 UMD 冒烟 | 309 / 309 | 2026-11-06 | 80 个库 |
-
-以上数字是"当前范围内全绿"，**不表示完整 ES2015 或全部库受支持**，口径见 §0.1。
-
-### 1.3 代码规模
-
-| 区域 | 文件数 | 行数 |
-|---|---:|---:|
-| core + host `commonMain` | 102 | 38,276 |
-| core + host `commonTest` / `jvmTest` | 37 | 13,412 |
-| `vibe-js-conformance`（main + test） | 17 | 10,750 |
-
-最大单文件：[Interpreter.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Interpreter.kt) 6,276 行、[Parser.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/parser/Parser.kt) 3,807、[JsRegexEngine.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/regex/JsRegexEngine.kt) 2,260、[ArrayBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/ArrayBuiltins.kt) 1,954、[Lexer.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/lexer/Lexer.kt) 1,758、[IteratorBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/IteratorBuiltins.kt) 1,094（helper 已拆到 [IteratorHelperBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/IteratorHelperBuiltins.kt) 616 行）。
-
-### 1.4 性能基线（B1，2026-11-04）
-
-解释器吞吐（`run` 含解析 / 预解析执行）：
-
-| 场景 | `Engine.run` | 预解析 |
-|---|---:|---:|
-| 算术 `1 + 2 * 3` | ~142,000 ops/s | ~363,000 ops/s |
-| 字符串/对象拼接 | ~95,000 ops/s | ~202,000 ops/s |
-| 函数调用 | ~95,000 ops/s | ~271,000 ops/s |
-| 100 次数组 push 循环 | ~6,200 ops/s | ~7,100 ops/s |
-
-关键单项成本：
-
-| 基准 | 结果 | 折算 |
-|---|---:|---:|
-| `propertyGet`（1000 次属性读） | 2,051 µs | **~2.05 µs/次** |
-| `propertySet`（1000 次属性写） | 2,064 µs | ~2.06 µs/次 |
-| `closureLookup`（1000 次闭包变量读） | 2,490 µs | ~2.49 µs/次 |
-| `microtaskStorm`（1000 个微任务） | 7,944 µs | **~7.9 µs/个** |
-| `promiseChain`（100 个 then） | 852 µs | ~8.5 µs/个 |
-| `asyncAwait`（100 次 await） | 552 µs | ~5.5 µs/次 |
-| `engineCreate` | 75.7 µs | 单引擎创建 |
-| `parseOnly`（100 次循环脚本） | 9.9 µs | 单次解析 |
-| `arrayMap`（1000 元素） | 3,001 µs | ~3.0 µs/元素 |
-| `regexpExec`（1000 次） | 4,204 µs | ~4.2 µs/次 |
-| `stringSlice`（1000 次） | 2,902 µs | ~2.9 µs/次 |
-| `jsonParse`（100 次） | 557 µs | ~5.6 µs/文档 |
-
-集合（M1 后）：单键 get 6–11 ns、has 4–6 ns、set 18–19 ns，1k/10k/100k 规模基本持平；`size` 约 0.02 ns/次。
-
-### 1.5 发布状态
-
-- 版本统一为 `0.0.0-SNAPSHOT`（根 [build.gradle.kts](../build.gradle.kts) 的 `allprojects`），`group = com.muedsa.js`。
-- `vibe-js-core` / `vibe-js-host` 已接入 `maven-publish`，推送到 GitHub Packages（[publish.yml](../.github/workflows/publish.yml)）：每次分支推送触发，3 个 OS 矩阵覆盖 JVM/JS/Wasm/Android/Linux、Apple 目标、mingwX64。
-- 消费方式与鉴权已写入 [README](../README.md#引入依赖)。
-- **未发布正式版**；API 契约工具链（explicitApi/Dokka/BCV/CHANGELOG）尚未建立，见 §3.2。
-
-## 2. 不可破坏的契约
-
-已完成项留下的约束；后续任何改动都必须保持。
-
-| 领域 | 约束 |
-|---|---|
-| 协作式取消与超时 | 解释器检查点观察取消；宿主取消原样传播；JS `catch`/`finally` 不吞宿主中止；剩余微任务丢弃 |
-| 执行配额 | `EngineLimits(maxSteps, maxCallDepth = 16_384)`；步数超限抛宿主 `ExecutionLimitException`，深度超限抛 JS `RangeError` |
-| 错误栈 | 创建/首次抛出时快照；重抛与 Promise 转发不覆盖原栈；保留万层同步/async 回归 |
-| 事件循环生命周期 | `close()`、`pendingTasks`、`runUntilIdle()`、统一恢复队列；同一引擎串行执行；关闭等待清理且不取消宿主父 Job |
-| 集合迭代 | 实时语义：遍历中新增可见、删除跳过、重删重加再次访问、`done` 后不复活；`size` 为 O(1)；迭代期间不压缩存储 |
-| 宿主计时 | `Date` 用墙钟；`performance.now()` 与 `console.time` 用单调时钟；`timeOrigin` 在模块安装时固定 |
-| 发布 | 版本 `0.0.0-SNAPSHOT`；`GITHUB_REPOSITORY` 缺失时不注册仓库；发布任务名与 `GITHUB_ACTOR`/`GITHUB_TOKEN` 约定不变 |
-| 文档口径 | 未实现能力必须标注"未实现"；对外数字必须带子集/跳过口径，不得把在办项写成已支持 |
-
-## 3. 任务详情
-
-> 本节按项目组织；执行顺序见 §0。人日为工程工作量粗估（1 人日 ≈ 6–8 小时有效投入），不是日历工期。
-
-### 3.1 B2 · 性能优化（P0–P1，25–48 人日，按子项独立验收）
-
-**现状。** B1 已给出可复现的七组基准（§1.4）。当前解释器是递归 suspend AST 遍历：每次属性访问走 `Interpreter.getV`/`putV`（suspend）→ `JSObject` 属性表（`LinkedHashMap<PropertyKey, PropertyDescriptor>`）→ 原型链；环境查找用字符串 Map + 父链；每个 Promise 反应都经过协程恢复。上述结构直接对应 §1.4 的几类热点。
-
-**建议顺序。** B2.4 → B2.3 → B2.5 → B2.1 → B2.2：风险从低到高，先用前两项积累基准与回归经验。
-
-**总原则。** 每个子项独立提交、独立基准对比、独立验收；**任何子项不得让 ES5/ES2015/差分/真实库任一项基线回退**。不追求一次性重写解释器。
-
-#### B2.1 属性访问与对象存储（10–18 人日，高风险）
-
-- **证据**：`propertyGet` 2.05 µs/次、`propertySet` 2.06 µs/次，是单项成本最高的操作。
-- **方案**：对象引入"形状（shape）+ 槽位数组"替代每对象 `LinkedHashMap`；字符串键驻留；`getV`/`putV` 增加单态内联缓存（shape + key → slot），未命中回退现有路径；数组索引属性走专用整数索引路径。
-- **范围**：`runtime/value/JSObject.kt`、`PropertyKey`、`Interpreter.getV/putV`、`ArrayBuiltins` 索引路径，约 5–10 文件、800–1,500 行。
-- **验收**：`propertyGet`/`propertySet` 至少 2×；属性枚举顺序、`delete`、`defineProperty`、原型链、getter/setter 副作用回归不变；四项一致性基线全绿。
-- **风险**：属性顺序与描述符语义是可观察行为，缓存失效与原型变更最容易出错；建议先加"单次访问"微基准再动结构。
-
-#### B2.2 环境查找槽位化（5–10 人日，中高风险）
-
-- **证据**：`closureLookup` 2.49 µs/次（每次 4 个闭包变量读 + 算术）。
-- **方案**：Parser 在解析期为每个函数/块预计算声明槽位（复用现有 `varDeclarations`/`functionDeclarations` 机制），运行时环境改为数组槽位 + 父链；`with`、直接 `eval`、全局动态声明回退到字符串 Map。
-- **范围**：`runtime/Environment.kt`、`Parser`、`Interpreter`，4–8 文件。
-- **验收**：`closureLookup` 至少 1.5×；`with`/`eval`/TDZ/块级作用域/catch 参数回归不变。
-- **风险**：动态作用域与提升规则的边界多，建议以差分与 Test262 为门禁。
-
-#### B2.3 事件循环与微任务（3–6 人日，中风险）
-
-- **证据**：1000 个微任务 7.9 ms（7.9 µs/个）；100 个 then 852 µs；100 次 await 552 µs。
-- **方案**：微任务批量 drain（一次恢复多个）、Promise 反应队列直接迭代、减少每任务 `launch`/闭包分配、async 恢复复用调度入口。
-- **范围**：`runtime/EventLoop.kt`、`runtime/PromiseSupport.kt`，3–5 文件。
-- **验收**：`microtaskStorm` 至少 2×；微任务顺序、取消边界与 `close()` 语义由差分异步用例与 Test262 async 用例守护。
-- **风险**：调度顺序与取消时机是 P0 契约，改动必须逐条对照现有测试。
-
-#### B2.4 引擎创建与解析（3–6 人日，低风险）
-
-- **证据**：`engineCreate` 75.7 µs；`parseOnly` 9.9 µs；`Engine.run` 与预解析执行相差约 60%，解析占小脚本总成本的一半以上。
-- **方案**：内建安装改为惰性/模板复制（共享不可变描述符模板，按引擎实例化）；Lexer token 分配与 Parser 节点构造减少临时对象。
-- **范围**：`Engine.kt`、`CoreBuiltins`、`Lexer`、`Parser`。
-- **验收**：`engineCreate` 至少 1.5×、`parseOnly` 至少 1.3×；解析一致性基线不变。
-- **风险**：低；主要注意内建原型的可修改性与每引擎隔离。
-
-#### B2.5 内建热路径（4–8 人日，中低风险）
-
-- **证据**：`arrayMap` 3.0 µs/元素、`regexpExec` 4.2 µs/次、`stringSlice` 2.9 µs/次、`jsonParse` 5.6 µs/文档。
-- **方案**：Array 迭代方法对密集数组走直接元素读取（跳过 `getV`）；RegExp 结果对象复用/减少包装；String `slice` 减少子串复制；JSON 解析器减少中间分配。
-- **范围**：`ArrayBuiltins`、`RegExpBuiltins`、`StringBuiltins`、`JsonParser`。
-- **验收**：对应基准至少 1.5×；稀疏数组、原型链元素、自定义 `Symbol` 协议、JSON reviver 语义回归不变。
-
-**B2 的停止条件。** 每个子项完成后重新跑全量基准；若某项收益低于 20% 或回归成本过高，记录数据并停止该项，不为了"完成路线"强行合入。
-
-### 3.2 PKG1 · 制品与 API 契约（P0 + P2，7.5–14.5 人日）
-
-**已完成。** `0.0.0-SNAPSHOT` + `maven-publish` + GitHub Packages + 三 OS 矩阵发布 + README 消费说明（§1.5）。
-
-**子项（PKG1.1 在 P0，其余在 P2）：**
-
-| 编号 | 子项 | 证据 | 方案 | 人日 |
-|---|---|---|---|---:|
-| PKG1.1 | 协程依赖泄漏 | `EventLoop` 公开构造参数与 `scope` 属性暴露 `CoroutineScope`，但 `kotlinx-coroutines-core` 是 `implementation` | 改为 `api(libs.kotlinx.coroutines.core)`；校验发布 POM 的 compile scope | 0.5 |
-| PKG1.2 | explicit API | 未启用 `explicitApi()`；公共面没有显式可见性 | 先 core 后 host，逐处补 `public`/`internal`，接入 `apiDump` 防漂移 | 3–5 |
-| PKG1.3 | Dokka | 无 API 文档生成 | 接入 `org.jetbrains.dokka`，KDoc 作为公开 API 的说明来源 | 1–2 |
-| PKG1.4 | 二进制兼容与变更记录 | 无 BCV、无 CHANGELOG | 接入 `binary-compatibility-validator`（`api/*.api`），建立 CHANGELOG 约定 | 1–2 |
-| PKG1.5 | host Android 目标 | core 有 Android，host 没有 | 为 host 增加 Android target，与 core 对齐 | 1–2 |
-| PKG1.6 | 发布冒烟 | 只验证过 `publishToMavenLocal`，未验证从 GitHub Packages 消费 | 独立消费工程解析 `0.0.0-SNAPSHOT`（JVM/JS/Wasm/Android），并验证重复发布的快照覆盖行为 | 1–2 |
-
-**验收。** 消费工程能在不额外声明协程依赖的情况下编译；`apiDump` 通过；Dokka 可生成；快照重复发布有明确结论（若 GitHub Packages 拒绝覆盖，改用唯一快照后缀并更新文档）。
-
-**风险。** `explicitApi()` 会一次性冻结公共面，必须排在 B2.1/B2.2 之后（见 §0 P2 注）。
-
-### 3.3 C4 · 一致性筛选口径（P0，1–2 人日）
-
-**现状。** [Test262Selection.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Selection.kt) 对 `$262`、`Array.print`、`propertyBagObserver`、`ArrayBuffer`、BigInt/Proxy/Generator 等仍使用**源码文本匹配**；注释或字符串中出现这些词会造成误排，T2 只能做到把跳过明细落盘供复核。
-
-**方案。**
-1. 优先使用 test262 元数据 `features`；仅当 features 缺失或不足以判定时才回退文本匹配；
-2. 文本匹配命中但 features 不含对应项时，写入"疑似误排"审计列表，不直接排除；
-3. 增加单元测试：注释/字符串中的 `Proxy`、`BigInt` 不触发排除。
-
-**验收。** 选中用例数量变化必须有逐条解释；`test262-skipped.txt` 与审计列表可复核；不降低现有基线。
-
-### 3.4 L1 · Generator / 异步迭代（P3，25–45 人日）
-
-| 编号 | 子项 | 依赖 | 人日 | 交付后可用 | 主要风险 |
-|---|---|---|---:|---|---|
-| L1.1 | 同步 Generator 核心 | 无 | 10–18 | `function*`、`yield`、`%GeneratorPrototype%`、`return`/`throw` 完成语义 | 当前是递归 suspend 树遍历，需要独立的暂停/恢复执行模型 |
-| L1.2 | 委托与清理 | L1.1 | 5–9 | `yield*`、`finally`、`return`/`throw` 传播 | 关闭语义与嵌套委托容易出错 |
-| L1.3 | `for await` + AsyncIterator 原型 | 无 | 4–8 | 异步迭代语句与原型（不需要 Generator） | 与现有 `Symbol.asyncIterator` 消费、微任务顺序的交互 |
-| L1.4 | async generator | L1.1 + L1.3 | 6–10 | `async function*`、`await` 与 `yield` 交错 | 组合项，不能先做 |
-
-**最小实现集**：只要 `for await` → L1.3（4–8 人日）；要运行 regenerator/co → L1.1 + L1.2（15–27）。
-
-**顺序。** L1.3 在 P3 首位；L1.1 + L1.2 在 P3 末段（对解释器侵入最深）；L1.4 最后。
-
-### 3.5 L2 · Reflect / Proxy（P3，25–45 人日）
-
-| 编号 | 子项 | 依赖 | 人日 | 交付后可用 | 主要风险 |
-|---|---|---|---:|---|---|
-| L2.1 | Reflect 完整 API | 无 | 5–10 | 13 个 Reflect 方法 | 若先于 Proxy 落地，之后需要 suspend 化或维护双入口 |
-| L2.2 | 内部方法 suspend 化 | 无 | 8–15 | 8 个属性内部方法可执行任意 JS | 全仓约 120–160 处调用点，跨切面重构 |
-| L2.3 | Proxy | L2.2 | 12–20 | 13 个 trap、可撤销代理、不变量校验 | trap 可执行任意 JS，所有内部方法必须 suspend |
-
-**最小实现集**：只要 Reflect → L2.1（5–10 人日，接受将来改 API）；要运行 Vue 3/immer/mobx → L2.2 + L2.3（20–35）。
-
-**顺序。** L2.2 → L2.3 → L2.1：先完成 suspend 化与 Proxy，再补 Reflect，避免"先 Reflect 后返工"。
-
-### 3.6 L3 · 二进制与 BigInt（P3，35–65 人日）
-
-| 编号 | 子项 | 依赖 | 人日 | 交付后可用 | 主要风险 |
-|---|---|---|---:|---|---|
-| L3.1 | ArrayBuffer + DataView | 无 | 8–15 | 二进制缓冲区、DataView 读写 | 可分离/可调整大小的缓冲区属于后续规范扩展，首版可不做 |
-| L3.2 | TypedArray 数值视图 | L3.1 | 12–22 | 9 种非 BigInt 类型化数组、整数索引 exotic、species/迭代/subarray | 整数索引异质对象与 Array 的索引语义不同，需独立实现 |
-| L3.3 | BigInt 运行时 | 无 | 12–22 | 任意精度整数、算术/位运算/转换 | 需自研大整数并保证 JVM/JS/Wasm/Native 一致 |
-| L3.4 | BigInt64Array / BigUint64Array | L3.2 + L3.3 | 3–6 | 64 位整数视图 | 组合项，不能单独交付 |
-
-**最小实现集**：只要二进制 → L3.1 + L3.2（20–37 人日）；只要大整数 → L3.3（12–22）；完整 L3 → 35–65。
-
-**顺序。** L3.1 → L3.2；L3.3 可与 L3.2 并行；L3.4 最后。
-
-### 3.7 R1 · 资源约束扩展（P4，15–30 人日）
-
-**现状。** `EngineLimits` 只有 `maxSteps` 与 `maxCallDepth`（默认 16,384）；`Engine.parse` 没有源码大小/嵌套深度上限；`JsonParser` 是纯递归解析；正则引擎没有步数预算；全仓 17 处 `checkExecution`；timer/async 不限制排队任务数量（步数预算只约束执行工作量）。
-
-**方案（三批）。**
-1. 解析期：源码长度上限、词法/语法嵌套深度上限、`JsonParser` 深度上限，超限抛明确异常；
-2. 执行期：正则匹配步数预算、单次内建调用的协作式检查点；
-3. 任务期：事件循环排队任务数量上限、内存/对象数量预算（先确定可接受的计量方式）。
-
-**验收。** 每类超限都有明确异常类型与测试；现有语义与配额行为不变；资源耗尽不得被记成普通断言失败。
-
-**风险。** 正则回溯与内存分配无法用步数表达；预算过严会误伤正常脚本；跨平台内存计量不一致。
-
-### 3.8 M2 · 真实弱引用（P4，可行性验证 3–5 人日 + 完整实现未知）
-
-**现状。** `JSWeakMap : JSMap`、`JSWeakSet : JSSet`，底层与强集合共用数组 + 索引，键值强持有。
-
-**方案。** 先做可行性验证：在 `commonMain` 内实现最小的 ephemeron/可达性模型（不能使用 JVM `WeakHashMap` 或 JS 原生 `WeakMap`），评估对值模型与 GC 时机的影响；验证通过后再估算完整实现。
-
-**验收（验证阶段）。** 能证明"键不可达后条目可被回收"的最小场景；明确跨平台语义差异与 API 影响。
-
-**风险。** 需要自研可达性分析，影响整个值模型；Kotlin 各平台没有统一的弱引用原语。
-
-### 3.9 L4 · 模块系统与宿主生态（P4，30–60 人日）
-
-**现状。** `import`/`export` 是保留字并直接报错；没有 CLI、URL、TextEncoder、structuredClone。
-
-**方案（可独立交付）。** 模块加载与链接（25–50 人日）、CLI（2–4）、宿主生态内建（3–6）。
-
-**验收。** 能执行多文件 ES Module 工程；live binding、循环依赖与错误定位有测试。
-
-**风险。** 链接、live binding、循环依赖与宿主加载器；这是从"单脚本"到"工程运行时"的范围改变。
-
-### 3.10 跨组依赖与返工
-
-- **先 L3.2 后 L2.2**：TypedArray 的 `[[Get]]`/`[[Set]]`/`[[GetOwnProperty]]` 等内部方法需要返工，约 +2–5 人日；Array/String 的 exotic 行为同理。
-- **先 L2.1 后 L2.3**：Reflect 的公开 API 需要 suspend 化（或维护同步/异步双入口），约 +1–3 人日。
-- **L1 与 L2/L3 正交**：Generator 的核心是执行模型，不依赖属性内部方法；但 L1.1 对解释器侵入最深。
-- **必须成组**：L1.1+L1.2、L1.1+L1.3（async generator）、L2.2+L2.3、L3.1+L3.2、L3.2+L3.3（BigInt 视图）；其余可独立交付。
-
-## 4. 批次与投入
-
-| 批次 | 优先级 | 内容 | 人日 | 主要产物 |
-|---|---|---|---|---:|
-| **1 · 低风险收尾** | P0 | PKG1.1、C4、B2.4 | **4.5–8.5** | 可编译的 API 依赖、可审计筛选、创建/解析基准提升 |
-| **2 · 性能主线** | P1 | B2.3、B2.5、B2.1、B2.2 | **22–42** | 解释器核心成本下降 |
-| **3 · API 契约** | P2 | PKG1.2–PKG1.6 | **7–13** | 可发布的稳定 API 面 |
-| **4 · 语言能力** | P3 | L1.3、L2.2+L2.3、L2.1、L3.1+L3.2、L3.3、L1.1+L1.2、L3.4、L1.4 | **85–155** | 异步迭代、Proxy/Reflect、二进制、BigInt、Generator |
-| **5 · 长期** | P4 | R1、M2、L4 | **48–95** | 资源约束、弱引用、模块系统 |
-
-批次 1 可立即开始；批次 2 风险最高的是 B2.1/B2.2，建议在批次 1 积累基准与回归经验后再动；批次 3 必须等批次 2 的公共 API 改动完成。合计约 **167–314 人日**。
-
-## 5. 验证命令
-
-在仓库根目录用 PowerShell 执行。新增行为优先写 commonTest；方法名使用中文字符串与 kotlin-test 断言。**不要通过删除既有用例、扩大无理由 allowlist 或降低默认调用深度来换取通过。**
+### 1.1 验证数字
+
+| 检查 | 当前值 | 说明 |
+|---|---|---|
+| core JVM 单元测试 | **990 / 990** | 2026-11-08 本地运行 |
+| core JS / Wasm（Node） | **881 / 881**（上次记录） | 新增 commonTest 后未复跑；以 JVM 990 为当前参考 |
+| host JVM / JS / Wasm | 各 **25 / 25** | 最近记录 |
+| conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
+| parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
+| parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
+| Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 选中 8,088 个文件 |
+| Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Node 差分 | **545 / 545** | 含 L 系列同步 45 + 异步 8 |
+| 真实库 UMD 冒烟 | **320 / 320**（83 个库） | 含 mobx / immer / regenerator-runtime |
+
+> 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准；本表只用于说明路线起点。
+> JS/Wasm 的 881 是上次记录时点的旧值，新增 L4/R1/M2 用例后尚未复跑，不能据此宣称跨平台全绿。
+
+### 1.2 已实现能力摘要
+
+- **语言**：ES5 + ES2015 常用语法（class、箭头函数、解构、模板/标签模板、默认参数、rest、`let`/`const`、`for-of`、Symbol、`async/await`），以及 `using` / `await using`、严格模式尾调用优化。
+- **生成器与异步迭代**：同步/异步 Generator、`yield` / `yield*`、`for await...of`、`%GeneratorPrototype%` / `%AsyncGeneratorPrototype%` / `%AsyncIteratorPrototype%`。
+- **元编程**：Proxy 13 个 trap、`Proxy.revocable`、不变量校验；Reflect 13 个方法。
+- **二进制与数值**：BigInt、11 种 TypedArray、ArrayBuffer、DataView、detach 语义；固定小端序。
+- **集合与内建**：Iterator helpers、DisposableStack / AsyncDisposableStack、Promise 组合、`RegExp.escape`、ES2025 Set 关系方法等。
+- **模块**：`Parser.parseModule()` 可解析 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、模块顶层 `await` 语法，并预计算 `requestedModules`、`ImportEntry` / `ExportEntry` 等静态表；**不能链接、求值或加载**。
+- **资源约束**：`EngineLimits` 已覆盖源码长度、嵌套深度、AST 节点、对象数量、JSON 深度、正则步数、排队任务、单轮微任务等预算；仍不是完整的进程级隔离。
+
+### 1.3 当前边界（一句话）
+
+模块执行（链接、求值、加载、CLI、Test262 module harness）未实现；顶层 await 只有语法没有执行；TextEncoder/TextDecoder、structuredClone、URL 子集等宿主生态未实现；WeakRef/FinalizationRegistry 未实现；Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/transfer ArrayBuffer 不在当前范围；性能优化 B2 与 API 契约 PKG1 延后。
+
+## 2. 优先级总览
+
+| 顺序 | 编号 | 工作 | 人日 | 依赖 | 触发条件 |
+|---:|---|---|---:|---|---|
+| 1 | L4.2 | 模块链接（Module Record / 静态解析） | 8–14 | 模块解析与静态表已完成 | 需要多文件模块工程或启用 Test262 module 链接用例 |
+| 2 | L4.3 | 模块求值（live binding / 命名空间） | 6–12 | L4.2 | 链接稳定后 |
+| 3 | L4.4 | 模块加载器抽象与宿主加载器 | 3–5 | L4.3 | 需要从文件/URL 加载模块 |
+| 4 | L4.4b | 模块 CLI | 2–4 | L4.4 | 需要命令行运行 `.mjs` |
+| 5 | L4.6b | Test262 module harness | 3–5 | L4.2 / L4.3 | 模块执行稳定后纳入门禁 |
+| 6 | L4.5 | 宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集） | 3–6 | 无（可与 L4.2 并行） | 宿主或真实库需要 |
+| 7 | L4.7 | 顶层 await（可选） | +8–15 | L4.3 | 真实模块使用 TLA；否则延后 |
+
+**P0 主体（L4.2–L4.6b）合计约 22–40 人日；L4.5 可并行；L4.7 为可选项，不计入默认排期。**
+
+P1（按场景触发/质量）与长期项见第 4、5 节。
+
+## 3. P0：模块执行与宿主生态
+
+### 3.1 L4.2 模块链接
+
+- **范围**：把 `ModuleProgram` 的静态表提升为可链接的 Module Record；按 `requestedModules` 递归解析依赖；实现 `ImportEntry` / `ExportEntry` 的解析与 `ResolveExport`；处理循环依赖、重复导入、导出名冲突与歧义；构造模块命名空间对象的链接元数据；补齐链接阶段早期错误。
+- **依赖**：模块声明解析、模块表达式语法与模块语料门禁已完成；可先用内存中的测试模块集，不要求 L4.4 的文件加载器。
+- **人日**：8–14。
+- **风险**：循环依赖与 `ResolveExport` 的规范细节多；同一模块重复请求、`default` / 命名 / 星号导出的歧义容易漏；错误抛出顺序会直接影响 Test262；解析器尚未覆盖任意模块命名空间名、import attributes 等扩展。
+- **验收标准**：多模块图可完成链接；循环依赖、重复导出、歧义导出有回归用例；脚本解析路径零改动；模块语料门禁保持全绿；Test262 module 链接用例可按子集启用。
+- **触发条件**：出现多文件 ES Module 工程需求，或准备启用 Test262 module 执行用例。
+
+### 3.2 L4.3 模块求值
+
+- **范围**：模块环境（模块顶层 `this` 为 `undefined`、恒严格模式）、导入绑定的只读 live binding、导出绑定的初始化与更新、`export default` 的求值顺序、模块命名空间对象、`import.meta` 元数据对象；模块求值错误与部分求值后的状态；为 L4.7 预留异步求值边界。
+- **依赖**：L4.2。
+- **人日**：6–12。
+- **风险**：live binding 与 TDZ 的交互；匿名默认导出的 NamedEvaluation；命名空间对象的 exotic 行为；模块求值失败后的缓存与重试语义；若同时做顶层 await，复杂度会显著上升。
+- **验收标准**：可执行多模块图；导入绑定在导出方更新后可见；`default`、命名导出、命名空间导入有回归；模块执行不改变 Script 的 `this` / 严格模式语义；Test262 module 执行子集通过或显式跳过。
+- **触发条件**：L4.2 链接稳定，且确实需要运行模块。
+
+### 3.3 L4.4 模块加载器
+
+- **范围**：核心提供 `ModuleLoader` / 模块解析（resolver）抽象，宿主注入实际 IO；实现模块缓存、说明符解析、循环加载与错误传播；官方文件/URL 加载器放在 `:vibe-js-host`，核心不引用平台 API。
+- **依赖**：L4.3；`:vibe-js-host` 扩展点。
+- **人日**：3–5。
+- **风险**：路径/URL 规范化跨平台差异；缓存键与循环依赖；IO 错误如何映射为 JS 错误；安全边界（任意文件读取）需要宿主决定；核心不得引入平台 API。
+- **验收标准**：核心只有抽象与纯 Kotlin 默认实现；宿主提供文件加载器；缓存、循环依赖、缺失模块、解析失败有测试；核心 `commonMain` 不出现平台 IO。
+- **触发条件**：需要从磁盘/URL 加载模块，而不是只执行内存中的模块图。
+
+### 3.4 L4.4b 模块 CLI
+
+- **范围**：提供运行模块入口的最小 CLI（解析命令行参数、选择入口模块、设置退出码、输出未捕获错误）；CLI 与文件 IO 放在宿主侧，核心不新增平台依赖。
+- **依赖**：L4.4。
+- **人日**：2–4。
+- **风险**：CLI 打包与发布方式；Windows 路径与编码；错误输出格式；不要为了 CLI 把 IO 塞进核心。
+- **验收标准**：可从命令行运行 `.mjs` 入口；模块解析/求值错误有明确退出码；帮助与示例文档可用；核心依赖不增加。
+- **触发条件**：需要开发者工具或演示入口。
+
+### 3.5 L4.6b Test262 module harness
+
+- **范围**：为 Test262 module 用例提供模块加载与 `$262` 模块钩子；按 `flags: [module]` 启用模块执行用例；把 module 链接/求值失败分类写入报告；用显式 allowlist 处理语料/规范差异，禁止宽泛文本排除。
+- **依赖**：L4.2、L4.3；parser 模块语料门禁已完成。
+- **人日**：3–5。
+- **风险**：module harness 与 Script harness 的 `$262` 语义不同；模块用例依赖宿主加载器；启用后 322 个跳过项会变成真实失败面；容易用扩大跳过换取绿色。
+- **验收标准**：module 用例真实执行；通过/失败/跳过分类可审计；module allowlist 逐条路径 + 原因；`-Pstrict` 下 module 门禁失败即红；已实现特性不再被文本排除。
+- **触发条件**：L4.3 稳定，准备把模块执行纳入 CI 门禁。
+
+### 3.6 L4.5 宿主生态
+
+- **范围**：在 `:vibe-js-host` 提供 TextEncoder/TextDecoder（UTF-8）、structuredClone（结构化克隆的常用子集）、URL/URLSearchParams 的实用子集（解析、序列化、常用查询参数操作）；核心只保留通用值模型与扩展点。
+- **依赖**：无，可与 L4.2 并行；需要宿主模块现有 `BuiltinModule` 机制。
+- **人日**：3–6。
+- **风险**：UTF-8 孤立代理项/BOM 等边界；structuredClone 的循环引用、不可克隆类型与 transfer 语义；URL 规范范围大，容易失控；平台差异必须留在宿主侧。
+- **验收标准**：宿主测试覆盖编码/解码、循环克隆、URL 解析与序列化；核心无平台 API；文档明确支持的子集与不支持项。
+- **触发条件**：真实库或宿主产品需要浏览器风格 API。
+
+### 3.7 L4.7 顶层 await（可选）
+
+- **范围**：模块顶层 `await` 的异步求值、`[[AsyncEvaluation]]` 排序、异步依赖图与循环、`import()` 等待模块求值完成；只在模块目标生效。
+- **依赖**：L4.3。
+- **人日**：+8–15（可选，不计入默认排期）。
+- **风险**：异步模块图的求值顺序与死锁；与事件循环/微任务队列耦合；循环依赖 + TLA 的规范行为复杂；失败传播与缓存状态。
+- **验收标准**：TLA 用例通过；同步模块行为不变；循环依赖与拒绝路径有回归；未实现时文档明确标注“仅语法”。
+- **触发条件**：真实模块使用顶层 await；否则延后。
+
+### 3.8 建议顺序
+
+1. L4.2 链接（先内存模块图，不依赖 IO）。
+2. L4.3 求值（先同步模块，TLA 留到 L4.7）。
+3. L4.4 加载器 + L4.4b CLI（宿主侧）。
+4. L4.6b Test262 module harness（与 L4.3 后期并行准备）。
+5. L4.5 可全程并行；L4.7 按真实需求决定是否插入。
+
+## 4. P1：按场景触发与质量项
+
+### 4.1 R1 第三批（可选）
+
+- **范围**：统一资源约束的计量口径（源码/AST/对象/微任务/正则/排队任务），补齐跨平台一致性（JVM/JS/Wasm 的计数与异常分类），完善 `ResourceLimitException` 的分类与文档；评估 `JSArguments`、解释器合成节点等未计数项。
+- **依赖**：现有 `EngineLimits` 与 `ResourceLimitsTest` 设施。
+- **人日**：5–10（待细化）。
+- **风险**：默认限制可能误伤真实库；不同平台计数差异；异常分类变化影响宿主；计量开销影响性能。
+- **验收标准**：每类限制都有文档、默认值与回归；跨平台计数一致或有明确说明；超限异常分类稳定；不降低现有默认能力。
+- **触发条件**：需要执行不受信任脚本，或宿主需要可配置的资源边界。
+
+### 4.2 S2 扩展（持续覆盖）
+
+- **范围**：随新特性/修复补充 Node 差分与真实库用例；每批增加 3–5 个无 DOM 依赖的 UMD 库；覆盖 Generator、BigInt、TypedArray/AB/DV、Proxy/Reflect、async generator/for-await 的新边界；保持报告元数据与用例数同步。
+- **依赖**：当前 545/545、320/320 基线。
+- **人日**：2–4 / 批。
+- **风险**：Node/V8 与规范允许差异；库下载不稳定；把实现差异写成“期望行为”；用例膨胀导致运行时间上升。
+- **验收标准**：`-Pstrict` 全绿；新增用例确实覆盖目标能力；失败分类可审计；不通过删除用例或放宽断言换绿。
+- **触发条件**：新特性落地、线上回归、或每季度覆盖维护。
+
+### 4.3 性能复测与 B2 恢复评估
+
+- **范围**：复用 S5 流程重跑 B1 七组基准，记录 JDK/OS/CPU/内存/GC 与 commit；补充 Generator/BigInt/TypedArray/Proxy 专项基准；对比 B1/S5，判断是否恢复 B2。
+- **依赖**：S5 已有复测记录；代码进入相对稳定期。
+- **人日**：1–2 / 次复测（B2 本身见 §5.2）。
+- **风险**：基准噪声与机器差异；只做纵向对比，不能跨环境下结论；优化前先确认热点。
+- **验收标准**：报告落盘、环境可复现、结论标注“仅纵向对比”；专项基准覆盖缺失的四类能力；B2 是否恢复有明确结论。
+- **触发条件**：B2 恢复前、重大运行时改动后、或性能问题反馈。
+
+### 4.4 门禁维护（S6 后续项）
+
+- **范围**：保持 parser（脚本 + 模块）、Test262 ES5/ES2015、真实库、差分的 `-Pstrict` 门禁；清理报告/注释中的历史文案；维护 allowlist 与失败分类；确保 CI 的 PR 快速子集与完整 Job 都使用当前命令。
+- **依赖**：现有 `Conformance` 工作流与 allowlist。
+- **人日**：1–2 / 批。
+- **风险**：语料下载失败造成假红；allowlist 漂移；报告文案与代码能力再次脱节；PR 子集覆盖不足。
+- **验收标准**：所有 strict 门禁通过；module allowlist 保持逐条可审计；报告不含已删除 harness 的描述；失败诊断能定位到用例。
+- **触发条件**：CI/报告变更、语料升级、或发现文档与门禁不一致。
+
+## 5. 长期/延后
+
+### 5.1 M2 真实弱引用（暂缓）
+
+- **范围**：采用 C2 方案——`HostEnvironment` 注入 `WeakKeySupport`，核心 WeakMap/WeakSet 委托给宿主实现，默认保持强引用降级；JVM 先做 MVP，其他平台后续补齐。
+- **依赖**：M2 可行性验证已完成；需要扩展 `HostEnvironment` 与宿主模块。
+- **人日**：JVM MVP **12–18**；全平台 **30–45**。
+- **风险**：ephemeron 不动点与值→键循环；JS 目标需要 `external`，与“核心无平台 API”约束冲突，必须放宿主；API 兼容与默认降级；长期内存行为难测试。
+- **验收标准**：JVM 上键不可达后条目可回收；WeakMap/WeakSet 的 get/set/has/delete/迭代语义不回归；无宿主实现时保持强引用并有文档；跨平台测试可重复。
+- **触发条件**：长期宿主出现 WeakMap/WeakSet 内存增长，或产品明确要求 GC 弱语义。
+
+### 5.2 B2 性能优化（延后）
+
+- **范围**：针对 S5 确认的热点做优化：属性读写、数组循环、引擎创建；重点排查内部方法 suspend 化后的全局标识符双查、`getPropertyFrom` / `putProperty` 每层 Proxy/TypedArray 分支、`CoreBuiltins` 安装量；补齐 B1 七组中缺失的 Generator/BigInt/TypedArray/Proxy 专项基准。
+- **依赖**：S5 复测数据；性能复测流程（§4.3）。
+- **人日**：**25–48**。
+- **风险**：语义回归（尤其 Proxy/TypedArray/Generator 热路径）；微优化不可泛化；基准噪声；为性能改变公共 API 或语义不可接受。
+- **验收标准**：S5 记录的回归项恢复或有明确解释；新增专项基准；全部单元测试、Test262、真实库与差分保持绿色；不改变语义与公共 API。
+- **触发条件**：性能敏感宿主、S5 复测确认回归、或 B2 恢复评估通过。
+
+> S5 汇总（相对 2026-11-04 B1 基线）：`propertyGet` **+12.7%**、`propertySet` **+9.6%**、数组循环 **−19%**、`engineCreate` **+37%**。这些是当前 B2 的输入，不是已完成的优化结论。
+
+### 5.3 PKG1.2–1.6 API 契约（延后）
+
+- **范围**：explicitApi、Dokka、二进制兼容校验（BCV）、CHANGELOG、host Android 目标、发布冒烟。
+- **依赖**：正式版发布决策。
+- **人日**：**7–13**。
+- **风险**：公开 API 面变化导致兼容性负担；Android 目标与宿主模块边界；文档与发布流程。
+- **验收标准**：API dump/BCV 通过；Dokka 可生成；CHANGELOG 与版本策略落地；发布冒烟覆盖 core/host。
+- **触发条件**：准备发布首个正式版。
+
+### 5.4 不做/范围外
+
+以下能力**不排期**；除非需求方明确改变范围，否则不进入路线图：
+
+| 能力 | 状态 | 说明 |
+|---|---|---|
+| Intl | 不做 | 数字/日期/排序本地化不提供；`toLocaleString` 保持简化行为 |
+| 真实 DOM / Web API | 不做 | fetch、localStorage、document 等由宿主自行提供；`:vibe-js-host` 只做通用能力 |
+| SharedArrayBuffer / Atomics | 不做 | 单线程模型不引入共享内存 |
+| resizable / transfer ArrayBuffer | 不做 | 只支持固定长度与宿主 detach |
+| Temporal / Float16Array / 装饰器 / ShadowRealm | 不做 | 不在当前语言范围 |
+| import attributes / `import.meta.resolve` / `export using` | 暂不排期 | 首批模块执行只承诺 ES2015 基础子集；出现真实用例再评估 |
+| 顶层 await | 可选 | 见 L4.7；未实现前只有语法解析 |
+| WeakRef / FinalizationRegistry | 暂缓 | 属于 M2 弱引用能力；当前只有可行性结论 |
+
+## 6. 验证命令
+
+在仓库根目录用 PowerShell 执行。新增行为优先写 commonTest；测试方法名使用中文字符串与 kotlin-test 断言。
+**不要通过删除既有用例、扩大无理由 allowlist 或降低默认调用深度来换取通过。**
 
 ```powershell
 # 核心与宿主常规验证
 .\gradlew :vibe-js-core:jvmTest :vibe-js-host:jvmTest :vibe-js-conformance:test --continue --console=plain
 
-# 涉及 commonMain 语义、容器、调度改动时验证其他本机目标
-.\gradlew :vibe-js-core:jsNodeTest :vibe-js-host:jsNodeTest :vibe-js-core:wasmJsNodeTest :vibe-js-host:wasmJsNodeTest :vibe-js-core:mingwX64Test :vibe-js-host:mingwX64Test --continue --console=plain
+# 其他目标（涉及值模型/容器/调度改动时）
+.\gradlew :vibe-js-core:jsNodeTest :vibe-js-core:wasmJsNodeTest :vibe-js-host:jsNodeTest :vibe-js-host:wasmJsNodeTest --continue --console=plain
 
-# 三项严格一致性检查
-.\gradlew :vibe-js-conformance:parserConformance :vibe-js-conformance:test262Conformance :vibe-js-conformance:test262Es2015Conformance -Pstrict --continue --console=plain
+# parser 门禁（脚本 + 模块语料都在同一任务内）
+.\gradlew :vibe-js-conformance:parserConformance -Pstrict --console=plain
+
+# Test262 ES5 / ES2015 门禁
+.\gradlew :vibe-js-conformance:test262Conformance :vibe-js-conformance:test262Es2015Conformance -Pstrict --continue --console=plain
+
+# 定向验证（示例）
+.\gradlew :vibe-js-conformance:test262Es2015Conformance -Pstrict -Ptest262Filter=Proxy --console=plain
+.\gradlew :vibe-js-conformance:test262Es2015Conformance -Pstrict -Ptest262Filter=generators --console=plain
 
 # 真实库与 Node 差分
 .\gradlew :vibe-js-conformance:librarySmoke :vibe-js-conformance:differentialConformance -Pstrict --continue --console=plain
 
-# 基准：环境记录 + 全量（约 1.5 分钟）或单组
+# 基准（性能复测时使用）
 .\gradlew :vibe-js-core:benchmarkEnvironment :vibe-js-core:jvmBenchmarkBenchmark
 .\gradlew :vibe-js-core:jvmBenchmarkBenchmark -PbenchmarkFilter=ObjectEnvironmentBenchmark
-
-# 发布任务校验（dry-run，不需要真实凭据）
-$env:GITHUB_REPOSITORY='muedsa/vibe-js'; $env:GITHUB_ACTOR='local'; $env:GITHUB_TOKEN='dummy'
-.\gradlew :vibe-js-core:publishJvmPublicationToGitHubPackagesRepository --dry-run
 ```
 
-## 6. 风险与约束
+## 7. 不可破坏契约
 
-1. **性能优化不得以语义换速度**：B2 每个子项都必须跑全量一致性基线；属性顺序、访问副作用、原型失效、微任务顺序都是可观察行为。
-2. **explicitApi 必须在公共 API 稳定后做**：B2.1/B2.2 可能调整内部类型；先冻结 API 会带来反复的 `apiDump` 变更。
-3. **快照发布存在覆盖风险**：GitHub Packages 对 Maven 快照通常允许覆盖，但未在真实仓库验证；若返回 409，改用唯一快照后缀并同步 README。
-4. **Test262 文本筛选仍是已知弱点**：C4 只降低误排概率，不能完全消除；任何对外数字都要带"子集/跳过数"口径。
-5. **新增能力必须同步口径**：L1/L2/L3 落地后，必须同步更新 [COMPATIBILITY.md](COMPATIBILITY.md)、筛选逻辑与 README，避免报告口径漂移。
-6. **P3 每项独立验收**：不做大爆炸式合并；Generator/Proxy/TypedArray 各自完成后单独回归，失败可回退单项。
+已完成能力留下的约束；后续任何改动都必须保持。
 
-## 7. 关键文件入口
+| 领域 | 约束 |
+|---|---|
+| 脚本/模块解析隔离 | `Parser.parseProgram()` 的脚本路径保持不变；`Parser.parseModule()` 独立；`ModuleItem` 不继承 `Statement`；脚本目标继续拒绝 `import` / `export` |
+| 模块目标语义 | 模块恒为严格模式；禁用 Annex B HTML 注释与 Annex B 语法；`moduleContext` 必须传播到模板 `${...}` 子解析器；`import.meta` / `import()` 只在模块目标合法 |
+| 模块执行边界 | 当前只有解析；`Engine` 没有模块执行入口；`ImportMetaExpr` / `ImportCallExpr` 执行期按未支持报错；在 L4.2/L4.3 完成前不得宣称可执行 |
+| 资源约束 | `EngineLimits` 的默认值不得回退；`ResourceLimitException` 不可被 JS `catch`/`finally` 吞掉；超限行为与分类可预期 |
+| 协作式取消与超时 | 解释器检查点观察取消；宿主取消原样传播；JS `catch`/`finally` 不吞宿主中止；剩余微任务丢弃 |
+| 执行配额 | 步数超限抛宿主 `ExecutionLimitException`；深度超限抛 JS `RangeError`；async 继承创建时的逻辑深度 |
+| 错误栈 | 创建/首次抛出时快照；重抛与 Promise 转发不覆盖原栈；保留万层同步/async 回归 |
+| 事件循环生命周期 | `close()`、`pendingTasks`、`runUntilIdle()`、统一恢复队列；同一引擎串行执行；关闭等待清理且不取消宿主父 Job |
+| 集合迭代 | 实时语义：遍历中新增可见、删除跳过、重删重加再次访问、`done` 后不复活；`size` O(1) |
+| 宿主计时 | `Date` 用墙钟；`performance.now()` / `console.time` 用单调时钟；`timeOrigin` 在模块安装时固定 |
+| 数值转换 | `ToNumeric` 对对象必须使用 number 提示；`ToNumber(BigInt)` 抛 TypeError；BigInt 与 Number 混用抛 TypeError |
+| Generator / AsyncGenerator | 参数绑定、默认参数、this/arguments 在调用生成器函数时完成；首次 `next` 前不执行函数体；async generator 请求 FIFO 串行；取消与配额异常不转换为 JS 异常 |
+| Proxy | 13 个内部方法/trap 与不变量必须走 `Interpreter` 分派；撤销后全部 TypeError；内建不得绕过内部方法 |
+| 二进制与 BigInt | 11 种 TypedArray 的整数索引 exotic 语义不变；固定小端序；detach 后长度/读写/键集合按规范；BigInt 受 `MAX_RESULT_BITS` 限制 |
+| Test262 口径 | 已实现特性不得用宽泛文本/路径排除；过滤变更必须可审计、可回滚；对外数字必须带子集/跳过口径 |
+| 文档口径 | 未实现能力必须标注“未实现”；已实现能力不得写成“明确排除”；数字必须与 §1.1 和 [CONFORMANCE.md](CONFORMANCE.md) 一致 |
+| 发布 | `0.0.0-SNAPSHOT`；GitHub Packages 发布矩阵与 README 消费说明不变 |
 
-| 区域 | 文件 | 对应任务 |
+## 8. 风险与约束
+
+1. **模块执行是剩余工作中语义最重的一块**：链接/求值/加载会引入模块图、live binding、命名空间对象与循环依赖；先做 L4.2，再做 L4.3，不要用“能解析”代替“能执行”。
+2. **模块解析仍有已知宽松点**：`import()` 零参数在语法层暂允许（执行期拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未覆盖。启动 L4.2 前应决定“先修正语法”还是“在执行层显式拒绝”。
+3. **Test262 规模**：ES2015 当前 61,786 次执行、本地约 110 秒；module 用例启用后还会增加；CI 需评估并行度与超时，但不能用扩大排除换绿。
+4. **Generator / async generator 语义最复杂**：通道驱动、async 队列与 Promise 落定顺序耦合；任何改动必须跑 Generator/AsyncGenerator/ForAwait 与 Test262 三重回归。
+5. **Proxy 不变量跨内建**：JSON、Array、`with`、`Function.prototype.toString` 等路径必须继续走内部方法；新增内建不得直接读 `JSObject` 存储。
+6. **detach 语义跨 ArrayBuffer/DataView/TypedArray**：分离后所有视图的长度、读写、键集合与原型方法需一致。
+7. **性能结论不能沿用**：S5 已显示属性读写、数组循环、引擎创建存在回归；B2 恢复前先补专项基准，且只做纵向对比。
+8. **平台差异**：JS/Wasm 单线程；Native/Android/Apple 仅 CI 或历史记录，文档结论必须带“本地/CI”标注。
+9. **BigInt 内存上限**：`MAX_RESULT_BITS = 2^24`；大数运算可能触发 RangeError，这是规范允许的实现定义限制。
+10. **R1 不是进程级隔离**：源码/AST/对象/微任务预算覆盖了解释器内主要路径，但不限制宿主阻塞调用、单次内建内部工作与全部内存。
+11. **WeakMap/WeakSet 仍是强引用**：不能当作长期缓存自动清理机制；M2 暂缓。
+12. **范围外能力不要混入缺口**：Intl、DOM/Web API、SAB/Atomics、resizable/transfer 等应标注“未实现/不在范围”，不能作为回归处理。
+
+## 9. 关键文件入口
+
+| 区域 | 文件 | 对应工作 |
 |---|---|---|
-| 引擎门面与限制 | [Engine.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Engine.kt)、[EngineLimits.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/EngineLimits.kt) | B2.4、R1 |
-| 解释器与属性访问 | [Interpreter.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Interpreter.kt)、[JSObject.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/value/JSObject.kt)、[Environment.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Environment.kt) | B2.1、B2.2、L2.2 |
-| 事件循环与 Promise | [EventLoop.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/EventLoop.kt)、[PromiseSupport.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/PromiseSupport.kt) | B2.3 |
-| 解析与词法 | [Lexer.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/lexer/Lexer.kt)、[Parser.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/parser/Parser.kt) | B2.4、R1、L1.1、L1.3 |
-| 内建热路径 | [ArrayBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/ArrayBuiltins.kt)、[RegExpBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/RegExpBuiltins.kt)、[StringBuiltins.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/StringBuiltins.kt)、[JsonParser.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/builtins/JsonParser.kt) | B2.5 |
-| 基准 | [jvmBenchmark](../vibe-js-core/src/jvmBenchmark/kotlin) 下的七个基准类 | B2 验收 |
-| 发布与 API 契约 | [vibe-js-core/build.gradle.kts](../vibe-js-core/build.gradle.kts)、[vibe-js-host/build.gradle.kts](../vibe-js-host/build.gradle.kts)、[publish.yml](../.github/workflows/publish.yml) | PKG1 |
-| 一致性筛选 | [Test262Selection.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Selection.kt)、[Test262Conformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Conformance.kt) | C4 |
-| 语言能力（待新建） | Parser/Interpreter/JSObject 与 `builtins/` 下的新模块 | L1、L2、L3 |
-| 文档 | [README.md](../README.md)、[COMPATIBILITY.md](COMPATIBILITY.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[CONFORMANCE.md](CONFORMANCE.md) | 口径同步 |
+| 模块解析 | [Parser.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/parser/Parser.kt)、[Modules.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/ast/Modules.kt)、[Lexer.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/lexer/Lexer.kt) | L4.2 / L4.3 的输入 |
+| 模块测试 | [ParserModuleTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ParserModuleTest.kt)、[ParserConformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/ParserConformance.kt)、`parser-module-allowlist.txt` | 模块语料门禁已接入；L4.6b 扩展 |
+| 模块执行（建议新增） | `vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/module/`（Module Record / Link / Evaluate） | L4.2 / L4.3 / L4.4 |
+| 模块加载与 CLI（建议新增） | `vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/`（文件/URL loader、CLI 入口） | L4.4 / L4.4b |
+| 引擎与解释器接入 | [Engine.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Engine.kt)、[Interpreter.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Interpreter.kt) | L4.3 |
+| Test262 筛选/运行器 | [Test262Selection.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Selection.kt)、[Test262Conformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Conformance.kt) | L4.6b / S2 / 门禁 |
+| 差分与真实库 | [DifferentialCases.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialCases.kt)、[LSeriesDifferentialCases.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/LSeriesDifferentialCases.kt)、[Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt) | S2 扩展 |
+| 性能 | `vibe-js-core/src/jvmBenchmark/kotlin/` 下基准源码、`vibe-js-core/build/reports/benchmarks/` | 性能复测 / B2 |
+| 资源约束 | [EngineLimits.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/EngineLimits.kt)、[ResourceLimitsTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ResourceLimitsTest.kt) | R1 第三批 |
+| 文档 | [README.md](../README.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[COMPATIBILITY.md](COMPATIBILITY.md)、[CONFORMANCE.md](CONFORMANCE.md)、本文件 | 口径维护 |
 
-## 8. 变更记录
+## 10. 变更记录
 
 | 日期 | 变更 |
 |---|---|
-| 2026-11-06 | 重写：移除全部已完成项（C1–C3、T1、T2、M1、B1、H1、A1、D1），其约束收敛到 §2；按重新审核的结果确定在办项 B2（五个子项）、PKG1（收尾六项）、C4（筛选口径）；更新基线（core 610/604、host 25、ES5 15,244、ES2015 37,329、差分 492、真实库 309）、代码规模、性能数据与发布状态（0.0.0-SNAPSHOT → GitHub Packages）；暂缓 R1/L4/L3、搁置 L1/L2/M2 保持原决策并更新证据 |
-| 2026-11-06 | L1/L2/L3 补充原子拆分（§4.1、§5.1、§5.2）：按可独立交付的子项列出依赖、人日与返工成本，明确"主题分组 ≠ 必须同时实现"；给出最小实现集：`for await` 4–8、Reflect 5–10、二进制 20–37、大整数 12–22、Vue 3/immer 20–35 |
-| 2026-11-06 | 子项编号统一为 `X.n`：`L1a–L1d` → `L1.1–L1.4`、`L2a–L2c` → `L2.1–L2.3`、`L3a–L3d` → `L3.1–L3.4`，PKG1 子项编号 `PKG1.1–PKG1.6`；顶层编号不变（与提交历史、已完成项引用保持连续） |
-| 2026-11-06 | 全部项目改为在办：移除"暂缓/搁置"分区，原 R1/L4/L3/L1/L2/M2 并入任务详情；按 P0–P4 重排优先级（P0 立即可做、P1 性能主线、P2 API 契约、P3 语言能力、P4 长期）；新增 R1/M2/L4 的方案与验收；总投入约 167–314 人日 |
+| 2026-11-08 | **重写为“后续路线（未完成工作）”**：移除已完成项清单，只保留 P0 模块执行与宿主生态、P1 质量项、长期/延后项；基线更新为 `1f8fa3d`；补充每项的范围、依赖、人日、风险、验收与触发条件；加入模块解析/执行边界与不做清单 |
