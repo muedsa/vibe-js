@@ -29,6 +29,8 @@ import com.muedsa.js.ast.FunctionDeclaration
 import com.muedsa.js.ast.FunctionExpression
 import com.muedsa.js.ast.Identifier
 import com.muedsa.js.ast.IfStatement
+import com.muedsa.js.ast.ImportCallExpr
+import com.muedsa.js.ast.ImportMetaExpr
 import com.muedsa.js.ast.LabeledStatement
 import com.muedsa.js.ast.MemberExpr
 import com.muedsa.js.ast.NewExpr
@@ -4419,6 +4421,9 @@ class Interpreter(
             is ClassExpression -> evaluateClass(expression.name, expression.superClass, expression.members, expression.sourceText)
             is SuperExpr -> throw syntaxError("'super' keyword unexpected here")
             is NewTargetExpr -> currentFrame.newTarget ?: JSUndefined
+            // 模块表达式节点只由 parseModule 产生；模块求值属于 L4.3，脚本执行不会到达这里。
+            is ImportMetaExpr -> throw syntaxError("import.meta is only available in module code")
+            is ImportCallExpr -> throw syntaxError("Dynamic import is not supported")
 
             is YieldExpression -> evaluateYield(expression)
 

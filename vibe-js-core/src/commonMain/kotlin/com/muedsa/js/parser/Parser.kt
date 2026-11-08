@@ -49,6 +49,14 @@ class Parser(
      * 接续到外层总数上，保证整个脚本共享同一个 maxAstNodes 预算。顶层解析为 0。
      */
     private val initialAstNodeCount: Int = 0,
+    /**
+     * 是否按 Module 目标解析。
+     *
+     * [parseModule] 会在开始解析前置位；模板字符串的 `${...}` 子解析器通过该参数
+     * 继承模块语境（`import.meta` / `import()` / 模块顶层 await 在模板表达式中同样合法）。
+     * 脚本目标保持 false，所有模块专属规则都不会生效。
+     */
+    private var moduleContext: Boolean = false,
 ) {
 
     /**
@@ -172,6 +180,15 @@ class Parser(
      * 函数/方法/箭头的函数体恢复 [~Await] 语境；箭头参数仍沿用外层限制。
      */
     private var awaitIdentifierForbidden = false
+
+    /**
+     * 当前嵌套的 class 字段初始化表达式层数。
+     *
+     * 字段初始化表达式是 [~Await] 语境：模块里 `await` 虽可作顶层 await 表达式，
+     * 但 `class C { x = await 1 }` 仍是语法错误。进入普通函数体（含箭头函数体）
+     * 会重置该层数，因为函数体有自己独立的 [Await] 语境。
+     */
+    private var classFieldInitializerDepth = 0
 
     /**
      * 正在解析的 class 静态初始化块所在的 functionDepth。
@@ -1644,6 +1661,7 @@ class Parser(
         val outerAsync = asyncContext
         argumentsForbidden = true
         awaitIdentifierForbidden = false
+        classFieldInitializerDepth++
         // 字段初始化表达式是 [~Yield] 语境：yield 只能作为标识符（严格模式下直接报错）
         generatorContext = false
         superPropertyAllowed = true
@@ -1653,6 +1671,7 @@ class Parser(
         return try {
             block()
         } finally {
+            classFieldInitializerDepth--
             argumentsForbidden = outerArgumentsForbidden
             awaitIdentifierForbidden = outerAwaitForbidden
             generatorContext = outerGenerator
@@ -1722,11 +1741,14 @@ class Parser(
         val outerNewTarget = newTargetAllowed
         val outerArgumentsForbidden = argumentsForbidden
         val outerAwaitForbidden = awaitIdentifierForbidden
+        // 函数体有独立的 [Await] 语境，不再受外层 class 字段初始化器限制
+        val outerClassFieldInitializerDepth = classFieldInitializerDepth
         strict = outerStrict || bodyStrict
         asyncContext = isAsync
         generatorContext = isGenerator
         // 函数体是形参早期错误规则的边界：yield/await 在此恢复为普通表达式语境
         inFormalParameters = false
+        classFieldInitializerDepth = 0
         superPropertyAllowed = allowSuperProperty
         superCallAllowed = allowSuperCall
         newTargetAllowed = allowNewTarget
@@ -1783,6 +1805,7 @@ class Parser(
             newTargetAllowed = outerNewTarget
             argumentsForbidden = outerArgumentsForbidden
             awaitIdentifierForbidden = outerAwaitForbidden
+            classFieldInitializerDepth = outerClassFieldInitializerDepth
             inFormalParameters = outerInFormalParameters
         }
         val innerStrict = strict
@@ -1858,9 +1881,13 @@ class Parser(
         }
     }
 
-    /** 标识符引用/绑定位置的额外校验：转义关键字与 async/generator 上下文中的关键字。 */
+    /** 标识符引用/绑定位置的额外校验：转义关键字与 async/generator/模块上下文中的关键字。 */
     private fun validateIdentifierToken(token: Token) {
         validateEscapedKeyword(token)
+        // 模块代码中 await 始终是保留字（含嵌套函数与转义写法），不能作为绑定名或引用
+        if (moduleContext && token.value == "await") {
+            throw ParseException("await is not a valid identifier in module code", token.range)
+        }
         if (asyncContext && token.value == "await") {
             throw ParseException("await is not a valid identifier in async context", token.range)
         }
@@ -2892,6 +2919,9 @@ class Parser(
         // 箭头表达式体是形参早期错误规则的边界：其中 yield/await 恢复为普通表达式语境
         val outerInFormalParameters = inFormalParameters
         inFormalParameters = false
+        // 箭头函数体同样有独立的 [Await] 语境，不受外层 class 字段初始化器限制
+        val outerClassFieldInitializerDepth = classFieldInitializerDepth
+        classFieldInitializerDepth = 0
         // 表达式体沿用当前严格模式上下文
         validateFunctionParameters(params, strict, isArrow = true)
         try {
@@ -2913,6 +2943,7 @@ class Parser(
         } finally {
             asyncContext = outerAsync
             awaitIdentifierForbidden = outerAwaitForbidden
+            classFieldInitializerDepth = outerClassFieldInitializerDepth
             generatorContext = outerGenerator
             inFormalParameters = outerInFormalParameters
         }
@@ -3084,6 +3115,20 @@ class Parser(
 
         // async 函数中的 await
         if (asyncContext && token.type == TokenType.IDENTIFIER && token.value == "await") {
+            advance()
+            val operand = parseUnary()
+            return trackAstNode(UnaryOp("await", operand, SourceRange(token.range.start, operand.range.end)))
+        }
+
+        // 模块代码中的 await：
+        // - 模块顶层与函数体内的 await 按 AwaitExpression 解析（语法层，运行期由 L4.3 处理）；
+        // - 形参列表、class 字段初始化器与 static 块是 [~Await] 语境，await 只能按
+        //   保留字处理（随后由标识符校验报错）；
+        // - 转义形式（aw\u0061it）不构成 await 运算符。
+        if (moduleContext && !inFormalParameters && classFieldInitializerDepth == 0 &&
+            !awaitIdentifierForbidden && token.type == TokenType.IDENTIFIER &&
+            token.value == "await" && !token.containsEscape
+        ) {
             advance()
             val operand = parseUnary()
             return trackAstNode(UnaryOp("await", operand, SourceRange(token.range.start, operand.range.end)))
@@ -3519,6 +3564,15 @@ class Parser(
                 throw error("Unexpected private name")
 
             TokenType.IDENTIFIER -> {
+                // 模块表达式层的 import 元属性与动态导入；
+                // 脚本目标不进入该分支，仍按保留字报错（本切片不扩大到脚本）。
+                if (moduleContext && token.value == "import" && !token.containsEscape) {
+                    when (peek(1).type) {
+                        TokenType.DOT -> return parseImportMetaExpression(token.range.start)
+                        TokenType.LPAREN -> return parseImportCallExpression(token.range.start)
+                        else -> Unit
+                    }
+                }
                 validateIdentifierToken(token)
                 validateIdentifierName(token.value, strict)
                 validateStaticBlockReferenceName(token.value)
@@ -3564,6 +3618,52 @@ class Parser(
     }
 
     /**
+     * `import.meta` 元属性（`import` 已定位但尚未消费）。
+     *
+     * 语法要求 `import` 后必须紧跟 `.` 与无转义的 `meta`；`import.foo`、
+     * `import[0]` 等形态都是早期错误。脚本目标不会走到这里（`import` 仍是保留字）。
+     */
+    private fun parseImportMetaExpression(start: SourcePosition): Expression {
+        advance() // import
+        consume(TokenType.DOT, "Expected '.' after 'import'")
+        val meta = peek()
+        if (meta.type != TokenType.IDENTIFIER || meta.containsEscape || meta.value != "meta") {
+            throw ParseException("Expected 'meta' after 'import.'", meta.range)
+        }
+        advance()
+        return trackAstNode(ImportMetaExpr(SourceRange(start, meta.range.end)))
+    }
+
+    /**
+     * 动态导入 `import(specifier[, options])`（`import` 已定位但尚未消费）。
+     *
+     * 语法层允许 0..2 个实参（规范要求 1..2，零参数留给运行期按规范拒绝），
+     * 并允许尾逗号；实参必须是 AssignmentExpression，因此 `...x` 展开是早期错误。
+     */
+    private fun parseImportCallExpression(start: SourcePosition): Expression {
+        advance() // import
+        consume(TokenType.LPAREN, "Expected '(' after 'import'")
+        val arguments = mutableListOf<Expression>()
+        if (!check(TokenType.RPAREN)) {
+            while (true) {
+                if (check(TokenType.ELLIPSIS)) {
+                    throw error("Spread arguments are not allowed in import()")
+                }
+                // 第三个实参从词法上就不属于 ImportCall 文法，在解析前给出位置准确的诊断
+                if (arguments.size >= 2) {
+                    throw error("import() accepts at most 2 arguments")
+                }
+                arguments.add(parseAssignment())
+                if (!match(TokenType.COMMA)) break
+                // 允许尾逗号：`import("m",)`
+                if (check(TokenType.RPAREN)) break
+            }
+        }
+        val close = consume(TokenType.RPAREN, "Expected ')' after import() arguments")
+        return trackAstNode(ImportCallExpr(arguments, SourceRange(start, close.range.end)))
+    }
+
+    /**
      * 模板字符串：解析 `${...}` 中的表达式源码。
      *
      * [tagged] 为 true 时允许非法转义（cooked=null）；普通模板在解析期报 SyntaxError。
@@ -3606,6 +3706,8 @@ class Parser(
                         maxAstNodes = maxAstNodes,
                         // 子表达式与整个脚本共享同一预算：把父解析器已创建的节点作为起点
                         initialAstNodeCount = inheritedNodeCount,
+                        // 模板表达式继承模块语境（import.meta / import() / 顶层 await）
+                        moduleContext = moduleContext,
                     )
                     val subExpression = subParser.parseExpressionInput()
                     // 子解析器新增的节点计入父解析器，后续模板与节点继续共用剩余预算。
@@ -4221,14 +4323,19 @@ class Parser(
      *   因此单独返回 `functionDeclarations`，不会混进 `varDeclarations`。
      *
      * 已实现的早期错误：导入绑定重复、导出名重复、`var` 与顶层词法声明重名、
-     * 模块说明符的八进制转义。
-     * 未实现（后续切片）：`import()` / `import.meta`（表达式层需要模块上下文）、
-     * 模块顶层 `await` 作为保留字、`super` / `new.target` 的模块限制、
-     * Annex B 语法在模块中的禁用、`export using`。
+     * 顶层函数重复声明、模块说明符的八进制转义；`await` 在模块中作为保留字；
+     * 模块顶层 `super` / `new.target` 被拒绝；Annex B 的 sloppy 语法因模块恒为
+     * 严格模式而全部禁用。
+     *
+     * 表达式层（L4.1b）：`import.meta` 解析为 [ImportMetaExpr]，`import(...)` 解析为
+     * [ImportCallExpr]；模块顶层与函数体内的 `await` 解析为 `UnaryOp("await", ...)`。
+     * 以上节点暂不参与求值，链接/执行语义属于 L4.2/L4.3。
      */
     fun parseModule(): ModuleProgram {
         // 模块代码恒为严格模式：先置位，后续所有语句都按严格模式解析与校验
         strict = true
+        // 置位模块语境：表达式层识别 import.meta / import()，并启用模块专属早期错误
+        moduleContext = true
         val start = peek().range.start
         val items = mutableListOf<ModuleItem>()
         val statements = mutableListOf<Statement>()
@@ -4247,7 +4354,8 @@ class Parser(
                 val result = if (isModuleDeclarationStart()) {
                     parseModuleDeclaration()
                 } else {
-                    rejectUnsupportedImportExpression()
+                    // import() / import.meta 由表达式层解析；其余 import/export 用法
+                    // 在 parseStatement 内按保留字或声明语法报错
                     ModuleParseResult(StatementItem(parseStatement()))
                 }
                 items.add(result.item)
@@ -4282,8 +4390,16 @@ class Parser(
 
         val hoist = collectHoisted(statements)
         // 模块顶层 function 是词法声明：未被 export 包裹的顶层函数同样要计入词法名，
-        // 供 var 冲突检查与模块声明实例化（ModuleDeclarationInstantiation）使用
+        // 供 var 冲突检查与模块声明实例化（ModuleDeclarationInstantiation）使用。
+        // 重复的顶层函数名在脚本里合法（var 语义），在模块里属于词法重名早期错误。
+        val topLevelFunctionNames = mutableSetOf<String>()
         for (declaration in hoist.functionDeclarations) {
+            if (!topLevelFunctionNames.add(declaration.name)) {
+                throw ParseException(
+                    "Identifier '${declaration.name}' has already been declared",
+                    declaration.range,
+                )
+            }
             lexicalNames.add(declaration.name)
         }
         // 模块顶层 function 是词法声明，因此 var 与任意顶层词法名重名都是早期错误。
@@ -4321,7 +4437,8 @@ class Parser(
      *
      * `import` / `export` 在 Lexer 里不是关键字（没有对应 [TokenType]），
      * 而是由 Parser 按保留字拒绝；这里用同样的方式识别，避免改动词法层。
-     * `import(` 与 `import.` 是表达式层语法，不算声明起点。
+     * `import(` 与 `import.` 是表达式层语法（[parseImportCallExpression] /
+     * [parseImportMetaExpression]），不算声明起点。
      */
     private fun isModuleDeclarationStart(): Boolean {
         val token = peek()
@@ -4330,19 +4447,6 @@ class Parser(
             "export" -> true
             "import" -> peek(1).type != TokenType.LPAREN && peek(1).type != TokenType.DOT
             else -> false
-        }
-    }
-
-    /** 动态导入 / `import.meta` 尚无实现，给出明确诊断而不是笼统的"保留字"错误。 */
-    private fun rejectUnsupportedImportExpression() {
-        val token = peek()
-        if (token.type != TokenType.IDENTIFIER || token.containsEscape || token.value != "import") {
-            return
-        }
-        when (peek(1).type) {
-            TokenType.LPAREN -> throw error("Dynamic import is not supported yet")
-            TokenType.DOT -> throw error("import.meta is not supported yet")
-            else -> Unit
         }
     }
 
@@ -4472,6 +4576,8 @@ class Parser(
                     }
                     importedToken
                 }
+                // 无 `as` 时导入名同时是本地绑定名：复用标识符校验（模块中 await 为保留字等）
+                validateIdentifierToken(localToken)
                 validateIdentifierName(localToken.value, strict)
                 declareLexicalBinding(localToken.value)
                 specifiers.add(

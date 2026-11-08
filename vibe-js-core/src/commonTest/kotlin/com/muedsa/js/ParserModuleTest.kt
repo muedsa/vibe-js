@@ -1,15 +1,27 @@
 package com.muedsa.js
 
+import com.muedsa.js.ast.ArrowFunction
+import com.muedsa.js.ast.CallExpr
 import com.muedsa.js.ast.ClassExpression
+import com.muedsa.js.ast.ConditionalExpr
 import com.muedsa.js.ast.ExportAllDeclaration
 import com.muedsa.js.ast.ExportDefaultDeclaration
 import com.muedsa.js.ast.ExportNamedDeclaration
+import com.muedsa.js.ast.Expression
+import com.muedsa.js.ast.ExpressionStatement
 import com.muedsa.js.ast.FunctionDeclaration
 import com.muedsa.js.ast.FunctionExpression
+import com.muedsa.js.ast.ImportCallExpr
 import com.muedsa.js.ast.ImportDeclaration
+import com.muedsa.js.ast.ImportMetaExpr
+import com.muedsa.js.ast.MemberExpr
+import com.muedsa.js.ast.ModuleProgram
 import com.muedsa.js.ast.NumberLiteral
+import com.muedsa.js.ast.ObjectLiteral
+import com.muedsa.js.ast.Statement
 import com.muedsa.js.ast.StatementItem
 import com.muedsa.js.ast.StringLiteral
+import com.muedsa.js.ast.UnaryOp
 import com.muedsa.js.ast.VarDeclaration
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.parser.ParseException
@@ -33,6 +45,14 @@ class ParserModuleTest {
     private fun parseModule(code: String) = Parser(Lexer(code).tokenize()).parseModule()
 
     private fun parseScript(code: String) = Parser(Lexer(code).tokenize()).parseProgram()
+
+    /** 取模块中第一个模块项的语句（用于只有普通语句的用例）。 */
+    private fun firstStatement(module: ModuleProgram): Statement =
+        assertIs<StatementItem>(module.items.first()).statement
+
+    /** 取模块中第一个表达式语句的表达式。 */
+    private fun firstExpression(module: ModuleProgram): Expression =
+        assertIs<ExpressionStatement>(firstStatement(module)).expression
 
     @Test
     fun `模块恒为严格模式且不依赖 use strict 指令`() {
@@ -240,11 +260,13 @@ class ParserModuleTest {
     }
 
     @Test
-    fun `动态导入与import元属性给出明确诊断`() {
-        val dynamicImport = assertFailsWith<ParseException> { parseModule("""import("./m.js");""") }
-        assertTrue(dynamicImport.message.orEmpty().contains("Dynamic import"))
-        val meta = assertFailsWith<ParseException> { parseModule("import.meta.url;") }
-        assertTrue(meta.message.orEmpty().contains("import.meta"))
+    fun `脚本目标拒绝import元属性与动态导入`() {
+        // 本切片只把两种表达式接入模块目标；脚本中 import 仍是保留字
+        assertFailsWith<ParseException> { parseScript("import.meta.url;") }
+        assertFailsWith<ParseException> { parseScript("import(\"./m.js\");") }
+        // 模块目标下二者都已可用
+        parseModule("import.meta.url;")
+        parseModule("import(\"./m.js\");")
     }
 
     @Test
@@ -284,5 +306,230 @@ class ParserModuleTest {
         val expression = assertIs<ExportDefaultDeclaration>(module.items.single()).expression
         assertEquals("text", assertIs<StringLiteral>(expression).value)
         assertEquals("*default*", module.exportEntries.single().localName)
+    }
+
+    // ================================================================
+    // L4.1b：模块表达式层语法与剩余早期错误
+    // ================================================================
+
+    @Test
+    fun `import元属性解析为独立节点`() {
+        val module = parseModule("const url = import.meta.url;")
+        val declaration = assertIs<VarDeclaration>(firstStatement(module))
+        val member = assertIs<MemberExpr>(declaration.declarations.single().initializer)
+        val meta = assertIs<ImportMetaExpr>(member.obj)
+        // 位置覆盖整个 import.meta（起始列 13，结束列 24；结束位置是最后一个字符之后）
+        assertEquals(1, meta.range.start.line)
+        assertEquals(13, meta.range.start.column)
+        assertEquals(24, meta.range.end.column)
+        // 元属性不是导入声明，不产生模块请求
+        assertTrue(module.requestedModules.isEmpty())
+    }
+
+    @Test
+    fun `import元属性必须紧跟meta`() {
+        assertFailsWith<ParseException> { parseModule("import.foo;") }
+        assertFailsWith<ParseException> { parseModule("import.meta2;") }
+        assertFailsWith<ParseException> { parseModule("import[\"meta\"];") }
+        // meta 不能使用转义写法
+        assertFailsWith<ParseException> { parseModule("import.m\\u0065ta;") }
+    }
+
+    @Test
+    fun `import元属性与动态导入在嵌套函数和模板中可用`() {
+        parseModule("function f() { return import.meta.url; }")
+        parseModule("const f = () => import.meta;")
+        parseModule("const p = import(\"./m.js\");")
+        // 模板表达式由子 Parser 解析，必须继承模块语境
+        parseModule("const u = `\${import.meta.url}`;")
+        parseModule("const p = `\${import(\"./m.js\")}`;")
+    }
+
+    @Test
+    fun `动态导入允许零个一个两个参数与尾逗号`() {
+        val zero = assertIs<ImportCallExpr>(firstExpression(parseModule("import();")))
+        assertTrue(zero.arguments.isEmpty())
+        assertNull(zero.specifier)
+        assertNull(zero.options)
+
+        val one = assertIs<ImportCallExpr>(firstExpression(parseModule("import(\"./m.js\");")))
+        assertEquals(1, one.arguments.size)
+        assertIs<StringLiteral>(one.specifier)
+        assertNull(one.options)
+
+        val two = assertIs<ImportCallExpr>(
+            firstExpression(parseModule("import(\"./m.js\", { with: { type: \"json\" } });"))
+        )
+        assertEquals(2, two.arguments.size)
+        assertIs<StringLiteral>(two.specifier)
+        assertIs<ObjectLiteral>(two.options)
+
+        // 一个实参与两个实参都允许尾逗号
+        val trailing = assertIs<ImportCallExpr>(firstExpression(parseModule("import(\"./m.js\",);")))
+        assertEquals(1, trailing.arguments.size)
+        val trailingTwo = assertIs<ImportCallExpr>(
+            firstExpression(parseModule("import(\"./m.js\", {},);"))
+        )
+        assertEquals(2, trailingTwo.arguments.size)
+    }
+
+    @Test
+    fun `动态导入超过两个参数是早期错误`() {
+        val error = assertFailsWith<ParseException> {
+            parseModule("import(\"a\", \"b\", \"c\");")
+        }
+        assertTrue(error.message.orEmpty().contains("at most 2"))
+        // 错误位置指向第三个实参
+        assertEquals(1, error.range.start.line)
+        assertEquals(18, error.range.start.column)
+    }
+
+    @Test
+    fun `动态导入参数必须是表达式而非展开`() {
+        val error = assertFailsWith<ParseException> { parseModule("import(...args);") }
+        assertTrue(error.message.orEmpty().contains("Spread"))
+        assertFailsWith<ParseException> { parseModule("import(\"m\", ...options);") }
+    }
+
+    @Test
+    fun `模块顶层await解析为await表达式`() {
+        val await = assertIs<UnaryOp>(firstExpression(parseModule("await fetchData();")))
+        assertEquals("await", await.operator)
+        assertIs<CallExpr>(await.operand)
+    }
+
+    @Test
+    fun `模块顶层await可出现在导出与条件表达式`() {
+        val exported = parseModule("export default await 1;")
+        assertIs<UnaryOp>(assertIs<ExportDefaultDeclaration>(exported.items.single()).expression)
+
+        val conditional = parseModule("const x = await a ? await b : await c;")
+        val initializer = assertIs<VarDeclaration>(firstStatement(conditional))
+            .declarations.single().initializer
+        val ternary = assertIs<ConditionalExpr>(initializer)
+        assertIs<UnaryOp>(ternary.condition)
+        assertIs<UnaryOp>(ternary.thenBranch)
+        assertIs<UnaryOp>(ternary.elseBranch)
+    }
+
+    @Test
+    fun `模块顶层与函数体内的await均可解析`() {
+        // 语法层允许模块函数体（含箭头函数）中的 await；运行期语义由 L4.3 处理
+        parseModule("function f() { return await 1; }")
+        parseModule("async function g() { return await 2; }")
+        val arrow = parseModule("const f = () => await 1;")
+        val initializer = assertIs<VarDeclaration>(firstStatement(arrow))
+            .declarations.single().initializer
+        val function = assertIs<ArrowFunction>(initializer)
+        assertIs<UnaryOp>(function.expressionBody)
+        parseModule("const g = async () => await 2;")
+    }
+
+    @Test
+    fun `模块顶层await在模板表达式中可解析`() {
+        parseModule("const x = `\${await 1}`;")
+    }
+
+    @Test
+    fun `模块中await不能作为绑定名或标识符`() {
+        val invalid = listOf(
+            "var await = 1;",
+            "let await = 1;",
+            "const await = 1;",
+            "function await() {}",
+            "function f(await) {}",
+            "const f = await => 1;",
+            "class await {}",
+            "try {} catch (await) {}",
+            "import {await} from \"./m.js\";",
+            "var x = await;",
+            "await: 1;",
+            // 转义写法在模块中同样不能绕过保留字限制
+            "var aw\\u0061it = 1;",
+        )
+        for (code in invalid) {
+            assertFailsWith<ParseException>(code) { parseModule(code) }
+        }
+    }
+
+    @Test
+    fun `模块中await仍可作为属性名`() {
+        parseModule("obj.await;")
+        parseModule("const o = { await: 1 };")
+        parseModule("class C { await() {} }")
+    }
+
+    @Test
+    fun `模块中class字段与static块内await仍是保留字`() {
+        assertFailsWith<ParseException> { parseModule("class C { x = await 1; }") }
+        assertFailsWith<ParseException> { parseModule("class C { static { await 1; } }") }
+        assertFailsWith<ParseException> { parseModule("function f(x = await 1) {}") }
+    }
+
+    @Test
+    fun `模块顶层super是早期错误`() {
+        assertFailsWith<ParseException> { parseModule("super.x;") }
+        assertFailsWith<ParseException> { parseModule("super();") }
+        // 箭头函数继承外层 super 语境，模块顶层同样非法
+        assertFailsWith<ParseException> { parseModule("const f = () => super.x;") }
+    }
+
+    @Test
+    fun `模块顶层new_target是早期错误`() {
+        assertFailsWith<ParseException> { parseModule("new.target;") }
+        assertFailsWith<ParseException> { parseModule("const f = () => new.target;") }
+    }
+
+    @Test
+    fun `模块函数内的super属性与new_target合法`() {
+        // 普通函数允许 new.target，方法允许 super 属性，派生类构造器允许 super()
+        parseModule("function F() { return new.target; }")
+        parseModule("const o = { m() { return super.x; } };")
+        parseModule("class B {} class D extends B { constructor() { super(); } m() { return super.x; } }")
+    }
+
+    @Test
+    fun `模块禁用AnnexB的单语句函数声明`() {
+        assertFailsWith<ParseException> { parseModule("if (x) function f() {}") }
+        assertFailsWith<ParseException> { parseModule("if (x) function f() {} else function g() {}") }
+        assertFailsWith<ParseException> { parseModule("while (x) function f() {}") }
+        assertFailsWith<ParseException> { parseModule("label: function f() {}") }
+        // 旧式 for-in 初始化器同样是 Annex B 的 sloppy 扩展
+        assertFailsWith<ParseException> { parseModule("for (var x = 0 in obj) {}") }
+        // 同样的 if 分支函数声明与 for-in 初始化器在 sloppy 脚本中按 Annex B 合法
+        parseScript("if (x) function f() {}")
+        parseScript("for (var x = 0 in obj) {}")
+    }
+
+    @Test
+    fun `模块禁用sloppy块级函数重复声明`() {
+        assertFailsWith<ParseException> {
+            parseModule("{ function f() {} function f() {} }")
+        }
+        // sloppy 脚本允许块级同名普通函数（Annex B.3.3）
+        parseScript("{ function f() {} function f() {} }")
+    }
+
+    @Test
+    fun `模块顶层重复函数声明是早期错误`() {
+        // 脚本中顶层 function 属于 var 语义，可以重复；模块中属于词法声明
+        parseScript("function f() {} function f() {}")
+        assertFailsWith<ParseException> { parseModule("function f() {} function f() {}") }
+        assertFailsWith<ParseException> { parseModule("export function f() {} function f() {}") }
+    }
+
+    @Test
+    fun `模块早期错误位置指向出错的token`() {
+        val meta = assertFailsWith<ParseException> { parseModule("import.foo;") }
+        assertEquals(1, meta.range.start.line)
+        assertEquals(8, meta.range.start.column)
+
+        val binding = assertFailsWith<ParseException> { parseModule("var await = 1;") }
+        assertEquals(1, binding.range.start.line)
+        assertEquals(5, binding.range.start.column)
+
+        val parameter = assertFailsWith<ParseException> { parseModule("function f(await) {}") }
+        assertEquals(1, parameter.range.start.line)
+        assertEquals(12, parameter.range.start.column)
     }
 }

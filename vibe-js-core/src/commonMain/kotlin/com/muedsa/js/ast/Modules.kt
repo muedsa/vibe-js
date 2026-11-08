@@ -65,8 +65,8 @@ class ImportSpecifier(
  * - `import * as ns from "m"`（命名空间导入）
  * - `import d, {a} from "m"` / `import d, * as ns from "m"`
  *
- * 仍未覆盖（后续 L4.1 切片）：`import { "字符串名" as x }`（任意模块命名空间名）、
- * `import.meta`、`import()`——后两者需要表达式层的模块上下文，见设计报告。
+ * 仍未覆盖（后续 L4.1 切片）：`import { "字符串名" as x }`（任意模块命名空间名）。
+ * `import.meta` 与 `import()` 属于表达式层语法，分别见 [ImportMetaExpr] 与 [ImportCallExpr]。
  *
  * @property moduleRequest 模块说明符（字符串字面量解码后的值）
  * @property specifiers 具名导入项（含默认导入）
@@ -162,6 +162,42 @@ class ExportEntry(
     val importName: String?,
     val localName: String?,
 )
+
+/**
+ * `import.meta` 元属性表达式。
+ *
+ * 语法（ES2024 13.3.12）：`import . meta`，`meta` 必须是无转义的标识符名。
+ * 只在 Module 目标下合法；脚本目标由 Parser 按保留字拒绝。
+ * 求值语义（宿主提供的模块元数据对象）属于 L4.3，本切片只负责表达式层语法。
+ */
+class ImportMetaExpr(
+    override val range: SourceRange,
+) : Expression()
+
+/**
+ * 动态导入调用 `import(specifier[, options])`。
+ *
+ * 语法层宽容点：
+ * - 参数个数允许 0..2（规范 13.3.12 要求至少一个实参、至多两个；运行期 L4.3
+ *   在真正执行时再按规范拒绝零参数形态）；
+ * - 允许尾逗号与第二个可选参数（导入属性对象）。
+ *
+ * 与普通 [CallExpr] 分开建模，避免解释器把 `import` 当成普通标识符调用，
+ * 同时保留 `import` 自身在脚本目标中作为保留字的诊断。
+ *
+ * @property arguments 实参表达式（0..2 个）
+ */
+class ImportCallExpr(
+    val arguments: List<Expression>,
+    override val range: SourceRange,
+) : Expression() {
+
+    /** 模块说明符（第一个实参）；`import()` 零参数时为 null。 */
+    val specifier: Expression? get() = arguments.getOrNull(0)
+
+    /** 导入属性/选项对象（第二个实参）；未提供时为 null。 */
+    val options: Expression? get() = arguments.getOrNull(1)
+}
 
 /**
  * 模块根节点（Module 目标）。
