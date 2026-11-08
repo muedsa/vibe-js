@@ -67,7 +67,14 @@ kotlin {
     }
     // Native 桌面/服务器目标
     linuxX64()   // Linux (x64)
-    mingwX64()   // Windows (x64)
+    mingwX64 {   // Windows (x64)
+        // Kotlin/Native 测试可执行文件默认沿用 Windows PE 的 1 MB 主线程栈。
+        // 递归下降解析在 Native debug 构建下每层括号嵌套约消耗 24 KB Kotlin 物理栈
+        // （ResourceLimitsTest 深嵌套用例实测 41 层通过、42 层溢出），
+        // 默认 maxNestingDepth = 256 需要更大的宿主栈才能完成解析。
+        // 这里只放宽测试进程的栈到 32 MB，库运行期行为与配额默认值均不变。
+        binaries.getTest("DEBUG").linkerOpts("-Wl,--stack,33554432")
+    }
     macosArm64() // macOS (Apple Silicon)
 
     // Apple 移动/嵌入式目标
