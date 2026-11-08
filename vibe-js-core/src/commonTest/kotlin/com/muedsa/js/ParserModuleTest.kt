@@ -18,12 +18,14 @@ import com.muedsa.js.ast.MemberExpr
 import com.muedsa.js.ast.ModuleProgram
 import com.muedsa.js.ast.NumberLiteral
 import com.muedsa.js.ast.ObjectLiteral
+import com.muedsa.js.ast.RegExpLiteral
 import com.muedsa.js.ast.Statement
 import com.muedsa.js.ast.StatementItem
 import com.muedsa.js.ast.StringLiteral
 import com.muedsa.js.ast.UnaryOp
 import com.muedsa.js.ast.VarDeclaration
 import com.muedsa.js.lexer.Lexer
+import com.muedsa.js.lexer.LexerException
 import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import kotlin.test.Test
@@ -42,7 +44,8 @@ import kotlin.test.assertTrue
  */
 class ParserModuleTest {
 
-    private fun parseModule(code: String) = Parser(Lexer(code).tokenize()).parseModule()
+    private fun parseModule(code: String) =
+        Parser(Lexer(code, moduleContext = true).tokenize()).parseModule()
 
     private fun parseScript(code: String) = Parser(Lexer(code).tokenize()).parseProgram()
 
@@ -64,6 +67,18 @@ class ParserModuleTest {
         // 同一段代码作为脚本是合法的（sloppy 脚本允许八进制字面量）
         val script = parseScript("var x = 010;")
         assertTrue(!script.strict)
+    }
+
+    @Test
+    fun `模块目标禁用 Annex B HTML 注释而脚本目标允许`() {
+        // 脚本目标：Annex B 的 `<!--` 与行首 `-->` 按单行注释跳过
+        parseScript("<!-- comment\nvar x = 1;")
+        parseScript("-->\nvar x = 1;")
+        // 模块目标：同样的注释是词法错误（必须在 Lexer 阶段声明模块语境）
+        assertFailsWith<LexerException> { parseModule("<!-- comment\nvar x = 1;") }
+        assertFailsWith<LexerException> { parseModule("-->\nvar x = 1;") }
+        // 普通行注释与块注释在模块中仍然合法
+        parseModule("// line\n/* block */ export const a = 1;")
     }
 
     @Test
@@ -149,6 +164,12 @@ class ParserModuleTest {
     }
 
     @Test
+    fun `未导出的顶层词法声明进入词法名集合`() {
+        val module = parseModule("let a = 1; const b = 2; class C {}")
+        assertEquals(listOf("a", "b", "C"), module.lexicallyDeclaredNames)
+    }
+
+    @Test
     fun `默认导出表达式使用内部名字`() {
         val module = parseModule("export default 1;")
         val declaration = assertIs<ExportDefaultDeclaration>(module.items.single())
@@ -204,6 +225,31 @@ class ParserModuleTest {
         assertNull(entry.localName)
         // 间接导出不建立本地绑定
         assertTrue(reExport.lexicallyDeclaredNames.isEmpty())
+    }
+
+    @Test
+    fun `本地导出的绑定必须已在模块顶层声明`() {
+        // 未声明的本地导出是早期错误；声明可以出现在导出语句之后
+        assertFailsWith<ParseException> { parseModule("export {a};") }
+        assertFailsWith<ParseException> { parseModule("export {a as b};") }
+        parseModule("export {a}; var a = 1;")
+        parseModule("export {f}; function f() {}")
+        parseModule("export {C}; class C {}")
+        parseModule("""export {a as b}; import {a} from "./m.js";""")
+        // 块级声明不属于模块作用域，不能作为本地导出的绑定
+        assertFailsWith<ParseException> { parseModule("export {a}; { let a = 1; }") }
+        // 间接导出与星号导出不要求本地绑定
+        parseModule("""export {a as b} from "./m.js";""")
+        parseModule("""export * from "./m.js";""")
+        parseModule("""export * as ns from "./m.js";""")
+    }
+
+    @Test
+    fun `export default 后的正则字面量按表达式解析`() {
+        // `default` 之后是 AssignmentExpression 起始位置，`/` 必须读成正则而不是除号
+        val module = parseModule("export default /foo/;")
+        val declaration = assertIs<ExportDefaultDeclaration>(module.items.single())
+        assertIs<RegExpLiteral>(declaration.expression)
     }
 
     @Test

@@ -67,12 +67,14 @@ val downloadParserCorpus = tasks.register<JavaExec>("downloadParserCorpus") {
  * 运行解析一致性基线。
  *
  * 默认只生成报告（退出码 0）；发生崩溃时退出码 2。
- * 使用 `-Pstrict` 时，允许列表（`src/main/resources/parser-pass-allowlist.txt`，
- * 当前已清空、0 条允许）之外的任何正/负向语法不一致都会导致任务失败。
+ * 脚本语料走 `Parser.parseProgram`，`.module.js` 走 `Parser.parseModule` 并按模块目标
+ * 单独统计。使用 `-Pstrict` 时，允许列表之外的任何正/负向语法不一致都会导致任务失败：
+ * 脚本见 `parser-pass-allowlist.txt`（已清空）、`parser-fail-allowlist.txt` 与
+ * `parser-early-allowlist.txt`；模块见 `parser-module-allowlist.txt`（逐条路径 + 原因）。
  */
 val parserConformance = tasks.register<JavaExec>("parserConformance") {
     group = "verification"
-    description = "运行 test262-parser-tests 并生成解析一致性报告（默认报告模式）"
+    description = "运行 test262-parser-tests 脚本与模块语料并生成解析一致性报告（默认报告模式）"
     dependsOn(downloadParserCorpus)
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.muedsa.js.conformance.ParserConformanceKt")

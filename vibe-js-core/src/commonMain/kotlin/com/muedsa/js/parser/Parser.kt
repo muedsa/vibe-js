@@ -3685,6 +3685,8 @@ class Parser(
                             part.source,
                             maxNestingDepth = maxNestingDepth,
                             initialNestingDepth = part.nestingDepth,
+                            // 模板表达式继承模块语境：模块中的 HTML 注释在子表达式里同样非法
+                            moduleContext = moduleContext,
                         ).tokenize()
                     } catch (error: LexerException) {
                         throw ParseException(error.message ?: "Invalid template expression", error.range)
@@ -4323,9 +4325,10 @@ class Parser(
      *   因此单独返回 `functionDeclarations`，不会混进 `varDeclarations`。
      *
      * 已实现的早期错误：导入绑定重复、导出名重复、`var` 与顶层词法声明重名、
-     * 顶层函数重复声明、模块说明符的八进制转义；`await` 在模块中作为保留字；
-     * 模块顶层 `super` / `new.target` 被拒绝；Annex B 的 sloppy 语法因模块恒为
-     * 严格模式而全部禁用。
+     * 顶层函数重复声明、本地导出（`export {a}`）的绑定未声明、模块说明符的八进制转义；
+     * `await` 在模块中作为保留字；模块顶层 `super` / `new.target` 被拒绝；
+     * Annex B 的 sloppy 语法因模块恒为严格模式而全部禁用（HTML 注释需由
+     * `Lexer(moduleContext = true)` 在词法阶段拒绝）。
      *
      * 表达式层（L4.1b）：`import.meta` 解析为 [ImportMetaExpr]，`import(...)` 解析为
      * [ImportCallExpr]；模块顶层与函数体内的 `await` 解析为 `UnaryOp("await", ...)`。
@@ -4349,6 +4352,10 @@ class Parser(
         val exportedNames = mutableSetOf<String>()
 
         pushDeclScope(DeclScopeKind.PROGRAM)
+        // 保留程序作用域引用：模块顶层词法名（含未 export 的 let/const/class/using）
+        // 与 var 名由 declareLexicalBinding / declareVarBinding 直接登记在这里，
+        // popDeclScope 之后仍需读取它们做导出绑定校验。
+        val moduleScope = declScopes.last()
         try {
             while (!isAtEnd()) {
                 val result = if (isModuleDeclarationStart()) {
@@ -4402,11 +4409,30 @@ class Parser(
             }
             lexicalNames.add(declaration.name)
         }
+        // 程序作用域已登记全部顶层词法绑定（包括未 export 的 let/const/class/using），
+        // 合并进词法名集合，供 var 冲突检查与 lexicallyDeclaredNames 使用。
+        lexicalNames.addAll(moduleScope.lexicalNames)
         // 模块顶层 function 是词法声明，因此 var 与任意顶层词法名重名都是早期错误。
         // 脚本里 `var f; function f(){}` 合法，但在模块里 `function f` 已经是词法绑定。
         for (name in hoist.varDeclarations) {
             if (name in lexicalNames) {
                 throw ParseException("Identifier '$name' has already been declared", peek().range)
+            }
+        }
+        // 本地导出（`export {a}`）的绑定名必须在模块顶层声明过：
+        // 导入绑定、let/const/class、顶层 function 与 var 都算已声明；
+        // 间接导出（`export {a} from "m"`）与 `export *` 不要求本地绑定。
+        // 该检查必须等整个模块解析完再做，因为声明可以出现在导出语句之后。
+        val declaredNames = lexicalNames + moduleScope.varNames
+        for (item in items) {
+            if (item !is ExportNamedDeclaration || item.source != null) continue
+            for (specifier in item.specifiers) {
+                if (specifier.localName !in declaredNames) {
+                    throw ParseException(
+                        "Exported binding '${specifier.localName}' is not declared",
+                        specifier.range,
+                    )
+                }
             }
         }
         val end = tokens.lastOrNull()?.range?.end ?: start

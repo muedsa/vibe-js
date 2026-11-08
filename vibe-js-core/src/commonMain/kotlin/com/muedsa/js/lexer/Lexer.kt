@@ -25,6 +25,14 @@ class Lexer(
     private val maxNestingDepth: Int? = null,
     /** 从外层模板表达式继承的起始嵌套深度。 */
     private val initialNestingDepth: Int = 0,
+    /**
+     * 是否按 Module 目标做词法分析。
+     *
+     * 模块代码禁用 Annex B 的 HTML 注释（`<!--` / `-->`），而脚本目标允许；
+     * 该差异发生在词法阶段（注释在 Parser 看到之前已被丢弃），因此必须由
+     * 调用方在创建 Lexer 时声明目标。默认 false 保持脚本行为不变。
+     */
+    private val moduleContext: Boolean = false,
 ) {
 
     /** 当前读取位置（字符偏移）。 */
@@ -1463,6 +1471,10 @@ class Lexer(
             TokenType.TYPEOF, TokenType.DELETE, TokenType.VOID, TokenType.IN,
             TokenType.INSTANCEOF, TokenType.NEW, TokenType.DO, TokenType.ELSE,
             TokenType.ARROW, TokenType.DEBUGGER,
+            // `export default /re/`：default 之后是 AssignmentExpression 起始位置。
+            // switch 的 `default` 必须跟 `:`，对象/类成员中的 default 后是 `:` 或 `(`，
+            // 因此把 DEFAULT 视为允许正则不会改变脚本目标的合法代码判定。
+            TokenType.DEFAULT,
         )
     }
 
@@ -1748,9 +1760,18 @@ class Lexer(
                     }
                 }
 
-                // Annex B HTML 注释：`<!--` 任意位置，`-->` 仅在行首（可前置空白）
+                // Annex B HTML 注释：`<!--` 任意位置，`-->` 仅在行首（可前置空白）。
+                // 模块目标禁用这两类注释（ES2024 12.4），必须报词法错误而不是静默跳过。
                 '<' -> {
                     if (peek(1) == '!' && peek(2) == '-' && peek(3) == '-') {
+                        if (moduleContext) {
+                            throw lexerError(
+                                "HTML-like comments are not allowed in module code",
+                                line,
+                                column,
+                                pos,
+                            )
+                        }
                         repeat(4) { advance() }
                         skipHtmlCommentTail()
                     } else {
@@ -1760,6 +1781,14 @@ class Lexer(
 
                 '-' -> {
                     if (peek(1) == '-' && peek(2) == '>' && isAtLineStartIgnoringWhitespace()) {
+                        if (moduleContext) {
+                            throw lexerError(
+                                "HTML-like comments are not allowed in module code",
+                                line,
+                                column,
+                                pos,
+                            )
+                        }
                         repeat(3) { advance() }
                         skipHtmlCommentTail()
                     } else {
