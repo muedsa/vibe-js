@@ -1,5 +1,6 @@
 package com.muedsa.js.builtins
 
+import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSNull
@@ -40,6 +41,8 @@ internal class JsonParser(
     private val objectPrototype: JSObject?,
     private val arrayPrototype: JSObject?,
     private val maxDepth: Int? = null,
+    /** 执行解析的解释器；用于消费 maxSteps 与协作式取消检查点。 */
+    private val interpreter: Interpreter? = null,
 ) {
 
     private var index = 0
@@ -60,7 +63,7 @@ internal class JsonParser(
     /** 查询父对象某个属性的原始字面量信息。 */
     fun sourceOf(parent: JSObject, key: String): LiteralSource? = sources[parent]?.get(key)
 
-    fun parse(): JSValue {
+    suspend fun parse(): JSValue {
         skipWhitespace()
         val start = index
         val value = parseValue()
@@ -75,7 +78,9 @@ internal class JsonParser(
         return value
     }
 
-    private fun parseValue(): JSValue {
+    private suspend fun parseValue(): JSValue {
+        // 每个 JSON 值消费一个检查点：巨大数组/对象与深嵌套字符串都受步数预算约束。
+        interpreter?.checkExecution()
         if (index >= text.length) fail("Unexpected end of JSON input")
         return when (val c = text[index]) {
             '{' -> nested { parseObject() }
@@ -100,7 +105,7 @@ internal class JsonParser(
     }
 
     /** 进入一层对象/数组嵌套并在超限时抛出深度限制异常。 */
-    private fun <T> nested(block: () -> T): T {
+    private suspend fun <T> nested(block: suspend () -> T): T {
         depth++
         try {
             val limit = maxDepth
@@ -113,7 +118,7 @@ internal class JsonParser(
         }
     }
 
-    private fun parseObject(): JSObject {
+    private suspend fun parseObject(): JSObject {
         index++ // '{'
         val result = JSObject(prototype = objectPrototype)
         skipWhitespace()
@@ -158,7 +163,7 @@ internal class JsonParser(
         }
     }
 
-    private fun parseArray(): JSArray {
+    private suspend fun parseArray(): JSArray {
         index++ // '['
         val elements = mutableListOf<JSValue?>()
         val elementSources = LinkedHashMap<String, LiteralSource>()
@@ -193,7 +198,7 @@ internal class JsonParser(
         }
     }
 
-    private fun parseString(): String {
+    private suspend fun parseString(): String {
         if (peek() != '"') fail("Expected '\"'")
         index++
         val builder = StringBuilder()
@@ -233,7 +238,7 @@ internal class JsonParser(
         }
     }
 
-    private fun parseNumber(): JSNumber {
+    private suspend fun parseNumber(): JSNumber {
         val start = index
         if (peek() == '-') index++
         if (index >= text.length) fail("Invalid number")

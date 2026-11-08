@@ -236,6 +236,7 @@ internal object IteratorBuiltins {
                 )
             }
             val objectValue = JSObject(prototype = null)
+                .attachAllocationBudget(interpreter.context.objectAllocations)
             for (index in results.indices) {
                 objectValue.defineOwnProperty(
                     keys[index],
@@ -970,6 +971,7 @@ internal object IteratorBuiltins {
         val optionsArg = args.getOrElse(1) { JSUndefined }
         val options = when (optionsArg) {
             is JSUndefined -> JSObject(prototype = null)
+                .attachAllocationBudget(interpreter.context.objectAllocations)
             is JSObject -> optionsArg
             else -> interpreter.typeError("options must be an object")
         }

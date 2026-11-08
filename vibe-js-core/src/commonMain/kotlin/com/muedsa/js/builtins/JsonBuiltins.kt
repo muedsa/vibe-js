@@ -50,6 +50,7 @@ object JsonBuiltins {
                     intrinsics.objectPrototype,
                     intrinsics.arrayPrototype,
                     maxDepth = interpreter.context.limits.maxJsonDepth,
+                    interpreter = interpreter,
                 )
                 val value = try {
                     // 使用严格 JSON 语法，而不是宽松的 JS 表达式解析器
@@ -94,6 +95,7 @@ object JsonBuiltins {
                         intrinsics.objectPrototype,
                         intrinsics.arrayPrototype,
                         maxDepth = interpreter.context.limits.maxJsonDepth,
+                        interpreter = interpreter,
                     ).parse()
                 } catch (error: JsonDepthLimitException) {
                     interpreter.rangeError(error.message ?: "Maximum JSON nesting depth exceeded")
@@ -104,6 +106,7 @@ object JsonBuiltins {
                     interpreter.syntaxError("Raw JSON must be a primitive value")
                 }
                 val raw = JSObject(prototype = null)
+                    .attachAllocationBudget(interpreter.context.objectAllocations)
                 raw.isRawJson = true
                 raw.defineDataProperty(
                     key = PropertyKey.Str("rawJSON"),
@@ -175,6 +178,7 @@ object JsonBuiltins {
             if (interpreter.isArray(value)) {
                 val length = interpreter.lengthOfArrayLike(value)
                 for (index in 0 until length) {
+                    interpreter.checkExecution()
                     val elementKey = index.toString()
                     val elementKeyRef = PropertyKey.Str(elementKey)
                     val newElement = internalize(
@@ -194,6 +198,7 @@ object JsonBuiltins {
                     .filterIsInstance<PropertyKey.Str>()
                     .filter { interpreter.internalGetOwnProperty(value, it)?.enumerable == true }
                 for (propertyKey in keys) {
+                    interpreter.checkExecution()
                     val newValue = internalize(
                         interpreter, value, propertyKey.value, reviver, parser, rootHolder,
                     )
@@ -427,7 +432,7 @@ object JsonBuiltins {
         is JSUndefined -> null
         is JSBoolean -> value.value.toString()
         is JSNumber -> if (value.value.isFinite()) NumberFormatting.toString(value.value) else "null"
-        is JSString -> quote(value.value)
+        is JSString -> quote(interpreter, value.value)
         is JSSymbol -> null
         // JSON 文本无法无损表示 BigInt，规范要求抛 TypeError
         is JSBigInt -> interpreter.typeError("Do not know how to serialize a BigInt")
@@ -467,6 +472,7 @@ object JsonBuiltins {
                 val childIndent = indent + gap
                 val parts = ArrayList<String>()
                 for (propertyKey in keys) {
+                    interpreter.checkExecution()
                     val serialized = serializeProperty(
                         interpreter = interpreter,
                         holder = value,
@@ -478,7 +484,7 @@ object JsonBuiltins {
                         seen = seen,
                     ) ?: continue
                     val separator = if (gap.isEmpty()) ":" else ": "
-                    parts.add("${quote(propertyKey)}$separator$serialized")
+                    parts.add("${quote(interpreter, propertyKey)}$separator$serialized")
                 }
                 if (gap.isEmpty() || parts.isEmpty()) {
                     "{${parts.joinToString(",")}}"
@@ -514,6 +520,7 @@ object JsonBuiltins {
             val childIndent = indent + gap
             val parts = ArrayList<String>(length.toInt().coerceAtMost(1024))
             for (index in 0 until length) {
+                interpreter.checkExecution()
                 val serialized = serializeProperty(
                     interpreter = interpreter,
                     holder = array,
@@ -537,11 +544,13 @@ object JsonBuiltins {
     }
 
     /** JSON 字符串转义（孤立代理项按 well-formed JSON.stringify 转义）。 */
-    private fun quote(text: String): String {
+    private suspend fun quote(interpreter: Interpreter, text: String): String {
         val builder = StringBuilder(text.length + 2)
         builder.append('"')
         var index = 0
         while (index < text.length) {
+            // 超长字符串按字符规模消费检查点，避免单次 stringify 长时间占用。
+            if (index % 4096 == 0) interpreter.checkExecution()
             val c = text[index]
             when (c) {
                 '"' -> builder.append("\\\"")

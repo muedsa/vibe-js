@@ -373,6 +373,7 @@ object StringBuiltins {
                 } else if (separatorValue is JSRegExp) {
                     JSArray(
                         splitWithRegExp(
+                            interpreter,
                             text,
                             separatorValue.matcher,
                             limit.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
@@ -380,6 +381,9 @@ object StringBuiltins {
                         prototype = intrinsics.arrayPrototype,
                     )
                 } else {
+                    // 字符串 split 由平台实现一次完成，按字符规模预先消耗检查点，
+                    // 使超长输入仍受 maxSteps 与协作式取消约束。
+                    consumeStringWork(interpreter, text.length)
                     val parts = if (separatorText.isEmpty()) {
                         text.map { it.toString() }
                     } else {
@@ -790,10 +794,14 @@ object StringBuiltins {
                 // 收集互不重叠的匹配位置（空字符串在每个位置都匹配）
                 val positions = ArrayList<Int>()
                 if (search.isEmpty()) {
-                    for (position in 0..text.length) positions.add(position)
+                    for (position in 0..text.length) {
+                        interpreter.checkExecution()
+                        positions.add(position)
+                    }
                 } else {
                     var cursor = 0
                     while (true) {
+                        interpreter.checkExecution()
                         val index = text.indexOf(search, cursor)
                         if (index < 0) break
                         positions.add(index)
@@ -804,6 +812,7 @@ object StringBuiltins {
                 val builder = StringBuilder()
                 var endOfLastMatch = 0
                 for (position in positions) {
+                    interpreter.checkExecution()
                     if (position < endOfLastMatch) continue
                     builder.append(text, endOfLastMatch, position)
                     val replacementValue = if (functionalReplace) {
@@ -1024,10 +1033,16 @@ object StringBuiltins {
      * - 分隔符命中结尾时保留结尾空串；
      * - 零长度分隔符在字符之间分割。
      */
-    private fun splitWithRegExp(text: String, regex: JsRegex, limit: Int): MutableList<JSValue?> {
+    private suspend fun splitWithRegExp(
+        interpreter: Interpreter,
+        text: String,
+        regex: JsRegex,
+        limit: Int,
+    ): MutableList<JSValue?> {
         val result = ArrayList<JSValue?>()
         if (limit == 0) return result
         if (text.isEmpty()) {
+            interpreter.checkExecution()
             // 空串匹配零长度分隔符时结果为 []，否则为 [""]
             val emptyMatch = regex.find(text)
             if (emptyMatch == null) result.add(JSString(""))
@@ -1037,6 +1052,7 @@ object StringBuiltins {
         var searchIndex = 0
         var lastZeroLengthAtEnd = false
         while (searchIndex < text.length) {
+            interpreter.checkExecution()
             val match = regex.find(text, searchIndex) ?: break
             val matchEnd = match.end
             if (matchEnd == previousEnd) {
@@ -1062,6 +1078,20 @@ object StringBuiltins {
             result.removeAt(result.lastIndex)
         }
         return if (result.size > limit) ArrayList(result.take(limit)) else result
+    }
+
+    /**
+     * 按字符串长度消耗协作检查点。
+     *
+     * 平台字符串 split/map 等一次性操作无法在内部插入检查点，这里按 4096 个字符
+     * 一个检查点的粒度预先消费步数并观察取消，使超长字符串仍受 maxSteps 约束。
+     */
+    private suspend fun consumeStringWork(interpreter: Interpreter, length: Int) {
+        var remaining = length
+        while (remaining > 0) {
+            interpreter.checkExecution()
+            remaining -= 4096
+        }
     }
 
     /** RequireObjectCoercible：null/undefined 接收者抛 TypeError（String 原型方法共用）。 */

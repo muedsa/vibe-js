@@ -50,7 +50,11 @@ class Engine(
     val registry = BuiltinRegistry(intrinsics, host)
 
     /** 事件循环。 */
-    val eventLoop = EventLoop(host.scheduler, maxPendingTasks = limits.maxPendingTasks)
+    val eventLoop = EventLoop(
+        host.scheduler,
+        maxPendingTasks = limits.maxPendingTasks,
+        maxMicrotasksPerRun = limits.maxMicrotasksPerRun,
+    )
 
     /** 引擎上下文。 */
     val context = EngineContext(globalObject, intrinsics, registry, eventLoop, host, limits)
@@ -85,6 +89,12 @@ class Engine(
 
         // 3. 安装 ECMAScript 标准内建
         CoreBuiltins.install(registry)
+
+        // 4. 把对象分配预算挂到 realm 根原型。
+        // 初始化期间创建的内建对象发生在预算启用前，不计入任何单次 run；
+        // 运行期对象在构造时沿原型链继承该预算，天然按引擎隔离。
+        globalObject.allocationBudget = context.objectAllocations
+        intrinsics.objectPrototype.allocationBudget = context.objectAllocations
     }
 
     /**
@@ -105,6 +115,7 @@ class Engine(
             tokens,
             source = source,
             maxNestingDepth = limits.maxNestingDepth,
+            maxAstNodes = limits.maxAstNodes,
         ).parseProgram()
         return Program(
             parsed.body, parsed.strict, parsed.varDeclarations, parsed.functionDeclarations,
@@ -158,6 +169,8 @@ class Engine(
             val previousBudget = eventLoop.executionBudget
             val budget = ExecutionBudget(limits.maxSteps)
             eventLoop.executionBudget = budget
+            // 对象分配预算同样按单次 run 重置；窗口外的内建/宿主对象不计入。
+            context.objectAllocations.begin()
             try {
                 var aborted = false
                 try {
@@ -201,6 +214,7 @@ class Engine(
                 )
             } finally {
                 // 包括取消、配额耗尽及 JS 抛错，均不能把旧预算带入下一次调用。
+                context.objectAllocations.end()
                 eventLoop.executionBudget = previousBudget
             }
         }

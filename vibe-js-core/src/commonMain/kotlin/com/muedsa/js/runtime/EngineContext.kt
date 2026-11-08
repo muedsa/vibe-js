@@ -1,5 +1,7 @@
 package com.muedsa.js.runtime
 
+import com.muedsa.js.runtime.value.ObjectAllocationBudget
+
 /**
  * 引擎上下文：把运行时需要的共享组件集中在一起。
  *
@@ -14,6 +16,13 @@ class EngineContext(
     val host: HostEnvironment,
     val limits: EngineLimits = EngineLimits(),
 ) {
+    /**
+     * 单次 Engine.run 的 JavaScript 对象分配预算。
+     *
+     * 由 Engine 在取得事件循环执行权后启用、在归还执行权前关闭；
+     * 通过 realm 根原型挂到对象原型链上，保证多引擎隔离。
+     */
+    internal val objectAllocations = ObjectAllocationBudget(limits.maxObjectCount)
     /**
      * 全局词法环境。
      *

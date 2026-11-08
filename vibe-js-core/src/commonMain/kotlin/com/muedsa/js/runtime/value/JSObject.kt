@@ -15,7 +15,71 @@ import com.muedsa.js.runtime.exception.StackFrame
  */
 open class JSObject(
     var prototype: JSObject? = null,
+    /**
+     * 是否计入对象分配预算。
+     *
+     * arguments 等"每次函数调用都会创建"的调用脚手架不计数：它们由解释器
+     * 内部创建、生命周期通常与调用一致，计入会让高调用量的正常脚本误触上限。
+     * 普通对象、数组、函数、生成器、Promise 与内建实例保持 true。
+     */
+    internal val countsTowardsAllocationBudget: Boolean = true,
 ) : JSValue() {
+
+    companion object {
+        /**
+         * 沿原型链查找对象分配预算的最大层数。
+         *
+         * 正常运行时原型链只有几层；上限用于避免脚本通过极深原型链让每次
+         * 对象分配都做线性遍历。超过上限的对象不计数（只会少算，不会多算）。
+         */
+        private const val ALLOCATION_BUDGET_PROTOTYPE_DEPTH = 64
+    }
+
+    /**
+     * 该对象所属 realm 的对象分配预算。
+     *
+     * 构造时从直接原型继承；引擎初始化完成后根原型持有预算，因此脚本执行期
+     * 创建的对象（普通对象、数组、函数、内建实例等）都会在这里登记一次。
+     * null 表示不属于任何可计量的 realm（如引擎初始化期的内建对象）。
+     */
+    internal var allocationBudget: ObjectAllocationBudget? = null
+
+    init {
+        val parent = prototype
+        if (parent != null) {
+            val inherited = parent.findAllocationBudget()
+            if (inherited != null) {
+                // 给直接原型补记预算，避免同一原型的后续分配每次沿链重复查找。
+                if (parent.allocationBudget == null) parent.allocationBudget = inherited
+                allocationBudget = inherited
+                if (countsTowardsAllocationBudget) inherited.allocate()
+            }
+        }
+    }
+
+    /** 从当前对象开始沿原型链查找最近的预算（有层数上限）。 */
+    private fun findAllocationBudget(): ObjectAllocationBudget? {
+        var cursor: JSObject? = this
+        var depth = 0
+        while (cursor != null && depth < ALLOCATION_BUDGET_PROTOTYPE_DEPTH) {
+            cursor.allocationBudget?.let { return it }
+            cursor = cursor.prototype
+            depth++
+        }
+        return null
+    }
+
+    /**
+     * 给没有原型链的对象（如 Object.create(null)）显式安装预算并登记一次分配。
+     *
+     * 普通对象在构造时已从原型继承预算，不应调用本方法，否则会重复计数。
+     */
+    internal fun attachAllocationBudget(budget: ObjectAllocationBudget?): JSObject {
+        if (allocationBudget != null || budget == null) return this
+        allocationBudget = budget
+        budget.allocate()
+        return this
+    }
 
     /** 自有属性表（按插入顺序）。 */
     private val ownProperties: MutableMap<PropertyKey, PropertyDescriptor> = LinkedHashMap()

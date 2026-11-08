@@ -45,6 +45,13 @@ class EventLoop(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
     /** 同时排队的微任务/定时器/拒绝通知总数上限；null 表示不限制。 */
     private val maxPendingTasks: Int? = null,
+    /**
+     * 单次微任务清空循环最多执行的微任务数；null 表示不限制。
+     *
+     * 用于终止不经过 AST 检查点、只靠 Promise 微任务自我驱动的 async generator 泵。
+     * 正常 async/await 链远低于默认上限，不受影响。
+     */
+    private val maxMicrotasksPerRun: Int? = null,
 ) {
     /** 引擎拥有自己的子 Job；关闭不会取消调用方传入的整个宿主 scope。 */
     private val lifetime = SupervisorJob(scope.coroutineContext[Job])
@@ -308,6 +315,28 @@ class EventLoop(
         pulse()
     }
 
+    /** 本轮微任务清空循环已执行的任务数。 */
+    private var microtasksInDrain = 0
+
+    /**
+     * 消费一轮微任务预算。
+     *
+     * 自驱动 async generator 泵每轮只产生 Promise 反应微任务，不经过解释器的
+     * AST 检查点；这里按“出队前尝试执行”计数，超过上限直接抛宿主控制异常，
+     * Engine.run 会中止本轮执行并丢弃剩余微任务，不能被 JS catch 捕获。
+     */
+    private fun ensureMicrotaskBudget() {
+        val limit = maxMicrotasksPerRun ?: return
+        microtasksInDrain++
+        if (microtasksInDrain > limit) {
+            throw ResourceLimitException(
+                kind = ResourceLimitKind.MICROTASKS_PER_RUN,
+                limitValue = limit.toLong(),
+                actualValue = microtasksInDrain.toLong(),
+            )
+        }
+    }
+
     /**
      * 清空微任务队列。
      *
@@ -337,10 +366,14 @@ class EventLoop(
         // 即使队列为空，也要观察脚本最后一次宿主调用发出的取消。
         currentCoroutineContext().ensureActive()
         executionBudget?.ensureAvailable()
+        // 每次进入微任务清空循环都重新计算本轮预算：一次 Engine.run 通常只清空一次，
+        // 定时器回调与外部 async 恢复也各自拥有独立的一轮。
+        microtasksInDrain = 0
         while (microtasks.size > 0) {
             // 原生微任务可以不断重新入队而不经过 AST，需在此独立检查。
             currentCoroutineContext().ensureActive()
             executionBudget?.step()
+            ensureMicrotaskBudget()
             val task = microtasks.removeFirstOrNull() ?: break
             try {
                 task()

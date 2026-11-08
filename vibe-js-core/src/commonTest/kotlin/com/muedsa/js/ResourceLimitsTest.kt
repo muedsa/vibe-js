@@ -2,16 +2,20 @@ package com.muedsa.js
 
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.EngineLimits
+import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.exception.ResourceLimitException
 import com.muedsa.js.runtime.exception.ResourceLimitKind
 import com.muedsa.js.runtime.regex.JsRegexEngine
+import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSError
+import com.muedsa.js.runtime.value.JSMap
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
+import com.muedsa.js.runtime.value.JSValue
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -321,6 +325,439 @@ class ResourceLimitsTest {
             assertEquals(ResourceLimitKind.SOURCE_LENGTH, error.kind)
             assertEquals(128L, error.limitValue)
             assertEquals(200L, error.actualValue)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `AST 节点超限在解析期抛出并携带限制名与位置`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxAstNodes = 10))
+        try {
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.parse("1+1+1+1+1")
+            }
+            assertEquals(ResourceLimitKind.AST_NODES, error.kind)
+            assertEquals("maxAstNodes", error.limitName)
+            assertEquals(10L, error.limitValue)
+            assertTrue(error.actualValue > 10L)
+            assertTrue(error.message!!.contains("maxAstNodes"))
+            assertTrue(error.message!!.contains("line 1, column"))
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `AST 节点预算边界允许恰好等于上限`() = runTest {
+        // "1" 由 NumberLiteral + ExpressionStatement + Program 三个节点组成。
+        val exact = Engine(limits = EngineLimits(maxAstNodes = 3))
+        try {
+            exact.parse("1")
+        } finally {
+            exact.close()
+        }
+        val tooSmall = Engine(limits = EngineLimits(maxAstNodes = 2))
+        try {
+            val error = assertFailsWith<ResourceLimitException> { tooSmall.parse("1") }
+            assertEquals(ResourceLimitKind.AST_NODES, error.kind)
+            assertEquals(2L, error.limitValue)
+            assertEquals(3L, error.actualValue)
+        } finally {
+            tooSmall.close()
+        }
+    }
+
+    @Test
+    fun `eval 解析同样受 AST 节点预算约束`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxAstNodes = 5))
+        try {
+            // 外层脚本 eval(evalSource) 恰好 5 个节点；eval 的 "1+1+1" 需要 6 个节点。
+            engine.registry.defineGlobal("evalSource", JSString("1+1+1"))
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.run("eval(evalSource)")
+            }
+            assertEquals(ResourceLimitKind.AST_NODES, error.kind)
+            assertEquals(5L, error.limitValue)
+            assertTrue(error.actualValue > 5L)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `Function 构造器解析同样受 AST 节点预算约束`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxAstNodes = 5))
+        try {
+            // 外层脚本 Function(body) 恰好 5 个节点；动态函数源码需要更多节点。
+            engine.registry.defineGlobal("body", JSString("return 1"))
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.run("Function(body)")
+            }
+            assertEquals(ResourceLimitKind.AST_NODES, error.kind)
+            assertEquals(5L, error.limitValue)
+            assertTrue(error.actualValue > 5L)
+
+            // 超限不污染引擎，后续小脚本仍可解析执行。
+            assertEquals(42.0, assertIs<JSNumber>(engine.run("42")).value)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `模板表达式子解析器与主解析器共享 AST 节点预算`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxAstNodes = 8))
+        try {
+            // 6 个子表达式各产生 1 个节点，加上模板/语句/Program 节点后超过 8。
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.parse("`\${1}\${1}\${1}\${1}\${1}\${1}`")
+            }
+            assertEquals(ResourceLimitKind.AST_NODES, error.kind)
+            assertEquals(8L, error.limitValue)
+            assertTrue(error.actualValue > 8L)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `对象分配超限抛出携带实际分配数的宿主异常`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxObjectCount = 100))
+        try {
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.run("for (var i = 0; i < 500; i++) { ({ n: i }); }")
+            }
+            assertEquals(ResourceLimitKind.OBJECT_COUNT, error.kind)
+            assertEquals("maxObjectCount", error.limitName)
+            assertEquals(100L, error.limitValue)
+            assertEquals(101L, error.actualValue)
+            assertTrue(error.message!!.contains("maxObjectCount"))
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `对象分配预算只统计单次 run 且引擎初始化对象不计入`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxObjectCount = 1))
+        try {
+            // 引擎初始化创建的内建对象发生在预算窗口外，不计入；原始值也不分配对象。
+            assertEquals(1.0, assertIs<JSNumber>(engine.run("1")).value)
+            // 恰好一个对象允许通过。
+            engine.run("({})")
+            val error = assertFailsWith<ResourceLimitException> { engine.run("({}, {})") }
+            assertEquals(ResourceLimitKind.OBJECT_COUNT, error.kind)
+            assertEquals(2L, error.actualValue)
+            // 每次 run 重置计数，失败后仍可继续执行。
+            engine.run("({})")
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `对象分配超限不能被 JS catch 吞掉`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxObjectCount = 50))
+        try {
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.run(
+                    "var caught = false; try { for (;;) { ({}) } } catch (e) { caught = true; }"
+                )
+            }
+            assertEquals(ResourceLimitKind.OBJECT_COUNT, error.kind)
+            assertEquals(false, assertIs<JSBoolean>(engine.run("caught")).value)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `数组函数与内建实例同样计入对象分配预算`() = runTest {
+        for (source in listOf(
+            "for (;;) { []; }",
+            "for (;;) { (function () {}); }",
+            "for (;;) { new Date(); }",
+            "for (;;) { JSON.parse('{}'); }",
+            "for (;;) { Object.create(null); }",
+            "for (;;) { new Proxy({}, {}); }",
+            "for (;;) { JSON.rawJSON(1); }",
+        )) {
+            val engine = Engine(limits = EngineLimits(maxObjectCount = 80))
+            try {
+                val error = assertFailsWith<ResourceLimitException> { engine.run(source) }
+                assertEquals(ResourceLimitKind.OBJECT_COUNT, error.kind)
+            } finally {
+                engine.close()
+            }
+        }
+    }
+
+    @Test
+    fun `对象分配预算按引擎隔离而不是全局共享`() = runTest {
+        val limited = Engine(limits = EngineLimits(maxObjectCount = 20))
+        val normal = Engine(limits = EngineLimits(maxObjectCount = 20))
+        try {
+            assertFailsWith<ResourceLimitException> {
+                limited.run("for (;;) { ({}) }")
+            }
+            // 另一个引擎的单次 run 计数不受影响。
+            normal.run("for (var i = 0; i < 10; i++) { ({ i: i }); }")
+            normal.run("({})")
+        } finally {
+            limited.close()
+            normal.close()
+        }
+    }
+
+    @Test
+    fun `默认对象预算允许常规对象与数组分配`() = runTest {
+        val engine = Engine()
+        try {
+            assertEquals(49995000.0, assertIs<JSNumber>(engine.run(
+                "var sum = 0; for (var i = 0; i < 10000; i++) { var o = { i: i }; sum += o.i; } sum;"
+            )).value)
+            assertEquals(1000.0, assertIs<JSNumber>(engine.run(
+                "var n = 0; for (var i = 0; i < 1000; i++) { n += [i].length; } n;"
+            )).value)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `Array 长循环内建在步数预算耗尽时抛出宿主异常`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxSteps = 500))
+        try {
+            engine.registry.defineGlobal(
+                "big",
+                JSArray(
+                    MutableList(100_000) { JSNumber(it.toDouble()) },
+                    engine.intrinsics.arrayPrototype,
+                ),
+            )
+            val sources = listOf(
+                "big.forEach(function () {});",
+                "big.map(function (x) { return x; });",
+                "big.filter(function () { return false; });",
+                "big.reduce(function (a, b) { return a + b; }, 0);",
+                "big.join(',');",
+            )
+            for (source in sources) {
+                val error = assertFailsWith<ExecutionLimitException> { engine.run(source) }
+                assertEquals("maxSteps", error.limitName)
+                assertEquals(500L, error.limitValue)
+            }
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `Array sort 的插入排序比较循环消耗步数预算`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxSteps = 500))
+        try {
+            engine.registry.defineGlobal(
+                "descending",
+                JSArray(
+                    MutableList(5_000) { JSNumber((5_000 - it).toDouble()) },
+                    engine.intrinsics.arrayPrototype,
+                ),
+            )
+            val error = assertFailsWith<ExecutionLimitException> {
+                engine.run("descending.sort();")
+            }
+            assertEquals("maxSteps", error.limitName)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `String split 与 replaceAll 长循环消耗步数预算`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxSteps = 50))
+        try {
+            engine.registry.defineGlobal("text", JSString("a".repeat(200_000)))
+            for (source in listOf("text.split('');", "text.replaceAll('a', 'b');")) {
+                val error = assertFailsWith<ExecutionLimitException> { engine.run(source) }
+                assertEquals("maxSteps", error.limitName)
+            }
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `JSON stringify 与 parse 长循环消耗步数预算`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxSteps = 500))
+        try {
+            engine.registry.defineGlobal(
+                "bigArray",
+                JSArray(
+                    MutableList(20_000) { JSNumber(0.0) },
+                    engine.intrinsics.arrayPrototype,
+                ),
+            )
+            assertFailsWith<ExecutionLimitException> { engine.run("JSON.stringify(bigArray);") }
+
+            val jsonText = buildString {
+                append('[')
+                repeat(20_000) {
+                    if (it > 0) append(',')
+                    append('0')
+                }
+                append(']')
+            }
+            engine.registry.defineGlobal("jsonText", JSString(jsonText))
+            assertFailsWith<ExecutionLimitException> { engine.run("JSON.parse(jsonText);") }
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `Map 与 Set 长迭代消耗步数预算`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxSteps = 500))
+        try {
+            val map = JSMap(engine.intrinsics.mapPrototype)
+            repeat(20_000) { map.setEntry(JSNumber(it.toDouble()), JSNumber(it.toDouble())) }
+            engine.registry.defineGlobal("bigMap", map)
+            assertFailsWith<ExecutionLimitException> {
+                engine.run("bigMap.forEach(function () {});")
+            }
+
+            val set = com.muedsa.js.runtime.value.JSSet(engine.intrinsics.setPrototype)
+            repeat(20_000) { set.addValue(JSNumber(it.toDouble())) }
+            engine.registry.defineGlobal("bigSet", set)
+            assertFailsWith<ExecutionLimitException> {
+                engine.run("bigSet.forEach(function () {});")
+            }
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `事件循环单轮微任务预算超限抛出资源异常`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxMicrotasksPerRun = 10))
+        try {
+            var executed = 0
+            lateinit var task: suspend () -> Unit
+            task = {
+                executed++
+                engine.eventLoop.enqueueMicrotask(task)
+            }
+            engine.eventLoop.enqueueMicrotask(task)
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.eventLoop.drainMicrotasks()
+            }
+            assertEquals(ResourceLimitKind.MICROTASKS_PER_RUN, error.kind)
+            assertEquals("maxMicrotasksPerRun", error.limitName)
+            assertEquals(10L, error.limitValue)
+            assertEquals(11L, error.actualValue)
+            assertEquals(10, executed)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `纯 Promise 自驱动微任务链受单轮微任务预算终止`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxMicrotasksPerRun = 100))
+        try {
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.run(
+                    "function again() { Promise.resolve().then(again); } again();"
+                )
+            }
+            assertEquals(ResourceLimitKind.MICROTASKS_PER_RUN, error.kind)
+            assertEquals(100L, error.limitValue)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `async 生成器自驱动泵受单轮微任务预算终止`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxMicrotasksPerRun = 300))
+        try {
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.run(
+                    """
+                    var caught = false;
+                    try {
+                        (async function () {
+                            const generator = (async function* () {
+                                while (true) { yield 1; }
+                            })();
+                            for await (const value of generator) { }
+                        })();
+                    } catch (e) { caught = true; }
+                    """.trimIndent()
+                )
+            }
+            assertEquals(ResourceLimitKind.MICROTASKS_PER_RUN, error.kind)
+            assertEquals("maxMicrotasksPerRun", error.limitName)
+            assertEquals(300L, error.limitValue)
+            // 微任务阶段耗尽配额，不能进入 JS catch；后续 run 使用新预算。
+            assertEquals(false, assertIs<JSBoolean>(engine.run("caught")).value)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `默认微任务预算允许正常 async await 链`() = runTest {
+        val engine = Engine()
+        try {
+            engine.run(
+                """
+                var result = '';
+                (async function () {
+                    for (var i = 0; i < 1000; i++) { await Promise.resolve(); }
+                    result = 'done';
+                })();
+                """.trimIndent()
+            )
+            assertEquals("done", assertIs<JSString>(engine.run("result")).value)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `新增配额拒绝零与负数并保留第二批默认值`() = runTest {
+        assertFailsWith<IllegalArgumentException> { EngineLimits(maxAstNodes = 0) }
+        assertFailsWith<IllegalArgumentException> { EngineLimits(maxAstNodes = -1) }
+        assertFailsWith<IllegalArgumentException> { EngineLimits(maxObjectCount = 0) }
+        assertFailsWith<IllegalArgumentException> { EngineLimits(maxObjectCount = -1) }
+        assertFailsWith<IllegalArgumentException> { EngineLimits(maxMicrotasksPerRun = 0) }
+        assertFailsWith<IllegalArgumentException> { EngineLimits(maxMicrotasksPerRun = -1) }
+
+        val limits = EngineLimits()
+        assertEquals(5_000_000, limits.maxAstNodes)
+        assertEquals(2_000_000, limits.maxObjectCount)
+        assertEquals(1_000_000, limits.maxMicrotasksPerRun)
+        // 既有默认值保持不变。
+        assertEquals(null, limits.maxSteps)
+        assertEquals(16_384, limits.maxCallDepth)
+        assertEquals(10_000_000, limits.maxSourceLength)
+        assertEquals(256, limits.maxNestingDepth)
+        assertEquals(1_000, limits.maxJsonDepth)
+        assertEquals(10_000_000L, limits.maxRegexSteps)
+        assertEquals(100_000, limits.maxPendingTasks)
+    }
+
+    @Test
+    fun `默认 AST 与对象预算允许大型常规脚本`() = runTest {
+        val engine = Engine()
+        try {
+            val source = buildString {
+                append("var total = 0;")
+                for (i in 1..2000) append("total += $i;")
+                append("total;")
+            }
+            assertEquals(2001000.0, assertIs<JSNumber>(engine.run(source)).value)
         } finally {
             engine.close()
         }

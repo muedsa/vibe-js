@@ -344,6 +344,11 @@ object ObjectBuiltins {
                     else -> interpreter.typeError("Object prototype may only be an Object or null")
                 }
                 val result = JSObject(prototype = prototype)
+                // 无原型对象无法在构造时沿原型链继承分配预算，这里显式登记一次；
+                // 其后续派生对象会从本对象继承预算，避免通过 null 原型绕过配额。
+                if (prototype == null) {
+                    result.attachAllocationBudget(interpreter.context.objectAllocations)
+                }
                 val propertiesValue = args.getOrNull(1)
                 if (propertiesValue != null && propertiesValue !is JSUndefined) {
                     // 与规范一致：非 undefined 的第二参数先做 ToObject（null 会抛 TypeError）
@@ -532,7 +537,9 @@ object ObjectBuiltins {
                 if (!interpreter.isCallable(callback)) {
                     interpreter.typeError("Object.groupBy requires a callable callback")
                 }
+                // 分组结果按规范为 null 原型对象，显式登记分配预算。
                 val result = JSObject(prototype = null)
+                    .attachAllocationBudget(interpreter.context.objectAllocations)
                 val groups = LinkedHashMap<PropertyKey, JSArray>()
                 var index = 0.0
                 interpreter.consumeIterator(items) { value ->

@@ -26,10 +26,19 @@ enum class ResourceLimitKind(val limitName: String) {
 
     /** 事件循环排队任务数上限。 */
     PENDING_TASKS("maxPendingTasks"),
+
+    /** 单次解析创建的 AST 节点总数上限。 */
+    AST_NODES("maxAstNodes"),
+
+    /** 单次 Engine.run 内创建 JavaScript 对象数量上限。 */
+    OBJECT_COUNT("maxObjectCount"),
+
+    /** 单次微任务清空循环执行的任务数上限（阻断自驱动 async 泵）。 */
+    MICROTASKS_PER_RUN("maxMicrotasksPerRun"),
 }
 
 /**
- * 解析期、正则或任务队列资源耗尽的宿主异常。
+ * 解析期、对象分配、正则或事件循环资源耗尽的宿主异常。
  *
  * 继承 [ExecutionLimitException] 以复用"不可被 JS catch/finally 处理、直接中止
  * 当前 Engine.run"的宿主控制语义；调用方可以按 [kind] 区分具体限制项。

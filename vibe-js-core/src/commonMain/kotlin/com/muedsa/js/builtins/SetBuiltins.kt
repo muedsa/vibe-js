@@ -125,6 +125,7 @@ object SetBuiltins {
                     var index = set.iterationStartIndex
                     while (index < set.iterationEndIndex) {
                         // 嵌套回调也可 clear；每次恢复都依据最新逻辑起点跳过旧区间。
+                        interpreter.checkExecution()
                         index = maxOf(index, set.iterationStartIndex)
                         val value = set.valueAtIterationIndex(index)
                         index++
@@ -155,7 +156,9 @@ object SetBuiltins {
                         set.endIteration()
                     }
                 }
-                IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.setIteratorPrototype) { _, _, _ ->
+                IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.setIteratorPrototype) { inner, _, _ ->
+                    // 每次 next 至少跳过墓碑并读取一个值；长迭代需要协作检查点。
+                    inner.checkExecution()
                     if (!started) {
                         started = true
                         set.beginIteration()

@@ -40,7 +40,55 @@ class Parser(
     private val maxNestingDepth: Int? = null,
     /** 从外层模板表达式继承的起始递归深度，避免跨模板层级时深度清零。 */
     initialNestingDepth: Int = 0,
+    /** AST 节点总数上限；null 表示不限制（由 EngineLimits.maxAstNodes 传入）。 */
+    private val maxAstNodes: Int? = null,
+    /**
+     * 外层解析器已经创建的 AST 节点数。
+     *
+     * 模板字符串的 `${...}` 子表达式由独立 Parser 解析；子解析器用该值把新节点
+     * 接续到外层总数上，保证整个脚本共享同一个 maxAstNodes 预算。顶层解析为 0。
+     */
+    private val initialAstNodeCount: Int = 0,
 ) {
+
+    /**
+     * 当前解析器实例已经创建的 AST 节点数（不含 [initialAstNodeCount]）。
+     *
+     * 只在启用 maxAstNodes 时累加；模板子解析器结束后由父解析器把差值并入自身计数。
+     */
+    private var astNodeCount = 0
+
+    /** 当前解析器累计的 AST 节点总数（含从外层继承的起点）。 */
+    internal fun astNodeTotal(): Int = initialAstNodeCount + astNodeCount
+
+    /**
+     * 登记并返回一个新创建的 AST 节点。
+     *
+     * 构造完成后调用；超限时立即抛出，阻止继续创建后续节点，已分配的子树由
+     * 异常传播后丢弃。异常携带当前源码位置，便于宿主定位触发预算的语法位置。
+     * 预算是宿主控制异常，不能被 JS catch 捕获。
+     */
+    private fun <T : ASTNode> trackAstNode(node: T): T {
+        val limit = maxAstNodes ?: return node
+        astNodeCount++
+        val total = initialAstNodeCount + astNodeCount
+        if (total > limit) {
+            val position = if (isAtEnd()) {
+                "line ${tokens.lastOrNull()?.range?.start?.line ?: 1}, " +
+                    "column ${tokens.lastOrNull()?.range?.start?.column ?: 1}"
+            } else {
+                val start = peek().range.start
+                "line ${start.line}, column ${start.column}"
+            }
+            throw ResourceLimitException(
+                kind = ResourceLimitKind.AST_NODES,
+                limitValue = limit.toLong(),
+                actualValue = total.toLong(),
+                detail = position,
+            )
+        }
+        return node
+    }
 
     /**
      * 当前表达式递归深度。
@@ -365,14 +413,14 @@ class Parser(
 
         val hoist = collectHoisted(body)
         val end = tokens.lastOrNull()?.range?.end ?: start
-        return Program(
+        return trackAstNode(Program(
             body = body,
             strict = strict,
             varDeclarations = hoist.varDeclarations,
             functionDeclarations = hoist.functionDeclarations,
             range = SourceRange(start, end),
             hasUsingDeclaration = body.any { it is UsingDeclaration },
-        )
+        ))
     }
 
     // ================================================================
@@ -434,7 +482,7 @@ class Parser(
         return when (peek().type) {
             TokenType.SEMICOLON -> {
                 val token = advance()
-                EmptyStatement(token.range)
+                trackAstNode(EmptyStatement(token.range))
             }
 
             TokenType.VAR, TokenType.LET, TokenType.CONST ->
@@ -444,7 +492,7 @@ class Parser(
                     val expression = parseExpression()
                     val start = expression.range.start
                     consumeSemicolon()
-                    ExpressionStatement(expression, SourceRange(start, previous().range.end))
+                    trackAstNode(ExpressionStatement(expression, SourceRange(start, previous().range.end)))
                 } else {
                     parseVarDeclaration()
                 }
@@ -463,7 +511,7 @@ class Parser(
             TokenType.DEBUGGER -> {
                 val token = advance()
                 consumeSemicolon()
-                DebuggerStatement(token.range)
+                trackAstNode(DebuggerStatement(token.range))
             }
 
             TokenType.WITH -> parseWithStatement()
@@ -484,7 +532,7 @@ class Parser(
                 val expression = parseExpression()
                 val start = expression.range.start
                 consumeSemicolon()
-                ExpressionStatement(expression, SourceRange(start, previous().range.end))
+                trackAstNode(ExpressionStatement(expression, SourceRange(start, previous().range.end)))
             }
         }
     }
@@ -517,7 +565,7 @@ class Parser(
             labelScopes.removeAt(labelScopes.lastIndex)
             if (chainStart) inLabelChain = false
         }
-        return LabeledStatement(labelToken.value, body, SourceRange(labelToken.range.start, body.range.end))
+        return trackAstNode(LabeledStatement(labelToken.value, body, SourceRange(labelToken.range.start, body.range.end)))
     }
 
     /**
@@ -1039,7 +1087,7 @@ class Parser(
         val end = consume(TokenType.RPAREN, "Expected ')' after do-while condition").range.end
         // do-while 结尾的分号按规范可省略（即使同一行后接语句）
         match(TokenType.SEMICOLON)
-        return DoWhileStatement(body, condition, SourceRange(start, end))
+        return trackAstNode(DoWhileStatement(body, condition, SourceRange(start, end)))
     }
 
     /** with 语句。 */
@@ -1052,7 +1100,7 @@ class Parser(
         val objectExpression = parseExpression()
         consume(TokenType.RPAREN, "Expected ')' after with expression")
         val body = parseSingleStatement()
-        return WithStatement(objectExpression, body, SourceRange(start, body.range.end))
+        return trackAstNode(WithStatement(objectExpression, body, SourceRange(start, body.range.end)))
     }
 
     /** class 声明。 */
@@ -1071,13 +1119,13 @@ class Parser(
             declareLexicalBinding(name.value)
             val superClass = if (match(TokenType.EXTENDS)) parseLeftHandSide() else null
             val members = parseClassBody(derived = superClass != null)
-            return ClassDeclaration(
+            return trackAstNode(ClassDeclaration(
                 name = name.value,
                 superClass = superClass,
                 members = members,
                 range = SourceRange(start, previous().range.end),
                 sourceText = sourceSlice(SourceRange(start, previous().range.end)),
-            )
+            ))
         } finally {
             strict = outerStrict
         }
@@ -1100,13 +1148,13 @@ class Parser(
             }
             val superClass = if (match(TokenType.EXTENDS)) parseLeftHandSide() else null
             val members = parseClassBody(derived = superClass != null)
-            return ClassExpression(
+            return trackAstNode(ClassExpression(
                 name = nameToken?.value,
                 superClass = superClass,
                 members = members,
                 range = SourceRange(start, previous().range.end),
                 sourceText = sourceSlice(SourceRange(start, previous().range.end)),
-            )
+            ))
         } finally {
             strict = outerStrict
         }
@@ -1140,7 +1188,7 @@ class Parser(
                         allowNewTarget = true,
                         staticBlock = true,
                     )
-                    val function = FunctionExpression(
+                    val function = trackAstNode(FunctionExpression(
                         name = "",
                         params = emptyList(),
                         body = bodyInfo.body,
@@ -1150,16 +1198,16 @@ class Parser(
                         functionDeclarations = bodyInfo.functionDeclarations,
                         range = SourceRange(memberStart, bodyInfo.body.range.end),
                         isMethodDefinition = true,
-                    )
+                    ))
                     members.add(
-                        ClassMember(
+                        trackAstNode(ClassMember(
                             kind = ClassMemberKind.STATIC_BLOCK,
                             isStatic = true,
-                            key = Identifier("static", SourceRange(memberStart, memberStart)),
+                            key = trackAstNode(Identifier("static", SourceRange(memberStart, memberStart))),
                             computed = false,
                             value = function,
                             range = SourceRange(memberStart, bodyInfo.body.range.end),
-                        )
+                        ))
                     )
                     continue
                 }
@@ -1218,7 +1266,7 @@ class Parser(
 
                 val (key, computed) = if (check(TokenType.PRIVATE_IDENTIFIER)) {
                     val token = advance()
-                    PrivateIdentifier(token.value, token.range) to false
+                    trackAstNode(PrivateIdentifier(token.value, token.range)) to false
                 } else {
                     parsePropertyKeyExpression()
                 }
@@ -1274,11 +1322,11 @@ class Parser(
                         initializer = withFieldInitializerContext { parseAssignment() }
                     }
                     consumeSemicolon()
-                    val function = FunctionExpression(
+                    val function = trackAstNode(FunctionExpression(
                         name = if (!computed && key is Identifier) key.name else "",
                         params = emptyList(),
                         // 无初始化表达式时使用空块体（求值为 undefined）
-                        body = BlockStatement(emptyList(), SourceRange.NONE),
+                        body = trackAstNode(BlockStatement(emptyList(), SourceRange.NONE)),
                         strict = true,
                         isAsync = false,
                         varDeclarations = emptyList(),
@@ -1286,16 +1334,16 @@ class Parser(
                         range = SourceRange(key.range.start, previous().range.end),
                         isMethodDefinition = true,
                         fieldInitializer = initializer,
-                    )
+                    ))
                     members.add(
-                        ClassMember(
+                        trackAstNode(ClassMember(
                             kind = ClassMemberKind.FIELD,
                             isStatic = isStatic,
                             key = key,
                             computed = computed,
                             value = function,
                             range = SourceRange(memberStart, previous().range.end),
-                        )
+                        ))
                     )
                     continue
                 }
@@ -1333,7 +1381,7 @@ class Parser(
                 }
                 // 类成员总是严格模式，且使用 UniqueFormalParameters
                 validateFunctionParameters(params, strict = true, isMethod = true)
-                val function = FunctionExpression(
+                val function = trackAstNode(FunctionExpression(
                     name = if (!computed && key is Identifier) key.name else "",
                     params = params,
                     body = bodyInfo.body,
@@ -1347,16 +1395,16 @@ class Parser(
                     sourceText = sourceSlice(
                         SourceRange(memberTextStart, bodyInfo.body.range.end)
                     ),
-                )
+                ))
                 members.add(
-                    ClassMember(
+                    trackAstNode(ClassMember(
                         kind = if (isConstructor) ClassMemberKind.CONSTRUCTOR else kind,
                         isStatic = isStatic,
                         key = key,
                         computed = computed,
                         value = function,
                         range = SourceRange(memberStart, bodyInfo.body.range.end),
-                    )
+                    ))
                 )
             }
             consume(TokenType.RBRACE, "Expected '}' after class body")
@@ -1407,7 +1455,7 @@ class Parser(
                 check(TokenType.LBRACKET) || check(TokenType.LBRACE) -> parseBindingPatternLiteral()
                 else -> {
                     val nameToken = consumeBindingIdentifier("Expected identifier in declaration")
-                    Identifier(nameToken.value, nameToken.range)
+                    trackAstNode(Identifier(nameToken.value, nameToken.range))
                 }
             }
             if (target !is Identifier) {
@@ -1447,19 +1495,19 @@ class Parser(
             val end = initializer?.range?.end ?: target.range.end
             declarations.add(
                 if (target is Identifier) {
-                    VariableDeclarator(
+                    trackAstNode(VariableDeclarator(
                         name = target.name,
                         pattern = null,
                         initializer = initializer,
                         range = SourceRange(targetStart, end),
-                    )
+                    ))
                 } else {
-                    VariableDeclarator(
+                    trackAstNode(VariableDeclarator(
                         name = null,
                         pattern = target,
                         initializer = initializer,
                         range = SourceRange(targetStart, end),
-                    )
+                    ))
                 }
             )
         } while (match(TokenType.COMMA))
@@ -1468,7 +1516,7 @@ class Parser(
             consumeSemicolon()
         }
 
-        return VarDeclaration(kind, declarations, SourceRange(start, previous().range.end))
+        return trackAstNode(VarDeclaration(kind, declarations, SourceRange(start, previous().range.end)))
     }
 
     /** 函数声明：`function name(params) { ... }`（可选 async / 生成器 `*`）。 */
@@ -1508,7 +1556,7 @@ class Parser(
         if (bodyInfo.strict && name.value in STRICT_RESTRICTED_NAMES) {
             throw error("Unexpected eval or arguments in strict mode")
         }
-        return FunctionDeclaration(
+        return trackAstNode(FunctionDeclaration(
             name = name.value,
             params = params,
             body = bodyInfo.body,
@@ -1521,7 +1569,7 @@ class Parser(
             sourceText = sourceSlice(SourceRange(start, bodyInfo.body.range.end)),
             annexBLegacy = annexBLegacy,
             annexBVarEligible = annexBVarEligible,
-        )
+        ))
     }
 
     /** 函数表达式：`function [*] [name](params) { ... }`（调用前已由 parsePrimary 消费 function）。 */
@@ -1565,7 +1613,7 @@ class Parser(
         if (bodyInfo.strict && nameToken?.value in STRICT_RESTRICTED_NAMES) {
             throw error("Unexpected eval or arguments in strict mode")
         }
-        return FunctionExpression(
+        return trackAstNode(FunctionExpression(
             name = nameToken?.value,
             params = params,
             body = bodyInfo.body,
@@ -1576,7 +1624,7 @@ class Parser(
             functionDeclarations = bodyInfo.functionDeclarations,
             range = SourceRange(startPos, bodyInfo.body.range.end),
             sourceText = sourceSlice(SourceRange(startPos, bodyInfo.body.range.end)),
-        )
+        ))
     }
 
     /**
@@ -1881,24 +1929,24 @@ class Parser(
                         val target = parseBindingPatternLiteral()
                         validateBindingPattern(target)
                         params.add(
-                            Parameter(
+                            trackAstNode(Parameter(
                                 name = null,
                                 pattern = target,
                                 defaultValue = null,
                                 rest = true,
                                 range = SourceRange(start, target.range.end),
-                            )
+                            ))
                         )
                     } else {
                         val name = consumeBindingIdentifier("Expected rest parameter name")
                         params.add(
-                            Parameter(
+                            trackAstNode(Parameter(
                                 name = name.value,
                                 pattern = null,
                                 defaultValue = null,
                                 rest = true,
                                 range = SourceRange(start, name.range.end),
-                            )
+                            ))
                         )
                     }
                     break
@@ -1908,7 +1956,7 @@ class Parser(
                     check(TokenType.LBRACKET) || check(TokenType.LBRACE) -> parseBindingPatternLiteral()
                     else -> {
                         val name = consumeBindingIdentifier("Expected parameter name")
-                        Identifier(name.value, name.range)
+                        trackAstNode(Identifier(name.value, name.range))
                     }
                 }
                 if (target !is Identifier) {
@@ -1921,23 +1969,23 @@ class Parser(
                 val end = defaultValue?.range?.end ?: target.range.end
                 if (target is Identifier) {
                     params.add(
-                        Parameter(
+                        trackAstNode(Parameter(
                             name = target.name,
                             pattern = null,
                             defaultValue = defaultValue,
                             rest = false,
                             range = SourceRange(start, end),
-                        )
+                        ))
                     )
                 } else {
                     params.add(
-                        Parameter(
+                        trackAstNode(Parameter(
                             name = null,
                             pattern = target,
                             defaultValue = defaultValue,
                             rest = false,
                             range = SourceRange(start, end),
-                        )
+                        ))
                     )
                 }
                 // 允许尾随逗号：(a, b,)；rest 参数后的逗号仍由 RPAREN 检查拒绝
@@ -2012,19 +2060,19 @@ class Parser(
             }
             val initializer = parseAssignment()
             declarations.add(
-                UsingDeclarator(
+                trackAstNode(UsingDeclarator(
                     name = nameToken.value,
                     initializer = initializer,
                     range = SourceRange(nameToken.range.start, initializer.range.end),
-                )
+                ))
             )
         } while (match(TokenType.COMMA))
         if (requireTerminator) consumeSemicolon()
-        return UsingDeclaration(
+        return trackAstNode(UsingDeclaration(
             declarations = declarations,
             isAwait = isAwait,
             range = SourceRange(start, previous().range.end),
-        )
+        ))
     }
 
     private fun parseBlockStatement(
@@ -2052,12 +2100,12 @@ class Parser(
         // 无法提供作用域时保守保留独立环境
         val scope = blockScope ?: environmentScope
         val requiresEnvironment = scope?.lexicalNames?.isNotEmpty() ?: true
-        return BlockStatement(
+        return trackAstNode(BlockStatement(
             statements = statements,
             range = SourceRange(start, end),
             requiresEnvironment = requiresEnvironment,
             hasUsingDeclaration = statements.any { it is UsingDeclaration },
-        )
+        ))
     }
 
     /** if 语句。 */
@@ -2072,7 +2120,7 @@ class Parser(
             alternate = parseSingleStatement(allowFunctionDeclaration = true)
         }
         val end = (alternate ?: consequent).range.end
-        return IfStatement(condition, consequent, alternate, SourceRange(start, end))
+        return trackAstNode(IfStatement(condition, consequent, alternate, SourceRange(start, end)))
     }
 
     /** while 语句。 */
@@ -2082,7 +2130,7 @@ class Parser(
         val condition = parseExpression()
         consume(TokenType.RPAREN, "Expected ')' after while condition")
         val body = withLoopContext { parseSingleStatement() }
-        return WhileStatement(condition, body, SourceRange(start, body.range.end))
+        return trackAstNode(WhileStatement(condition, body, SourceRange(start, body.range.end)))
     }
 
     /** for / for-in 语句。 */
@@ -2128,7 +2176,7 @@ class Parser(
                     parseVarDeclaration(requireSemicolon = false)
                 } else {
                     val expression = parseExpression()
-                    ExpressionStatement(expression, expression.range)
+                    trackAstNode(ExpressionStatement(expression, expression.range))
                 }
                 consume(TokenType.SEMICOLON, "Expected ';' after for loop initializer")
             }
@@ -2146,7 +2194,7 @@ class Parser(
             consume(TokenType.RPAREN, "Expected ')' after for loop")
 
             val body = withLoopContext { parseSingleStatement() }
-            return ForStatement(init, condition, update, body, SourceRange(start, body.range.end))
+            return trackAstNode(ForStatement(init, condition, update, body, SourceRange(start, body.range.end)))
         } finally {
             popDeclScope()
         }
@@ -2373,7 +2421,7 @@ class Parser(
         val body = withLoopContext { parseSingleStatement() }
         val range = SourceRange(start, body.range.end)
         return if (isOf) {
-            ForOfStatement(
+            trackAstNode(ForOfStatement(
                 declarationKind = declarationKind,
                 variableName = variableName,
                 pattern = pattern,
@@ -2383,9 +2431,9 @@ class Parser(
                 range = range,
                 usingMode = usingMode,
                 isAwait = isAwait,
-            )
+            ))
         } else {
-            ForInStatement(
+            trackAstNode(ForInStatement(
                 declarationKind = declarationKind,
                 variableName = variableName,
                 pattern = pattern,
@@ -2394,7 +2442,7 @@ class Parser(
                 body = body,
                 range = range,
                 initializer = forInInitializer,
-            )
+            ))
         }
     }
 
@@ -2428,7 +2476,7 @@ class Parser(
                             consequent.add(parseStatement())
                         }
                         val end = consequent.lastOrNull()?.range?.end ?: previous().range.end
-                        cases.add(SwitchCase(test, consequent, SourceRange(caseStart, end)))
+                        cases.add(trackAstNode(SwitchCase(test, consequent, SourceRange(caseStart, end))))
                     }
 
                     match(TokenType.DEFAULT) -> {
@@ -2443,7 +2491,7 @@ class Parser(
                             consequent.add(parseStatement())
                         }
                         val end = consequent.lastOrNull()?.range?.end ?: previous().range.end
-                        cases.add(SwitchCase(null, consequent, SourceRange(caseStart, end)))
+                        cases.add(trackAstNode(SwitchCase(null, consequent, SourceRange(caseStart, end))))
                     }
 
                     else -> throw error("Expected 'case' or 'default' in switch statement")
@@ -2456,7 +2504,7 @@ class Parser(
         }
 
         val end = consume(TokenType.RBRACE, "Expected '}' after switch body").range.end
-        return SwitchStatement(discriminant, cases, SourceRange(start, end))
+        return trackAstNode(SwitchStatement(discriminant, cases, SourceRange(start, end)))
     }
 
     /** break 语句（可带标签）。 */
@@ -2474,7 +2522,7 @@ class Parser(
             throw error("Illegal break statement")
         }
         consumeSemicolon()
-        return BreakStatement(label, SourceRange(start, previous().range.end))
+        return trackAstNode(BreakStatement(label, SourceRange(start, previous().range.end)))
     }
 
     /** continue 语句（可带标签）。 */
@@ -2492,7 +2540,7 @@ class Parser(
             throw error("Illegal continue statement")
         }
         consumeSemicolon()
-        return ContinueStatement(label, SourceRange(start, previous().range.end))
+        return trackAstNode(ContinueStatement(label, SourceRange(start, previous().range.end)))
     }
 
     /** throw 语句。 */
@@ -2503,7 +2551,7 @@ class Parser(
         }
         val argument = parseExpression()
         consumeSemicolon()
-        return ThrowStatement(argument, SourceRange(start, argument.range.end))
+        return trackAstNode(ThrowStatement(argument, SourceRange(start, argument.range.end)))
     }
 
     /** return 语句。 */
@@ -2520,7 +2568,7 @@ class Parser(
             value = parseExpression()
         }
         consumeSemicolon()
-        return ReturnStatement(value, SourceRange(start, previous().range.end))
+        return trackAstNode(ReturnStatement(value, SourceRange(start, previous().range.end)))
     }
 
     /** try-catch-finally 语句。 */
@@ -2578,7 +2626,7 @@ class Parser(
             } finally {
                 popDeclScope()
             }
-            handler = CatchClause(param, pattern, body, SourceRange(catchStart, body.range.end))
+            handler = trackAstNode(CatchClause(param, pattern, body, SourceRange(catchStart, body.range.end)))
         }
 
         var finalizer: BlockStatement? = null
@@ -2591,7 +2639,7 @@ class Parser(
         }
 
         val end = finalizer?.range?.end ?: handler?.range?.end ?: block.range.end
-        return TryStatement(block, handler, finalizer, SourceRange(start, end))
+        return trackAstNode(TryStatement(block, handler, finalizer, SourceRange(start, end)))
     }
 
     // ================================================================
@@ -2607,10 +2655,10 @@ class Parser(
         while (match(TokenType.COMMA)) {
             expressions.add(parseAssignment())
         }
-        return SequenceExpr(
+        return trackAstNode(SequenceExpr(
             expressions,
             SourceRange(first.range.start, expressions.last().range.end),
-        )
+        ))
     }
 
     /** 赋值表达式（右结合，箭头函数与 yield 也在此层解析）。 */
@@ -2645,13 +2693,13 @@ class Parser(
             val value = parseAssignment()
             // 目标中的简写默认值属于合法模式，不向后续表达式传播
             patternDefaultsSeen = defaultsBefore
-            return AssignmentExpr(
+            return trackAstNode(AssignmentExpr(
                 target = left,
                 operator = token.value,
                 value = value,
                 range = SourceRange(left.range.start, value.range.end),
                 lhsParenthesized = left.range in parenthesizedRanges,
-            )
+            ))
         }
         if (patternSyntaxDepth == 0 && patternDefaultsSeen > defaultsBefore) {
             throw error("Invalid shorthand property initializer")
@@ -2685,26 +2733,26 @@ class Parser(
         if (check(TokenType.MULTIPLY) && !peek().precededByNewline) {
             advance() // *
             val argument = parseAssignment()
-            return YieldExpression(
+            return trackAstNode(YieldExpression(
                 argument = argument,
                 delegate = true,
                 range = SourceRange(start, argument.range.end),
-            )
+            ))
         }
         // 换行或后续 Token 不能开始表达式时按无实参的 yield 处理（yield 自身可被 ASI 结束）
         if (peek().precededByNewline || !canStartYieldArgument()) {
-            return YieldExpression(
+            return trackAstNode(YieldExpression(
                 argument = null,
                 delegate = false,
                 range = SourceRange(start, previous().range.end),
-            )
+            ))
         }
         val argument = parseAssignment()
-        return YieldExpression(
+        return trackAstNode(YieldExpression(
             argument = argument,
             delegate = false,
             range = SourceRange(start, argument.range.end),
-        )
+        ))
     }
 
     /** 判断当前 Token 是否可以开始 yield 的实参（AssignmentExpression）。 */
@@ -2742,7 +2790,7 @@ class Parser(
                 consume(TokenType.ARROW, "Expected '=>'")
                 return parseArrowBody(
                     start,
-                    listOf(Parameter(paramToken.value, null, null, false, paramToken.range)),
+                    listOf(trackAstNode(Parameter(paramToken.value, null, null, false, paramToken.range))),
                     isAsync = true,
                 )
             }
@@ -2764,7 +2812,7 @@ class Parser(
             consume(TokenType.ARROW, "Expected '=>'")
             return parseArrowBody(
                 token.range.start,
-                listOf(Parameter(token.value, null, null, false, token.range)),
+                listOf(trackAstNode(Parameter(token.value, null, null, false, token.range))),
                 isAsync = false,
             )
         }
@@ -2820,7 +2868,7 @@ class Parser(
                 isArrow = true,
             )
             validateFunctionParameters(params, bodyInfo.strict, isArrow = true)
-            return ArrowFunction(
+            return trackAstNode(ArrowFunction(
                 params = params,
                 body = bodyInfo.body,
                 expressionBody = null,
@@ -2831,7 +2879,7 @@ class Parser(
                 range = SourceRange(start, bodyInfo.body.range.end),
                 allowsNewTarget = newTargetAllowed,
                 sourceText = sourceSlice(SourceRange(start, bodyInfo.body.range.end)),
-            )
+            ))
         }
 
         val outerAsync = asyncContext
@@ -2850,7 +2898,7 @@ class Parser(
             // 箭头表达式体不会经过普通的一元/条件递归路径，需要单独计入嵌套深度，
             // 否则 `x => x => ...` 这类无括号链会绕过 maxNestingDepth。
             val expression = withSyntaxNesting { parseAssignment() }
-            return ArrowFunction(
+            return trackAstNode(ArrowFunction(
                 params = params,
                 body = null,
                 expressionBody = expression,
@@ -2861,7 +2909,7 @@ class Parser(
                 range = SourceRange(start, expression.range.end),
                 allowsNewTarget = newTargetAllowed,
                 sourceText = sourceSlice(SourceRange(start, expression.range.end)),
-            )
+            ))
         } finally {
             asyncContext = outerAsync
             awaitIdentifierForbidden = outerAwaitForbidden
@@ -2878,12 +2926,12 @@ class Parser(
         val thenBranch = parseAssignment()
         consume(TokenType.COLON, "Expected ':' in conditional expression")
         val elseBranch = parseAssignment()
-        return ConditionalExpr(
+        return trackAstNode(ConditionalExpr(
             condition,
             thenBranch,
             elseBranch,
             SourceRange(condition.range.start, elseBranch.range.end),
-        )
+        ))
     }
 
     /** `??` 空值合并（左结合）。 */
@@ -2900,11 +2948,11 @@ class Parser(
                     "Coalesce expression cannot be mixed with logical operators without parentheses"
                 )
             }
-            expression = CoalesceExpr(
+            expression = trackAstNode(CoalesceExpr(
                 expression,
                 right,
                 SourceRange(expression.range.start, right.range.end),
-            )
+            ))
         }
         return expression
     }
@@ -2947,11 +2995,11 @@ class Parser(
             advance() // in
             val right = parseShift()
             recordPrivateNameReference(privateToken.value, privateToken.range)
-            PrivateInExpr(
+            trackAstNode(PrivateInExpr(
                 privateToken.value,
                 right,
                 SourceRange(privateToken.range.start, right.range.end),
-            )
+            ))
         } else {
             parseShift()
         }
@@ -2963,12 +3011,12 @@ class Parser(
                 else -> break
             }
             val right = parseShift()
-            expression = BinaryOp(
+            expression = trackAstNode(BinaryOp(
                 expression,
                 operator.value,
                 right,
                 SourceRange(expression.range.start, right.range.end),
-            )
+            ))
         }
         return expression
     }
@@ -2998,7 +3046,7 @@ class Parser(
         }
         advance()
         val exponent = parseExponentiation()
-        return BinaryOp(base, "**", exponent, SourceRange(base.range.start, exponent.range.end))
+        return trackAstNode(BinaryOp(base, "**", exponent, SourceRange(base.range.start, exponent.range.end)))
     }
 
     /** 通用左结合二元运算解析。 */
@@ -3010,12 +3058,12 @@ class Parser(
         while (peek().type in operators) {
             val operator = advance().value
             val right = operandParser()
-            expression = BinaryOp(
+            expression = trackAstNode(BinaryOp(
                 expression,
                 operator,
                 right,
                 SourceRange(expression.range.start, right.range.end),
-            )
+            ))
         }
         return expression
     }
@@ -3038,7 +3086,7 @@ class Parser(
         if (asyncContext && token.type == TokenType.IDENTIFIER && token.value == "await") {
             advance()
             val operand = parseUnary()
-            return UnaryOp("await", operand, SourceRange(token.range.start, operand.range.end))
+            return trackAstNode(UnaryOp("await", operand, SourceRange(token.range.start, operand.range.end)))
         }
 
         return when (token.type) {
@@ -3051,12 +3099,12 @@ class Parser(
                     throw error("Invalid left-hand side expression in prefix operation")
                 }
                 validateStrictAssignmentTarget(operand)
-                UpdateExpr(
+                trackAstNode(UpdateExpr(
                     target = operand,
                     operator = token.value,
                     prefix = true,
                     range = SourceRange(token.range.start, operand.range.end),
-                )
+                ))
             }
 
             TokenType.NOT, TokenType.MINUS, TokenType.PLUS,
@@ -3072,7 +3120,7 @@ class Parser(
                 if (token.type == TokenType.DELETE && strict && operand is Identifier) {
                     throw error("Delete of an unqualified identifier in strict mode")
                 }
-                UnaryOp(token.value, operand, SourceRange(token.range.start, operand.range.end))
+                trackAstNode(UnaryOp(token.value, operand, SourceRange(token.range.start, operand.range.end)))
             }
 
             else -> parsePostfix()
@@ -3093,12 +3141,12 @@ class Parser(
             }
             validateStrictAssignmentTarget(expression)
             advance()
-            expression = UpdateExpr(
+            expression = trackAstNode(UpdateExpr(
                 target = expression,
                 operator = token.value,
                 prefix = false,
                 range = SourceRange(expression.range.start, token.range.end),
-            )
+            ))
         }
         return expression
     }
@@ -3118,11 +3166,11 @@ class Parser(
 
                 match(TokenType.LPAREN) -> {
                     val arguments = parseArgumentsAfterOpen()
-                    expression = CallExpr(
+                    expression = trackAstNode(CallExpr(
                         expression,
                         arguments,
                         SourceRange(expression.range.start, previous().range.end),
-                    )
+                    ))
                 }
 
                 match(TokenType.DOT) -> {
@@ -3132,32 +3180,32 @@ class Parser(
                         }
                         val privateToken = advance()
                         recordPrivateNameReference(privateToken.value, privateToken.range)
-                        expression = MemberExpr(
+                        expression = trackAstNode(MemberExpr(
                             obj = expression,
-                            property = PrivateIdentifier(privateToken.value, privateToken.range),
+                            property = trackAstNode(PrivateIdentifier(privateToken.value, privateToken.range)),
                             computed = false,
                             range = SourceRange(expression.range.start, privateToken.range.end),
-                        )
+                        ))
                     } else {
                         val propertyToken = parsePropertyName()
-                        expression = MemberExpr(
+                        expression = trackAstNode(MemberExpr(
                             obj = expression,
-                            property = Identifier(propertyToken.value, propertyToken.range),
+                            property = trackAstNode(Identifier(propertyToken.value, propertyToken.range)),
                             computed = false,
                             range = SourceRange(expression.range.start, propertyToken.range.end),
-                        )
+                        ))
                     }
                 }
 
                 match(TokenType.LBRACKET) -> {
                     val property = parseExpression()
                     val close = consume(TokenType.RBRACKET, "Expected ']' after member expression")
-                    expression = MemberExpr(
+                    expression = trackAstNode(MemberExpr(
                         obj = expression,
                         property = property,
                         computed = true,
                         range = SourceRange(expression.range.start, close.range.end),
-                    )
+                    ))
                 }
 
                 check(TokenType.TEMPLATE) -> {
@@ -3167,13 +3215,13 @@ class Parser(
                     }
                     val templateToken = advance()
                     val template = parseTemplateLiteral(templateToken, tagged = true) as TemplateLiteral
-                    expression = TaggedTemplate(
+                    expression = trackAstNode(TaggedTemplate(
                         tag = expression,
                         quasis = template.quasis,
                         rawQuasis = template.rawQuasis,
                         expressions = template.expressions,
                         range = SourceRange(expression.range.start, templateToken.range.end),
-                    )
+                    ))
                 }
 
                 else -> return expression
@@ -3194,7 +3242,7 @@ class Parser(
             if (!newTargetAllowed) {
                 throw error("new.target expression is not allowed here")
             }
-            return NewTargetExpr(SourceRange(start, property.range.end))
+            return trackAstNode(NewTargetExpr(SourceRange(start, property.range.end)))
         }
 
         var constructor: Expression =
@@ -3207,45 +3255,45 @@ class Parser(
                     if (check(TokenType.PRIVATE_IDENTIFIER)) {
                         val privateToken = advance()
                         recordPrivateNameReference(privateToken.value, privateToken.range)
-                        constructor = MemberExpr(
+                        constructor = trackAstNode(MemberExpr(
                             constructor,
-                            PrivateIdentifier(privateToken.value, privateToken.range),
+                            trackAstNode(PrivateIdentifier(privateToken.value, privateToken.range)),
                             false,
                             SourceRange(constructor.range.start, privateToken.range.end),
-                        )
+                        ))
                     } else {
                         val propertyToken = parsePropertyName()
-                        constructor = MemberExpr(
+                        constructor = trackAstNode(MemberExpr(
                             constructor,
-                            Identifier(propertyToken.value, propertyToken.range),
+                            trackAstNode(Identifier(propertyToken.value, propertyToken.range)),
                             false,
                             SourceRange(constructor.range.start, propertyToken.range.end),
-                        )
+                        ))
                     }
                 }
 
                 match(TokenType.LBRACKET) -> {
                     val property = parseExpression()
                     val close = consume(TokenType.RBRACKET, "Expected ']' after member expression")
-                    constructor = MemberExpr(
+                    constructor = trackAstNode(MemberExpr(
                         constructor,
                         property,
                         true,
                         SourceRange(constructor.range.start, close.range.end),
-                    )
+                    ))
                 }
 
                 // new tag`...`：标签模板属于 MemberExpression，构造发生在其结果上
                 check(TokenType.TEMPLATE) -> {
                     val templateToken = advance()
                     val template = parseTemplateLiteral(templateToken, tagged = true) as TemplateLiteral
-                    constructor = TaggedTemplate(
+                    constructor = trackAstNode(TaggedTemplate(
                         tag = constructor,
                         quasis = template.quasis,
                         rawQuasis = template.rawQuasis,
                         expressions = template.expressions,
                         range = SourceRange(constructor.range.start, templateToken.range.end),
-                    )
+                    ))
                 }
 
                 else -> break
@@ -3257,17 +3305,17 @@ class Parser(
 
         if (match(TokenType.LPAREN)) {
             val arguments = parseArgumentsAfterOpen()
-            return NewExpr(
+            return trackAstNode(NewExpr(
                 constructor,
                 arguments,
                 SourceRange(start, previous().range.end),
-            )
+            ))
         }
         // `new a?.b` 非法；`new a()?.b` 由外层可选链处理
         if (check(TokenType.QUESTION_DOT)) {
             throw error("Invalid optional chain from new expression")
         }
-        return NewExpr(constructor, emptyList(), SourceRange(start, constructor.range.end))
+        return trackAstNode(NewExpr(constructor, emptyList(), SourceRange(start, constructor.range.end)))
     }
 
     /** 解析从 `?.` 开始的可选链，并收集同链上的普通成员/调用。 */
@@ -3296,7 +3344,7 @@ class Parser(
                     recordPrivateNameReference(privateToken.value, privateToken.range)
                     operations.add(
                         OptionalChainMember(
-                            property = PrivateIdentifier(privateToken.value, privateToken.range),
+                            property = trackAstNode(PrivateIdentifier(privateToken.value, privateToken.range)),
                             computed = false,
                             optional = true,
                         )
@@ -3307,7 +3355,7 @@ class Parser(
                     val propertyToken = parsePropertyName()
                     operations.add(
                         OptionalChainMember(
-                            property = Identifier(propertyToken.value, propertyToken.range),
+                            property = trackAstNode(Identifier(propertyToken.value, propertyToken.range)),
                             computed = false,
                             optional = true,
                         )
@@ -3327,7 +3375,7 @@ class Parser(
                             recordPrivateNameReference(privateToken.value, privateToken.range)
                             operations.add(
                                 OptionalChainMember(
-                                    property = PrivateIdentifier(privateToken.value, privateToken.range),
+                                    property = trackAstNode(PrivateIdentifier(privateToken.value, privateToken.range)),
                                     computed = false,
                                     optional = false,
                                 )
@@ -3336,7 +3384,7 @@ class Parser(
                             val propertyToken = parsePropertyName()
                             operations.add(
                                 OptionalChainMember(
-                                    property = Identifier(propertyToken.value, propertyToken.range),
+                                    property = trackAstNode(Identifier(propertyToken.value, propertyToken.range)),
                                     computed = false,
                                     optional = false,
                                 )
@@ -3360,11 +3408,11 @@ class Parser(
                 }
             }
         }
-        return OptionalChainExpr(
+        return trackAstNode(OptionalChainExpr(
             base = base,
             operations = operations,
             range = SourceRange(base.range.start, previous().range.end),
-        )
+        ))
     }
 
     /** 解析函数调用参数（左括号已消费）。 */
@@ -3376,7 +3424,7 @@ class Parser(
                     val spreadStart = advance().range.start
                     val argument = parseAssignment()
                     arguments.add(
-                        SpreadElement(argument, SourceRange(spreadStart, argument.range.end))
+                        trackAstNode(SpreadElement(argument, SourceRange(spreadStart, argument.range.end)))
                     )
                 } else {
                     arguments.add(parseAssignment())
@@ -3401,12 +3449,12 @@ class Parser(
                     throw error("Octal literals are not allowed in strict mode")
                 }
                 advance()
-                NumberLiteral(parseNumberLiteral(token), token.range)
+                trackAstNode(NumberLiteral(parseNumberLiteral(token), token.range))
             }
 
             TokenType.BIGINT -> {
                 advance()
-                BigIntLiteral(token.value, token.range)
+                trackAstNode(BigIntLiteral(token.value, token.range))
             }
 
             TokenType.STRING -> {
@@ -3414,27 +3462,27 @@ class Parser(
                     throw error("Octal escape sequences are not allowed in strict mode")
                 }
                 advance()
-                StringLiteral(token.value, token.range, containsEscape = token.containsEscape)
+                trackAstNode(StringLiteral(token.value, token.range, containsEscape = token.containsEscape))
             }
 
             TokenType.TRUE -> {
                 advance()
-                BooleanLiteral(true, token.range)
+                trackAstNode(BooleanLiteral(true, token.range))
             }
 
             TokenType.FALSE -> {
                 advance()
-                BooleanLiteral(false, token.range)
+                trackAstNode(BooleanLiteral(false, token.range))
             }
 
             TokenType.NULL -> {
                 advance()
-                NullLiteral(token.range)
+                trackAstNode(NullLiteral(token.range))
             }
 
             TokenType.THIS -> {
                 advance()
-                ThisExpr(token.range)
+                trackAstNode(ThisExpr(token.range))
             }
 
             TokenType.SUPER -> {
@@ -3449,7 +3497,7 @@ class Parser(
                 if (next != TokenType.DOT && next != TokenType.LBRACKET && next != TokenType.LPAREN) {
                     throw error("'super' keyword unexpected here")
                 }
-                SuperExpr(token.range)
+                trackAstNode(SuperExpr(token.range))
             }
 
             TokenType.CLASS -> parseClassExpression()
@@ -3464,7 +3512,7 @@ class Parser(
                     throw error("Unexpected token 'let'")
                 }
                 advance()
-                Identifier("let", token.range)
+                trackAstNode(Identifier("let", token.range))
             }
 
             TokenType.PRIVATE_IDENTIFIER ->
@@ -3482,7 +3530,7 @@ class Parser(
                     parseFunctionExpression(token.range.start, isAsync = true)
                 } else {
                     advance()
-                    Identifier(token.value, token.range)
+                    trackAstNode(Identifier(token.value, token.range))
                 }
             }
 
@@ -3503,7 +3551,7 @@ class Parser(
 
             TokenType.REGEX -> {
                 advance()
-                RegExpLiteral(token.value, token.regexFlags, token.range)
+                trackAstNode(RegExpLiteral(token.value, token.regexFlags, token.range))
             }
 
             TokenType.TEMPLATE -> {
@@ -3543,20 +3591,26 @@ class Parser(
                     }
                     // 模板嵌入的是表达式，不能按 Program 解析（对象字面量会被当作块）；
                     // 生成器语境需要继承，${yield ...} 中的 yield 仍是关键字
-                    expressions.add(
-                        Parser(
-                            subTokens,
-                            strictContext = strict,
-                            superPropertyContext = superPropertyAllowed,
-                            superCallContext = superCallAllowed,
-                            newTargetContext = newTargetAllowed,
-                            argumentsForbiddenContext = argumentsForbidden,
-                            evalPrivateNames = externalPrivateNames,
-                            yieldContext = generatorContext,
-                            maxNestingDepth = maxNestingDepth,
-                            initialNestingDepth = part.nestingDepth,
-                        ).parseExpressionInput()
+                    val inheritedNodeCount = astNodeTotal()
+                    val subParser = Parser(
+                        subTokens,
+                        strictContext = strict,
+                        superPropertyContext = superPropertyAllowed,
+                        superCallContext = superCallAllowed,
+                        newTargetContext = newTargetAllowed,
+                        argumentsForbiddenContext = argumentsForbidden,
+                        evalPrivateNames = externalPrivateNames,
+                        yieldContext = generatorContext,
+                        maxNestingDepth = maxNestingDepth,
+                        initialNestingDepth = part.nestingDepth,
+                        maxAstNodes = maxAstNodes,
+                        // 子表达式与整个脚本共享同一预算：把父解析器已创建的节点作为起点
+                        initialAstNodeCount = inheritedNodeCount,
                     )
+                    val subExpression = subParser.parseExpressionInput()
+                    // 子解析器新增的节点计入父解析器，后续模板与节点继续共用剩余预算。
+                    astNodeCount += subParser.astNodeTotal() - inheritedNodeCount
+                    expressions.add(subExpression)
                 }
             }
         }
@@ -3567,7 +3621,7 @@ class Parser(
         if (!tagged && quasis.any { it == null }) {
             throw ParseException("Invalid escape sequence in template literal", token.range)
         }
-        return TemplateLiteral(quasis, rawQuasis, expressions, token.range)
+        return trackAstNode(TemplateLiteral(quasis, rawQuasis, expressions, token.range))
     }
 
     /** 解析单个表达式输入（供模板字符串 ${...} 使用）。 */
@@ -3595,7 +3649,7 @@ class Parser(
             if (check(TokenType.ELLIPSIS)) {
                 val spreadStart = advance().range.start
                 val argument = parseAssignment()
-                elements.add(SpreadElement(argument, SourceRange(spreadStart, argument.range.end)))
+                elements.add(trackAstNode(SpreadElement(argument, SourceRange(spreadStart, argument.range.end))))
                 if (match(TokenType.COMMA)) {
                     restFollowedByComma = true
                     if (check(TokenType.RBRACKET)) break
@@ -3612,7 +3666,7 @@ class Parser(
         }
 
         val end = consume(TokenType.RBRACKET, "Expected ']' after array literal").range.end
-        return ArrayLiteral(elements, SourceRange(start, end), restFollowedByComma)
+        return trackAstNode(ArrayLiteral(elements, SourceRange(start, end), restFollowedByComma))
     }
 
     /** 对象字面量。 */
@@ -3629,7 +3683,7 @@ class Parser(
             if (check(TokenType.ELLIPSIS)) {
                 val spreadStart = advance().range.start
                 val argument = parseAssignment()
-                properties.add(ObjectSpreadProperty(argument, SourceRange(spreadStart, argument.range.end)))
+                properties.add(trackAstNode(ObjectSpreadProperty(argument, SourceRange(spreadStart, argument.range.end))))
                 if (!match(TokenType.COMMA)) break
                 restFollowedByComma = true
                 if (check(TokenType.RBRACE)) break
@@ -3712,7 +3766,7 @@ class Parser(
                     validateFunctionParameters(params, bodyInfo.strict, isMethod = true)
                     // 计算键的方法名由运行时 SetFunctionName 推断
                     val name = if (!computed && key is Identifier) key.name else ""
-                    FunctionExpression(
+                    trackAstNode(FunctionExpression(
                         name = name,
                         params = params,
                         body = bodyInfo.body,
@@ -3726,7 +3780,7 @@ class Parser(
                         sourceText = sourceSlice(
                             SourceRange(propertyStart, bodyInfo.body.range.end)
                         ),
-                    )
+                    ))
                 }
 
                 kind == PropertyKind.INIT && key is Identifier && !computed -> {
@@ -3735,19 +3789,19 @@ class Parser(
                     lastPropertyKeyToken?.let { validateIdentifierToken(it) }
                     validateIdentifierName(key.name, strict)
                     validateStaticBlockReferenceName(key.name)
-                    val identifier = Identifier(key.name, key.range)
+                    val identifier = trackAstNode(Identifier(key.name, key.range))
                     if (match(TokenType.ASSIGN)) {
                         if (patternSyntaxDepth == 0) {
                             throw error("Invalid shorthand property initializer")
                         }
                         patternDefaultsSeen++
                         val defaultValue = parseAssignment()
-                        AssignmentExpr(
+                        trackAstNode(AssignmentExpr(
                             target = identifier,
                             operator = "=",
                             value = defaultValue,
                             range = SourceRange(identifier.range.start, defaultValue.range.end),
-                        )
+                        ))
                     } else {
                         identifier
                     }
@@ -3757,14 +3811,14 @@ class Parser(
             }
 
             properties.add(
-                ObjectProperty(
+                trackAstNode(ObjectProperty(
                     key = key,
                     kind = kind,
                     value = value,
                     computed = computed,
                     range = SourceRange(propertyStart, value.range.end),
                     method = isMethodSyntax,
-                )
+                ))
             )
             if (!match(TokenType.COMMA)) break
             if (check(TokenType.RBRACE)) break
@@ -3773,7 +3827,7 @@ class Parser(
         val end = consume(TokenType.RBRACE, "Expected '}' after object literal").range.end
         val literalRange = SourceRange(start, end)
         if (hasDuplicateProto) duplicateProtoLiteralRanges.add(literalRange)
-        return ObjectLiteral(properties, literalRange, restFollowedByComma)
+        return trackAstNode(ObjectLiteral(properties, literalRange, restFollowedByComma))
     }
 
     /** 判断 `get`/`set` 之后是否跟着一个可访问器属性名。 */
@@ -3860,7 +3914,7 @@ class Parser(
             token.type == TokenType.IDENTIFIER ||
                 (token.type == TokenType.LET && allowLetAsIdentifier()) -> {
                 advance()
-                Identifier(token.value, token.range) to false
+                trackAstNode(Identifier(token.value, token.range)) to false
             }
 
             token.type == TokenType.STRING -> {
@@ -3868,12 +3922,12 @@ class Parser(
                     throw error("Octal escape sequences are not allowed in strict mode")
                 }
                 advance()
-                StringLiteral(token.value, token.range) to false
+                trackAstNode(StringLiteral(token.value, token.range)) to false
             }
 
             token.type == TokenType.BIGINT -> {
                 advance()
-                BigIntLiteral(token.value, token.range) to false
+                trackAstNode(BigIntLiteral(token.value, token.range)) to false
             }
 
             token.type in setOf(
@@ -3886,12 +3940,12 @@ class Parser(
                     throw error("Octal literals are not allowed in strict mode")
                 }
                 advance()
-                NumberLiteral(parseNumberLiteral(token), token.range) to false
+                trackAstNode(NumberLiteral(parseNumberLiteral(token), token.range)) to false
             }
 
             token.type in keywordTokenTypes -> {
                 advance()
-                StringLiteral(token.value, token.range) to false
+                trackAstNode(StringLiteral(token.value, token.range)) to false
             }
 
             else -> throw error("Expected property key (identifier, string, or number)")

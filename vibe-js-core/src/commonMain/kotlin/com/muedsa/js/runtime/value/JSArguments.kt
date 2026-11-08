@@ -11,7 +11,7 @@ package com.muedsa.js.runtime.value
  */
 class JSArguments(
     prototype: JSObject?,
-) : JSObject(prototype) {
+) : JSObject(prototype, countsTowardsAllocationBudget = false) {
 
     /** 索引与形参绑定的读写通道（由解释器在创建时注入）。 */
     class ParameterMapping(

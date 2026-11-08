@@ -179,6 +179,7 @@ object MapBuiltins {
                     var index = map.iterationStartIndex
                     while (index < map.iterationEndIndex) {
                         // 回调可能清空并重新填充集合；跳过已被物理回收的旧逻辑区间。
+                        interpreter.checkExecution()
                         index = maxOf(index, map.iterationStartIndex)
                         val entry = map.entryAtIterationIndex(index)
                         index++
@@ -214,7 +215,9 @@ object MapBuiltins {
                         map.endIteration()
                     }
                 }
-                IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.mapIteratorPrototype) { _, _, _ ->
+                IteratorBuiltins.createIteratorWithNext(intrinsics, intrinsics.mapIteratorPrototype) { inner, _, _ ->
+                    // 每次 next 至少跳过墓碑并读取一个条目；长迭代需要协作检查点。
+                    inner.checkExecution()
                     if (!started) {
                         started = true
                         map.beginIteration()

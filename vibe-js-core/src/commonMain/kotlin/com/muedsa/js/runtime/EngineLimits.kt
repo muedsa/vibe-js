@@ -32,6 +32,20 @@ import com.muedsa.js.runtime.exception.ResourceLimitKind
  * @property maxPendingTasks 事件循环同时排队的微任务、定时器与未处理拒绝通知总数上限，
  * 默认 100,000；null 表示不限制。执行中的 async 协程和宿主入口不计入队列长度。
  * 超限抛出 [ResourceLimitException]（kind = [ResourceLimitKind.PENDING_TASKS]）。
+ * @property maxAstNodes 单次解析创建的 AST 节点总数上限，默认 5,000,000；
+ * null 表示不限制。Parser 在创建节点时同步计数，Engine.parse、直接/间接 eval 与
+ * Function 构造器共用同一套解析入口；模板表达式子解析器的节点计入外层总数。
+ * 超限抛出 [ResourceLimitException]（kind = [ResourceLimitKind.AST_NODES]）。
+ * @property maxObjectCount 单次 Engine.run 内创建的 JavaScript 对象数量上限，
+ * 默认 2,000,000；null 表示不限制。统计普通对象、数组、函数、生成器、Promise、
+ * 内建实例等所有从引擎原型链派生的 JavaScript 对象（不是内存字节数，跨平台一致）；
+ * arguments 等每次函数调用都会产生的解释器内部脚手架不计入，避免高调用量的正常
+ * 脚本误触上限；引擎初始化时创建的内建对象与事件循环关闭后的宿主对象也不计入。
+ * 超限抛出 [ResourceLimitException]（kind = [ResourceLimitKind.OBJECT_COUNT]）。
+ * @property maxMicrotasksPerRun 单次微任务清空循环最多执行的微任务数，默认 1,000,000；
+ * null 表示不限制。用于终止不经过 AST、只靠微任务自我驱动的 async generator 泵；
+ * 正常 async/await 链远低于该上限，不受影响。
+ * 超限抛出 [ResourceLimitException]（kind = [ResourceLimitKind.MICROTASKS_PER_RUN]）。
  */
 data class EngineLimits(
     val maxSteps: Long? = null,
@@ -41,6 +55,9 @@ data class EngineLimits(
     val maxJsonDepth: Int? = 1_000,
     val maxRegexSteps: Long? = 10_000_000,
     val maxPendingTasks: Int? = 100_000,
+    val maxAstNodes: Int? = 5_000_000,
+    val maxObjectCount: Int? = 2_000_000,
+    val maxMicrotasksPerRun: Int? = 1_000_000,
 ) {
     init {
         require(maxSteps == null || maxSteps > 0) { "maxSteps must be > 0 or null" }
@@ -59,6 +76,15 @@ data class EngineLimits(
         }
         require(maxPendingTasks == null || maxPendingTasks > 0) {
             "maxPendingTasks must be > 0 or null"
+        }
+        require(maxAstNodes == null || maxAstNodes > 0) {
+            "maxAstNodes must be > 0 or null"
+        }
+        require(maxObjectCount == null || maxObjectCount > 0) {
+            "maxObjectCount must be > 0 or null"
+        }
+        require(maxMicrotasksPerRun == null || maxMicrotasksPerRun > 0) {
+            "maxMicrotasksPerRun must be > 0 or null"
         }
     }
 

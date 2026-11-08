@@ -615,6 +615,8 @@ object RegExpBuiltins {
                 var lastMatchEnd = 0
                 var searchIndex = 0
                 while (searchIndex < input.length) {
+                    // 自定义 exec 可能永不返回 null，逐轮消费宿主预算。
+                    interpreter.checkExecution()
                     interpreter.putV(
                         splitter,
                         PropertyKey.Str("lastIndex"),
@@ -951,6 +953,8 @@ object RegExpBuiltins {
             interpreter.intrinsics,
             prototype,
         ) { inner, _, _ ->
+            // 每次 next 都可能触发一次 exec；长迭代同样消费宿主步数预算。
+            inner.checkExecution()
             if (done) {
                 return@createIteratorWithNext result(JSUndefined, true)
             }
@@ -1267,6 +1271,7 @@ object RegExpBuiltins {
         val namedIndices = match.namedGroupIndices
         if (namedIndices.isNotEmpty()) {
             val groupsObject = JSObject(prototype = null)
+                .attachAllocationBudget(interpreter.context.objectAllocations)
             for (name in namedIndices.keys) {
                 groupsObject.defineDataProperty(
                     key = PropertyKey.Str(name),
@@ -1314,6 +1319,7 @@ object RegExpBuiltins {
             val indicesArray = JSArray(indices, prototype = interpreter.intrinsics.arrayPrototype)
             val indicesGroups: JSValue = if (namedIndices.isNotEmpty()) {
                 val groupsObject = JSObject(prototype = null)
+                    .attachAllocationBudget(interpreter.context.objectAllocations)
                 for (name in namedIndices.keys) {
                     groupsObject.defineDataProperty(
                         key = PropertyKey.Str(name),

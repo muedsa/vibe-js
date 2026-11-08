@@ -486,6 +486,7 @@ object ArrayBuiltins {
                 requireCallback(interpreter, callback, "Array.prototype.forEach")
                 var index = 0L
                 while (index < length) {
+                    interpreter.checkExecution()
                     val element = elementAt(interpreter, objectValue, index)
                     if (element != null) {
                         callCallback(interpreter, callback, thisArg, element, index, objectValue)
@@ -510,6 +511,7 @@ object ArrayBuiltins {
                 val target = arraySpeciesCreate(interpreter, objectValue, length)
                 var index = 0L
                 while (index < length) {
+                    interpreter.checkExecution()
                     val element = elementAt(interpreter, objectValue, index)
                     if (element != null) {
                         val mapped = callCallback(
@@ -535,6 +537,7 @@ object ArrayBuiltins {
                 var index = 0L
                 var to = 0L
                 while (index < length) {
+                    interpreter.checkExecution()
                     val element = elementAt(interpreter, objectValue, index)
                     if (element != null) {
                         val keep = callCallback(
@@ -562,6 +565,7 @@ object ArrayBuiltins {
                 var result = true
                 var index = 0L
                 while (index < length) {
+                    interpreter.checkExecution()
                     val element = elementAt(interpreter, objectValue, index)
                     if (element != null) {
                         if (!interpreter.toBoolean(
@@ -589,6 +593,7 @@ object ArrayBuiltins {
                 var result = false
                 var index = 0L
                 while (index < length) {
+                    interpreter.checkExecution()
                     val element = elementAt(interpreter, objectValue, index)
                     if (element != null && interpreter.toBoolean(
                             callCallback(interpreter, callback, thisArg, element, index, objectValue)
@@ -613,6 +618,7 @@ object ArrayBuiltins {
                 requireCallback(interpreter, callback, "Array.prototype.find")
                 var index = 0L
                 while (index < length) {
+                    interpreter.checkExecution()
                     // 规范使用 Get（空洞视为 undefined）
                     val element = interpreter.getV(objectValue, PropertyKey.Str(index.toString()))
                     if (interpreter.toBoolean(
@@ -637,6 +643,7 @@ object ArrayBuiltins {
                 requireCallback(interpreter, callback, "Array.prototype.findIndex")
                 var index = 0L
                 while (index < length) {
+                    interpreter.checkExecution()
                     // 规范使用 Get（空洞视为 undefined）
                     val element = interpreter.getV(objectValue, PropertyKey.Str(index.toString()))
                     if (interpreter.toBoolean(
@@ -661,6 +668,7 @@ object ArrayBuiltins {
                 requireCallback(interpreter, callback, "Array.prototype.findLast")
                 var index = length - 1
                 while (index >= 0) {
+                    interpreter.checkExecution()
                     // 规范使用 Get（空洞视为 undefined），不再 HasProperty
                     val element = interpreter.getV(objectValue, PropertyKey.Str(index.toString()))
                     if (interpreter.toBoolean(
@@ -685,6 +693,7 @@ object ArrayBuiltins {
                 requireCallback(interpreter, callback, "Array.prototype.findLastIndex")
                 var index = length - 1
                 while (index >= 0) {
+                    interpreter.checkExecution()
                     val element = interpreter.getV(objectValue, PropertyKey.Str(index.toString()))
                     if (interpreter.toBoolean(
                             callCallback(interpreter, callback, thisArg, element, index, objectValue)
@@ -717,6 +726,7 @@ object ArrayBuiltins {
                     var initialValue: JSValue? = null
                     var index = 0L
                     while (index < length) {
+                        interpreter.checkExecution()
                         val key = PropertyKey.Str(index.toString())
                         if (interpreter.internalHasProperty(objectValue, key)) {
                             initialIndex = index
@@ -734,6 +744,7 @@ object ArrayBuiltins {
 
                 var index = startIndex
                 while (index < length) {
+                    interpreter.checkExecution()
                     val element = elementAt(interpreter, objectValue, index)
                     if (element != null) {
                         accumulator = interpreter.callFunction(
@@ -767,6 +778,7 @@ object ArrayBuiltins {
                     var initialValue: JSValue? = null
                     var index = length - 1
                     while (index >= 0) {
+                        interpreter.checkExecution()
                         val key = PropertyKey.Str(index.toString())
                         if (interpreter.internalHasProperty(objectValue, key)) {
                             initialIndex = index
@@ -784,6 +796,7 @@ object ArrayBuiltins {
 
                 var index = startIndex
                 while (index >= 0) {
+                    interpreter.checkExecution()
                     val element = elementAt(interpreter, objectValue, index)
                     if (element != null) {
                         accumulator = interpreter.callFunction(
@@ -814,6 +827,7 @@ object ArrayBuiltins {
                         }
                         var index = 0L
                         while (index < length) {
+                            interpreter.checkExecution()
                             val key = PropertyKey.Str(index.toString())
                             if (interpreter.internalHasProperty(sourceObject, key)) {
                                 val element = interpreter.getV(sourceObject, key)
@@ -1877,6 +1891,7 @@ object ArrayBuiltins {
         val parts = ArrayList<String>()
         var index = 0L
         while (index < length) {
+            interpreter.checkExecution()
             val element = elementAt(interpreter, objectValue, index)
             parts.add(
                 if (element == null || element is JSNull || element is JSUndefined) {
@@ -1906,6 +1921,7 @@ object ArrayBuiltins {
         val values = ArrayList<JSValue>()
         var index = 0L
         while (index < length) {
+            interpreter.checkExecution()
             val key = PropertyKey.Str(index.toString())
             if (interpreter.internalHasProperty(objectValue, key)) {
                 values.add(interpreter.getV(objectValue, key))
@@ -1914,11 +1930,13 @@ object ArrayBuiltins {
         }
 
         for (position in 1 until values.size) {
+            interpreter.checkExecution()
             val current = values[position]
             var cursor = position - 1
             while (cursor >= 0 &&
                 sortCompare(interpreter, values[cursor], current, comparator) > 0.0
             ) {
+                interpreter.checkExecution()
                 values[cursor + 1] = values[cursor]
                 cursor--
             }
@@ -1926,6 +1944,7 @@ object ArrayBuiltins {
         }
 
         for (position in values.indices) {
+            interpreter.checkExecution()
             interpreter.putV(
                 objectValue,
                 PropertyKey.Str(position.toString()),

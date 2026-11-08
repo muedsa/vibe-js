@@ -68,6 +68,10 @@ object ProxyBuiltins {
         if (handler !is JSObject) {
             interpreter.typeError("Cannot create proxy with a non-object as handler")
         }
-        return JSProxy(target, handler)
+        // Proxy 的 [[Prototype]] 由 target 动态决定，JSObject 基类构造时没有原型；
+        // 这里显式登记一次分配，避免通过 Proxy 循环绕过对象分配预算。
+        val proxy = JSProxy(target, handler)
+        proxy.attachAllocationBudget(interpreter.context.objectAllocations)
+        return proxy
     }
 }

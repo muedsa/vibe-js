@@ -753,7 +753,7 @@ object PromiseBuiltins {
                             resolveCapability(
                                 interpreter,
                                 capability,
-                                createKeyedResult(intrinsics, keys, results),
+                                createKeyedResult(interpreter, keys, results),
                             )
                         }
                     }
@@ -788,7 +788,7 @@ object PromiseBuiltins {
                                 resolveCapability(
                                     interpreter,
                                     capability,
-                                    createKeyedResult(intrinsics, keys, results),
+                                    createKeyedResult(interpreter, keys, results),
                                 )
                             }
                         } else {
@@ -813,7 +813,7 @@ object PromiseBuiltins {
                 resolveCapability(
                     interpreter,
                     capability,
-                    createKeyedResult(intrinsics, keys, results),
+                    createKeyedResult(interpreter, keys, results),
                 )
             } catch (error: JSException) {
                 rejectCapability(interpreter, capability, error)
@@ -824,11 +824,12 @@ object PromiseBuiltins {
 
     /** 键控组合结果：null 原型对象，键顺序与输入一致。 */
     private fun createKeyedResult(
-        intrinsics: com.muedsa.js.runtime.Intrinsics,
+        interpreter: com.muedsa.js.runtime.Interpreter,
         keys: List<PropertyKey>,
         values: List<JSValue>,
     ): JSObject {
         val result = JSObject(prototype = null)
+            .attachAllocationBudget(interpreter.context.objectAllocations)
         for (index in keys.indices) {
             result.defineDataProperty(
                 key = keys[index],

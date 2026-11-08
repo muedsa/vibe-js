@@ -367,6 +367,7 @@ class Interpreter(
                 } ?: emptySet(),
                 source = source,
                 maxNestingDepth = context.limits.maxNestingDepth,
+                maxAstNodes = context.limits.maxAstNodes,
             ).parseProgram()
         } catch (error: ParseException) {
             syntaxError(error.message ?: "Invalid eval code")
@@ -495,6 +496,7 @@ class Interpreter(
                 Lexer(source, maxNestingDepth = context.limits.maxNestingDepth).tokenize(),
                 source = source,
                 maxNestingDepth = context.limits.maxNestingDepth,
+                maxAstNodes = context.limits.maxAstNodes,
             ).parseProgram()
         } catch (error: ParseException) {
             syntaxError(error.message ?: "Invalid eval code")
@@ -3116,6 +3118,7 @@ class Interpreter(
                 Lexer(source, maxNestingDepth = context.limits.maxNestingDepth).tokenize(),
                 source = source,
                 maxNestingDepth = context.limits.maxNestingDepth,
+                maxAstNodes = context.limits.maxAstNodes,
             ).parseProgram()
             val statement = program.body.singleOrNull()
             if (statement !is ExpressionStatement) {
