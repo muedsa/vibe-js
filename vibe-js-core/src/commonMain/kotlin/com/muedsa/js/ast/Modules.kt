@@ -1,0 +1,199 @@
+package com.muedsa.js.ast
+
+import com.muedsa.js.lexer.SourceInfo
+import com.muedsa.js.lexer.SourceRange
+
+/**
+ * ES Module 的语法树节点。
+ *
+ * 设计说明（L4 原型，仅解析，不参与求值）：
+ * - 模块项 [ModuleItem] **不继承** [Statement]：`import` / `export` 声明在规范里是
+ *   ModuleItem，不是可执行语句。这样既贴合 ECMAScript 文法
+ *   （`ModuleItem : ImportDeclaration | ExportDeclaration | StatementListItem`，
+ *   见 ES2024 16.2.1），也避免给 [Statement] 增加子类——解释器里对 `Statement`
+ *   的 `when` 是穷尽式（`Interpreter.kt` 的 `executeStatementInternal`），新增子类
+ *   会强制改动解释器执行路径。
+ * - 导出声明通过 [ExportNamedDeclaration.declaration] / [ExportDefaultDeclaration.declaration]
+ *   包装真实语句，模块求值器（L4.3）按 [ModuleProgram.items] 的源码顺序逐项求值，
+ *   普通语句直接交给现有 `Interpreter.executeStatements` 的单语句入口。
+ * - [ImportEntry] / [ExportEntry] 是规范 Module Record 的静态语义表
+ *   （[[ImportEntries]] / [[LocalExportEntries]] 等），由 Parser 预计算，
+ *   供 L4.2 链接阶段直接使用，避免运行时再扫描 AST。
+ */
+
+/**
+ * 模块项。
+ *
+ * @see StatementItem
+ * @see ImportDeclaration
+ * @see ExportNamedDeclaration
+ * @see ExportDefaultDeclaration
+ * @see ExportAllDeclaration
+ */
+sealed class ModuleItem : ASTNode()
+
+/**
+ * 普通语句项：把 [Statement] 包进模块项层次。
+ *
+ * 包装而不让 `Statement` 直接出现在 [ModuleProgram.items] 里，是为了让模块求值器
+ * 能在一个密封类型上做穷尽分派，不必关心"这条语句是否被 export 包裹"。
+ */
+class StatementItem(
+    val statement: Statement,
+    override val range: SourceRange = statement.range,
+) : ModuleItem()
+
+/**
+ * 具名导入/导出说明符。
+ *
+ * @property importedName 导入名：`default`、普通标识符或 `*`（命名空间导入）
+ * @property localName 本地绑定名
+ */
+class ImportSpecifier(
+    val importedName: String,
+    val localName: String,
+    override val range: SourceRange,
+) : ASTNode()
+
+/**
+ * `import` 声明。
+ *
+ * 支持的形式（ES2015 基础子集）：
+ * - `import "m"`（副作用导入，[isSideEffectOnly] 为 true）
+ * - `import d from "m"`（默认导入：[specifiers] 中 importedName 为 `default`）
+ * - `import {a, b as c} from "m"`（具名导入，允许空 `{}` 与末尾逗号）
+ * - `import * as ns from "m"`（命名空间导入）
+ * - `import d, {a} from "m"` / `import d, * as ns from "m"`
+ *
+ * 仍未覆盖（后续 L4.1 切片）：`import { "字符串名" as x }`（任意模块命名空间名）、
+ * `import.meta`、`import()`——后两者需要表达式层的模块上下文，见设计报告。
+ *
+ * @property moduleRequest 模块说明符（字符串字面量解码后的值）
+ * @property specifiers 具名导入项（含默认导入）
+ * @property namespaceImport `import * as ns` 的本地名；无命名空间导入时为 null
+ */
+class ImportDeclaration(
+    val moduleRequest: String,
+    val specifiers: List<ImportSpecifier>,
+    val namespaceImport: String?,
+    /** 是否为纯副作用导入 `import "m"`（`import {} from "m"` 不算，它没有导入表项） */
+    val isSideEffectOnly: Boolean,
+    override val range: SourceRange,
+) : ModuleItem()
+
+/**
+ * 导出说明符：`export { local as exported }`。
+ *
+ * 带 `from` 时 [localName] 是**导入名**、[moduleRequest] 非 null；
+ * 不带 `from` 时 [localName] 是本地绑定名、[moduleRequest] 为 null。
+ */
+class ExportSpecifier(
+    val localName: String,
+    val exportName: String,
+    override val range: SourceRange,
+) : ASTNode()
+
+/**
+ * `export` 具名声明。
+ *
+ * 三种形态：
+ * - `export var/let/const/function/class ...`：[declaration] 非 null，[specifiers] 为空；
+ * - `export {a as b}`：[declaration] 为 null、[source] 为 null、[specifiers] 非空；
+ * - `export {a as b} from "m"`：[source] 非 null。
+ */
+class ExportNamedDeclaration(
+    val declaration: Statement?,
+    val specifiers: List<ExportSpecifier>,
+    val source: String?,
+    override val range: SourceRange,
+) : ModuleItem()
+
+/**
+ * `export default` 声明。
+ *
+ * 两种形态（规范 16.2.3.7 的 HoistableDeclaration / ClassDeclaration / AssignmentExpression）：
+ * - 具名函数/类声明：[declaration] 非 null，同时导出 `*default*` 与具名的本地绑定；
+ * - 匿名函数/类或任意表达式：[expression] 非 null，`*default*` 在求值点初始化。
+ *
+ * 具体导出表项见 [ModuleProgram.exportEntries]（`ExportEntry("default", ...)`）。
+ */
+class ExportDefaultDeclaration(
+    val declaration: Statement?,
+    val expression: Expression?,
+    override val range: SourceRange,
+) : ModuleItem()
+
+/**
+ * `export * from "m"` 与 `export * as ns from "m"`。
+ *
+ * @property namespaceName `export * as ns` 的导出名；普通 `export *` 为 null
+ */
+class ExportAllDeclaration(
+    val source: String,
+    val namespaceName: String?,
+    override val range: SourceRange,
+) : ModuleItem()
+
+/**
+ * 规范 ImportEntry（ES2024 16.2.1.5）：[[ModuleRequest]] / [[ImportName]] / [[LocalName]]。
+ *
+ * @property moduleRequest 模块说明符
+ * @property importName `default`、具体导出名或 `*`（命名空间导入）
+ * @property localName 本地绑定名
+ */
+class ImportEntry(
+    val moduleRequest: String,
+    val importName: String,
+    val localName: String,
+)
+
+/**
+ * 规范 ExportEntry（ES2024 16.2.1.5）：
+ * [[ExportName]] / [[ModuleRequest]] / [[ImportName]] / [[LocalName]]。
+ *
+ * @property exportName 导出名；`export *` 为 null（不产生具名导出）
+ * @property moduleRequest 间接导出（`export ... from`）的模块说明符；本地导出为 null
+ * @property importName 间接导出的导入名；本地导出为 null
+ * @property localName 本地导出的本地绑定名；间接/星号导出为 null
+ */
+class ExportEntry(
+    val exportName: String?,
+    val moduleRequest: String?,
+    val importName: String?,
+    val localName: String?,
+)
+
+/**
+ * 模块根节点（Module 目标）。
+ *
+ * 与 [Program]（Script 目标）并列而不是合并：模块与脚本在严格模式、顶层声明种类、
+ * `this`/`var` 落点、`import.meta` 上下文上都不同，早期错误集合也不同；分开可以
+ * 保证 [`Parser.parseProgram`] 的脚本路径完全不变（parser 一致性基线不受影响）。
+ *
+ * @property items 模块项（源码顺序，求值的权威顺序）
+ * @property statements 去掉导入/导出外壳后的语句序列，**仅用于**变量提升与早期错误检查；
+ *   求值必须按 [items] 顺序进行，因为 `export default <表达式>` 的求值位置在源码中
+ * @property varDeclarations 模块 var 作用域的 var 名（含 `export var`）
+ * @property functionDeclarations 模块顶层函数声明（在模块中属于**词法**声明，提升到模块环境）
+ * @property lexicallyDeclaredNames 模块顶层词法声明名：import 绑定 + let/const/class/function
+ * @property hasUsingDeclaration 顶层是否直接包含 using 声明
+ */
+class ModuleProgram(
+    val items: List<ModuleItem>,
+    val statements: List<Statement>,
+    val varDeclarations: List<String>,
+    val functionDeclarations: List<FunctionDeclaration>,
+    val lexicallyDeclaredNames: List<String>,
+    val importEntries: List<ImportEntry>,
+    val exportEntries: List<ExportEntry>,
+    /** 模块请求的去重列表（源码顺序），链接阶段按此顺序加载依赖。 */
+    val requestedModules: List<String>,
+    val hasUsingDeclaration: Boolean,
+    override val range: SourceRange,
+    /** 引擎预解析时绑定的模块来源（路径/URL）；Parser 直接调用使用匿名来源。 */
+    val sourceInfo: SourceInfo = SourceInfo(),
+) : ASTNode() {
+
+    /** 模块代码恒为严格模式（ECMAScript 16.2.1.6：Module code is always strict mode code）。 */
+    val strict: Boolean get() = true
+}

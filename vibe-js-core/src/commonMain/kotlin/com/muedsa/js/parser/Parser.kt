@@ -4206,4 +4206,557 @@ class Parser(
         val varDeclarations: List<String>,
         val functionDeclarations: List<FunctionDeclaration>,
     )
+
+    // ================================================================
+    // 模块目标（L4.1 原型：只解析，不接入执行）
+    // ================================================================
+
+    /**
+     * 解析整个模块，返回 [ModuleProgram] 根节点。
+     *
+     * 与 [parseProgram] 的关系：
+     * - 独立入口，脚本目标的行为完全不变（`import`/`export` 在脚本中仍然是保留字错误）；
+     * - 模块恒为严格模式（ECMAScript 16.2.1.6），不依赖 `"use strict"` 指令；
+     * - 顶层 `function` 声明在模块中属于**词法**声明（不是 var 声明），
+     *   因此单独返回 `functionDeclarations`，不会混进 `varDeclarations`。
+     *
+     * 已实现的早期错误：导入绑定重复、导出名重复、`var` 与顶层词法声明重名、
+     * 模块说明符的八进制转义。
+     * 未实现（后续切片）：`import()` / `import.meta`（表达式层需要模块上下文）、
+     * 模块顶层 `await` 作为保留字、`super` / `new.target` 的模块限制、
+     * Annex B 语法在模块中的禁用、`export using`。
+     */
+    fun parseModule(): ModuleProgram {
+        // 模块代码恒为严格模式：先置位，后续所有语句都按严格模式解析与校验
+        strict = true
+        val start = peek().range.start
+        val items = mutableListOf<ModuleItem>()
+        val statements = mutableListOf<Statement>()
+        val importEntries = mutableListOf<ImportEntry>()
+        val exportEntries = mutableListOf<ExportEntry>()
+        // 模块顶层词法名：import 绑定 + let/const/class + 顶层 function（含 export 包裹的）
+        val lexicalNames = LinkedHashSet<String>()
+        // 模块请求去重（源码顺序）；链接阶段按此顺序加载依赖
+        val requestedModules = LinkedHashSet<String>()
+        // 导出名去重：同一个导出名只能出现一次（含 default）
+        val exportedNames = mutableSetOf<String>()
+
+        pushDeclScope(DeclScopeKind.PROGRAM)
+        try {
+            while (!isAtEnd()) {
+                val result = if (isModuleDeclarationStart()) {
+                    parseModuleDeclaration()
+                } else {
+                    rejectUnsupportedImportExpression()
+                    ModuleParseResult(StatementItem(parseStatement()))
+                }
+                items.add(result.item)
+                // statements 只保留"去掉 import/export 外壳"的语句，供提升与早期错误使用
+                when (val item = result.item) {
+                    is StatementItem -> statements.add(item.statement)
+                    is ExportNamedDeclaration -> item.declaration?.let { statements.add(it) }
+                    is ExportDefaultDeclaration -> item.declaration?.let { statements.add(it) }
+                    is ImportDeclaration, is ExportAllDeclaration -> Unit
+                }
+                importEntries.addAll(result.imports)
+                for (entry in result.exports) {
+                    // export * 不产生具名导出（ExportName 为 null），但仍要进入导出表，
+                    // 由链接阶段做星号解析
+                    val exportName = entry.exportName
+                    if (exportName != null && !exportedNames.add(exportName)) {
+                        throw ParseException(
+                            "Duplicate export of '$exportName'",
+                            result.item.range,
+                        )
+                    }
+                    exportEntries.add(entry)
+                }
+                lexicalNames.addAll(result.lexicalNames)
+                for (entry in result.imports) requestedModules.add(entry.moduleRequest)
+                for (entry in result.exports) entry.moduleRequest?.let { requestedModules.add(it) }
+            }
+        } finally {
+            popDeclScope()
+        }
+        checkDeferredProtoDuplicates()
+
+        val hoist = collectHoisted(statements)
+        // 模块顶层 function 是词法声明：未被 export 包裹的顶层函数同样要计入词法名，
+        // 供 var 冲突检查与模块声明实例化（ModuleDeclarationInstantiation）使用
+        for (declaration in hoist.functionDeclarations) {
+            lexicalNames.add(declaration.name)
+        }
+        // 模块顶层 function 是词法声明，因此 var 与任意顶层词法名重名都是早期错误。
+        // 脚本里 `var f; function f(){}` 合法，但在模块里 `function f` 已经是词法绑定。
+        for (name in hoist.varDeclarations) {
+            if (name in lexicalNames) {
+                throw ParseException("Identifier '$name' has already been declared", peek().range)
+            }
+        }
+        val end = tokens.lastOrNull()?.range?.end ?: start
+        return ModuleProgram(
+            items = items,
+            statements = statements,
+            varDeclarations = hoist.varDeclarations,
+            functionDeclarations = hoist.functionDeclarations,
+            lexicallyDeclaredNames = lexicalNames.toList(),
+            importEntries = importEntries,
+            exportEntries = exportEntries,
+            requestedModules = requestedModules.toList(),
+            hasUsingDeclaration = statements.any { it is UsingDeclaration },
+            range = SourceRange(start, end),
+        )
+    }
+
+    /** 模块声明解析结果：模块项本身，以及它贡献的导入/导出表项与顶层词法名。 */
+    private class ModuleParseResult(
+        val item: ModuleItem,
+        val imports: List<ImportEntry> = emptyList(),
+        val exports: List<ExportEntry> = emptyList(),
+        val lexicalNames: List<String> = emptyList(),
+    )
+
+    /**
+     * 当前是否位于模块声明（`import` / `export`）的起点。
+     *
+     * `import` / `export` 在 Lexer 里不是关键字（没有对应 [TokenType]），
+     * 而是由 Parser 按保留字拒绝；这里用同样的方式识别，避免改动词法层。
+     * `import(` 与 `import.` 是表达式层语法，不算声明起点。
+     */
+    private fun isModuleDeclarationStart(): Boolean {
+        val token = peek()
+        if (token.type != TokenType.IDENTIFIER || token.containsEscape) return false
+        return when (token.value) {
+            "export" -> true
+            "import" -> peek(1).type != TokenType.LPAREN && peek(1).type != TokenType.DOT
+            else -> false
+        }
+    }
+
+    /** 动态导入 / `import.meta` 尚无实现，给出明确诊断而不是笼统的"保留字"错误。 */
+    private fun rejectUnsupportedImportExpression() {
+        val token = peek()
+        if (token.type != TokenType.IDENTIFIER || token.containsEscape || token.value != "import") {
+            return
+        }
+        when (peek(1).type) {
+            TokenType.LPAREN -> throw error("Dynamic import is not supported yet")
+            TokenType.DOT -> throw error("import.meta is not supported yet")
+            else -> Unit
+        }
+    }
+
+    /** 解析一个模块声明（`import` 或 `export`）。 */
+    private fun parseModuleDeclaration(): ModuleParseResult {
+        val token = peek()
+        return when (token.value) {
+            "import" -> parseImportDeclaration()
+            "export" -> parseExportDeclaration()
+            else -> throw error("Expected 'import' or 'export'")
+        }
+    }
+
+    /** `as` 关键字（作为标识符上下文关键字出现）。 */
+    private fun isAsKeyword(offset: Int = 0): Boolean {
+        val token = peek(offset)
+        return token.type == TokenType.IDENTIFIER && !token.containsEscape && token.value == "as"
+    }
+
+    /** `from` 关键字。 */
+    private fun consumeFrom(): Token {
+        val token = peek()
+        if (token.type != TokenType.IDENTIFIER || token.containsEscape || token.value != "from") {
+            throw error("Expected 'from'")
+        }
+        return advance()
+    }
+
+    /**
+     * 模块说明符：必须是字符串字面量。
+     *
+     * 模块恒为严格模式，八进制转义（`import "a\01"`）是语法错误。
+     */
+    private fun parseModuleSpecifier(): String {
+        val token = consume(TokenType.STRING, "Expected module specifier string")
+        if (token.legacyOctal) {
+            throw error("Octal escape sequences are not allowed in module specifiers")
+        }
+        return token.value
+    }
+
+    /**
+     * 导入/导出名（ModuleExportName）：IdentifierName 或字符串字面量。
+     *
+     * 字符串形式对应 ES2022 的任意模块命名空间名（`export { x as "a-b" }`），
+     * 这里直接取其解码后的值。
+     */
+    private fun consumeModuleExportName(message: String): Token {
+        val token = peek()
+        if (token.type == TokenType.IDENTIFIER || token.type in keywordTokenTypes) {
+            return advance()
+        }
+        if (token.type == TokenType.STRING) {
+            if (token.legacyOctal) {
+                throw error("Octal escape sequences are not allowed in export names")
+            }
+            return advance()
+        }
+        throw ParseException("$message (Token: ${token.value})", token.range)
+    }
+
+    /** `import` 声明：副作用、默认、具名、命名空间四种形态及其组合。 */
+    private fun parseImportDeclaration(): ModuleParseResult {
+        val start = advance().range.start // import
+        // 纯副作用导入：import "m";
+        if (check(TokenType.STRING)) {
+            val moduleRequest = parseModuleSpecifier()
+            consumeSemicolon()
+            return ModuleParseResult(
+                item = ImportDeclaration(
+                    moduleRequest = moduleRequest,
+                    specifiers = emptyList(),
+                    namespaceImport = null,
+                    isSideEffectOnly = true,
+                    range = SourceRange(start, previous().range.end),
+                ),
+                // 规范里副作用导入仍然产生 ImportEntry：ImportName 为 all、LocalName 为空；
+                // 这里用 "*" / "" 表示该哨兵值，模块求值器只据此触发依赖求值。
+                imports = listOf(ImportEntry(moduleRequest, "*", "")),
+            )
+        }
+
+        val specifiers = mutableListOf<ImportSpecifier>()
+        val names = mutableListOf<Pair<String, String>>() // importName to localName
+        val lexical = mutableListOf<String>()
+        var namespaceImport: String? = null
+
+        // 默认导入：import d ...（后面可能跟 `,` 再接具名/命名空间导入）
+        if (!check(TokenType.LBRACE) && !check(TokenType.MULTIPLY)) {
+            val defaultToken = consumeBindingIdentifier("Expected default import name")
+            validateIdentifierName(defaultToken.value, strict)
+            declareLexicalBinding(defaultToken.value)
+            specifiers.add(ImportSpecifier("default", defaultToken.value, defaultToken.range))
+            names.add("default" to defaultToken.value)
+            lexical.add(defaultToken.value)
+            if (!match(TokenType.COMMA)) {
+                return finishImportDeclaration(start, specifiers, namespaceImport, names, lexical)
+            }
+        }
+
+        if (match(TokenType.MULTIPLY)) {
+            // import * as ns from "m"
+            if (!isAsKeyword()) throw error("Expected 'as' after '*'")
+            advance()
+            val namespaceToken = consumeBindingIdentifier("Expected namespace import name")
+            validateIdentifierName(namespaceToken.value, strict)
+            declareLexicalBinding(namespaceToken.value)
+            namespaceImport = namespaceToken.value
+            names.add("*" to namespaceToken.value)
+            lexical.add(namespaceToken.value)
+        } else {
+            // import {a, b as c} from "m"
+            consume(TokenType.LBRACE, "Expected '{' or '*' in import declaration")
+            while (!check(TokenType.RBRACE) && !isAtEnd()) {
+                val importedToken = consumeModuleExportName("Expected imported name")
+                val importedName = importedToken.value
+                // 没有 `as` 时导入名同时是本地绑定名，因此必须是合法绑定标识符
+                val localToken = if (isAsKeyword()) {
+                    advance()
+                    consumeBindingIdentifier("Expected import binding name")
+                } else {
+                    if (importedToken.type != TokenType.IDENTIFIER) {
+                        throw ParseException(
+                            "Expected import binding name (Token: $importedName)",
+                            importedToken.range,
+                        )
+                    }
+                    importedToken
+                }
+                validateIdentifierName(localToken.value, strict)
+                declareLexicalBinding(localToken.value)
+                specifiers.add(
+                    ImportSpecifier(importedName, localToken.value, importedToken.range)
+                )
+                names.add(importedName to localToken.value)
+                lexical.add(localToken.value)
+                if (!match(TokenType.COMMA)) break
+            }
+            consume(TokenType.RBRACE, "Expected '}' after import list")
+        }
+        return finishImportDeclaration(start, specifiers, namespaceImport, names, lexical)
+    }
+
+    /** 解析 import 声明尾部的 `from "m" ;` 并组装结果。 */
+    private fun finishImportDeclaration(
+        start: SourcePosition,
+        specifiers: List<ImportSpecifier>,
+        namespaceImport: String?,
+        names: List<Pair<String, String>>,
+        lexicalNames: List<String>,
+    ): ModuleParseResult {
+        consumeFrom()
+        val moduleRequest = parseModuleSpecifier()
+        consumeSemicolon()
+        return ModuleParseResult(
+            item = ImportDeclaration(
+                moduleRequest = moduleRequest,
+                specifiers = specifiers,
+                namespaceImport = namespaceImport,
+                isSideEffectOnly = false,
+                range = SourceRange(start, previous().range.end),
+            ),
+            imports = names.map { (importName, localName) ->
+                ImportEntry(moduleRequest, importName, localName)
+            },
+            lexicalNames = lexicalNames,
+        )
+    }
+
+    /** `export` 声明：default、`*`、具名子句、内联声明四种形态。 */
+    private fun parseExportDeclaration(): ModuleParseResult {
+        val start = advance().range.start // export
+        return when {
+            check(TokenType.DEFAULT) -> parseExportDefault(start)
+            check(TokenType.MULTIPLY) -> parseExportAll(start)
+            check(TokenType.LBRACE) -> parseExportClause(start)
+            isInlineExportDeclarationStart() -> parseInlineExportDeclaration(start)
+            else -> throw error("Expected declaration or statement after 'export'")
+        }
+    }
+
+    /** 是否为 `export` 后直接跟声明（var/let/const/function/class/async function）的形态。 */
+    private fun isInlineExportDeclarationStart(): Boolean {
+        val token = peek()
+        return when (token.type) {
+            TokenType.VAR, TokenType.LET, TokenType.CONST,
+            TokenType.FUNCTION, TokenType.CLASS -> true
+
+            else -> token.type == TokenType.IDENTIFIER && !token.containsEscape &&
+                token.value == "async" && peek(1).type == TokenType.FUNCTION &&
+                !peek(1).precededByNewline
+        }
+    }
+
+    /** `export var/let/const/function/class ...`：内联声明的导出名等于绑定名。 */
+    private fun parseInlineExportDeclaration(start: SourcePosition): ModuleParseResult {
+        val declaration: Statement = when {
+            check(TokenType.VAR) || check(TokenType.LET) || check(TokenType.CONST) ->
+                parseVarDeclaration()
+
+            check(TokenType.FUNCTION) -> parseFunctionDeclaration()
+            check(TokenType.CLASS) -> parseClassDeclaration()
+            else -> parseFunctionDeclaration(isAsync = true)
+        }
+        val exports = mutableListOf<ExportEntry>()
+        val lexical = mutableListOf<String>()
+        when (declaration) {
+            is VarDeclaration -> {
+                val names = LinkedHashSet<String>()
+                for (declarator in declaration.declarations) {
+                    val pattern = declarator.pattern
+                    if (pattern != null) {
+                        collectPatternNames(pattern, names)
+                    } else {
+                        declarator.name?.let { names.add(it) }
+                    }
+                }
+                for (name in names) {
+                    exports.add(ExportEntry(name, null, null, name))
+                    // 只有 let/const 是词法声明；export var 仍属于模块 var 作用域
+                    if (declaration.kind != DeclarationKind.VAR) lexical.add(name)
+                }
+            }
+
+            is FunctionDeclaration -> {
+                // 模块顶层 function 是词法声明
+                exports.add(ExportEntry(declaration.name, null, null, declaration.name))
+                lexical.add(declaration.name)
+            }
+
+            is ClassDeclaration -> {
+                exports.add(ExportEntry(declaration.name, null, null, declaration.name))
+                lexical.add(declaration.name)
+            }
+
+            else -> Unit
+        }
+        return ModuleParseResult(
+            item = ExportNamedDeclaration(
+                declaration = declaration,
+                specifiers = emptyList(),
+                source = null,
+                range = SourceRange(start, previous().range.end),
+            ),
+            exports = exports,
+            lexicalNames = lexical,
+        )
+    }
+
+    /** `export {a as b}` 与 `export {a as b} from "m"`。 */
+    private fun parseExportClause(start: SourcePosition): ModuleParseResult {
+        consume(TokenType.LBRACE, "Expected '{' in export clause")
+        val specifiers = mutableListOf<ExportSpecifier>()
+        while (!check(TokenType.RBRACE) && !isAtEnd()) {
+            val localToken = consumeModuleExportName("Expected export name")
+            var exportName = localToken.value
+            if (isAsKeyword()) {
+                advance()
+                exportName = consumeModuleExportName("Expected exported name").value
+            }
+            specifiers.add(ExportSpecifier(localToken.value, exportName, localToken.range))
+            if (!match(TokenType.COMMA)) break
+        }
+        consume(TokenType.RBRACE, "Expected '}' after export list")
+        var source: String? = null
+        val fromToken = peek()
+        if (fromToken.type == TokenType.IDENTIFIER && !fromToken.containsEscape &&
+            fromToken.value == "from"
+        ) {
+            advance()
+            source = parseModuleSpecifier()
+        }
+        consumeSemicolon()
+        val moduleRequest = source
+        val exports = specifiers.map { specifier ->
+            if (moduleRequest != null) {
+                // 间接导出：左侧是导入名，没有本地绑定
+                ExportEntry(specifier.exportName, moduleRequest, specifier.localName, null)
+            } else {
+                ExportEntry(specifier.exportName, null, null, specifier.localName)
+            }
+        }
+        return ModuleParseResult(
+            item = ExportNamedDeclaration(
+                declaration = null,
+                specifiers = specifiers,
+                source = source,
+                range = SourceRange(start, previous().range.end),
+            ),
+            exports = exports,
+        )
+    }
+
+    /** `export * from "m"` 与 `export * as ns from "m"`。 */
+    private fun parseExportAll(start: SourcePosition): ModuleParseResult {
+        consume(TokenType.MULTIPLY, "Expected '*' after 'export'")
+        var namespaceName: String? = null
+        if (isAsKeyword()) {
+            advance()
+            namespaceName = consumeModuleExportName("Expected namespace export name").value
+        }
+        consumeFrom()
+        val moduleRequest = parseModuleSpecifier()
+        consumeSemicolon()
+        // 普通 export * 不产生具名导出（ExportName 为 null），由链接阶段做星号解析
+        val export = if (namespaceName != null) {
+            ExportEntry(namespaceName, moduleRequest, "*", null)
+        } else {
+            ExportEntry(null, moduleRequest, "*", null)
+        }
+        return ModuleParseResult(
+            item = ExportAllDeclaration(
+                source = moduleRequest,
+                namespaceName = namespaceName,
+                range = SourceRange(start, previous().range.end),
+            ),
+            exports = listOf(export),
+        )
+    }
+
+    /**
+     * `export default ...`。
+     *
+     * 具名函数/类声明按"声明 + 导出该名字"处理；匿名函数/类与普通表达式按
+     * "求值点创建并绑定 `*default*`"处理（规范 16.2.1.5 的 ExportEntry 形态）。
+     */
+    private fun parseExportDefault(start: SourcePosition): ModuleParseResult {
+        advance() // default
+        val isAsyncFunction = peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
+            peek().value == "async" && peek(1).type == TokenType.FUNCTION &&
+            !peek(1).precededByNewline
+        if (check(TokenType.FUNCTION) || isAsyncFunction) {
+            if (isNamedFunctionAfterFunctionKeyword()) {
+                val declaration = parseFunctionDeclaration(isAsync = isAsyncFunction)
+                return ModuleParseResult(
+                    item = ExportDefaultDeclaration(
+                        declaration = declaration,
+                        expression = null,
+                        range = SourceRange(start, previous().range.end),
+                    ),
+                    exports = listOf(
+                        ExportEntry("default", null, null, declaration.name)
+                    ),
+                    lexicalNames = listOf(declaration.name),
+                )
+            }
+            // 匿名函数：按函数表达式解析（parseFunctionExpression 要求 function 已消费），
+            // 绑定在模块求值点建立
+            val functionStart = peek().range.start
+            if (isAsyncFunction) advance() // async
+            consume(TokenType.FUNCTION, "Expected 'function'")
+            val expression = parseFunctionExpression(
+                startPos = functionStart,
+                isAsync = isAsyncFunction,
+            )
+            consumeSemicolon()
+            return anonymousDefaultDeclaration(start, expression)
+        }
+        if (check(TokenType.CLASS)) {
+            if (peek(1).type == TokenType.IDENTIFIER) {
+                val declaration = parseClassDeclaration()
+                return ModuleParseResult(
+                    item = ExportDefaultDeclaration(
+                        declaration = declaration,
+                        expression = null,
+                        range = SourceRange(start, previous().range.end),
+                    ),
+                    exports = listOf(
+                        ExportEntry("default", null, null, declaration.name)
+                    ),
+                    lexicalNames = listOf(declaration.name),
+                )
+            }
+            // 匿名类：`export default class {}` / `export default class extends B {}`
+            // （parseClassExpression 自己消费 class 关键字与可选的类名）
+            val expression = parseClassExpression()
+            consumeSemicolon()
+            return anonymousDefaultDeclaration(start, expression)
+        }
+        val expression = parseAssignment()
+        consumeSemicolon()
+        return anonymousDefaultDeclaration(start, expression)
+    }
+
+    /** 匿名默认导出：`*default*` 在模块求值点初始化。 */
+    private fun anonymousDefaultDeclaration(
+        start: SourcePosition,
+        expression: Expression,
+    ): ModuleParseResult = ModuleParseResult(
+        item = ExportDefaultDeclaration(
+            declaration = null,
+            expression = expression,
+            range = SourceRange(start, previous().range.end),
+        ),
+        exports = listOf(ExportEntry("default", null, null, "*default*")),
+    )
+
+    /**
+     * `export default function` 之后是否为具名声明。
+     *
+     * 当前 token 可能是 `function` 或 `async`；跳过 `function` 与可选的 `*` 后，
+     * 只有标识符才是具名声明，`(` 表示匿名。
+     */
+    private fun isNamedFunctionAfterFunctionKeyword(): Boolean {
+        var index = 0
+        if (peek().type == TokenType.IDENTIFIER && !peek().containsEscape &&
+            peek().value == "async" && peek(1).type == TokenType.FUNCTION &&
+            !peek(1).precededByNewline
+        ) {
+            index++
+        }
+        if (peek(index).type != TokenType.FUNCTION) return false
+        index++
+        if (peek(index).type == TokenType.MULTIPLY) index++
+        return peek(index).type == TokenType.IDENTIFIER
+    }
 }
