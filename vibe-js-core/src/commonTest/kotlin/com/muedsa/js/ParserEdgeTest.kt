@@ -466,6 +466,8 @@ class ParserEdgeTest {
         parse("for (let of of []) {}")
         parse("for (const of of []) {}")
         parse("for (obj.of of []) {}")
+        // `let` 本身也可以作为 sloppy var 绑定名（Test262 for-of/head-var-bound-names-let）
+        parse("for (var let of [23]) {}")
         // Test262 的 using 前瞻规则：`for (using of ...)` 默认是
         // “标识符 using + for-of”，只有 `for (using of = ...)` 是普通 for 声明
         parse("for (using of []) {}")

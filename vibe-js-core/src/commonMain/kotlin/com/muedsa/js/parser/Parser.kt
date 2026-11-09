@@ -2294,9 +2294,14 @@ class Parser(
                     // 与表达式开头的 of 都只是普通标识符。
                     val previous = tokens.getOrNull(index - 1)
                     val next = tokens.getOrNull(index + 1)
-                    val isDeclarationBinding = previous != null && previous.type in setOf(
-                        TokenType.VAR, TokenType.LET, TokenType.CONST,
-                    )
+                    val isDeclarationBinding = previous != null && when (previous.type) {
+                        // `var of` / `const of`：of 是绑定名
+                        TokenType.VAR, TokenType.CONST -> true
+                        // `let` 只有位于头部第一个 token 时才是声明关键字；
+                        // `for (var let of ...)` 中的 let 是绑定名，of 才是 for-of 运算符
+                        TokenType.LET -> index - 1 == pos
+                        else -> false
+                    }
                     val isPropertyName = previous != null && previous.type in setOf(
                         TokenType.DOT, TokenType.QUESTION_DOT,
                     )
@@ -2312,9 +2317,13 @@ class Parser(
                         previous.type == TokenType.IDENTIFIER &&
                         !previous.containsEscape && previous.value == "async" &&
                         next?.type == TokenType.ARROW
+                    val previousCanEndLeftHandSide = previous != null && (
+                        canEndLeftHandSideExpression(previous.type) ||
+                            // `for (var let of ...)`：let 作为绑定名也能结束左值
+                            (previous.type == TokenType.LET && index - 1 != pos)
+                        )
                     if (!isDeclarationBinding && !isPropertyName && !isUsingBinding &&
-                        !isAsyncArrowParameter && previous != null &&
-                        canEndLeftHandSideExpression(previous.type)
+                        !isAsyncArrowParameter && previousCanEndLeftHandSide
                     ) {
                         return ForHeaderKind.OF
                     }
