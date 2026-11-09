@@ -20,10 +20,10 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 沿用旧报告 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **548 / 548** | 含 L 系列同步与异步用例 |
-| 真实库 UMD 冒烟 | **329 / 329**（86 个库） | 2026-11-09 新增 pako/prop-types/react-is |
+| Node 差分 | **552 / 552** | 含 L 系列同步与异步用例 |
+| 真实库 UMD 冒烟 | **341 / 341**（90 个库） | 2026-11-09 新增 fflate/js-base64/long/loglevel |
 
-> 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5 与真实库数字沿用旧报告；ES2015、parser、差分已在当前基线复跑。
+> 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5 数字沿用旧报告；ES2015、parser、真实库与差分已在当前基线复跑。
 
 ### 1.2 已实现能力摘要
 
@@ -542,4 +542,5 @@ data class EngineLimits(
 | 2026-11-09 | 重新排序：模块执行作为条件 P0，模块语法降为最低优先级；M2/B2/PKG1/L4.7 列为无计划 |
 | 2026-11-09 | **L4.5 完成**：宿主模块新增 TextEncoder/TextDecoder（UTF-8）、structuredClone、URL/URLSearchParams 常用子集与 13 条测试；从按需队列移除 |
 | 2026-11-09 | **R1.3 完成**：`JSON.stringify` 接入 `maxJsonDepth`；显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎；补资源约束测试与异常分类表；从按需队列移除 |
+| 2026-11-09 | **S2.2 新一批**：新增 fflate/js-base64/long/loglevel 共 12 条真实库断言，库总数 90、341/341；差分新增 well-formed JSON、isWellFormed/toWellFormed、toSorted 空洞、with 负索引，548→552/552 |
 | 2026-11-09 | **整个模块方向降级为无计划**：保留 `Engine.run()` 单脚本入口与现有 `parseModule` 回归；说明 KMP 核心不应承担文件/URL IO，未来若重启只能采用“核心抽象 + 宿主加载器/内存模块表” |

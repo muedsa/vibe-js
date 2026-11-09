@@ -433,7 +433,7 @@ lexer -> parser -> AST (Program / ModuleProgram)
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
 | Test262 ES5 | **15,248/15,248**（跳过 0） |
 | Test262 ES2015 | **61,786/61,786**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
-| Node 差分 / 真实库冒烟 | **548/548**、**329/329**（86 个库） |
+| Node 差分 / 真实库冒烟 | **552/552**、**341/341**（90 个库） |
 
 详细口径、跳过原因与推进顺序见 [docs/CONFORMANCE.md](docs/CONFORMANCE.md)。
 

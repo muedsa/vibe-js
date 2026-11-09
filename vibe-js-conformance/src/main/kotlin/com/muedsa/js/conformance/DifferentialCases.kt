@@ -4033,4 +4033,35 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return [a, JSON.stringify(rest), d, JSON.stringify(nested)].join('|');
 })()""",
     ),
+    // well-formed JSON.stringify：孤立高/低代理项必须转义，而不是输出非法 UTF-8。
+    DifferentialCase(
+        "json-stringify-lone-surrogates",
+        """(function () {
+  var high = String.fromCharCode(0xD800);
+  var low = String.fromCharCode(0xDC00);
+  return JSON.stringify(high) + '|' + JSON.stringify(low);
+})()""",
+    ),
+    // String.prototype.isWellFormed / toWellFormed 的孤立代理项边界。
+    DifferentialCase(
+        "string-well-formed-surrogates",
+        """(function () {
+  var lone = String.fromCharCode(0xD800);
+  return [lone.isWellFormed(), lone.toWellFormed().charCodeAt(0), 'ok'.isWellFormed()].join('|');
+})()""",
+    ),
+    // toSorted 保留空洞并返回新数组，JSON 序列化把空位写成 null。
+    DifferentialCase(
+        "array-to-sorted-holes",
+        """JSON.stringify([3, , 1].toSorted())""",
+    ),
+    // with 的负索引按 length 归一化，且不修改原数组。
+    DifferentialCase(
+        "array-with-negative-index",
+        """(function () {
+  var source = [1, 2, 3];
+  var result = source.with(-1, 9);
+  return JSON.stringify(result) + '|' + JSON.stringify(source);
+})()""",
+    ),
 )

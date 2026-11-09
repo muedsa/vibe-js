@@ -2812,6 +2812,94 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    // fflate 是纯 UMD 压缩库；覆盖 deflate/gzip roundtrip 与空输入，
+    // 触达 TypedArray、二进制数据与多字节字符串转换。
+    LibrarySpec(
+        name = "fflate",
+        url = "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js",
+        globalName = "fflate",
+        cases = listOf(
+            SmokeCase(
+                "deflate inflate utf8",
+                assertion(
+                    "fflate.strFromU8(fflate.inflateSync(fflate.deflateSync(fflate.strToU8('hello')))) === 'hello'"
+                ),
+            ),
+            SmokeCase(
+                "gzip roundtrip",
+                assertion(
+                    "fflate.strFromU8(fflate.gunzipSync(fflate.gzipSync(fflate.strToU8('gzip')))) === 'gzip'"
+                ),
+            ),
+            SmokeCase(
+                "empty deflate",
+                assertion("fflate.deflateSync(fflate.strToU8('')).length > 0"),
+            ),
+        ),
+    ),
+    // js-base64 是纯字符串编解码库；覆盖 UTF-8 编码、解码与 ASCII 长度，
+    // 验证不依赖 btoa/atob 的实现。
+    LibrarySpec(
+        name = "js-base64",
+        url = "https://cdn.jsdelivr.net/npm/js-base64@3.7.7/base64.min.js",
+        globalName = "Base64",
+        cases = listOf(
+            SmokeCase(
+                "encode ascii",
+                assertion("Base64.encode('hello') === 'aGVsbG8='"),
+            ),
+            SmokeCase(
+                "decode ascii",
+                assertion("Base64.decode('aGVsbG8=') === 'hello'"),
+            ),
+            SmokeCase(
+                "encode utf8",
+                assertion("Base64.encode('你好') === '5L2g5aW9'"),
+            ),
+        ),
+    ),
+    // long 是 64 位整数库；覆盖字符串解析、加法与最大有符号值，
+    // 验证 BigInt 之外的 UMD 数值库兼容性。
+    LibrarySpec(
+        name = "long",
+        url = "https://cdn.jsdelivr.net/npm/long@5.2.3/umd/index.js",
+        globalName = "Long",
+        cases = listOf(
+            SmokeCase(
+                "add",
+                assertion("Long.fromString('123').add(1).toString() === '124'"),
+            ),
+            SmokeCase(
+                "to number",
+                assertion("Long.fromValue(42).toNumber() === 42"),
+            ),
+            SmokeCase(
+                "max signed",
+                assertion("Long.fromString('9223372036854775807').toString() === '9223372036854775807'"),
+            ),
+        ),
+    ),
+    // loglevel 是无 DOM 依赖的日志门面；只验证级别切换与命名 logger，
+    // 不触发实际控制台输出。
+    LibrarySpec(
+        name = "loglevel",
+        url = "https://cdn.jsdelivr.net/npm/loglevel@1.9.1/dist/loglevel.min.js",
+        globalName = "log",
+        cases = listOf(
+            SmokeCase(
+                "set silent level",
+                assertion("log.setLevel('silent') === undefined && log.getLevel() === 5"),
+            ),
+            SmokeCase(
+                "named logger inherits level",
+                assertion("log.getLogger('child').getLevel() === 5"),
+            ),
+            SmokeCase(
+                "levels map",
+                assertion("log.levels.SILENT === 5 && log.levels.ERROR === 4"),
+            ),
+        ),
+    ),
 )
 
 
