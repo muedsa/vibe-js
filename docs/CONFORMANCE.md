@@ -24,6 +24,7 @@
 | Node 差分 | **548 / 548** |
 | 真实库 UMD 冒烟 | **329 / 329**（86 个库） |
 | conformance 单元测试 | **39 / 39**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4） |
+| host 单元测试 | **38 / 38**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
 
 ## 3. Parser 基线
 
@@ -332,7 +333,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 - **模块执行无计划**：`import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法已可解析；链接、求值、加载、CLI 与 Test262 module harness **整体无计划**。当前执行入口只有单脚本 `Engine.run(source)`。Test262 的 322 个 `flags: [module]` 用例继续跳过，parser 的 262 个模块用例保留为现状回归门禁。
 - **顶层 await**：只有语法解析，没有异步模块求值；随模块方向一起无计划。
 - **模块扩展语法**：import attributes、`import.meta.resolve`、`export using` 无计划；`import()` 零参数在语法层暂允许（执行期按规范拒绝），不再投入语法收尾。
-- **宿主生态**：TextEncoder/TextDecoder、structuredClone、URL 子集未实现，按需评估（L4.5）。
+- **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。
 - **弱引用**：WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 仍是强引用存储（M2 无计划）。
 - **范围外**：Intl、真实 DOM / Web API、SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer、Temporal、Float16Array、装饰器、ShadowRealm。
 - **资源约束**：R1 前两批已落地，第三批（计量口径/跨平台一致性/异常分类）按需评估；`EngineLimits` 不是进程级隔离。
@@ -344,7 +345,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 1. **文档与门禁收口（维护主线）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块方向统一标注“无计划”。
 2. **覆盖扩展（P1）**：继续补充差分与真实库用例，优先覆盖新特性与回归边界；保持“无 DOM/浏览器全局”的加载条件。
-3. **按需能力（P1）**：`R1.3` 资源约束第三批只在需要执行不可信脚本时启动；`L4.5` 宿主生态只在宿主或真实库需要时启动。
+3. **按需能力（P1）**：`R1.3` 资源约束第三批只在需要执行不可信脚本时启动。
 4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
 
 **模块方向（L4.1c、L4.2–L4.4b、L4.6a+、L4.6b、L4.7）整体无计划**：保留 `Parser.parseModule` 与现有 262 个模块语料回归，但不投入链接/求值/加载/CLI/harness，也不新增模块语法收尾。单脚本 `Engine.run(source)` 是当前唯一执行入口。

@@ -36,6 +36,9 @@ private const val BASE64_ALPHABET =
  * - `setTimeout` / `clearTimeout` / `queueMicrotask`
  * - `atob` / `btoa`
  * - `performance.now()` / `performance.timeOrigin`
+ * - `TextEncoder` / `TextDecoder`（UTF-8 子集）
+ * - `structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）
+ * - `URL` / `URLSearchParams`（常用子集）
  *
  * 说明：不绑定任何平台原生 API；定时任务通过核心 EventLoop 的 Scheduler 执行，
  * console 输出通过可注入的 [Console] 实现。
@@ -82,6 +85,9 @@ class HostModule(
         installPerformance(registry)
         installTimers(registry)
         installEncoding(registry)
+        installTextEncoding(registry)
+        installStructuredClone(registry)
+        installUrl(registry)
     }
 
     private fun installConsole(registry: BuiltinRegistry) {

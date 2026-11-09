@@ -8,10 +8,11 @@
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
 > `import()` 表达式与模块顶层 `await` 语法，但**链接、求值、加载无计划，不能执行模块**；
 > 当前唯一执行入口是单脚本 `Engine.run(source)`。
-> 真实剩余差异集中在：宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集）、
-> WeakRef / FinalizationRegistry、Intl、DOM/Web API、SharedArrayBuffer / Atomics、
-> resizable / transfer ArrayBuffer；模块执行、顶层 await、资源约束第三批（R1）、
-> 性能优化（B2）与 API 契约（PKG1）均为无计划或按需评估。
+> 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
+> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；模块执行、
+> 顶层 await、资源约束第三批（R1）、性能优化（B2）与 API 契约（PKG1）
+> 均为无计划或按需评估。宿主生态已提供 TextEncoder/TextDecoder（UTF-8）、
+> structuredClone 与 URL/URLSearchParams 常用子集（`:vibe-js-host`）。
 
 ## 1. 词法
 
@@ -128,11 +129,11 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **999** + 宿主 25 个测试（2026-11-09 记录，`53fb71b`） |
-| JS（Node） | ✅ | 核心 **983** + 宿主 25 个测试 |
-| Wasm（Node） | ✅ | 核心 **983** + 宿主 25 个测试 |
+| JVM | ✅ | 核心 **999** + 宿主 38 个测试（2026-11-09 记录，`53fb71b`） |
+| JS（Node） | ✅ | 核心 **983** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **983** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
-| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-01 本地复跑 Windows mingwX64 通过（近期未重跑） |
+| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
 > 数字来自各平台测试报告。JVM 的 999 包含 L4/R1/M2 新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 983。"仅由 CI 覆盖"表示本次未在本地复跑。
 
@@ -144,7 +145,7 @@
 - 模块语法已知宽松点：`import()` 零参数在语法层暂允许（执行期按规范拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持；随模块方向整体无计划；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；
 - 顶层 await 只有语法解析，没有模块异步求值；随模块方向无计划；
-- 宿主生态未实现：TextEncoder/TextDecoder、structuredClone、URL/URLSearchParams 子集（L4.5，按需）；真实 DOM / fetch / localStorage 等 Web API 不在范围；
+- 宿主生态已实现 UTF-8 子集：TextEncoder（encode/encodeInto）、TextDecoder（fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/ArrayBuffer/视图/循环）、URL/URLSearchParams 常用能力；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API；
 - WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 使用强引用存储，没有 GC 弱语义，不能用于长期缓存的自动回收（M2 无计划）；
 - Intl、SharedArrayBuffer / Atomics、Temporal / Float16Array / 装饰器 / ShadowRealm 不在当前范围或明确无计划；
 - ArrayBuffer 不支持 resizable / transfer：`ArrayBuffer.prototype.resize` / `transfer` 不存在；分离（detach）状态只能由宿主调用 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 触发，JS 语言本身没有公开 detach API；
@@ -223,4 +224,4 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `DiagnosticTest` | 词法/语法异常转换为结构化诊断（类别、纯描述、源码范围、来源文件名与行偏移），其他异常不产生诊断，原异常类型与 message 格式保持不变 |
 | `ParserConformanceTest` / `Test262SelectionTest` / `RunSupportTest` / `RunMetadataTest`（:vibe-js-conformance） | parser 脚本/模块允许列表与 strict 判定、Test262 筛选与跳过分类、运行器超时/关闭/失败分类、报告元数据 |
-| `HostModuleTest`（:vibe-js-host） | window/self 身份、console、定时器/setInterval（额外参数与延迟钳制）、queueMicrotask（重入排序、异常记录）、atob/btoa（WHATWG Latin-1 码元与宽松 base64 解码）、墙钟/单调时钟注入、performance 时间原点（安装时固定）、console.time/timeEnd 走单调时钟 |
+| `HostModuleTest` / `HostEcosystemTest`（:vibe-js-host） | window/self 身份、console、定时器/setInterval、queueMicrotask、atob/btoa、宿主时钟、performance；TextEncoder/TextDecoder（UTF-8/fatal/BOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/二进制/循环/错误）、URL/URLSearchParams 常用能力 |

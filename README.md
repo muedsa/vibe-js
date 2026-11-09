@@ -5,7 +5,7 @@ Vibe JS 是一个使用 Kotlin 多平台从零实现的轻量级 JavaScript 运�
 - 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 `async/await`、Generator / async generator），并已实现 Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView；模块侧已支持 `Parser.parseModule` 语法解析（含 `import.meta` / `import()` / 顶层 `await` 语法），但尚不能链接或执行；
 - 定位：通用 Kotlin 库，核心不绑定任何浏览器/平台原生 API；
 - 构建目标：JVM、Android、JS、Wasm、Linux、Windows、macOS、iOS、tvOS、watchOS；
-- 宿主能力（console、定时器、window、performance 等）位于独立的 `:vibe-js-host` 模块。
+- 宿主能力（console、定时器、window、performance、TextEncoder/TextDecoder、structuredClone、URL 等）位于独立的 `:vibe-js-host` 模块。
 
 ## 使用方式
 
@@ -280,7 +280,8 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 
 `HostModule` 提供 `window`/`self`、`console`（含 time/timeEnd）、`setTimeout`/`clearTimeout`、
 `setInterval`/`clearInterval`、`queueMicrotask`、`atob`/`btoa`、
-`performance.now()`/`performance.timeOrigin`，
+`performance.now()`/`performance.timeOrigin`，以及 UTF-8 的
+`TextEncoder`/`TextDecoder`、`structuredClone` 与 `URL`/`URLSearchParams` 常用子集，
 全部由纯 Kotlin 实现，不绑定平台原生 API。
 
 ## 已支持
@@ -340,8 +341,9 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
 - **模块仅解析**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法；链接、求值、加载、CLI 与 Test262 module harness **无计划**，`Engine.run` 仍只执行 Script，不能运行模块；
-- **无计划**：顶层 await 的执行（L4.7）、WeakRef / FinalizationRegistry；宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集，L4.5）按需评估；
-- **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
+- **无计划**：顶层 await 的执行（L4.7）、WeakRef / FinalizationRegistry；
+- **宿主生态（已实现子集）**：`TextEncoder` / `TextDecoder`（UTF-8、fatal/ignoreBOM/stream）、`structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）、`URL` / `URLSearchParams` 常用能力，均位于 `:vibe-js-host`；
+- **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供通用宿主能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
 - **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2 无计划）；BigInt 结果受 `MAX_RESULT_BITS` 限制；`import()` 零参数在语法层暂允许（执行期拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持（随模块方向无计划）；
 - **无计划/按需**：性能优化（B2）与 API 契约（PKG1）无计划；完整资源约束（R1 第三批）按需评估；
 - **已知不完整**：完整 ASI 边界规则。
@@ -422,7 +424,7 @@ lexer -> parser -> AST (Program / ModuleProgram)
 |---|---|
 | core JVM | **999 / 999** |
 | core JS（Node）/ Wasm（Node） | 各 **983 / 983** |
-| host JVM / JS / Wasm | 各 **25 / 25** |
+| host JVM / JS / Wasm / Native | 各 **38 / 38** |
 | conformance 单元测试 | **39 / 39** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
@@ -445,7 +447,7 @@ lexer -> parser -> AST (Program / ModuleProgram)
     - `diagnostics/`：结构化诊断适配层（词法/语法异常 → 类别、范围、来源）
   - `src/commonTest/`：核心单元测试
 - `vibe-js-host/`（Gradle 模块 `:vibe-js-host`）
-  - `src/commonMain/kotlin/com/muedsa/js/host/`：宿主模块（console/timer/window 等；后续模块加载器/CLI 也放这里）
+  - `src/commonMain/kotlin/com/muedsa/js/host/`：宿主模块（console/timer/window、TextEncoder/TextDecoder、structuredClone、URL 等）
   - `src/commonTest/`：宿主模块测试
 - `vibe-js-conformance/`（Gradle 模块 `:vibe-js-conformance`）
   - JVM-only 一致性基线：test262-parser-tests（脚本 + 模块）运行器、语料下载与报告生成
@@ -455,7 +457,7 @@ lexer -> parser -> AST (Program / ModuleProgram)
 
 - **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 基线。
 - **模块**：`Parser.parseModule` 语法解析与模块语料门禁已完成；链接、求值、加载、CLI 与 Test262 module harness **无计划**，保留现有解析回归。
-- **未完成/无计划**：宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集）按需评估；WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划。
+- **未完成/无计划**：WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划；宿主生态已提供 TextEncoder/TextDecoder、structuredClone 与 URL 子集。
 
 ## 说明
 
