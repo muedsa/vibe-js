@@ -851,7 +851,7 @@ private data class Test262Report(
                 } else {
                     appendLine("- 范围：test/language + test/built-ins 中带 `es5id` 的脚本")
                 }
-                appendLine("- 跳过：module 等不支持的 flag、当前不支持特性、运行器未提供的 \$262 钩子、缺失 include")
+                appendLine("- 跳过：module 执行无计划（仍按 unsupported flag 跳过）、其他不支持的 flag、当前不支持特性、运行器未提供的 \$262 钩子、缺失 include")
                 appendLine()
                 appendLine("| 指标 | 数值 |")
                 appendLine("|---|---:|")

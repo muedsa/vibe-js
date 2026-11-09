@@ -126,8 +126,9 @@ internal object Test262Selection {
         suite: String,
         relativePath: String = "",
     ): SkipDecision? {
-        // module 仍未支持；generator 为旧版语料的历史 flag（现行语料已改用
-        // features: [generators]），保留判定以兼容旧语料，不影响已纳入基线的生成器用例
+        // module 执行无计划，仍保留 module flag 跳过；generator 为旧版语料的历史 flag
+        // （现行语料已改用 features: [generators]），保留判定以兼容旧语料，
+        // 不影响已纳入基线的生成器用例
         if (metadata.flags.any { it in setOf("module", "generator") }) {
             return SkipDecision("unsupported flag")
         }
