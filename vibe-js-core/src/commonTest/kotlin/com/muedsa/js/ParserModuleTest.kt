@@ -517,6 +517,16 @@ class ParserModuleTest {
     }
 
     @Test
+    fun `new 不能直接以 import 调用作为构造器`() {
+        // import() 是 CallExpression 而不是 MemberExpression，裸 new import() 是语法错误
+        assertFailsWith<ParseException> { parseModule("new import(\"m\");") }
+        assertFailsWith<ParseException> { parseModule("new import(\"m\", {});") }
+        // 括号形式与成员链形式是合法语法，运行期才因不可构造抛 TypeError
+        parseModule("new (import(\"m\"));")
+        parseModule("new import(\"m\").x;")
+    }
+
+    @Test
     fun `匿名默认导出函数与类后可直接跟下一条语句`() {
         // HoistableDeclaration / ClassDeclaration 形式不要求分号，ASI 不是必要条件
         parseModule("export default function () {} if (true) {}")

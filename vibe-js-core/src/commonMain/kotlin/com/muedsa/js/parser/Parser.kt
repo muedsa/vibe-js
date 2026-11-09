@@ -3388,6 +3388,12 @@ class Parser(
         if (constructor is SuperExpr) {
             throw error("'super' keyword unexpected here")
         }
+        // `new import("m")`：import() 不是 MemberExpression，不能作为 new 的构造器。
+        // 括号形式 `new (import("m"))` 与成员链 `new import("m").x` 是合法语法，
+        // 运行期才会因不可构造抛 TypeError，因此只拦截未被括号包裹的裸 import()。
+        if (constructor is ImportCallExpr && constructor.range !in parenthesizedRanges) {
+            throw error("Cannot use new with import()")
+        }
 
         if (match(TokenType.LPAREN)) {
             val arguments = parseArgumentsAfterOpen()
