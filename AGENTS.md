@@ -31,15 +31,16 @@
 - **已支持能力**：Generator / async generator、`for await...of`、Proxy / Reflect、BigInt、
   TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 ES2015 基线
 - **模块**：`Parser.parseModule()` 支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式
-  与模块顶层 `await` 语法，并预计算静态表；链接、求值、加载未实现，`Engine` 仍只执行 Script。
+  与模块顶层 `await` 语法，并预计算静态表；链接、求值、加载**无计划**，`Engine` 仍只执行 Script。
   模块解析必须保持脚本 `parseProgram` 路径零改动；`ModuleItem` 不继承 `Statement`；
   模块恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法
-- **模块加载与 IO 边界**：核心只提供 `parseModule`，后续 `ModuleLoader` 抽象（L4.4 待实现）也只能是
-  纯 Kotlin 接口；文件/URL 加载、CLI 与平台 IO 必须放在 `:vibe-js-host`，核心不得引入平台 API
+- **模块加载与 IO 边界**：模块方向整体无计划；当前唯一执行入口是单脚本 `Engine.run(source)`。
+  若未来重启，`ModuleLoader` 抽象也只能是纯 Kotlin 接口，文件/URL 加载、CLI 与平台 IO
+  必须放在 `:vibe-js-host`，核心不得引入平台 API；不得假设浏览器/Wasm 有文件系统
 - **仍排除/范围外**：Intl、真实 DOM / Web API、SharedArrayBuffer / Atomics、
   resizable / transfer ArrayBuffer、Temporal、Float16Array、装饰器、ShadowRealm；
-  WeakRef / FinalizationRegistry 未实现（M2 暂缓），WeakMap/WeakSet 仍是强引用存储；
-  顶层 await 只有语法解析，执行未实现（L4.7）
+  WeakRef / FinalizationRegistry 未实现（M2 无计划），WeakMap/WeakSet 仍是强引用存储；
+  顶层 await 只有语法解析，执行无计划（L4.7）
 
 ## 常用命令
 
@@ -74,7 +75,7 @@
 - **Vibe JS** 是一个使用 Kotlin 多平台从零开始实现的轻量级 JavaScript 运行时。
 - 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 async/await、Generator / async generator），
   已实现 Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView；模块目前只支持语法解析，
-  不能链接或执行；严格模式支持 `"use strict"` 双模式。
+  不能链接或执行（模块方向无计划）；严格模式支持 `"use strict"` 双模式。
 - `README.md`: 功能、结构、用法与阶段说明。
 - `docs/ARCHITECTURE.md`: 内核设计、执行流程、模块解析与扩展点。
 - `docs/COMPATIBILITY.md`: 兼容性矩阵与已知差异。
@@ -108,7 +109,7 @@
   以及 `GeneratorBuiltins` / `AsyncGeneratorBuiltins` / `ProxyBuiltins` / `ReflectBuiltins` /
   `TypedArrayBuiltins` / `ArrayBufferBuiltins` / `DataViewBuiltins` / `BigIntBuiltins`
 - `vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/HostModule.kt`: 宿主模块（console/timer/window 等；
-  后续模块加载器与 CLI 也放在这里）
+  若未来重启模块方向，加载器与 CLI 也只能放在这里）
 
 ### 测试结构 (`vibe-js-core/src/commonTest/kotlin/com/muedsa/js/`)
 

@@ -77,7 +77,7 @@
 
 模块早期错误（early-module）共 63 条，解析成功 0、被拒绝 63、意外接受 0。模块允许列表 `parser-module-allowlist.txt` 当前为空；新增条目必须逐条写“相对语料根目录的 POSIX 路径 + 原因”，且只允许 `.module.js`，禁止目录/后缀/通配符。
 
-> 模块语法已纳入 parser 门禁，但这只证明**能解析**，不代表能链接或执行；模块执行仍属 L4.2–L4.4。
+> 模块语法已纳入 parser 门禁，但这只证明**能解析**，不代表能链接或执行；模块执行（L4.1c–L4.6b）整体无计划，当前执行入口只有单脚本 `Engine.run(source)`。
 
 ### 3.4 早期错误（脚本）
 
@@ -145,7 +145,7 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 | unsupported harness: `$262` | 1 |
 | unsupported harness: print | 1 |
 
-`module` 仍跳过是因为模块执行未实现（解析已支持）；旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
+`module` 仍跳过是因为模块执行无计划（解析已支持）；旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
 
 ### 5.2 筛选统计（未纳入本次口径）
 
@@ -326,22 +326,25 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 9. 已知范围与缺口
 
-- **模块执行未实现**：`import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法已可解析；链接、求值、加载、CLI 与 Test262 module harness 未实现。Test262 的 322 个 `flags: [module]` 用例因此跳过，parser 的 262 个模块用例已纳入单独门禁。
-- **顶层 await**：只有语法解析，没有异步模块求值（L4.7，可选）。
-- **模块扩展语法**：import attributes、`import.meta.resolve`、`export using` 暂不排期；`import()` 零参数在语法层暂允许，执行期按规范拒绝。
-- **宿主生态**：TextEncoder/TextDecoder、structuredClone、URL 子集未实现（L4.5）。
-- **弱引用**：WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 仍是强引用存储（M2 暂缓）。
+- **模块执行无计划**：`import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法已可解析；链接、求值、加载、CLI 与 Test262 module harness **整体无计划**。当前执行入口只有单脚本 `Engine.run(source)`。Test262 的 322 个 `flags: [module]` 用例继续跳过，parser 的 262 个模块用例保留为现状回归门禁。
+- **顶层 await**：只有语法解析，没有异步模块求值；随模块方向一起无计划。
+- **模块扩展语法**：import attributes、`import.meta.resolve`、`export using` 无计划；`import()` 零参数在语法层暂允许（执行期按规范拒绝），不再投入语法收尾。
+- **宿主生态**：TextEncoder/TextDecoder、structuredClone、URL 子集未实现，按需评估（L4.5）。
+- **弱引用**：WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 仍是强引用存储（M2 无计划）。
 - **范围外**：Intl、真实 DOM / Web API、SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer、Temporal、Float16Array、装饰器、ShadowRealm。
-- **资源约束**：R1 前两批已落地，第三批（计量口径/跨平台一致性/异常分类）仍为可选项；`EngineLimits` 不是进程级隔离。
-- **性能与 API 契约**：B2（25–48 人日）与 PKG1.2–1.6（7–13 人日）延后，见[后续路线](OPTIMIZATION_ROADMAP.md)。
+- **资源约束**：R1 前两批已落地，第三批（计量口径/跨平台一致性/异常分类）按需评估；`EngineLimits` 不是进程级隔离。
+- **性能与 API 契约**：B2（25–48 人日）与 PKG1.2–1.6（7–13 人日）无计划，见[后续路线](OPTIMIZATION_ROADMAP.md)。
 - **parser early 5 条**：均为现行 Annex B / 宽松语义允许项，不是缺陷；已列入 `parser-early-allowlist.txt`。
 - 当前 ES5 / ES2015 基线无失败、无崩溃；上述范围外项不是回归。
 
 ## 10. 推进顺序
 
-1. **模块执行（P0）**：按 L4.2 链接 → L4.3 求值 → L4.4 加载器 → L4.4b CLI → L4.6b Test262 module harness 推进；L4.5 宿主生态可并行，L4.7 顶层 await 按真实需求决定。
+1. **文档与门禁收口（维护主线）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块方向统一标注“无计划”。
 2. **覆盖扩展（P1）**：继续补充差分与真实库用例，优先覆盖新特性与回归边界；保持“无 DOM/浏览器全局”的加载条件。
-3. **质量与门禁（P1）**：按需做性能复测、B2 恢复评估、R1 第三批与报告文案维护；所有 strict 门禁保持绿色。
+3. **按需能力（P1）**：`R1.3` 资源约束第三批只在需要执行不可信脚本时启动；`L4.5` 宿主生态只在宿主或真实库需要时启动。
+4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
+
+**模块方向（L4.1c、L4.2–L4.4b、L4.6a+、L4.6b、L4.7）整体无计划**：保留 `Parser.parseModule` 与现有 262 个模块语料回归，但不投入链接/求值/加载/CLI/harness，也不新增模块语法收尾。单脚本 `Engine.run(source)` 是当前唯一执行入口。
 
 ## 11. CI
 

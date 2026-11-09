@@ -142,7 +142,7 @@ buffer.detach()
 ### 模块语法（仅解析）
 
 模块语法通过 `Parser.parseModule()` 解析，不会进入 `Engine.run`。可以读取静态表，
-但链接、求值、加载尚未实现（L4.2–L4.4）：
+但链接、求值、加载**无计划**：
 
 ```kotlin
 import com.muedsa.js.lexer.Lexer
@@ -156,7 +156,8 @@ module.strict // true
 ```
 
 模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝
-`import` / `export`。模块执行入口、模块加载器与 CLI 不在当前实现内，详见
+`import` / `export`。模块执行入口、模块加载器与 CLI 不在当前实现内，且已降级为无计划；
+当前唯一执行入口是单脚本 `Engine.run(source)`。详见
 [兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
 
 ### 取消与超时
@@ -334,15 +335,15 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - **Iterator**：抽象构造器、`Iterator.from/concat/zip/zipKeyed` 与 helpers（map/filter/take/drop/flatMap/reduce/toArray 等）；`%AsyncIteratorPrototype%` 与 `for await` 消费
 - **其他**：Symbol 知名方法、JSON 源文本、`RegExp.escape`、ES2025 Set 方法集
 
-### 当前未实现与延后
+### 当前无计划与边界
 
 当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
-- **模块仅解析**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法；链接、求值、加载、CLI 与 Test262 module harness 未实现，`Engine.run` 仍只执行 Script，不能运行模块；
-- **未实现**：顶层 await 的执行（L4.7，可选）、宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集，L4.5）、WeakRef / FinalizationRegistry；
+- **模块仅解析**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法；链接、求值、加载、CLI 与 Test262 module harness **无计划**，`Engine.run` 仍只执行 Script，不能运行模块；
+- **无计划**：顶层 await 的执行（L4.7）、WeakRef / FinalizationRegistry；宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集，L4.5）按需评估；
 - **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供 console/timer/window 等通用能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
-- **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2）；BigInt 结果受 `MAX_RESULT_BITS` 限制；`import()` 零参数在语法层暂允许（执行期拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持；
-- **延后**：性能优化（B2）与 API 契约（PKG1）；完整资源约束（R1 第三批）见路线图；
+- **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2 无计划）；BigInt 结果受 `MAX_RESULT_BITS` 限制；`import()` 零参数在语法层暂允许（执行期拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持（随模块方向无计划）；
+- **无计划/按需**：性能优化（B2）与 API 契约（PKG1）无计划；完整资源约束（R1 第三批）按需评估；
 - **已知不完整**：完整 ASI 边界规则。
 
 Unicode 属性/标识符/归一化/大小写映射数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。
@@ -357,7 +358,7 @@ lexer -> parser -> AST (Program / ModuleProgram)
                          |                +-> EventLoop / Promise / async-await
                          |                +-> Generator channels / Proxy internal methods / binary views
                          |
-                         +-> ModuleProgram -> Parser.parseModule（仅解析；链接/求值/加载待 L4.2–L4.4）
+                         +-> ModuleProgram -> Parser.parseModule（仅解析；链接/求值/加载无计划）
 ```
 
 - `Engine`：门面，持有全局对象、内建注册表、事件循环与解释器；当前只执行 Script；
@@ -453,8 +454,8 @@ lexer -> parser -> AST (Program / ModuleProgram)
 ## 阶段状态
 
 - **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 基线。
-- **模块**：`Parser.parseModule` 语法解析与模块语料门禁已完成；链接、求值、加载、CLI 与 Test262 module harness 待后续路线。
-- **未完成/延后**：宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集）、WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约。
+- **模块**：`Parser.parseModule` 语法解析与模块语料门禁已完成；链接、求值、加载、CLI 与 Test262 module harness **无计划**，保留现有解析回归。
+- **未完成/无计划**：宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集）按需评估；WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划。
 
 ## 说明
 

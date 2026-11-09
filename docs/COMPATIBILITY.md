@@ -6,11 +6,12 @@
 > Generator / async generator、`for await`、Proxy / Reflect、BigInt、
 > TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
-> `import()` 表达式与模块顶层 `await` 语法，但**链接、求值、加载尚未实现，不能执行模块**。
-> 真实剩余差异集中在：模块执行、顶层 await、宿主生态（TextEncoder/TextDecoder、
-> structuredClone、URL 子集）、WeakRef / FinalizationRegistry、Intl、DOM/Web API、
-> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer，以及延后的
-> 资源约束第三批（R1）、性能优化（B2）与 API 契约（PKG1）。
+> `import()` 表达式与模块顶层 `await` 语法，但**链接、求值、加载无计划，不能执行模块**；
+> 当前唯一执行入口是单脚本 `Engine.run(source)`。
+> 真实剩余差异集中在：宿主生态（TextEncoder/TextDecoder、structuredClone、URL 子集）、
+> WeakRef / FinalizationRegistry、Intl、DOM/Web API、SharedArrayBuffer / Atomics、
+> resizable / transfer ArrayBuffer；模块执行、顶层 await、资源约束第三批（R1）、
+> 性能优化（B2）与 API 契约（PKG1）均为无计划或按需评估。
 
 ## 1. 词法
 
@@ -60,9 +61,9 @@
 | 私有字段/方法/访问器 | ✅ | 品牌检查、不可扩展与重复初始化报错、直接 eval 可见性 |
 | Generator（`function*` / `yield`） | ✅ | 同步/异步生成器、`yield*` 委托、`return`/`throw`/`next`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定在调用时完成 |
 | BigInt（字面量与运算） | ✅ | `123n`、算术/位运算/移位/比较/幂运算、`BigInt()` / `asIntN` / `asUintN`、与 Number 混用抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制 |
-| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry` 与模块早期错误；**不能链接、求值或加载**，`Engine` 仍只执行 Script（L4.2–L4.4）。脚本目标继续拒绝 `import` / `export` |
+| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry` 与模块早期错误；**不能链接、求值或加载**，`Engine` 仍只执行 Script；链接/求值/加载/CLI 整体无计划。脚本目标继续拒绝 `import` / `export` |
 | 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；执行期分别报 `import.meta is only available in module code` 与 `Dynamic import is not supported`。`import()` 零参数在语法层暂允许，执行期按规范拒绝 |
-| 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 表达式；模块求值与异步求值未实现（L4.7），因此不能执行顶层 await |
+| 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 表达式；模块求值与异步求值未实现，且随模块方向整体无计划，因此不能执行顶层 await |
 | Proxy / Reflect | ✅ | Proxy 13 个 trap、`Proxy.revocable`、撤销状态与完整不变量校验；Reflect 13 个方法；解释器属性/调用/构造内部方法统一分派 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
 | 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板），try/catch/finally 按待处理语义阻断 |
@@ -139,18 +140,18 @@
 
 ## 6. 已知差异
 
-- 模块执行未实现：`Parser.parseModule` 已能解析 `import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表；但 `Engine` 仍只执行 Script，链接、求值、加载、CLI 与 Test262 module harness 均未实现（L4.2–L4.6b）。Test262 的 322 个 `flags: [module]` 用例因此跳过；
-- 模块语法已知宽松点：`import()` 零参数在语法层暂允许（执行期按规范拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持；
+- 模块执行无计划：`Parser.parseModule` 已能解析 `import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表；但 `Engine` 仍只执行 Script，链接、求值、加载、CLI 与 Test262 module harness 均无计划（L4.1c–L4.6b）。Test262 的 322 个 `flags: [module]` 用例继续跳过；
+- 模块语法已知宽松点：`import()` 零参数在语法层暂允许（执行期按规范拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持；随模块方向整体无计划；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；
-- 顶层 await 只有语法解析，没有模块异步求值（L4.7，可选）；
-- 宿主生态未实现：TextEncoder/TextDecoder、structuredClone、URL/URLSearchParams 子集（L4.5）；真实 DOM / fetch / localStorage 等 Web API 不在范围；
-- WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 使用强引用存储，没有 GC 弱语义，不能用于长期缓存的自动回收（M2 暂缓）；
-- Intl、SharedArrayBuffer / Atomics、Temporal / Float16Array / 装饰器 / ShadowRealm 不在当前范围或明确延后；
+- 顶层 await 只有语法解析，没有模块异步求值；随模块方向无计划；
+- 宿主生态未实现：TextEncoder/TextDecoder、structuredClone、URL/URLSearchParams 子集（L4.5，按需）；真实 DOM / fetch / localStorage 等 Web API 不在范围；
+- WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 使用强引用存储，没有 GC 弱语义，不能用于长期缓存的自动回收（M2 无计划）；
+- Intl、SharedArrayBuffer / Atomics、Temporal / Float16Array / 装饰器 / ShadowRealm 不在当前范围或明确无计划；
 - ArrayBuffer 不支持 resizable / transfer：`ArrayBuffer.prototype.resize` / `transfer` 不存在；分离（detach）状态只能由宿主调用 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 触发，JS 语言本身没有公开 detach API；
 - BigInt 是任意精度实现，但 `MAX_RESULT_BITS = 2^24`（16,777,216 位）；超过上限的 `pow` / 左移 / `asIntN` / `asUintN` 抛 RangeError，这是规范允许的实现定义上限；
 - 其他已知行为/差异：TypedArray 固定小端序；`BigInt("")` 返回 `0n`；`toLocaleString` 使用十进制兜底；`Object.freeze` / `Object.seal` 对非空 TypedArray 不抛 TypeError（已知）；
-- R1 资源约束前两批已落地（源码/嵌套/AST/对象/JSON/正则/排队任务/微任务预算），第三批（计量口径、跨平台一致性、异常分类）仍为可选项；`EngineLimits` 不是进程级隔离；
-- B2 性能优化与 PKG1 API 契约尚未完成；S5 已记录属性读写、数组循环与引擎创建的回归，B2 恢复前需先做专项基准与复测；
+- R1 资源约束前两批已落地（源码/嵌套/AST/对象/JSON/正则/排队任务/微任务预算），第三批（计量口径、跨平台一致性、异常分类）按需评估；`EngineLimits` 不是进程级隔离；
+- B2 性能优化与 PKG1 API 契约无计划；S5 已记录属性读写、数组循环与引擎创建的回归，S5.2 只做复测观测，不恢复 B2 排期；
 - `Date` 默认 `HostEnvironment.utcOffsetMillis` 返回 0（UTC）；宿主可按时刻返回毫秒偏移以启用本地时间，内核不内置 DST 规则；`toString` 的时区后缀显示为 `UTC±HH:MM`；
 - `Date.parse`/`new Date(string)` 仅接受 ISO 8601（含扩展年份）与自身 `toString`/`toUTCString` 格式；V8 额外接受的实现自定义本地格式（如 `2020/01/01`、`Jan 1 2020`）会返回 NaN，属规范允许的实现差异；
 - `JSON.parse` 使用独立严格 JSON 语法，不再复用宽松的 JS Parser；
