@@ -426,6 +426,26 @@ class ParserEdgeTest {
         assertEquals("SyntaxError", (error.value as JSError).errorName)
     }
 
+    @Test
+    fun `await 后的正则字面量应被识别为正则`() = runTest {
+        // await 是上下文相关关键字：async 函数体中的 `/` 应作为正则字面量起始
+        parse("async function f() { return await /a/; }")
+        parse("async function f() { return [await /a/g, await /b/]; }")
+        parse("async function* g() { yield await /a/; }")
+        // 除法不能被误判为正则
+        parse("async function f(a, b) { return await a / b; }")
+        parse("async function f(a) { return await a / 2 / 3; }")
+        // 属性名位置上的 await 仍然是标识符
+        parse("async function f(obj) { return obj.await / 2; }")
+        // 运行期确认 await 的 operand 是正则对象，而不是除法结果
+        val runtime = TestRuntime()
+        runtime.eval(
+            "async function f() { return (await /a/).source; }" +
+                " f().then(function (v) { globalThis.__r = v; });"
+        )
+        assertEquals("a", runtime.evalString("globalThis.__r"))
+    }
+
     // ================================================================
     // 自动分号插入
     // ================================================================

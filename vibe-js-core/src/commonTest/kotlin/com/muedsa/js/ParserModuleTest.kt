@@ -477,6 +477,14 @@ class ParserModuleTest {
     }
 
     @Test
+    fun `模块顶层await后的正则字面量可解析`() {
+        // await 与 yield 一样是上下文相关关键字，`/` 必须按正则字面量读取
+        parseModule("await /a/;")
+        parseModule("const p = await /a/g;")
+        parseModule("export default await /a/;")
+    }
+
+    @Test
     fun `模块中await不能作为绑定名或标识符`() {
         val invalid = listOf(
             "var await = 1;",

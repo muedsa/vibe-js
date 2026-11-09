@@ -291,13 +291,15 @@ class Lexer(
 
             // 正则字面量与除法需要结合上下文判断：
             // 在表达式起始位置出现的 `/` 视为正则，否则视为除法/除赋值。
-            // `yield /re/` 是上下文相关关键字的特例：按启发式识别，失败回退为除法。
+            // `yield /re/` 与 `await /re/` 是上下文相关关键字的特例：按启发式识别，
+            // 失败回退为除法。
             current == '/' -> {
                 if (isRegexAllowed(lastTokenType) && peek(1) != '/') {
                     readRegex(startLine, startColumn, startOffset, newlineBefore)
                 } else {
-                    val yieldRegex = peek(1) != '/' && isYieldRegexStart()
-                    val regex = if (yieldRegex) {
+                    val contextualRegex = peek(1) != '/' &&
+                        (isYieldRegexStart() || isAwaitRegexStart())
+                    val regex = if (contextualRegex) {
                         tryReadRegex(startLine, startColumn, startOffset, newlineBefore)
                     } else {
                         null
@@ -1498,10 +1500,26 @@ class Lexer(
     }
 
     /**
-     * 尝试把 `yield` 后的 `/` 读成正则字面量。
+     * 判断当前 `/` 是否是 `await` 的操作数（`await /re/`）。
+     *
+     * await 与 yield 一样是上下文相关关键字：async 函数/模块中是运算符，
+     * 其他位置可以是普通标识符。词法层没有解析器上下文，只能按“前一 Token
+     * 是 await、后面看起来像完整正则”近似判断；属性名位置（`obj.await / 2`）
+     * 不参与该判断。误判时 [tryReadRegex] 会因非法 flags 回退为除法。
+     */
+    private fun isAwaitRegexStart(): Boolean {
+        if (lastTokenType != TokenType.IDENTIFIER || lastTokenValue != "await") return false
+        if (previousTokenType == TokenType.DOT || previousTokenType == TokenType.QUESTION_DOT) {
+            return false
+        }
+        return looksLikeRegexLiteral()
+    }
+
+    /**
+     * 尝试把 `yield` / `await` 后的 `/` 读成正则字面量。
      *
      * 读取失败（非法正则/flags）时恢复词法位置并返回 null，由调用方退回除法：
-     * 此时 yield 更可能是普通标识符。
+     * 此时 yield/await 更可能是普通标识符。
      */
     private fun tryReadRegex(
         startLine: Int,
