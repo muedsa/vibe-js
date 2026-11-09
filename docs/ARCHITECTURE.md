@@ -515,7 +515,7 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
   `import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表；链接、求值、加载、
   CLI 与 Test262 module harness **整体无计划**，`Engine` 当前只执行 Script。
 - **当前无计划/按需**：WeakRef / FinalizationRegistry、WeakMap/WeakSet 的真实弱引用（M2）、Intl、DOM/fetch 等真实 Web API、SharedArrayBuffer/Atomics、
-  resizable/transfer ArrayBuffer 无计划；R1 第三批按需；性能优化（B2）与 API 契约（PKG1）无计划，
+  resizable/transfer ArrayBuffer 无计划；R1 资源约束已覆盖主要路径；性能优化（B2）与 API 契约（PKG1）无计划，
   S5.2 只做性能复测观测（见[后续路线](OPTIMIZATION_ROADMAP.md)）。
 - **已发布**：`0.0.0-SNAPSHOT` 快照推送到 GitHub Packages（JVM/JS/Wasm/Android 与各 Native 目标，
   见 [publish.yml](../.github/workflows/publish.yml)），尚未发布正式版。

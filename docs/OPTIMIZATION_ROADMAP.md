@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **999 / 999** | 2026-11-09 本地运行 |
-| core JS / Wasm（Node） | 各 **983 / 983** | 2026-11-09 复跑 |
+| core JVM 单元测试 | **1001 / 1001** | 2026-11-09 本地运行 |
+| core JS / Wasm（Node） | 各 **985 / 985** | 2026-11-09 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -34,7 +34,7 @@
 - **集合与内建**：Iterator helpers、DisposableStack / AsyncDisposableStack、Promise 组合、`RegExp.escape`、ES2025 Set 方法等。
 - **宿主生态**：`:vibe-js-host` 提供 TextEncoder/TextDecoder（UTF-8、fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/二进制/循环）、URL/URLSearchParams 常用子集。
 - **模块解析**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、模块顶层 `await` 语法，并预计算静态表；**不能链接、求值或加载**，且该方向已降级为无计划。
-- **资源约束**：`EngineLimits` 已覆盖源码长度、嵌套深度、AST 节点、对象数量、JSON 深度、正则步数、排队任务、单轮微任务等预算。
+- **资源约束**：`EngineLimits` 已覆盖源码长度、嵌套深度、AST 节点、对象数量、JSON 深度、正则步数、排队任务、单轮微任务等预算；`JSON.stringify` 与 `JSON.parse` 共用 `maxJsonDepth`，显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎。
 
 ### 1.3 当前边界
 
@@ -47,7 +47,6 @@
 | 队列 | 范围 | 说明 |
 |---|---|---|
 | **维护主线** | `DOC-1` → `S6.2` → `S2.2` | 保持文档/门禁绿色，持续补差分与真实库覆盖 |
-| **按需能力** | `R1.3` | 只有出现真实需求时启动；不挤占维护主线 |
 | **观测** | `S5.2` | 只做性能复测，B2 仍无计划 |
 | **无计划** | 模块方向、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
 
@@ -66,8 +65,7 @@
 | 0 | `DOC-1` | 路线图与基线文档同步 | P1（维护） | 0.5 | 立即 | 数字与 README/CONFORMANCE 一致；模块方向标注为无计划 |
 | 1 | `S6.2` | 门禁维护 | P0（维护） | 1–2 / 批 | 持续 | parser/Test262/真实库/差分 strict 全绿；allowlist 可审计；报告与能力同步 |
 | 2 | `S2.2` | 差分与真实库覆盖扩展 | P1 | 2–4 / 批 | 新特性、线上回归、季度维护 | 每批新增 3–5 个无 DOM 依赖 UMD 库；补运行时边界；strict 全绿 |
-| 3 | `R1.3` | 资源约束第三批 | P1（按需） | 5–10 | 执行不受信任脚本、宿主需要资源边界 | 计量口径统一；跨平台计数一致或有说明；超限分类稳定；不降低默认能力 |
-| 4 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑 B1 七组基准；补四类专项基准；报告落盘；不做优化承诺 |
+| 3 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑 B1 七组基准；补四类专项基准；报告落盘；不做优化承诺 |
 
 > `S5.2` 不产生 B2 排期；`B2` 仍为无计划。
 
@@ -89,21 +87,14 @@
 - 补 Generator / BigInt / TypedArray / Proxy / async 边界；
 - 不通过删除用例或放宽断言换绿。
 
-### M3：按需能力（按触发条件）
-
-`R1.3`
-
-- `R1.3`：统一资源约束计量口径、跨平台一致性与异常分类；
-- 没有触发条件时不做。
-
-### M4：性能观测（1–2 人日 / 次）
+### M3：性能观测（1–2 人日 / 次）
 
 `S5.2`
 
 - 只做测量与报告；
 - B2 不恢复，避免把优化重新拉回排期。
 
-## 5. 任务示例（当前维护/按需项）
+## 5. 任务示例（当前维护/观测项）
 
 ### 5.1 S6.2 门禁维护
 
@@ -132,45 +123,7 @@ const _ = globalThis._;
 console.log(JSON.stringify(_.chunk([1, 2, 3, 4], 2))); // [[1,2],[3,4]]
 ```
 
-### 5.3 R1.3 资源约束第三批
-
-```kotlin
-val engine = Engine(
-    limits = EngineLimits(
-        maxSteps = 100_000,
-        maxCallDepth = 1_024,
-        maxSourceLength = 1_000_000,
-        maxJsonDepth = 128,
-        maxRegexSteps = 1_000_000,
-        maxPendingTasks = 10_000,
-    ),
-)
-```
-
-```js
-// 步数耗尽：宿主 ExecutionLimitException，JS 不能 catch/finally 吞掉
-for (;;) {}
-```
-
-```js
-// 调用深度超限：可被 JS 捕获的 RangeError
-function recurse() {
-    return recurse();
-}
-try {
-    recurse();
-} catch (error) {
-    console.log(error.name); // RangeError
-}
-```
-
-```js
-// JSON 深度与正则步数按各自配置抛出
-const deep = '['.repeat(200) + '0' + ']'.repeat(200);
-JSON.parse(deep); // RangeError（例如 maxJsonDepth = 128）
-```
-
-### 5.4 S5.2 性能复测
+### 5.3 S5.2 性能复测
 
 ```js
 // 属性读取
@@ -556,7 +509,7 @@ data class EngineLimits(
 2. **KMP 与文件 IO 不匹配**：核心不能假设文件系统；JVM/Android/Native/Node 与浏览器/Wasm 的 IO 能力差异大，未来若重启模块方向，只能采用“核心抽象 + 宿主加载器”或纯内存模块表。
 3. **`Engine.run()` 的边界**：多次 `run` 共享全局环境，但不是模块；全局 `let`/`const`/`class` 重复声明仍可能冲突，宿主需要自行管理脚本边界。
 4. **维护主线依赖语料稳定**：`S6.2`/`S2.2` 受 Test262/真实库下载与版本影响，报告必须带 commit 与跳过口径。
-5. **R1.3 不是进程级隔离**：源码/AST/对象/微任务预算覆盖了解释器内主要路径，但不限制宿主阻塞调用、单次内建内部工作与全部内存。
+5. **R1 不是进程级隔离**：源码/AST/对象/微任务预算覆盖了解释器内主要路径，但不限制宿主阻塞调用、单次内建内部工作与全部内存；Kotlin Regex 快路径也不消耗 `maxRegexSteps`。
 6. **L4.5 宿主子集边界**：TextEncoder/TextDecoder 只支持 UTF-8；structuredClone 不支持函数、Symbol、Proxy、Promise、Generator、WeakMap/WeakSet 与 transfer；URL 不实现 IDNA 与完整 WHATWG 状态机。这些能力只放在 `:vibe-js-host`，核心仍无平台 API。
 7. **B2 无计划但 S5.2 仍要做**：保留性能观测，避免以后重新评估时没有可比数据；S5 已记录 propertyGet +12.7%、propertySet +9.6%、数组循环 −19%、engineCreate +37%。
 8. **平台差异**：JS/Wasm 单线程；Native/Android/Apple 仅 CI 或历史记录，文档结论必须带“本地/CI”标注。
@@ -588,4 +541,5 @@ data class EngineLimits(
 | 2026-11-08 | 重写为“后续路线（未完成工作）”：移除已完成项清单，只保留 P0 模块执行与宿主生态、P1 质量项、长期/延后项；补充每项的范围、依赖、人日、风险、验收与触发条件 |
 | 2026-11-09 | 重新排序：模块执行作为条件 P0，模块语法降为最低优先级；M2/B2/PKG1/L4.7 列为无计划 |
 | 2026-11-09 | **L4.5 完成**：宿主模块新增 TextEncoder/TextDecoder（UTF-8）、structuredClone、URL/URLSearchParams 常用子集与 13 条测试；从按需队列移除 |
+| 2026-11-09 | **R1.3 完成**：`JSON.stringify` 接入 `maxJsonDepth`；显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎；补资源约束测试与异常分类表；从按需队列移除 |
 | 2026-11-09 | **整个模块方向降级为无计划**：保留 `Engine.run()` 单脚本入口与现有 `parseModule` 回归；说明 KMP 核心不应承担文件/URL IO，未来若重启只能采用“核心抽象 + 宿主加载器/内存模块表” |

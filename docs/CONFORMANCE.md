@@ -336,7 +336,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 - **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。
 - **弱引用**：WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 仍是强引用存储（M2 无计划）。
 - **范围外**：Intl、真实 DOM / Web API、SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer、Temporal、Float16Array、装饰器、ShadowRealm。
-- **资源约束**：R1 前两批已落地，第三批（计量口径/跨平台一致性/异常分类）按需评估；`EngineLimits` 不是进程级隔离。
+- **资源约束**：R1 已覆盖源码/嵌套/AST/对象/JSON/正则/排队任务/微任务；`JSON.stringify` 与 `JSON.parse` 共用 `maxJsonDepth`；`maxRegexSteps` 显式降到默认值以下时，常见嵌套量词正则路由到受该预算约束的回退引擎。Kotlin Regex 快路径不消耗该预算，是文档化边界；`EngineLimits` 不是进程级隔离。
 - **性能与 API 契约**：B2（25–48 人日）与 PKG1.2–1.6（7–13 人日）无计划，见[后续路线](OPTIMIZATION_ROADMAP.md)。
 - **parser early 5 条**：均为现行 Annex B / 宽松语义允许项，不是缺陷；已列入 `parser-early-allowlist.txt`。
 - 当前 ES5 / ES2015 基线无失败、无崩溃；上述范围外项不是回归。
@@ -345,8 +345,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 1. **文档与门禁收口（维护主线）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块方向统一标注“无计划”。
 2. **覆盖扩展（P1）**：继续补充差分与真实库用例，优先覆盖新特性与回归边界；保持“无 DOM/浏览器全局”的加载条件。
-3. **按需能力（P1）**：`R1.3` 资源约束第三批只在需要执行不可信脚本时启动。
-4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
+3. **按需能力（P1）**：当前无；R1.3 资源约束加固已完成。4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
 
 **模块方向（L4.1c、L4.2–L4.4b、L4.6a+、L4.6b、L4.7）整体无计划**：保留 `Parser.parseModule` 与现有 262 个模块语料回归，但不投入链接/求值/加载/CLI/harness，也不新增模块语法收尾。单脚本 `Engine.run(source)` 是当前唯一执行入口。
 

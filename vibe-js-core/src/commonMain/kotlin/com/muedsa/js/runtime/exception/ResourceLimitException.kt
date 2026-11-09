@@ -14,14 +14,14 @@ enum class ResourceLimitKind(val limitName: String) {
     NESTING_DEPTH("maxNestingDepth"),
 
     /**
-     * JSON.parse / JSON.rawJSON 的容器嵌套深度上限。
+     * JSON.parse / JSON.rawJSON / JSON.stringify 的容器嵌套深度上限。
      *
      * 按现有错误模型转换为 JS RangeError，不通过 [ResourceLimitException] 抛出；
      * 保留该枚举值用于宿主日志/诊断映射。
      */
     JSON_DEPTH("maxJsonDepth"),
 
-    /** 回退正则引擎单次匹配的最大回溯步数。 */
+    /** 回退正则引擎单次匹配的最大回溯步数；显式降低预算时高风险结构会路由到回退引擎。 */
     REGEX_STEPS("maxRegexSteps"),
 
     /** 事件循环排队任务数上限。 */

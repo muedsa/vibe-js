@@ -10,8 +10,8 @@
 > 当前唯一执行入口是单脚本 `Engine.run(source)`。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
 > SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；模块执行、
-> 顶层 await、资源约束第三批（R1）、性能优化（B2）与 API 契约（PKG1）
-> 均为无计划或按需评估。宿主生态已提供 TextEncoder/TextDecoder（UTF-8）、
+> 顶层 await、性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
+> 宿主生态已提供 TextEncoder/TextDecoder（UTF-8）、
 > structuredClone 与 URL/URLSearchParams 常用子集（`:vibe-js-host`）。
 
 ## 1. 词法
@@ -129,17 +129,32 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **999** + 宿主 38 个测试（2026-11-09 记录，`53fb71b`） |
-| JS（Node） | ✅ | 核心 **983** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **983** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1001** + 宿主 38 个测试（2026-11-09 记录，`53fb71b`） |
+| JS（Node） | ✅ | 核心 **985** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **985** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 999 包含 L4/R1/M2 新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 983。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1001 包含 L4/R1/M2 新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 985。"仅由 CI 覆盖"表示本次未在本地复跑。
 
 当前一致性基线（2026-11-09，`53fb71b`）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **548/548**；真实库 **329/329**（86 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
+
+资源限制的异常分类如下（宿主异常均不能被 JS `catch` / `finally` 吞掉）：
+
+| 限制 | 触发点 | 异常 | JS 可捕获 |
+|---|---|---|---|
+| `maxSteps` | 解释器/内建检查点 | `ExecutionLimitException` | 否 |
+| `maxCallDepth` | 逻辑调用深度 | JS `RangeError` | 是 |
+| `maxSourceLength` | parse/eval/Function | `ResourceLimitException` | 否 |
+| `maxNestingDepth` | Lexer/Parser 递归 | `ResourceLimitException` | 否 |
+| `maxAstNodes` | Parser 建节点 | `ResourceLimitException` | 否 |
+| `maxJsonDepth` | JSON.parse/rawJSON/stringify | JS `RangeError` | 是 |
+| `maxRegexSteps` | 回退引擎；显式降低预算时的高风险路由 | `ResourceLimitException` | 否 |
+| `maxPendingTasks` | EventLoop 排队任务 | `ResourceLimitException` | 否 |
+| `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
+| `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
 - 模块执行无计划：`Parser.parseModule` 已能解析 `import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表；但 `Engine` 仍只执行 Script，链接、求值、加载、CLI 与 Test262 module harness 均无计划（L4.1c–L4.6b）。Test262 的 322 个 `flags: [module]` 用例继续跳过；
 - 模块语法已知宽松点：`import()` 零参数在语法层暂允许（执行期按规范拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持；随模块方向整体无计划；
@@ -151,7 +166,7 @@
 - ArrayBuffer 不支持 resizable / transfer：`ArrayBuffer.prototype.resize` / `transfer` 不存在；分离（detach）状态只能由宿主调用 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 触发，JS 语言本身没有公开 detach API；
 - BigInt 是任意精度实现，但 `MAX_RESULT_BITS = 2^24`（16,777,216 位）；超过上限的 `pow` / 左移 / `asIntN` / `asUintN` 抛 RangeError，这是规范允许的实现定义上限；
 - 其他已知行为/差异：TypedArray 固定小端序；`BigInt("")` 返回 `0n`；`toLocaleString` 使用十进制兜底；`Object.freeze` / `Object.seal` 对非空 TypedArray 不抛 TypeError（已知）；
-- R1 资源约束前两批已落地（源码/嵌套/AST/对象/JSON/正则/排队任务/微任务预算），第三批（计量口径、跨平台一致性、异常分类）按需评估；`EngineLimits` 不是进程级隔离；
+- R1 资源约束已覆盖源码/嵌套/AST/对象/JSON/正则/排队任务/微任务；第三批补充 `JSON.stringify` 的 `maxJsonDepth` 检查，并在 `maxRegexSteps` 显式降到默认值以下时把常见嵌套量词正则路由到受该预算约束的回退引擎。Kotlin Regex 快路径仍由平台实现，不消耗该预算，这是文档化的边界；`EngineLimits` 不是进程级隔离；
 - B2 性能优化与 PKG1 API 契约无计划；S5 已记录属性读写、数组循环与引擎创建的回归，S5.2 只做复测观测，不恢复 B2 排期；
 - `Date` 默认 `HostEnvironment.utcOffsetMillis` 返回 0（UTC）；宿主可按时刻返回毫秒偏移以启用本地时间，内核不内置 DST 规则；`toString` 的时区后缀显示为 `UTC±HH:MM`；
 - `Date.parse`/`new Date(string)` 仅接受 ISO 8601（含扩展年份）与自身 `toString`/`toUTCString` 格式；V8 额外接受的实现自定义本地格式（如 `2020/01/01`、`Jan 1 2020`）会返回 NaN，属规范允许的实现差异；
@@ -194,7 +209,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `BasicExecutionTest` | 基础运算、作用域、闭包、控制流 |
 | `ConformanceTest` | 审查阶段 P0 问题回归 |
 | `RuntimeCancellationTest` / `RuntimeTimeoutTest`（JVM） | 协作式取消、异常透传、清理与复用；JVM 真实死循环超时 |
-| `RuntimeLimitsTest` / `ResourceLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用；源码长度/嵌套深度/AST 节点/对象数量/JSON 深度/正则步数/排队任务/单轮微任务预算与异常分类 |
+| `RuntimeLimitsTest` / `ResourceLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用；源码长度/嵌套深度/AST 节点/对象数量/JSON.parse 与 JSON.stringify 深度/正则步数（含显式降低预算时的嵌套量词路由）/排队任务/单轮微任务预算与异常分类 |
 | `ParserModuleTest` | `Parser.parseModule` 的 import/export 基础形式、import.meta/import()、模块顶层 await、模块早期错误、脚本目标零影响 |
 | `PropertyAndPrototypeTest` | 属性描述符、原型链、访问器、call/apply/bind |
 | `StrictModeTest` | 严格/非严格模式差异 |

@@ -7712,7 +7712,9 @@ class Interpreter(
             ('i' in flags && needsCaseFoldingFallback(pattern)) ||
             ('m' in flags && hasCaretAnchor(pattern)) ||
             hasLiteralBrace(enginePattern) ||
-            hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern)
+            hasDotOutsideClass(enginePattern) || requiresJsRegexEngine(pattern) ||
+            (context.limits.maxRegexSteps?.let { it < EngineLimits.DEFAULT_MAX_REGEX_STEPS } == true &&
+                hasNestedQuantifier(pattern))
         ) {
             buildFallback()
         } else {
@@ -8214,6 +8216,92 @@ class Interpreter(
     private fun hasLookaheadBackReference(pattern: String): Boolean {
         if (!pattern.contains("(?=") && !pattern.contains("(?!")) return false
         return Regex("""\\[1-9]""").containsMatchIn(pattern)
+    }
+
+    /** 正则组复杂度：用于把常见灾难性回溯模式路由到有步数预算的回退引擎。 */
+    private class RegexGroupComplexity(
+        var hasUnboundedQuantifier: Boolean = false,
+    )
+
+    /**
+     * 是否包含“组内已有无界量词，又被外层无界量词重复”的高风险结构。
+     *
+     * 这是保守启发式，不替代完整正则分析：命中时统一走 [JsRegexEngine]，
+     * 从而让 `maxRegexSteps` 覆盖常见 `(a+)+`、`(a*)*`、`(a+){2,}` 等模式；
+     * 普通 `?`、精确 `{n}` 量词与未命中的模式仍走 Kotlin Regex 快路径。
+     */
+    private fun hasNestedQuantifier(pattern: String): Boolean {
+        val groups = mutableListOf<RegexGroupComplexity>()
+        var inClass = false
+        var escaped = false
+        var index = 0
+        while (index < pattern.length) {
+            val character = pattern[index]
+            if (escaped) {
+                escaped = false
+                index++
+                continue
+            }
+            if (character == '\\') {
+                escaped = true
+                index++
+                continue
+            }
+            if (inClass) {
+                if (character == ']') inClass = false
+                index++
+                continue
+            }
+            when (character) {
+                '[' -> inClass = true
+                '(' -> groups.add(RegexGroupComplexity())
+                ')' -> {
+                    val group = groups.removeLastOrNull() ?: RegexGroupComplexity()
+                    val nextIndex = index + 1
+                    if (group.hasUnboundedQuantifier &&
+                        isUnboundedQuantifierAt(pattern, nextIndex)
+                    ) {
+                        return true
+                    }
+                    if (group.hasUnboundedQuantifier) {
+                        groups.lastOrNull()?.hasUnboundedQuantifier = true
+                    }
+                }
+
+                '*', '+' -> groups.lastOrNull()?.hasUnboundedQuantifier = true
+                '?' -> Unit
+                '{' -> {
+                    val close = pattern.indexOf('}', index + 1)
+                    if (close > index + 1 &&
+                        isUnboundedBraceQuantifier(pattern.substring(index + 1, close))
+                    ) {
+                        groups.lastOrNull()?.hasUnboundedQuantifier = true
+                        index = close
+                    }
+                }
+            }
+            index++
+        }
+        return false
+    }
+
+    /** 从指定位置开始是否为无界量词（`*`、`+`、`{m,}`）。 */
+    private fun isUnboundedQuantifierAt(pattern: String, index: Int): Boolean {
+        val character = pattern.getOrNull(index) ?: return false
+        if (character == '*' || character == '+') return true
+        if (character != '{') return false
+        val close = pattern.indexOf('}', index + 1)
+        if (close <= index + 1) return false
+        return isUnboundedBraceQuantifier(pattern.substring(index + 1, close))
+    }
+
+    /** `{m,}` 表示无上界；`{m}` 与 `{m,n}` 不在此列。 */
+    private fun isUnboundedBraceQuantifier(body: String): Boolean {
+        val comma = body.indexOf(',')
+        if (comma < 0) return false
+        if (body.substring(comma + 1).isNotEmpty()) return false
+        return body.substring(0, comma).isNotEmpty() &&
+            body.substring(0, comma).all { it.isDigit() }
     }
 
     /**

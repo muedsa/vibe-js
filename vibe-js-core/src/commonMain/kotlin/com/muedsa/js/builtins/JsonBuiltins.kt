@@ -156,6 +156,7 @@ object JsonBuiltins {
                     gap = gap,
                     indent = "",
                     seen = seen,
+                    depth = 0,
                 )
                 if (text == null) JSUndefined else JSString(text)
             },
@@ -322,6 +323,7 @@ object JsonBuiltins {
         gap: String,
         indent: String,
         seen: MutableSet<JSObject>,
+        depth: Int,
     ): String? {
         var value = interpreter.getV(holder, PropertyKey.Str(key))
 
@@ -357,6 +359,7 @@ object JsonBuiltins {
             gap = gap,
             indent = indent,
             seen = seen,
+            depth = depth,
         )
     }
 
@@ -369,6 +372,7 @@ object JsonBuiltins {
         gap: String,
         indent: String,
         seen: MutableSet<JSObject>,
+        depth: Int,
     ): String? {
         if (value is JSBoxedPrimitive) {
             when (val primitive = value.primitive) {
@@ -380,6 +384,7 @@ object JsonBuiltins {
                     gap,
                     indent,
                     seen,
+                    depth,
                 )
 
                 is JSString -> return serializeValue(
@@ -390,6 +395,7 @@ object JsonBuiltins {
                     gap,
                     indent,
                     seen,
+                    depth,
                 )
 
                 is JSBoolean -> return serializeValue(
@@ -400,6 +406,7 @@ object JsonBuiltins {
                     gap,
                     indent,
                     seen,
+                    depth,
                 )
 
                 // BigInt 包装对象按内部槽取出后与 BigInt 原始值一样抛 TypeError
@@ -416,6 +423,7 @@ object JsonBuiltins {
             gap,
             indent,
             seen,
+            depth,
         )
     }
 
@@ -427,6 +435,7 @@ object JsonBuiltins {
         gap: String,
         indent: String,
         seen: MutableSet<JSObject>,
+        depth: Int,
     ): String? = when (value) {
         is JSNull -> "null"
         is JSUndefined -> null
@@ -446,6 +455,7 @@ object JsonBuiltins {
             gap = gap,
             indent = indent,
             seen = seen,
+            depth = depth,
         )
 
         is JSObject -> {
@@ -459,12 +469,15 @@ object JsonBuiltins {
                     gap = gap,
                     indent = indent,
                     seen = seen,
+                    depth = depth,
                 )
             }
             if (!seen.add(value)) {
                 interpreter.typeError("Converting circular structure to JSON")
             }
+            val containerDepth = depth + 1
             try {
+                checkJsonStringifyDepth(interpreter, containerDepth)
                 val keys = propertyList ?: interpreter.internalOwnPropertyKeys(value)
                     .filterIsInstance<PropertyKey.Str>()
                     .filter { interpreter.internalGetOwnProperty(value, it)?.enumerable == true }
@@ -482,6 +495,7 @@ object JsonBuiltins {
                         gap = gap,
                         indent = childIndent,
                         seen = seen,
+                        depth = containerDepth,
                     ) ?: continue
                     val separator = if (gap.isEmpty()) ":" else ": "
                     parts.add("${quote(interpreter, propertyKey)}$separator$serialized")
@@ -511,11 +525,14 @@ object JsonBuiltins {
         gap: String,
         indent: String,
         seen: MutableSet<JSObject>,
+        depth: Int,
     ): String {
         if (!seen.add(array)) {
             interpreter.typeError("Converting circular structure to JSON")
         }
+        val containerDepth = depth + 1
         try {
+            checkJsonStringifyDepth(interpreter, containerDepth)
             val length = interpreter.lengthOfArrayLike(array)
             val childIndent = indent + gap
             val parts = ArrayList<String>(length.toInt().coerceAtMost(1024))
@@ -530,6 +547,7 @@ object JsonBuiltins {
                     gap = gap,
                     indent = childIndent,
                     seen = seen,
+                    depth = containerDepth,
                 )
                 parts.add(serialized ?: "null")
             }
@@ -540,6 +558,16 @@ object JsonBuiltins {
             }
         } finally {
             seen.remove(array)
+        }
+    }
+
+    /** JSON.stringify 与 JSON.parse 共用 maxJsonDepth，越界时按现有错误模型抛 RangeError。 */
+    private fun checkJsonStringifyDepth(interpreter: Interpreter, depth: Int) {
+        val maxDepth = interpreter.context.limits.maxJsonDepth ?: return
+        if (depth > maxDepth) {
+            interpreter.rangeError(
+                "Maximum JSON nesting depth exceeded (maxJsonDepth=$maxDepth, actual=$depth)",
+            )
         }
     }
 

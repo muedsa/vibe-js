@@ -184,6 +184,52 @@ class ResourceLimitsTest {
     }
 
     @Test
+    fun `JSON stringify 深度超限按现有错误模型转换为可捕获的 RangeError`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxJsonDepth = 3))
+        try {
+            assertEquals(
+                "{\"a\":{\"a\":{\"a\":1}}}",
+                assertIs<JSString>(engine.run("JSON.stringify({a:{a:{a:1}}})")).value,
+            )
+            val result = assertIs<JSString>(engine.run(
+                """
+                var caught = '';
+                try { JSON.stringify({ a: { a: { a: { a: 1 } } } }); }
+                catch (e) { caught = e.name + '|' + e.message; }
+                caught;
+                """.trimIndent()
+            )).value
+            assertTrue(result.startsWith("RangeError|"), "实际结果：$result")
+            assertTrue(result.contains("maxJsonDepth=3"), "实际结果：$result")
+            assertTrue(result.contains("actual=4"), "实际结果：$result")
+
+            // 循环引用仍按 TypeError 处理，不能被深度限制抢先改写。
+            val circular = assertFailsWith<JSException> {
+                engine.run("var o = {}; o.self = o; JSON.stringify(o);")
+            }
+            assertEquals("TypeError", assertIs<JSError>(circular.value).errorName)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `嵌套量词正则按回溯风险路由到受预算约束的回退引擎`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxRegexSteps = 300))
+        try {
+            val error = assertFailsWith<ResourceLimitException> {
+                engine.run("/^(a+)+$/.test('${"a".repeat(40)}!')")
+            }
+            assertEquals(ResourceLimitKind.REGEX_STEPS, error.kind)
+            assertEquals("maxRegexSteps", error.limitName)
+            assertEquals(300L, error.limitValue)
+            assertTrue(error.actualValue > 300L)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun `正则回退引擎回溯超过步数预算抛出宿主异常`() = runTest {
         val engine = JsRegexEngine("^(a+)+$", "d", maxSteps = 300)
         val error = assertFailsWith<ResourceLimitException> {

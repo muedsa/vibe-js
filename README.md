@@ -212,6 +212,9 @@ engine.run("1 + 2") // 每次 run 使用新预算
 finally 继续执行；调用深度超限则抛可被 JS 捕获的
 `RangeError: Maximum call stack size exceeded`。严格模式尾调用不累计深度。
 解释器通过内部协程恢复队列分段执行深层调用，减少 Kotlin 物理栈的累积。
+`JSON.parse` / `JSON.stringify` 的 `maxJsonDepth` 超限同样转成可捕获的 `RangeError`；
+将 `maxRegexSteps` 显式降到默认值以下时，常见嵌套量词正则会被路由到受该预算约束的回退引擎；
+Kotlin Regex 快路径不消耗该预算（边界已记录在兼容性文档）。
 不同 JS 引擎的栈上限由实现及运行环境决定，16,384 是本库的默认逻辑调用上限。
 
 步数检查不依赖计时器，因此也能在 JS/Wasm 单线程上终止脚本死循环。
@@ -345,7 +348,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - **宿主生态（已实现子集）**：`TextEncoder` / `TextDecoder`（UTF-8、fatal/ignoreBOM/stream）、`structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）、`URL` / `URLSearchParams` 常用能力，均位于 `:vibe-js-host`；
 - **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供通用宿主能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
 - **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2 无计划）；BigInt 结果受 `MAX_RESULT_BITS` 限制；`import()` 零参数在语法层暂允许（执行期拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持（随模块方向无计划）；
-- **无计划/按需**：性能优化（B2）与 API 契约（PKG1）无计划；完整资源约束（R1 第三批）按需评估；
+- **无计划/按需**：性能优化（B2）与 API 契约（PKG1）无计划；R1 资源约束已覆盖源码/AST/对象/JSON/正则/事件循环队列等主要路径；
 - **已知不完整**：完整 ASI 边界规则。
 
 Unicode 属性/标识符/归一化/大小写映射数据表固定为 Unicode 17.0.0，可由 `tools/generate_unicode_data.py` 重新生成。
@@ -422,8 +425,8 @@ lexer -> parser -> AST (Program / ModuleProgram)
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **999 / 999** |
-| core JS（Node）/ Wasm（Node） | 各 **983 / 983** |
+| core JVM | **1001 / 1001** |
+| core JS（Node）/ Wasm（Node） | 各 **985 / 985** |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** |
 | conformance 单元测试 | **39 / 39** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |

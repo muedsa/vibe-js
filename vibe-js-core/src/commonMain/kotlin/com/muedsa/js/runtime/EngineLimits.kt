@@ -23,10 +23,11 @@ import com.muedsa.js.runtime.exception.ResourceLimitKind
  * @property maxNestingDepth 词法与语法嵌套的最大深度，默认 256；null 表示不限制。
  * 统计括号、块、数组/对象字面量、模板表达式与递归下降解析层级；
  * 超限抛出 [ResourceLimitException]（kind = [ResourceLimitKind.NESTING_DEPTH]）。
- * @property maxJsonDepth JSON 文本的最大容器嵌套深度，默认 1000；null 表示不限制。
- * JSON.parse / JSON.rawJSON 超限时按现有错误模型抛 JS RangeError。
+ * @property maxJsonDepth JSON 容器嵌套深度，默认 1000；null 表示不限制。
+ * JSON.parse / JSON.rawJSON / JSON.stringify 超限时按现有错误模型抛 JS RangeError。
  * @property maxRegexSteps 纯 Kotlin 回退正则引擎单次匹配的最大步数，默认 10,000,000；
- * null 表示不限制。Kotlin Regex 主路径由平台实现，不消耗此预算。
+ * null 表示不限制。默认值保留 Kotlin Regex 快路径；显式降到更低值时，常见嵌套量词等
+ * 回溯风险模式会路由到回退引擎，从而受该预算约束。Kotlin Regex 快路径不消耗此预算。
  * 超限抛出 [ResourceLimitException]（kind = [ResourceLimitKind.REGEX_STEPS]），
  * 属于宿主控制异常，不能被 JS catch/finally 吞掉。
  * @property maxPendingTasks 事件循环同时排队的微任务、定时器与未处理拒绝通知总数上限，
@@ -53,12 +54,17 @@ data class EngineLimits(
     val maxSourceLength: Int? = 10_000_000,
     val maxNestingDepth: Int? = 256,
     val maxJsonDepth: Int? = 1_000,
-    val maxRegexSteps: Long? = 10_000_000,
+    val maxRegexSteps: Long? = DEFAULT_MAX_REGEX_STEPS,
     val maxPendingTasks: Int? = 100_000,
     val maxAstNodes: Int? = 5_000_000,
     val maxObjectCount: Int? = 2_000_000,
     val maxMicrotasksPerRun: Int? = 1_000_000,
 ) {
+    companion object {
+        /** 默认正则预算；显式降到更低值时才启用高风险模式的路由。 */
+        const val DEFAULT_MAX_REGEX_STEPS: Long = 10_000_000L
+    }
+
     init {
         require(maxSteps == null || maxSteps > 0) { "maxSteps must be > 0 or null" }
         require(maxCallDepth == null || maxCallDepth > 0) { "maxCallDepth must be > 0 or null" }
