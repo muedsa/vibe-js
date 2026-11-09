@@ -2235,6 +2235,23 @@ class Parser(
     }
 
     /**
+     * 该 token 能否结束一个 LeftHandSideExpression。
+     *
+     * for 头部的 `of` 只有在左值表达式已经完整时才可能是 for-of 运算符；
+     * 声明关键字、点号、逗号、运算符等之后的 `of` 都是普通标识符。
+     */
+    private fun canEndLeftHandSideExpression(type: TokenType): Boolean = when (type) {
+        TokenType.IDENTIFIER, TokenType.PRIVATE_IDENTIFIER,
+        TokenType.NUMBER, TokenType.NUMBER_HEX, TokenType.NUMBER_OCT, TokenType.NUMBER_BIN,
+        TokenType.BIGINT, TokenType.STRING, TokenType.REGEX, TokenType.TEMPLATE,
+        TokenType.TRUE, TokenType.FALSE, TokenType.NULL, TokenType.THIS, TokenType.SUPER,
+        TokenType.RPAREN, TokenType.RBRACKET, TokenType.RBRACE,
+        -> true
+
+        else -> false
+    }
+
+    /**
      * 判断 `for (` 之后是普通 for、for-in 还是 for-of。
      *
      * 在括号深度 0 处、遇到分号之前出现 `in` / `of` 即为对应形式。
@@ -2260,23 +2277,35 @@ class Parser(
                 TokenType.IDENTIFIER -> if (depth == 0 && !tokens[index].containsEscape &&
                     tokens[index].value == "of"
                 ) {
-                    // `for (using of ...)` 的第一个 of 是绑定名，不是 for-of 运算符
+                    // `of` 不是保留字：只有“前一个 token 能结束左值表达式”时才是
+                    // for-of 运算符。声明绑定名（var/let/const of）、属性名（a.of）
+                    // 与表达式开头的 of 都只是普通标识符。
                     val previous = tokens.getOrNull(index - 1)
-                    if (previous != null && previous.type == TokenType.IDENTIFIER &&
-                        !previous.containsEscape && previous.value == "using"
-                    ) {
-                        index++
-                        continue
-                    }
+                    val next = tokens.getOrNull(index + 1)
+                    val isDeclarationBinding = previous != null && previous.type in setOf(
+                        TokenType.VAR, TokenType.LET, TokenType.CONST,
+                    )
+                    val isPropertyName = previous != null && previous.type in setOf(
+                        TokenType.DOT, TokenType.QUESTION_DOT,
+                    )
+                    // `for (using of = ...)` 是普通 for 中的 using 声明（绑定名 of）；
+                    // 其余 `for (using of ...)` 按 Test262 的前瞻规则解释为
+                    // “标识符 using + for-of 运算符”。
+                    val isUsingBinding = previous != null &&
+                        previous.type == TokenType.IDENTIFIER &&
+                        !previous.containsEscape && previous.value == "using" &&
+                        next?.type == TokenType.ASSIGN
                     // `for (async of => {})`：这是 async 箭头函数，不是 for-of
-                    if (previous != null && previous.type == TokenType.IDENTIFIER &&
+                    val isAsyncArrowParameter = previous != null &&
+                        previous.type == TokenType.IDENTIFIER &&
                         !previous.containsEscape && previous.value == "async" &&
-                        tokens.getOrNull(index + 1)?.type == TokenType.ARROW
+                        next?.type == TokenType.ARROW
+                    if (!isDeclarationBinding && !isPropertyName && !isUsingBinding &&
+                        !isAsyncArrowParameter && previous != null &&
+                        canEndLeftHandSideExpression(previous.type)
                     ) {
-                        index++
-                        continue
+                        return ForHeaderKind.OF
                     }
-                    return ForHeaderKind.OF
                 }
 
                 TokenType.EOF -> return ForHeaderKind.NONE

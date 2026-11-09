@@ -446,6 +446,45 @@ class ParserEdgeTest {
         assertEquals("a", runtime.evalString("globalThis.__r"))
     }
 
+    @Test
+    fun `for 头部中的 of 绑定名与属性名不应被误判为 for-of`() = runTest {
+        // `of` 不是保留字：作为声明绑定名、表达式标识符或属性名时仍应按普通 for 解析
+        parse("for (let of = 1; of < 2; of++) {}")
+        parse("for (const of = 1; of < 2; of++) {}")
+        parse("for (var of = 1; of < 2; of++) {}")
+        parse("for (let of, x = 1;;) {}")
+        parse("for (let of in {}) {}")
+        parse("for (var of in {}) {}")
+        parse("for (const of in {}) {}")
+        parse("for (of = 1; of < 2; of++) {}")
+        parse("for (of in {}) {}")
+        parse("for (a.of;;) {}")
+        parse("for (a.of in {}) {}")
+        parse("for (of.x in y) {}")
+        // 真正的 for-of 仍必须识别
+        parse("for (of of []) {}")
+        parse("for (let of of []) {}")
+        parse("for (const of of []) {}")
+        parse("for (obj.of of []) {}")
+        // Test262 的 using 前瞻规则：`for (using of ...)` 默认是
+        // “标识符 using + for-of”，只有 `for (using of = ...)` 是普通 for 声明
+        parse("for (using of []) {}")
+        parse("for (using of of [0]) {}")
+        parse("for (using of = null;;) {}")
+        parse("async function f() { for (await using of of []) {} }")
+
+        // 运行期确认绑定名/左值仍是 of，而不是被当成 for-of 关键字
+        val runtime = TestRuntime()
+        assertEquals(
+            "1,2",
+            runtime.evalString("var out = []; for (let of of [1, 2]) out.push(of); out.join(',')")
+        )
+        assertEquals(
+            "a,b",
+            runtime.evalString("var out = []; for (let of in { a: 1, b: 2 }) out.push(of); out.join(',')")
+        )
+    }
+
     // ================================================================
     // 自动分号插入
     // ================================================================
