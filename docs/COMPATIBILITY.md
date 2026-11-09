@@ -136,6 +136,9 @@
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
 > 数字来自各平台测试报告。JVM 的 1001 包含 L4/R1/M2 新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 985。"仅由 CI 覆盖"表示本次未在本地复跑。
+>
+> 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
+> 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
 当前一致性基线（2026-11-09，`53fb71b`）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **552/552**；真实库 **341/341**（90 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 

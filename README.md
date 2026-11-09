@@ -381,6 +381,9 @@ lexer -> parser -> AST (Program / ModuleProgram)
 
 ## 构建与测试
 
+构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）。发布的 JVM 字节码 target 为 **1.8**，因此
+JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI 只升级构建 JDK 不会改变产物运行门槛。
+
 ```bash
 # 核心
 ./gradlew :vibe-js-core:jvmTest
