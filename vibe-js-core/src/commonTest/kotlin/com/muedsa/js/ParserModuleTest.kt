@@ -517,6 +517,15 @@ class ParserModuleTest {
     }
 
     @Test
+    fun `匿名默认导出函数与类后可直接跟下一条语句`() {
+        // HoistableDeclaration / ClassDeclaration 形式不要求分号，ASI 不是必要条件
+        parseModule("export default function () {} if (true) {}")
+        parseModule("export default function* () {} if (true) {}")
+        parseModule("export default class {} if (true) {}")
+        parseModule("export default class extends Base {} var x = 1;")
+    }
+
+    @Test
     fun `模块顶层支持 for await 与 using 声明`() {
         // 模块顶层是 [+Await] 语境，for await / await using 与顶层 await 一样可解析
         parseModule("for await (const x of []) {}")

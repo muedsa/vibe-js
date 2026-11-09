@@ -4919,7 +4919,7 @@ class Parser(
                 startPos = functionStart,
                 isAsync = isAsyncFunction,
             )
-            consumeSemicolon()
+            // HoistableDeclaration 形式不要求分号，后续语句可以同一行开始
             return anonymousDefaultDeclaration(start, expression)
         }
         if (check(TokenType.CLASS)) {
@@ -4940,7 +4940,7 @@ class Parser(
             // 匿名类：`export default class {}` / `export default class extends B {}`
             // （parseClassExpression 自己消费 class 关键字与可选的类名）
             val expression = parseClassExpression()
-            consumeSemicolon()
+            // ClassDeclaration 形式同样不要求分号
             return anonymousDefaultDeclaration(start, expression)
         }
         val expression = parseAssignment()
