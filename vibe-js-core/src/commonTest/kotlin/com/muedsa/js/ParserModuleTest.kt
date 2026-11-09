@@ -521,6 +521,7 @@ class ParserModuleTest {
         // import() 是 CallExpression 而不是 MemberExpression，裸 new import() 是语法错误
         assertFailsWith<ParseException> { parseModule("new import(\"m\");") }
         assertFailsWith<ParseException> { parseModule("new import(\"m\", {});") }
+        assertFailsWith<ParseException> { parseModule("new import(\"m\")();") }
         // 括号形式与成员链形式是合法语法，运行期才因不可构造抛 TypeError
         parseModule("new (import(\"m\"));")
         parseModule("new import(\"m\").x;")

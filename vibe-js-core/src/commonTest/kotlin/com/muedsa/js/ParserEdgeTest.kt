@@ -494,6 +494,7 @@ class ParserEdgeTest {
         assertFailsWith<ParseException> { parse("({...a.b = 1} = {});") }
         assertFailsWith<ParseException> { parse("({...{a}} = {});") }
         assertFailsWith<ParseException> { parse("({...[a]} = {});") }
+        assertFailsWith<ParseException> { parse("({...a?.b} = {});") }
         // 声明/参数/catch/for-of 的绑定 rest 只能是标识符
         assertFailsWith<ParseException> { parse("let {...a = 1} = {};") }
         assertFailsWith<ParseException> { parse("let {...{a}} = {};") }
