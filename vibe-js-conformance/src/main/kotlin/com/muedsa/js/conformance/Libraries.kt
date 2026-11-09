@@ -2743,6 +2743,75 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    // prop-types 是 React 生态的运行时校验库；checkPropTypes 不依赖 DOM，
+    // 验证 UMD 加载、工厂函数与合法值校验路径。
+    LibrarySpec(
+        name = "prop-types",
+        url = "https://unpkg.com/prop-types@15.8.1/prop-types.js",
+        globalName = "PropTypes",
+        cases = listOf(
+            SmokeCase(
+                "string validator shape",
+                assertion(
+                    "typeof PropTypes.string === 'function' &&" +
+                        " typeof PropTypes.string.isRequired === 'function'"
+                ),
+            ),
+            SmokeCase(
+                "check valid props",
+                assertion(
+                    "PropTypes.checkPropTypes({ value: PropTypes.string }," +
+                        " { value: 'ok' }, 'prop', 'Demo') === undefined"
+                ),
+            ),
+            SmokeCase(
+                "exact shape factory",
+                assertion("typeof PropTypes.exact({ value: PropTypes.string }).isRequired === 'function'"),
+            ),
+        ),
+    ),
+    // react-is 是 React 生态的纯判断库；覆盖内建标签、函数组件与非法值，
+    // 验证 Symbol.for 与函数类型判断。
+    LibrarySpec(
+        name = "react-is",
+        url = "https://unpkg.com/react-is@18.2.0/umd/react-is.development.js",
+        globalName = "ReactIs",
+        cases = listOf(
+            SmokeCase(
+                "intrinsic element type",
+                assertion("ReactIs.isValidElementType('div') === true"),
+            ),
+            SmokeCase(
+                "function component type",
+                assertion("ReactIs.isValidElementType(function Component() {}) === true"),
+            ),
+            SmokeCase(
+                "invalid element type",
+                assertion("ReactIs.isValidElementType(null) === false"),
+            ),
+        ),
+    ),
+    // pako 是 zlib/gzip 的 UMD 实现；覆盖字符串/空串 roundtrip 与 Uint8Array
+    // 输出类型，触达 TypedArray 与二进制处理。
+    LibrarySpec(
+        name = "pako",
+        url = "https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js",
+        globalName = "pako",
+        cases = listOf(
+            SmokeCase(
+                "deflate inflate string",
+                assertion("pako.inflate(pako.deflate('hello'), { to: 'string' }) === 'hello'"),
+            ),
+            SmokeCase(
+                "empty roundtrip",
+                assertion("pako.inflate(pako.deflate(''), { to: 'string' }) === ''"),
+            ),
+            SmokeCase(
+                "deflate returns uint8array",
+                assertion("Object.prototype.toString.call(pako.deflate('hello')) === '[object Uint8Array]'"),
+            ),
+        ),
+    ),
 )
 
 

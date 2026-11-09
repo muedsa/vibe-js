@@ -4004,4 +4004,33 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return out.join('');
 })()""",
     ),
+
+    // 非严格脚本中 `let` 可以作为 var 绑定名出现在 for-of/for-in 头部；
+    // 这两条同时覆盖“绑定名是上下文关键字”和循环变量的运行时取值。
+    DifferentialCase(
+        "for-var-let-of",
+        """(function () {
+  var out = [];
+  for (var let of [1, 2, 3]) out.push(let);
+  return out.join(',');
+})()""",
+    ),
+    DifferentialCase(
+        "for-var-let-in",
+        """(function () {
+  var out = [];
+  for (var let in { a: 1, b: 2 }) out.push(let);
+  return out.sort().join(',');
+})()""",
+    ),
+    // 对象 rest 只允许在赋值/声明目标中绑定到标识符；这里验证合法目标的
+    // 取值、剩余属性枚举与 JSON 序列化顺序。
+    DifferentialCase(
+        "object-rest-valid-targets",
+        """(function () {
+  var { a, ...rest } = { a: 1, b: 2, c: 3 };
+  var { d, ...nested } = { d: 4, e: { f: 5 } };
+  return [a, JSON.stringify(rest), d, JSON.stringify(nested)].join('|');
+})()""",
+    ),
 )

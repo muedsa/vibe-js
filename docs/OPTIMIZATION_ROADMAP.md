@@ -20,8 +20,8 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 沿用旧报告 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **545 / 545** | 含 L 系列同步与异步用例 |
-| 真实库 UMD 冒烟 | **320 / 320**（83 个库） | 沿用最近一次完整报告 |
+| Node 差分 | **548 / 548** | 含 L 系列同步与异步用例 |
+| 真实库 UMD 冒烟 | **329 / 329**（86 个库） | 2026-11-09 新增 pako/prop-types/react-is |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5 与真实库数字沿用旧报告；ES2015、parser、差分已在当前基线复跑。
 
