@@ -4570,9 +4570,36 @@ class Parser(
             if (token.legacyOctal) {
                 throw error("Octal escape sequences are not allowed in export names")
             }
+            // ModuleExportName 的 StringLiteral 必须满足 IsStringWellFormedUnicode
+            if (!isWellFormedUnicode(token.value)) {
+                throw ParseException(
+                    "Module export name must be well-formed Unicode",
+                    token.range,
+                )
+            }
             return advance()
         }
         throw ParseException("$message (Token: ${token.value})", token.range)
+    }
+
+    /** 字符串是否由合法 UTF-16 序列组成（不允许孤立代理项）。 */
+    private fun isWellFormedUnicode(text: String): Boolean {
+        var index = 0
+        while (index < text.length) {
+            val char = text[index]
+            when {
+                char.isHighSurrogate() -> {
+                    if (index + 1 >= text.length || !text[index + 1].isLowSurrogate()) {
+                        return false
+                    }
+                    index += 2
+                }
+
+                char.isLowSurrogate() -> return false
+                else -> index++
+            }
+        }
+        return true
     }
 
     /** `import` 声明：副作用、默认、具名、命名空间四种形态及其组合。 */
@@ -4769,8 +4796,13 @@ class Parser(
     private fun parseExportClause(start: SourcePosition): ModuleParseResult {
         consume(TokenType.LBRACE, "Expected '{' in export clause")
         val specifiers = mutableListOf<ExportSpecifier>()
+        // 无 from 时字符串不能作为本地绑定名（ExportClause 的早期错误）
+        var stringLocalNameRange: SourceRange? = null
         while (!check(TokenType.RBRACE) && !isAtEnd()) {
             val localToken = consumeModuleExportName("Expected export name")
+            if (localToken.type == TokenType.STRING && stringLocalNameRange == null) {
+                stringLocalNameRange = localToken.range
+            }
             var exportName = localToken.value
             if (isAsKeyword()) {
                 advance()
@@ -4787,6 +4819,14 @@ class Parser(
         ) {
             advance()
             source = parseModuleSpecifier()
+        }
+        if (source == null) {
+            stringLocalNameRange?.let {
+                throw ParseException(
+                    "String literal module export names must be followed by a 'from' clause",
+                    it,
+                )
+            }
         }
         consumeSemicolon()
         val moduleRequest = source

@@ -245,6 +245,38 @@ class ParserModuleTest {
     }
 
     @Test
+    fun `本地导出不能把字符串字面量用作绑定名`() {
+        // ExportDeclaration 的早期错误：无 from 时 ReferencedBindings 不能含字符串
+        assertFailsWith<ParseException> {
+            parseModule("let a = 1; export { \"a\" };")
+        }
+        assertFailsWith<ParseException> {
+            parseModule("let a = 1; export { \"a\" as b };")
+        }
+        // 带 from 的再导出允许字符串导入名/导出名
+        parseModule("export { \"a\" } from \"./m.js\";")
+        parseModule("export { \"a\" as \"b\" } from \"./m.js\";")
+        // 本地绑定名是标识符、仅导出名是字符串时合法
+        parseModule("let a = 1; export { a as \"b\" };")
+    }
+
+    @Test
+    fun `模块导入导出名必须是 well-formed Unicode`() {
+        val invalid = listOf(
+            "export { \"\\uD83C\" } from \"./m.js\";",
+            "export { a as \"\\uD83C\" } from \"./m.js\";",
+            "import { \"\\uD83C\" as x } from \"./m.js\";",
+            "export * as \"\\uD83C\" from \"./m.js\";",
+            "let a = 1; export { a as \"\\uD83C\" };",
+        )
+        for (code in invalid) {
+            assertFailsWith<ParseException>(code) { parseModule(code) }
+        }
+        // 合法的 astral 名称（U+1F319）可以导出
+        parseModule("let a = 1; export { a as \"\\uD83C\\uDF19\" };")
+    }
+
+    @Test
     fun `export default 后的正则字面量按表达式解析`() {
         // `default` 之后是 AssignmentExpression 起始位置，`/` 必须读成正则而不是除号
         val module = parseModule("export default /foo/;")
