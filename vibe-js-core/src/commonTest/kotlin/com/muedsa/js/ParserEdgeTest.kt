@@ -485,6 +485,30 @@ class ParserEdgeTest {
         )
     }
 
+    @Test
+    fun `对象 rest 属性不允许初始值或嵌套模式`() {
+        // 赋值模式的对象 rest 只能接标识符或成员引用，且不能带默认值
+        assertFailsWith<ParseException> { parse("({...a = 1} = {});") }
+        assertFailsWith<ParseException> { parse("({...a.b = 1} = {});") }
+        assertFailsWith<ParseException> { parse("({...{a}} = {});") }
+        assertFailsWith<ParseException> { parse("({...[a]} = {});") }
+        // 声明/参数/catch/for-of 的绑定 rest 只能是标识符
+        assertFailsWith<ParseException> { parse("let {...a = 1} = {};") }
+        assertFailsWith<ParseException> { parse("let {...{a}} = {};") }
+        assertFailsWith<ParseException> { parse("let {...a.b} = {};") }
+        assertFailsWith<ParseException> { parse("function f({...a = 1}) {}") }
+        assertFailsWith<ParseException> { parse("try {} catch ({...a = 1}) {}") }
+        assertFailsWith<ParseException> { parse("for (const {...a = 1} of []) {}") }
+        // 合法形式保持不变
+        parse("({...a} = {});")
+        parse("({...a.b} = {});")
+        parse("({...a[0]} = {});")
+        parse("let {...a} = {};")
+        parse("let [...a] = [];")
+        parse("let [...[a]] = [];")
+        parse("([...[a]] = []);")
+    }
+
     // ================================================================
     // 自动分号插入
     // ================================================================

@@ -1029,7 +1029,16 @@ class Parser(
 
                         is ObjectSpreadProperty -> {
                             restSeen = true
-                            validateAssignmentPattern(property.argument)
+                            val target = property.argument
+                            // AssignmentRestProperty 只接受 DestructuringAssignmentTarget，
+                            // 不能带默认值，也不能是数组/对象模式
+                            if (target is AssignmentExpr) {
+                                throw error("Rest property may not have a default initializer")
+                            }
+                            if (target !is Identifier && target !is MemberExpr) {
+                                throw error("Invalid rest property target")
+                            }
+                            validateAssignmentPattern(target)
                         }
                     }
                 }
@@ -1084,7 +1093,10 @@ class Parser(
 
                         is ObjectSpreadProperty -> {
                             restSeen = true
-                            validateBindingPattern(property.argument)
+                            // BindingRestProperty 只允许 BindingIdentifier
+                            if (property.argument !is Identifier) {
+                                throw error("Object rest binding must be an identifier")
+                            }
                         }
                     }
                 }
