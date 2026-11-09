@@ -517,6 +517,18 @@ class ParserModuleTest {
     }
 
     @Test
+    fun `模块顶层支持 for await 与 using 声明`() {
+        // 模块顶层是 [+Await] 语境，for await / await using 与顶层 await 一样可解析
+        parseModule("for await (const x of []) {}")
+        parseModule("for await (x of []) {}")
+        parseModule("using x = null;")
+        parseModule("await using x = null;")
+        parseModule("for (await using of of []) {}")
+        // 脚本顶层仍不允许 using 声明（与 V8 行为一致）
+        assertFailsWith<ParseException> { parseScript("using x = null;") }
+    }
+
+    @Test
     fun `模块中await不能作为绑定名或标识符`() {
         val invalid = listOf(
             "var await = 1;",

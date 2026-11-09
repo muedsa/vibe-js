@@ -4397,6 +4397,12 @@ class Parser(
         // 与 var 名由 declareLexicalBinding / declareVarBinding 直接登记在这里，
         // popDeclScope 之后仍需读取它们做导出绑定校验。
         val moduleScope = declScopes.last()
+        // 模块顶层是 [+Await] 语境：允许 for await / await using 与顶层 await 表达式；
+        // 同时允许 using 声明（脚本顶层不允许，只有块/函数体/模块顶层允许）。
+        val outerAsyncContext = asyncContext
+        val outerUsingDeclarationAllowed = usingDeclarationAllowed
+        asyncContext = true
+        usingDeclarationAllowed = true
         try {
             while (!isAtEnd()) {
                 val result = if (isModuleDeclarationStart()) {
@@ -4432,6 +4438,8 @@ class Parser(
                 for (entry in result.exports) entry.moduleRequest?.let { requestedModules.add(it) }
             }
         } finally {
+            asyncContext = outerAsyncContext
+            usingDeclarationAllowed = outerUsingDeclarationAllowed
             popDeclScope()
         }
         checkDeferredProtoDuplicates()
