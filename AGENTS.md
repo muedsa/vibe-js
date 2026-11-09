@@ -59,10 +59,10 @@
 
 ## 当前基线
 
-> 2026-11-08，代码基线 `1f8fa3d`。文档数字必须与本节及
-> `docs/CONFORMANCE.md` 保持一致；JS/Wasm 的 881 是旧记录，新增用例后未复跑。
+> 2026-11-09，代码基线 `53fb71b`。文档数字必须与本节及
+> `docs/CONFORMANCE.md` 保持一致；JS/Wasm 已在当前基线复跑。
 
-- core JVM **990 / 990**；core JS / Wasm **881 / 881**（上次记录）；host JVM / JS / Wasm 各 **25 / 25**
+- core JVM **999 / 999**；core JS / Wasm 各 **983 / 983**；host JVM / JS / Wasm 各 **25 / 25**
 - parser 脚本 **1,907 / 1,907**，fail 674 / 682（允许 8），early 5 / 605（允许 5）
 - parser 模块 **76 / 76 + 76 / 76 + 47 / 47 + 63 / 63**（early 拒绝），允许 0（262 个 `.module.js`）
 - Test262 ES5 **15,248 / 15,248**（跳过 0）；ES2015 **61,786 / 61,786**（跳过 324 = module flag 322 + 宿主钩子 2）

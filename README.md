@@ -415,12 +415,12 @@ lexer -> parser -> AST (Program / ModuleProgram)
 ./gradlew :vibe-js-conformance:differentialConformance
 ```
 
-当前基线（2026-11-08，代码基线 `1f8fa3d`）：
+当前基线（2026-11-09，代码基线 `53fb71b`）：
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **990 / 990** |
-| core JS（Node）/ Wasm（Node） | **881 / 881**（上次记录；新增 L4/R1/M2 用例后未复跑） |
+| core JVM | **999 / 999** |
+| core JS（Node）/ Wasm（Node） | 各 **983 / 983** |
 | host JVM / JS / Wasm | 各 **25 / 25** |
 | conformance 单元测试 | **39 / 39** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |

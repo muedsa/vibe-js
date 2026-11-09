@@ -4,7 +4,7 @@
 
 > 当前覆盖 ES5 与 ES2015 的常用语法和内建，并已实现部分 ES2016+ 特性。
 > Generator / async generator、`for await`、Proxy / Reflect、BigInt、
-> TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-08，`1f8fa3d`）。
+> TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
 > `import()` 表达式与模块顶层 `await` 语法，但**链接、求值、加载尚未实现，不能执行模块**。
 > 真实剩余差异集中在：模块执行、顶层 await、宿主生态（TextEncoder/TextDecoder、
@@ -127,15 +127,15 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **990** + 宿主 25 个测试（2026-11-08 记录，`1f8fa3d`） |
-| JS（Node） | ✅ | 核心 **881**（上次记录；新增 L4/R1/M2 用例后未复跑）+ 宿主 25 个测试 |
-| Wasm（Node） | ✅ | 核心 **881**（上次记录；新增 L4/R1/M2 用例后未复跑）+ 宿主 25 个测试 |
+| JVM | ✅ | 核心 **999** + 宿主 25 个测试（2026-11-09 记录，`53fb71b`） |
+| JS（Node） | ✅ | 核心 **983** + 宿主 25 个测试 |
+| Wasm（Node） | ✅ | 核心 **983** + 宿主 25 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-01 本地复跑 Windows mingwX64 通过（近期未重跑） |
 
-> 数字来自各平台测试报告。JVM 的 990 包含 L4/R1/M2 新增的 commonTest 用例；JS/Wasm 的 881 是旧记录，新增用例后未复跑，因此 990 与 881 的差值不等于平台专属用例数。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 999 包含 L4/R1/M2 新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 983。"仅由 CI 覆盖"表示本次未在本地复跑。
 
-当前一致性基线（2026-11-08，`1f8fa3d`）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **545/545**；真实库 **320/320**（83 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-09，`53fb71b`）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **545/545**；真实库 **320/320**（83 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
