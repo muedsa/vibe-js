@@ -123,4 +123,55 @@ class ModuleExecutionMatrixTest {
         assertIs<JSObject>(m2)
         assertSame(m1, m2)
     }
+
+    @Test
+    fun `循环星号导出的 namespace 保留实时绑定`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "entry",
+                "export * from './a.js';",
+            ),
+            Provider(
+                mapOf(
+                    "./a.js" to source(
+                        "a",
+                        "export * from './b.js'; " +
+                            "export let value = 1; export function setValue(next) { value = next; }",
+                    ),
+                    "./b.js" to source("b", "export * from './a.js'; export const b = 2;"),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf("b", "setValue", "value"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
+        val setValue = engine.interpreter.getProperty(namespace, PropertyKey.Str("setValue"))
+        engine.interpreter.callFunction(setValue, JSUndefined, listOf(JSNumber(7.0)))
+        assertEquals(7.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
+    }
+
+    @Test
+    fun `循环导出中的同名歧义不进入 namespace`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "entry",
+                "export * from './a.js'; export * from './b.js';",
+            ),
+            Provider(
+                mapOf(
+                    "./a.js" to source("a", "export const x = 1;"),
+                    "./b.js" to source("b", "export const x = 2;"),
+                ),
+            ),
+        )
+        assertEquals(
+            0,
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().size,
+        )
+        assertEquals(null, namespace.getOwnProperty(PropertyKey.Str("x")))
+    }
 }

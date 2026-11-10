@@ -76,7 +76,11 @@ internal object ModuleLinker {
                     )
                 }
             }
-            record.exportedNames = ModuleExportResolver.exportedNames(record)
+            // GetExportedNames 会保留星号导出的候选名；namespace 只暴露能唯一解析的名字，
+            // 因而同名的多个 `export *` 来源不应出现在 namespace 键中。
+            record.exportedNames = ModuleExportResolver.exportedNames(record).filter { name ->
+                ModuleExportResolver.resolveExport(record, name) !is ResolveExportResult.Ambiguous
+            }
             record.status = ModuleStatus.LINKED
         }
         return graph

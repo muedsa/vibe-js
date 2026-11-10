@@ -138,7 +138,7 @@ class ModuleNamespaceTest {
     }
 
     @Test
-    fun `星号歧义访问 namespace 属性抛 SyntaxError`() = runTest {
+    fun `星号歧义不进入 namespace`() = runTest {
         val engine = Engine()
         val graph = graph(
             source("a", "export * from \"./b.js\"; export * from \"./c.js\";"),
@@ -154,8 +154,10 @@ class ModuleNamespaceTest {
         instantiator.instantiate(graph.entry)
         val namespace = assertNotNull(graph.entry.namespace)
 
-        assertFailsWith<JSException> {
-            namespace.getOwnProperty(PropertyKey.Str("x"))
-        }
+        assertEquals(
+            0,
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().size,
+        )
+        assertEquals(null, namespace.getOwnProperty(PropertyKey.Str("x")))
     }
 }
