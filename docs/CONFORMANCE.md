@@ -22,7 +22,7 @@
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
 | Node 差分 | **561 / 561** |
-| 真实库 UMD 冒烟 | **349 / 349**（93 个库） |
+| 真实库 UMD 冒烟 | **357 / 357**（96 个库） |
 | conformance 单元测试 | **39 / 39**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4） |
 | host 单元测试 | **38 / 38**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
 
@@ -193,7 +193,7 @@ runner 当前只做以下注入/替换：
 
 ### 6.1 真实库
 
-固定版本清单见 [Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt)。当前 **90 个库、349/349 用例通过，0 失败**。最近一次新增 fflate 0.8.2、js-base64 3.7.7、long 5.2.3、loglevel 1.9.1，共 12 条断言。
+固定版本清单见 [Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt)。当前 **90 个库、357/357 用例通过，0 失败**。最近一次新增 fflate 0.8.2、js-base64 3.7.7、long 5.2.3、loglevel 1.9.1，共 12 条断言。
 
 | 库 | 状态 | 用例 |
 |---|---|---:|
@@ -290,8 +290,11 @@ runner 当前只做以下注入/替换：
 | base64-js | 可加载 | 3/3 |
 | jmespath | 可加载 | 3/3 |
 | jssha | 可加载 | 2/2 |
+| d3-array | 可加载 | 3/3 |
+| d3-hierarchy | 可加载 | 3/3 |
+| earcut | 可加载 | 2/2 |
 
-真实库冒烟支持异步用例：脚本把布尔结果写入 `globalThis.__libResult`，`Engine.run` 结束冲刷微任务后由运行器读取。`astring` 与 `acorn-walk` 通过 `dependencies` 先加载 `acorn`，再加载目标库。
+真实库冒烟支持异步用例：脚本把布尔结果写入 `globalThis.__libResult`，`Engine.run` 结束冲刷微任务后由运行器读取。`astring` 与 `acorn-walk` 通过 `dependencies` 先加载 `acorn`，再加载目标库。本轮新增 `d3-array`、`d3-hierarchy` 与 `earcut`，覆盖 d3 命名空间挂载、层级遍历与多边形三角剖分。
 
 > 依赖浏览器全局（如 `window` / `self` / `document`）的构建不纳入冒烟；seedrandom 在全局模式覆盖 `Math.random`，用例验证同种子确定性与不同种子差异；ajv 使用 `{ logger: false }` 适配裸 Engine（无 console）。
 

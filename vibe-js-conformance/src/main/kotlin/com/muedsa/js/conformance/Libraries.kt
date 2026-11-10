@@ -2962,6 +2962,70 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    // d3-array 是独立 UMD 模块，覆盖求和、最大值与 range，验证 d3 命名空间挂载。
+    LibrarySpec(
+        name = "d3-array",
+        url = "https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "sum",
+                assertion("d3.sum([1, 2, 3]) === 6"),
+            ),
+            SmokeCase(
+                "max",
+                assertion("d3.max([1, 5, 3]) === 5"),
+            ),
+            SmokeCase(
+                "range",
+                assertion("d3.range(0, 5, 2).join(',') === '0,2,4'"),
+            ),
+        ),
+    ),
+    // d3-hierarchy 是独立 UMD 模块，覆盖层级节点、高度与叶子遍历。
+    LibrarySpec(
+        name = "d3-hierarchy",
+        url = "https://cdn.jsdelivr.net/npm/d3-hierarchy@3.1.2/dist/d3-hierarchy.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "descendants",
+                assertion(
+                    "d3.hierarchy({ name: 'root', children: [{ name: 'a' }] })" +
+                        ".descendants().length === 2"
+                ),
+            ),
+            SmokeCase(
+                "height",
+                assertion(
+                    "d3.hierarchy({ name: 'root', children: [{ name: 'a' }] }).height === 1"
+                ),
+            ),
+            SmokeCase(
+                "leaves",
+                assertion(
+                    "d3.hierarchy({ name: 'root', children: [{ name: 'a' }] })" +
+                        ".leaves().length === 1"
+                ),
+            ),
+        ),
+    ),
+    // earcut 是多边形三角剖分库，验证三角形与四边形的索引数量。
+    LibrarySpec(
+        name = "earcut",
+        url = "https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js",
+        globalName = "earcut",
+        cases = listOf(
+            SmokeCase(
+                "triangle",
+                assertion("earcut([0, 0, 1, 0, 0, 1]).length === 3"),
+            ),
+            SmokeCase(
+                "quad",
+                assertion("earcut([0, 0, 1, 0, 1, 1, 0, 1]).length === 6"),
+            ),
+        ),
+    ),
 )
 
 
