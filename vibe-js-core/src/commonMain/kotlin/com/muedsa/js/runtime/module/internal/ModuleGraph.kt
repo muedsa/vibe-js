@@ -59,6 +59,12 @@ internal class ModuleRecord(
     /** 阶段 6 创建 namespace exotic 对象后填充。 */
     var namespace: JSObject? = null
 
+    /** 阶段 7 创建 import.meta 对象后填充；同一模块复用。 */
+    var importMeta: JSObject? = null
+
+    /** 求值失败时缓存原始异常；同图内再次求值直接重抛。 */
+    var evaluationError: Throwable? = null
+
     /** 按原说明符查找已加载的依赖；requestedModules 与 dependencies 顺序一致。 */
     fun dependencyFor(specifier: String): ModuleRecord? {
         val index = program.requestedModules.indexOf(specifier)

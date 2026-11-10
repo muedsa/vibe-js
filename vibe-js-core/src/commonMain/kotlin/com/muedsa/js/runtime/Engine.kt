@@ -7,7 +7,18 @@ import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.exception.ExecutionLimitException
+import com.muedsa.js.runtime.exception.ResourceLimitException
+import com.muedsa.js.runtime.module.EmptyModuleProvider
+import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.module.ModuleLinkException
+import com.muedsa.js.runtime.module.ModuleProvider
+import com.muedsa.js.runtime.module.ModuleSource
+import com.muedsa.js.runtime.module.internal.ModuleEvaluator
+import com.muedsa.js.runtime.module.internal.ModuleGraph
+import com.muedsa.js.runtime.module.internal.ModuleGraphLoader
+import com.muedsa.js.runtime.module.internal.ModuleLinker
 import com.muedsa.js.runtime.value.JSError
+import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -214,6 +225,88 @@ class Engine(
                 )
             } finally {
                 // 包括取消、配额耗尽及 JS 抛错，均不能把旧预算带入下一次调用。
+                context.objectAllocations.end()
+                eventLoop.executionBudget = previousBudget
+            }
+        }
+    }
+
+    /**
+     * 执行一个模块图，返回入口模块的 namespace。
+     *
+     * 模块图、链接和求值状态都属于本次调用；失败不会污染下一次调用。
+     * provider 负责说明符规范化与实际读取，核心不引入平台 IO。
+     */
+    @ExperimentalModuleApi
+    suspend fun runModule(
+        entry: ModuleSource,
+        provider: ModuleProvider = EmptyModuleProvider,
+    ): JSObject {
+        currentCoroutineContext().ensureActive()
+        eventLoop.ensureOpen()
+        val graph = ModuleGraphLoader(limits).load(entry, provider)
+        return executeModuleGraph(graph)
+    }
+
+    /** 从入口说明符加载并执行模块图。 */
+    @ExperimentalModuleApi
+    suspend fun runModule(
+        entrySpecifier: String,
+        provider: ModuleProvider,
+    ): JSObject {
+        currentCoroutineContext().ensureActive()
+        eventLoop.ensureOpen()
+        val graph = ModuleGraphLoader(limits).load(entrySpecifier, provider)
+        return executeModuleGraph(graph)
+    }
+
+    @OptIn(ExperimentalModuleApi::class)
+    private suspend fun executeModuleGraph(graph: ModuleGraph): JSObject {
+        ModuleLinker.link(graph)
+        return eventLoop.runTask {
+            val previousBudget = eventLoop.executionBudget
+            val budget = ExecutionBudget(limits.maxSteps)
+            eventLoop.executionBudget = budget
+            context.objectAllocations.begin()
+            try {
+                var aborted = false
+                try {
+                    try {
+                        ModuleEvaluator(interpreter).evaluate(graph).also {
+                            budget.ensureAvailable()
+                        }
+                    } catch (error: CancellationException) {
+                        aborted = true
+                        throw error
+                    } catch (error: ExecutionLimitException) {
+                        aborted = true
+                        throw error
+                    } finally {
+                        if (!aborted) eventLoop.drainMicrotasks()
+                    }
+                } catch (error: CancellationException) {
+                    eventLoop.discardPendingMicrotasks()
+                    throw error
+                } catch (error: ExecutionLimitException) {
+                    eventLoop.discardPendingMicrotasks()
+                    throw error
+                } catch (error: ModuleLinkException) {
+                    throw error
+                } catch (error: ResourceLimitException) {
+                    throw error
+                } catch (error: JSException) {
+                    throw error
+                } catch (error: Throwable) {
+                    throw JSException(
+                        JSError(
+                            errorName = "InternalError",
+                            messageText = error.message ?: error::class.simpleName ?: "Internal error",
+                            prototype = intrinsics.errorPrototype,
+                        ),
+                        stack = interpreter.hostFailureStack ?: emptyList(),
+                    )
+                }
+            } finally {
                 context.objectAllocations.end()
                 eventLoop.executionBudget = previousBudget
             }

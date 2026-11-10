@@ -20,6 +20,9 @@ import com.muedsa.js.ast.DebuggerStatement
 import com.muedsa.js.ast.DeclarationKind
 import com.muedsa.js.ast.DoWhileStatement
 import com.muedsa.js.ast.EmptyStatement
+import com.muedsa.js.ast.ExportAllDeclaration
+import com.muedsa.js.ast.ExportDefaultDeclaration
+import com.muedsa.js.ast.ExportNamedDeclaration
 import com.muedsa.js.ast.Expression
 import com.muedsa.js.ast.ExpressionStatement
 import com.muedsa.js.ast.ForInStatement
@@ -30,9 +33,12 @@ import com.muedsa.js.ast.FunctionExpression
 import com.muedsa.js.ast.Identifier
 import com.muedsa.js.ast.IfStatement
 import com.muedsa.js.ast.ImportCallExpr
+import com.muedsa.js.ast.ImportDeclaration
 import com.muedsa.js.ast.ImportMetaExpr
 import com.muedsa.js.ast.LabeledStatement
 import com.muedsa.js.ast.MemberExpr
+import com.muedsa.js.ast.ModuleItem
+import com.muedsa.js.ast.StatementItem
 import com.muedsa.js.ast.NewExpr
 import com.muedsa.js.ast.NewTargetExpr
 import com.muedsa.js.ast.NullLiteral
@@ -80,6 +86,8 @@ import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.GeneratorReturn
 import com.muedsa.js.runtime.exception.StackFrame
 import com.muedsa.js.runtime.exception.StackFrameLink
+import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.module.internal.ModuleRecord
 import com.muedsa.js.runtime.regex.JsRegex
 import com.muedsa.js.runtime.regex.JsRegexSyntax
 import com.muedsa.js.runtime.regex.JsRegexEngine
@@ -197,6 +205,9 @@ class Interpreter(
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
 
+    /** 当前模块求值记录；脚本/null 时 import.meta 不可用。 */
+    private var currentModuleRecord: ModuleRecord? = null
+
     /**
      * 生成器函数体执行期间绑定的暂停/恢复通道。
      *
@@ -306,6 +317,72 @@ class Interpreter(
         } finally {
             popStackFrame(countsTowardsDepth = false)
             frame = previousFrame
+        }
+    }
+
+    /**
+     * 执行一个已实例化的模块体。
+     *
+     * 与 [runProgram] 不同：没有全局声明实例化（已由模块阶段完成），
+     * `this` 为 undefined、强制严格模式，并按 ModuleItem 源码顺序跳过 import/export 外壳。
+     */
+    @OptIn(ExperimentalModuleApi::class)
+    internal suspend fun runModule(record: ModuleRecord): JSValue {
+        if (currentCoroutineContext()[ContinuationInterceptor] !is ExecutionTrampoline) {
+            return withExecutionTrampoline { runModule(record) }
+        }
+        currentCoroutineContext().ensureActive()
+        hostFailureStack = null
+        hostFailure = null
+        val environment = record.environment
+            ?: throw IllegalStateException("Module is not instantiated: ${record.id}")
+        val previousFrame = frame
+        val previousModule = currentModuleRecord
+        val moduleFrame = ExecutionContext(
+            lexicalEnv = environment,
+            thisValue = JSUndefined,
+            strict = true,
+        )
+        pushStackFrame(
+            "<module:${record.id}>",
+            record.program.range,
+            countsTowardsDepth = false,
+            sourceInfo = SourceInfo(record.source.sourceName),
+        )
+        frame = moduleFrame
+        currentModuleRecord = record
+        try {
+            for (item in record.program.items) {
+                executeModuleItem(item)
+            }
+            return JSUndefined
+        } catch (error: Throwable) {
+            captureFailure(error)
+            throw error
+        } finally {
+            currentModuleRecord = previousModule
+            popStackFrame(countsTowardsDepth = false)
+            frame = previousFrame
+        }
+    }
+
+    private suspend fun executeModuleItem(item: ModuleItem) {
+        when (item) {
+            is ImportDeclaration, is ExportAllDeclaration -> Unit
+            is ExportNamedDeclaration -> item.declaration?.let { executeStatement(it) }
+            is ExportDefaultDeclaration -> {
+                val declaration = item.declaration
+                val expression = item.expression
+                if (declaration != null) {
+                    executeStatement(declaration)
+                } else if (expression != null) {
+                    val value = evaluate(expression)
+                    (currentFrame.lexicalEnv as? DeclarativeEnvironment)
+                        ?.initializeLexical("*default*", value)
+                }
+            }
+
+            is StatementItem -> executeStatement(item.statement)
         }
     }
 
@@ -4422,7 +4499,8 @@ class Interpreter(
             is SuperExpr -> throw syntaxError("'super' keyword unexpected here")
             is NewTargetExpr -> currentFrame.newTarget ?: JSUndefined
             // 模块表达式节点只由 parseModule 产生；模块求值属于 L4.3，脚本执行不会到达这里。
-            is ImportMetaExpr -> throw syntaxError("import.meta is only available in module code")
+            is ImportMetaExpr -> currentModuleRecord?.importMeta
+                ?: throw syntaxError("import.meta is only available in module code")
             is ImportCallExpr -> throw syntaxError("Dynamic import is not supported")
 
             is YieldExpression -> evaluateYield(expression)

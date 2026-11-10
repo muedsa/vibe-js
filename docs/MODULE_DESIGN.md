@@ -1,11 +1,9 @@
 # 模块执行设计与实现方案
 
-> 状态：**阶段 0–6 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
-> 类型化声明、TLA 标记和语法收紧；公共 `ModuleProvider` / `ModuleSource` / `InMemoryModuleProvider`
-> 与模块图预算已提供；内部 `ModuleGraphLoader`、`ModuleExportResolver`、`ModuleLinker`、
-> `ModuleEnvironment`、声明实例化与 namespace exotic 对象已能加载/链接/建环境/暴露实时导出；
-> 但 `import.meta`、顶层 `this` 的模块执行帧、求值、公开 `Engine.runModule` 与宿主加载器均未实现。
-> 只有需求方明确继续重启时，才进入阶段 7+。
+> 状态：**阶段 0–7 已作为实验性模块实现落地；模块执行仍不承诺稳定兼容**。Parser、
+> 公共 Provider API、内部图加载/链接、ModuleEnvironment、namespace、`import.meta` 与
+> `Engine.runModule` 已接通；剩余工作是阶段 8 的错误定位、预算/取消边界、文档与审查。
+> 该 API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -191,7 +189,7 @@ suspend fun Engine.runModule(
 ): JSObject
 ```
 
-> 当前不暴露该入口：模块图/链接/求值尚未实现，M2.6 推迟到 M7，避免提供会抛错的公共桩。
+> 阶段 7 已实现上述两个重载；调用方需要 opt-in `@ExperimentalModuleApi`。
 
 - 两个重载都返回**入口模块的 namespace 对象**。
 - `ModuleSource` 入口允许省略 provider；如果源码包含静态 import，缺失 provider 会链接失败。
@@ -473,7 +471,11 @@ internal data class ModuleImportBinding(
 - 不执行任何用户语句。
 - 绑定种类全部来自 `ModuleProgram.bindings`，不在运行时扫描 AST。
 
-### 7.3 求值
+### 7.3 求值（阶段 7 已实现）
+
+`ModuleEvaluator` 先实例化整个图，再按 DFS 后序执行模块体；`Interpreter.runModule` 使用
+`this = undefined`、严格模式和模块环境，按 `ModuleProgram.items` 顺序执行普通语句/导出声明，
+匿名 `export default` 在源码位置写入 `*default*` 绑定。
 
 ```text
 evaluate(record):
@@ -496,7 +498,7 @@ evaluate(record):
 - 每次 `runModule` 的模块图独立，副作用不会跨调用复用。
 - `runModule` 返回入口 namespace；返回值不依赖模块体最后表达式。
 
-### 7.4 `import.meta`（阶段 7 实现）
+### 7.4 `import.meta`（阶段 7 已实现）
 
 - 每个 `ModuleRecord` 缓存一个 `import.meta` 对象。
 - 空原型、普通对象。
@@ -633,9 +635,8 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
-当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5、M3.1–M3.6、M4.1–M4.6、M5.1–M5.3、M5.5、M5.7、M6.1–M6.5 已完成；
-M5.4 已完成 import 只读转发与 namespace 值接入；M5.6（模块执行帧的顶层 `this`）与 M7.4（`import.meta`）
-随求值阶段实现；M2.6（`Engine.runModule` 签名）推迟到 M7；M0.2 的完整图 fixture 与阶段 7+ 尚未开始。
+当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.6、M3.1–M3.6、M4.1–M4.6、M5.1–M5.7、M6.1–M6.5、M7.1–M7.8 已完成；
+阶段 8（错误定位、预算/取消/失败恢复、文档审查）待执行。M0.2 的完整图 fixture 仍未单独建。
 
 ### 阶段 0：契约与脚手架（1–2 人日）
 
@@ -798,7 +799,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 阶段 0–6 的 Parser 前置、公共 Provider API、内部图加载、静态链接、模块环境/声明实例化与 namespace 已按本文落地；阶段 7+ 仍未排期。
+- 阶段 0–7 的 Parser、Provider API、内部图加载、静态链接、模块环境/声明实例化、namespace 与求值已按本文落地；阶段 8 的加固与审查仍待执行。
 - `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

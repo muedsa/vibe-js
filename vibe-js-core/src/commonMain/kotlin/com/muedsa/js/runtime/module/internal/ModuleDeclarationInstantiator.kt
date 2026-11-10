@@ -6,6 +6,9 @@ import com.muedsa.js.ast.ModuleBindingKind
 import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.PropertyKey
 
 /**
  * 模块声明实例化（ES2024 ModuleDeclarationInstantiation 的同步子集）。
@@ -68,6 +71,17 @@ internal class ModuleDeclarationInstantiator(
                 record = record,
                 symbolToStringTag = interpreter.intrinsics.symbolToStringTag,
             ).attachAllocationBudget(interpreter.context.objectAllocations)
+        }
+        if (record.importMeta == null) {
+            val importMeta = JSObject(prototype = null)
+            importMeta.defineDataProperty(
+                key = PropertyKey.Str("url"),
+                value = JSString(record.source.url ?: "module:${record.id}"),
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+            record.importMeta = importMeta.attachAllocationBudget(interpreter.context.objectAllocations)
         }
         return environment
     }

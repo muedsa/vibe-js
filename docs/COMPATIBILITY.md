@@ -6,8 +6,9 @@
 > Generator / async generator、`for await`、Proxy / Reflect、BigInt、
 > TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
-> `import()` 表达式与模块顶层 `await` 语法；阶段 0–6 已补静态表/类型化声明/TLA 标记、公共 Provider API、
-> 内部模块图加载、静态链接、模块环境/声明实例化与 namespace，但 **`import.meta`、求值、公开 runModule 尚未实现，不能执行模块**；当前唯一执行入口是单脚本 `Engine.run(source)`。
+> `import()` 表达式与模块顶层 `await` 语法；阶段 0–7 已实现实验性 `Engine.runModule`（Provider、链接、
+> 环境、namespace、`import.meta` 与同步求值），但 **TLA、动态 `import()` 执行与宿主加载器尚未实现**，
+> 且 API 需 `@ExperimentalModuleApi` opt-in。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
 > SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；模块执行、
 > 顶层 await、性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
@@ -62,9 +63,9 @@
 | 私有字段/方法/访问器 | ✅ | 品牌检查、不可扩展与重复初始化报错、直接 eval 可见性 |
 | Generator（`function*` / `yield`） | ✅ | 同步/异步生成器、`yield*` 委托、`return`/`throw`/`next`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定在调用时完成 |
 | BigInt（字面量与运算） | ✅ | `123n`、算术/位运算/移位/比较/幂运算、`BigInt()` / `asIntN` / `asUintN`、与 Number 混用抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制 |
-| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；**不能链接、求值或加载**，`Engine` 仍只执行 Script；链接/求值/加载/CLI 尚未实现。脚本目标继续拒绝 `import` / `export` |
-| 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；执行期分别报 `import.meta is only available in module code` 与 `Dynamic import is not supported`。`import()` 零参数在解析期报错 |
-| 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 并记录 `hasTopLevelAwait`；非 async 函数体中的 `await` 在解析期报错；模块求值与异步求值未实现，因此不能执行顶层 await |
+| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；实验性 `Engine.runModule` 已支持 Provider 图加载、链接、声明实例化、同步求值与 namespace，需 opt-in；宿主加载器/CLI/TLA 执行未实现。脚本目标继续拒绝 `import` / `export` |
+| 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；模块求值中 `import.meta` 返回缓存的 url 对象，`import()` 执行时抛 `Dynamic import is not supported`；零参数在解析期报错 |
+| 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 并记录 `hasTopLevelAwait`；非 async 函数体中的 `await` 在解析期报错；链接期直接拒绝 TLA，异步求值未实现 |
 | Proxy / Reflect | ✅ | Proxy 13 个 trap、`Proxy.revocable`、撤销状态与完整不变量校验；Reflect 13 个方法；解释器属性/调用/构造内部方法统一分派 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
 | 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板），try/catch/finally 按待处理语义阻断 |
@@ -129,13 +130,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1044** + 宿主 38 个测试（2026-11-10 记录） |
-| JS（Node） | ✅ | 核心 **1028** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1028** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1053** + 宿主 38 个测试（2026-11-10 记录） |
+| JS（Node） | ✅ | 核心 **1037** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1037** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1044 包含 L4/R1/M2/模块前置、Provider API、内部图加载、静态链接、模块环境与 namespace 新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1028。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1053 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace 与执行新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1037。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
@@ -159,7 +160,7 @@
 | `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
 | `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
-- 模块执行未实现：`Parser.parseModule` 已能解析 `import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表/类型化绑定/TLA 标记；但 `Engine` 仍只执行 Script，链接、求值、加载、CLI 与 Test262 module harness 尚未实现。Test262 的 322 个 `flags: [module]` 用例继续跳过；
+- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta` 与同步求值；TLA 在链接期拒绝，动态 `import()` 执行到表达式时抛 `SyntaxError`。模块加载器、CLI、Test262 module harness 仍无计划；API 需 opt-in；
 - 模块语法限制：import attributes、`import.meta.resolve`、`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；
 - 顶层 await 只有语法解析和 `hasTopLevelAwait` 标记，没有模块异步求值；
@@ -214,6 +215,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `RuntimeCancellationTest` / `RuntimeTimeoutTest`（JVM） | 协作式取消、异常透传、清理与复用；JVM 真实死循环超时 |
 | `RuntimeLimitsTest` / `ResourceLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用；源码长度/嵌套深度/AST 节点/对象数量/JSON.parse 与 JSON.stringify 深度/正则步数（含显式降低预算时的嵌套量词路由）/排队任务/单轮微任务预算与异常分类 |
 | `ParserModuleTest` | `Parser.parseModule` 的 import/export 基础形式、import.meta/import()、模块顶层 await、模块早期错误、脚本目标零影响 |
+| `ModuleExecutionTest` 等模块测试 | Provider 图加载/链接、ModuleEnvironment、namespace、`import.meta`、顶层 `this`、TLA 拒绝、动态 import 运行期错误与失败恢复 |
 | `PropertyAndPrototypeTest` | 属性描述符、原型链、访问器、call/apply/bind |
 | `StrictModeTest` | 严格/非严格模式差异 |
 | `BuiltinsTest` | 基础标准库 |
