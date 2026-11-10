@@ -4599,6 +4599,24 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    // Object.fromEntries 空输入返回普通空对象。
+    DifferentialCase(
+        "object-from-entries-empty",
+        """(function () {
+  var object = Object.fromEntries([]);
+  return Object.keys(object).length + ':' + Object.getOwnPropertySymbols(object).length + ':' +
+    (Object.getPrototypeOf(object) === Object.prototype);
+})()""",
+    ),
+    // Object.fromEntries 只含符号键时字符串键为空。
+    DifferentialCase(
+        "object-from-entries-symbol-only",
+        """(function () {
+  var key = Symbol('only');
+  var object = Object.fromEntries([[key, 1]]);
+  return Object.keys(object).length + ':' + Object.getOwnPropertySymbols(object).length + ':' + object[key];
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
