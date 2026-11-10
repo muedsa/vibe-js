@@ -676,6 +676,19 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `Object_entries 按排序枚举 namespace 导出`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("a", "export const b = 1; export const x = 2;"),
+        )
+        engine.registry.defineGlobal("ns", namespace)
+        val entries = engine.run(
+            "Object.entries(ns).map(function (entry) { return entry[0] + ':' + entry[1]; }).join(',')",
+        )
+        assertEquals("b:1,x:2", (entries as JSString).value)
+    }
+
+    @Test
     fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
