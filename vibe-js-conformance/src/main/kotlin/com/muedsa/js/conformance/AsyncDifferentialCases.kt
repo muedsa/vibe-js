@@ -302,6 +302,22 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         globalThis.__diffResult = log;
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-allsettled-thenable-getter-throw",
+        """
+        var log = [];
+        var thenable = {
+          get then() {
+            throw new Error('getter');
+          }
+        };
+        Promise.allSettled([thenable, Promise.resolve(2)]).then(function (results) {
+          log.push(results[0].status + ':' + results[0].reason.message);
+          log.push(results[1].status + ':' + results[1].value);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
 
     AsyncDifferentialCase(
         "async-array-from-async",
