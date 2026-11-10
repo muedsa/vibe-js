@@ -4283,6 +4283,14 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return object[key];
 })()""",
     ),
+    // Object.fromEntries 重复键由后者覆盖，且保留首次插入顺序。
+    DifferentialCase(
+        "object-from-entries-duplicate-key",
+        """(function () {
+  var object = Object.fromEntries([['b', 1], ['a', 2], ['b', 3]]);
+  return JSON.stringify(object) + ':' + Object.keys(object).join(',');
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
