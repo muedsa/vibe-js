@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1086 / 1086** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1070 / 1070** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1087 / 1087** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1071 / 1071** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -589,6 +589,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B23 Array.fromAsync GetMethod**：新增 async iterator getter 单次读取、sync iterator 回退 getter 单次读取 2 条异步用例；差分 640→642/642 |
 | 2026-11-10 | **S2.2-B24 Array.fromAsync 关闭路径**：新增同步迭代器 mapper 抛错的 return、异步 mapper reject 的 return 2 条异步用例；差分 642→644/644 |
 | 2026-11-10 | **S2.2-B25 Array.fromAsync array-like 与源码预算**：新增 `length` getter 抛错、跨模块总源码长度恰好达预算成功 2 条用例；差分 644→645/645，核心 1086/1070 |
+| 2026-11-10 | **S2.2-B26 模块执行预算**：新增模块体死循环触发 maxSteps、异常后同一 Engine 可复用 1 条核心单测；核心 1087/1071 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

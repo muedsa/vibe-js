@@ -2,6 +2,7 @@ package com.muedsa.js
 
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.EngineLimits
+import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleLinkErrorKind
@@ -189,5 +190,15 @@ class ModuleExecutionTest {
             )
         }
         assertEquals(ModuleLinkErrorKind.TOO_MANY_MODULES, error.kind)
+    }
+
+    @Test
+    fun `模块求值超出执行预算后 Engine 可复用`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxSteps = 50))
+        val error = assertFailsWith<ExecutionLimitException> {
+            engine.runModule(source("a", "while (true) {}"))
+        }
+        assertEquals("maxSteps", error.limitName)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
 }
