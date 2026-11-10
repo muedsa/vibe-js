@@ -3120,6 +3120,40 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-class-mapper",
+        """
+        var log = [];
+        Array.fromAsync([1], class {}).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-proxy-mapper",
+        """
+        var log = [];
+        var context = { tag: 1 };
+        var mapper = new Proxy(function (value) {
+          log.push(this === context);
+          return value;
+        }, {
+          apply: function (target, thisArg, args) {
+            log.push('apply:' + args.length);
+            return Reflect.apply(target, thisArg, args);
+          }
+        });
+        Array.fromAsync([1], mapper, context).then(function (values) {
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-extra-arguments-ignored",
         """
         var log = [];
