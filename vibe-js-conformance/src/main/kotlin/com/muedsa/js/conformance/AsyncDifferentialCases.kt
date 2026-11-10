@@ -1093,6 +1093,40 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-prototype-getter-throw",
+        """
+        var log = [];
+        function Result() {
+          return [];
+        }
+        Object.defineProperty(Result, 'prototype', {
+          get: function () {
+            throw new Error('prototype-getter');
+          }
+        });
+        Array.fromAsync.call(Result, [1]).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-arrow-this",
+        """
+        var log = [];
+        var arrow = () => {};
+        Array.fromAsync.call(arrow, [1]).then(function (values) {
+          log.push(Array.isArray(values));
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-string",
         """
         var log = [];
