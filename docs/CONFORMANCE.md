@@ -359,9 +359,9 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 10. 推进顺序
 
-1. **文档与门禁收口（维护主线）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–8 标为 experimental，执行入口已存在但加载器/TLA/harness 仍无计划。
-2. **覆盖扩展（P1）**：继续补充差分与真实库用例，优先覆盖新特性与回归边界；保持“无 DOM/浏览器全局”的加载条件。
-3. **按需能力（P1）**：当前无；R1.3 资源约束加固已完成。
+1. **文档与门禁收口（已完成）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–8 标为 experimental，执行入口已存在但加载器/TLA/harness 仍无计划。
+2. **覆盖扩展（P1，下一批）**：优先补运行时边界（Proxy/Reflect、Generator/async generator、TypedArray/AB detach、Iterator helpers、Set 方法等），其次才是有新增特性的 UMD 库；保持“无 DOM/浏览器全局”的加载条件。
+3. **门禁维护（P0）**：每批覆盖或核心改动后重跑 parser、ES5、ES2015、差分与真实库 strict。
 4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
 
 **模块阶段 0–8（实验性）已完成，模块后续能力（L4.4、L4.6a+、L4.6b、L4.7）仍未实现**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–8 已补静态表、类型化声明、range、TLA 标记、语法收紧、公共 Provider/预算、内部图加载、ResolveExport/import 链接、声明实例化、namespace、`import.meta`、同步 `runModule` 与错误定位；不投入宿主加载器/module harness/TLA 执行。

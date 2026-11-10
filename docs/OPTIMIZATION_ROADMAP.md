@@ -46,7 +46,7 @@
 
 | 队列 | 范围 | 说明 |
 |---|---|---|
-| **维护主线** | `DOC-1` → `S6.2` → `S2.2` | 保持文档/门禁绿色，持续补差分与真实库覆盖 |
+| **维护主线** | `DOC-2`（收口）→ `S6.2` → `S2.2` | 保持文档/门禁绿色，持续补运行时边界与真实库覆盖 |
 | **观测** | `S5.2` | 只做性能复测，B2 仍无计划 |
 | **实验性实现** | 模块阶段 0–8（已完成） | Parser/Provider/图加载/链接/环境/namespace/import.meta/runModule + 错误定位/预算/取消/恢复加固；opt-in；无加载器/harness/TLA 执行 |
 | **无计划** | 模块加载器、TLA 执行、动态 import、module harness、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
@@ -63,38 +63,37 @@
 
 ## 3. 推进列表
 
+> `DOC-1`、`MOD-1`、`MOD-2`、首轮 `S6.2` 与 `S2.2` 四批已经完成，记录见 §12；下表只保留仍需持续执行的项。
+
 | 排位 | 编号 | 任务 | 优先级 | 人日 | 触发条件 | 验收摘要 |
 |---:|---|---|---|---:|---|---|
-| 0 | `DOC-1` | 路线图与基线文档同步 | P1（维护） | 0.5 | 立即 | 数字与 README/CONFORMANCE 一致；模块 experimental 状态一致 |
-| 1 | `MOD-1` | 模块 Provider 契约测试与宿主文档 | P0 | 1–2 | 模块 experimental 稳定化 | null/异常/referrer/id/url/取消契约固定；提供最小实现示例 |
-| 2 | `MOD-2` | 模块执行回归矩阵与跨平台验证 | P0 | 1–2 | MOD-1 后 | 循环、TDZ、re-export、namespace、错误定位、预算/取消覆盖 |
-| 3 | `S6.2` | 门禁维护 | P0（维护） | 1–2 / 批 | 持续 | parser/Test262/真实库/差分 strict 全绿；allowlist 可审计；报告与能力同步 |
-| 4 | `S2.2` | 差分与真实库覆盖扩展 | P1 | 2–4 / 批 | 新特性、线上回归、季度维护 | 每批新增 3–5 个无 DOM 依赖 UMD 库；补运行时边界；strict 全绿 |
-| 5 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑 B1 七组基准；补模块图/求值观测；报告落盘；不做优化承诺 |
+| 0 | `S6.2` | 门禁维护 | P0（维护） | 1–2 / 批 | 核心、语料、依赖变更后 | parser/Test262/真实库/差分 strict 全绿；allowlist 可审计 |
+| 1 | `S2.2-B5` | 运行时边界覆盖 | P1 | 2–4 | 下一批覆盖扩展 | 新增 5–10 条无 DOM 边界用例，或 3–5 个有新增特性的 UMD 库；strict 全绿 |
+| 2 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑八组基准；报告落盘；不做优化承诺 |
 
 > `S5.2` 不产生 B2 排期；`B2` 仍为无计划。
 
 ## 4. 里程碑
 
-### M1：模块稳定化 + 基线收口（2.5–5.5 人日）
+### M1：模块稳定化 + 基线收口（已完成）
 
 `DOC-1 + MOD-1 + MOD-2 + S6.2`
 
-- 更新路线图、README、CONFORMANCE 中的模块口径；
-- 固定 `ModuleProvider` 契约，补宿主实现示例；
-- 补模块执行回归矩阵并跨 JVM/JS/Wasm/Native 验证；
-- 保持 parser/Test262/真实库/差分 strict 全绿；
+- 已更新路线图、README、CONFORMANCE 中的模块口径；
+- 已固定 `ModuleProvider` 契约并补宿主实现示例；
+- 已补模块执行回归矩阵并跨 JVM/JS/Wasm/Native 验证；
+- 已保持 parser/Test262/真实库/差分 strict 全绿；
 - 模块保持 experimental，不承诺正式版兼容性；不新增 CLI/平台加载器/TLA 执行承诺。
 
-### M2：覆盖扩展（2–4 人日 / 批）
+### M2：覆盖扩展（持续推进）
 
 `S2.2`
 
-- 每批新增 3–5 个无 DOM 依赖 UMD 库；
-- 补 Generator / BigInt / TypedArray / Proxy / async 边界；
+- 每批新增 3–5 个无 DOM 依赖 UMD 库，或 5–10 条运行时边界用例；
+- 优先补 Generator / BigInt / TypedArray / Proxy / async 边界；
 - 不通过删除用例或放宽断言换绿。
 
-### M3：性能观测（1–2 人日 / 次）
+### M3：性能观测（首轮已完成）
 
 `S5.2`
 
@@ -112,8 +111,10 @@ test/language/module-code/import-attributes/import-attribute-empty.js<TAB>暂不
 
 ```powershell
 .\gradlew :vibe-js-conformance:parserConformance -Pstrict --console=plain
+.\gradlew :vibe-js-conformance:test262Conformance -Pstrict --console=plain
 .\gradlew :vibe-js-conformance:test262Es2015Conformance -Pstrict --console=plain
 .\gradlew :vibe-js-conformance:differentialConformance -Pstrict --console=plain
+.\gradlew :vibe-js-conformance:librarySmoke -Pstrict --console=plain
 ```
 
 ### 5.2 S2.2 差分与真实库覆盖
@@ -568,6 +569,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2 第三批**：新增 d3-dsv/cbor-js/humanize-duration 共 9 条断言，覆盖 CSV、CBOR 二进制往返与时长格式化；库总数 96→99，真实库 357→366/366；差分新增 6 条，561→567/567 |
 | 2026-11-10 | **S2.2 第四批**：新增 msgpack-lite/d3-delaunay/topojson-client 共 9 条断言，覆盖 MessagePack、Delaunay 与 TopoJSON；库总数 99→102，真实库 366→375/375；差分新增 7 条（toSpliced 无参/删到末尾、with -0、groupBy Symbol/-0、toSorted 比较器、TypedArray with），567→574/574 |
 | 2026-11-10 | **S6.2 门禁复跑**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 574/574、真实库 375/375，strict 全绿 |
+| 2026-11-10 | **DOC-2 完成**：推进列表只保留周期性 `S6.2`、`S2.2-B5` 与 `S5.2`；M1/M3 标记完成，M2 改为持续覆盖；S6.2 命令补 ES5 与真实库 |
 | 2026-11-10 | **S5.2 复测**：完整运行八组 JVM 基准并新增 `ModuleBenchmark`（入口 + 一个依赖，avg 28.307 us/op）；环境为 Windows 10 / 12 核 / JDK 21.0.12.1 / 4 GB 堆 / G1；只记录，不做优化承诺 |
 | 2026-11-10 | **模块执行设计完成（执行仍无计划）**：新增 [MODULE_DESIGN.md](MODULE_DESIGN.md)，冻结嵌入式静态模块 MVP 的 API、图生命周期、链接/求值、错误与预算决策，并列出阶段 0–8 详细任务 |
 | 2026-11-10 | **模块阶段 0–1 完成**：`requestedModules` 补空子句、`parseModule(SourceInfo)`、Import/Export entry range、类型化 `ModuleProgram.bindings`、`hasTopLevelAwait`，并收紧普通函数内 `await` 与零参数 `import()`；仅 Parser 前置，执行入口仍未实现 |
