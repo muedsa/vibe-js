@@ -4478,6 +4478,34 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     Object.hasOwn(object, '__proto__') + ':' + object.__proto__;
 })()""",
     ),
+    // Object.fromEntries 生成对象的字符串键按数组索引规则排序。
+    DifferentialCase(
+        "object-from-entries-integer-key-order",
+        """(function () {
+  var object = Object.fromEntries([['2', 'b'], ['1', 'a'], ['x', 'c']]);
+  return JSON.stringify(object) + ':' + Object.keys(object).join(',');
+})()""",
+    ),
+    // Object.fromEntries 的符号键保持插入顺序，且不混入字符串键序列。
+    DifferentialCase(
+        "object-from-entries-symbol-order",
+        """(function () {
+  var first = Symbol('first');
+  var second = Symbol('second');
+  var object = Object.fromEntries([[second, 2], ['a', 3], [first, 1]]);
+  var symbols = Object.getOwnPropertySymbols(object);
+  return Object.keys(object).join(',') + ':' +
+    (symbols[0] === second) + ':' + (symbols[1] === first) + ':' + object[first];
+})()""",
+    ),
+    // Object.fromEntries 将 -0 键规范化为字符串 '0'。
+    DifferentialCase(
+        "object-from-entries-negative-zero-key",
+        """(function () {
+  var object = Object.fromEntries([[-0, 'z']]);
+  return Object.keys(object).join(',') + ':' + object[0] + ':' + object[-0];
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
