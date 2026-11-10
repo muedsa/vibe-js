@@ -4205,6 +4205,84 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return result.join(',') + '|' + source.join(',');
 })()""",
     ),
+    // using 声明的资源按逆序释放。
+    DifferentialCase(
+        "using-disposal-order",
+        """(function () {
+  var log = [];
+  {
+    using first = { [Symbol.dispose]: function () { log.push('first'); } };
+    using second = { [Symbol.dispose]: function () { log.push('second'); } };
+  }
+  return log.join(',');
+})()""",
+    ),
+    // using 在函数体抛错时仍释放资源，异常继续向外传播。
+    DifferentialCase(
+        "using-disposal-on-throw",
+        """(function () {
+  var log = [];
+  try {
+    using resource = { [Symbol.dispose]: function () { log.push('dispose'); } };
+    throw new Error('body');
+  } catch (error) {
+    log.push(error.message);
+  }
+  return log.join(',');
+})()""",
+    ),
+    // DisposableStack 的 use/adopt/defer 按逆序执行。
+    DifferentialCase(
+        "disposable-stack-order",
+        """(function () {
+  var log = [];
+  var stack = new DisposableStack();
+  stack.defer(function () { log.push('defer'); });
+  stack.adopt(1, function (value) { log.push('adopt:' + value); });
+  stack.use({ [Symbol.dispose]: function () { log.push('use'); } });
+  stack.dispose();
+  return log.join(',');
+})()""",
+    ),
+    // RegExp.escape 的结果可直接用于构造正则。
+    DifferentialCase(
+        "regexp-escape-roundtrip",
+        """(function () {
+  var pattern = RegExp.escape('a.b(c)');
+  var regexp = new RegExp(pattern);
+  return [regexp.test('a.b(c)'), regexp.test('axb(c)'), pattern.length > 0].join('|');
+})()""",
+    ),
+    // Array.from 的 mapper 抛错时会关闭迭代器。
+    DifferentialCase(
+        "array-from-mapper-throw-closes",
+        """(function () {
+  var log = [];
+  var iterable = {
+    [Symbol.iterator]: function () {
+      return {
+        next: function () { return { value: 1, done: false }; },
+        return: function () { log.push('close'); return { done: true }; }
+      };
+    }
+  };
+  try {
+    Array.from(iterable, function () { throw new Error('map'); });
+  } catch (error) {
+    log.push(error.message);
+  }
+  return log.join(',');
+})()""",
+    ),
+    // Object.fromEntries 保留 Symbol 键。
+    DifferentialCase(
+        "object-from-entries-symbol",
+        """(function () {
+  var key = Symbol('key');
+  var object = Object.fromEntries([[key, 1]]);
+  return object[key];
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",
