@@ -639,6 +639,17 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `Object_toString 使用 namespace 的 Module 标签`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "[object Module]",
+            (engine.run("Object.prototype.toString.call(ns)") as JSString).value,
+        )
+    }
+
+    @Test
     fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(

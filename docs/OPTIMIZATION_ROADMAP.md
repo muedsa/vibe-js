@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1129 / 1129** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1113 / 1113** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1130 / 1130** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1114 / 1114** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -650,6 +650,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B84 namespace 定义拒绝**：新增 Reflect.defineProperty 对已有/新增属性均返回 false 1 条核心单测；核心 1127/1111 |
 | 2026-11-10 | **S2.2-B85 namespace for-in 枚举**：新增按排序枚举导出且忽略标签符号 1 条核心单测；核心 1128/1112 |
 | 2026-11-10 | **S2.2-B86 namespace freeze**：新增 Object.freeze 抛 TypeError、sealed 但未 frozen 1 条核心单测；核心 1129/1113 |
+| 2026-11-10 | **S2.2-B87 namespace Object_toString**：新增 `[object Module]` 标签消费 1 条核心单测；核心 1130/1114 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
