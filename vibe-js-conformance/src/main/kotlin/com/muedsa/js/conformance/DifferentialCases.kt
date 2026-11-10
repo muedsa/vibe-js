@@ -4836,6 +4836,86 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return json + '|' + log.join(',');
 })()""",
     ),
+    // Array.prototype.map 通过 Proxy 读取 length 与索引。
+    DifferentialCase(
+        "proxy-array-map-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ length: 2, 0: 'a', 1: 'b' }, {
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var result = Array.prototype.map.call(source, function (value) {
+    return String(value).toUpperCase();
+  });
+  return result.join('') + '|' + log.join(',');
+})()""",
+    ),
+    // Array.prototype.push 通过 Proxy 写入索引与 length。
+    DifferentialCase(
+      "proxy-array-push-order",
+      """(function () {
+  var log = [];
+  var target = { length: 0 };
+  var source = new Proxy(target, {
+    set: function (object, key, value, receiver) {
+      log.push('set:' + key + '=' + value);
+      return Reflect.set(object, key, value, receiver);
+    }
+  });
+  Array.prototype.push.call(source, 'x');
+  return target.length + ':' + target[0] + '|' + log.join(',');
+})()""",
+    ),
+    // 数组展开通过 Proxy 读取迭代器方法与元素。
+    DifferentialCase(
+        "proxy-array-spread-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy([1, 2], {
+    get: function (target, key, receiver) {
+      log.push('get:' + String(key));
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var result = [...source];
+  return result.join(',') + '|' + log.join(',');
+})()""",
+    ),
+    // Array.prototype.join 通过 Proxy 读取 length 与索引。
+    DifferentialCase(
+        "proxy-array-join-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ length: 2, 0: 'a', 1: 'b' }, {
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var result = Array.prototype.join.call(source, '-');
+  return result + '|' + log.join(',');
+})()""",
+    ),
+    // Object.setPrototypeOf 通过 Proxy 的 setPrototypeOf trap。
+    DifferentialCase(
+        "proxy-setprototypeof-trap",
+        """(function () {
+  var log = [];
+  var target = {};
+  var source = new Proxy(target, {
+    setPrototypeOf: function (object, prototype) {
+      log.push('setPrototypeOf');
+      return Reflect.setPrototypeOf(object, prototype);
+    }
+  });
+  var prototype = { marker: 1 };
+  Object.setPrototypeOf(source, prototype);
+  return Object.getPrototypeOf(target).marker + '|' + log.join(',');
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",
