@@ -569,6 +569,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2 第三批**：新增 d3-dsv/cbor-js/humanize-duration 共 9 条断言，覆盖 CSV、CBOR 二进制往返与时长格式化；库总数 96→99，真实库 357→366/366；差分新增 6 条，561→567/567 |
 | 2026-11-10 | **S2.2 第四批**：新增 msgpack-lite/d3-delaunay/topojson-client 共 9 条断言，覆盖 MessagePack、Delaunay 与 TopoJSON；库总数 99→102，真实库 366→375/375；差分新增 7 条（toSpliced 无参/删到末尾、with -0、groupBy Symbol/-0、toSorted 比较器、TypedArray with），567→574/574 |
 | 2026-11-10 | **S2.2-B5 运行时边界**：新增 using 释放顺序/异常释放、DisposableStack、RegExp.escape、Array.from mapper 关闭迭代器、Object.fromEntries Symbol 键共 6 条；差分 574→580/580 |
+| 2026-11-10 | **S6.2 门禁复跑（B5 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 580/580、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 574/574、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **DOC-2 完成**：推进列表只保留周期性 `S6.2`、`S2.2-B5` 与 `S5.2`；M1/M3 标记完成，M2 改为持续覆盖；S6.2 命令补 ES5 与真实库 |
 | 2026-11-10 | **S5.2 复测**：完整运行八组 JVM 基准并新增 `ModuleBenchmark`（入口 + 一个依赖，avg 28.307 us/op）；环境为 Windows 10 / 12 核 / JDK 21.0.12.1 / 4 GB 堆 / G1；只记录，不做优化承诺 |
