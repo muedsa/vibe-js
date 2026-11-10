@@ -211,4 +211,16 @@ class ModuleExecutionTest {
         assertEquals("maxObjectCount", error.limitName)
         assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
+
+    @Test
+    fun `模块求值超出微任务预算后 Engine 可复用`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxMicrotasksPerRun = 10))
+        val error = assertFailsWith<ExecutionLimitException> {
+            engine.runModule(
+                source("a", "for (let i = 0; i < 100; i++) { Promise.resolve().then(() => {}); }"),
+            )
+        }
+        assertEquals("maxMicrotasksPerRun", error.limitName)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
 }
