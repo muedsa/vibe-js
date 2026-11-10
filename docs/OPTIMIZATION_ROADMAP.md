@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **617 / 617** | 含 L 系列同步与异步用例 |
+| Node 差分 | **625 / 625** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -574,6 +574,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B8 Proxy/toString 边界**：新增撤销 Proxy 的 `Array.isArray`/JSON/`Object.prototype.toString`/`instanceof`、`Symbol.toStringTag` getter 异常、`Error.toString` name getter 异常、bound function `toString` 共 7 条；差分 599→606/606；修复 bound function 误带目标函数名的问题 |
 | 2026-11-10 | **S2.2-B9 Promise/Thenable 边界**：新增 thenable getter 抛错、executor resolve 后再抛错、Promise 子类与 species 共 4 条异步用例；差分 606→610/610 |
 | 2026-11-10 | **S2.2-B10 新内建与异步生成器**：新增 `Error.isError`、`JSON.rawJSON`/非法文本、async generator return/throw/`for await` close/yield* return 共 7 条；差分 610→617/617 |
+| 2026-11-10 | **S2.2-B11 class/super 边界**：新增 this-before-super、基类返回对象上的字段初始化、字段 super 调用、静态块 super、私有品牌/Proxy、super setter 接收者、计算键求值顺序共 8 条；差分 617→625/625 |
 | 2026-11-10 | **S6.2 门禁复跑（B10 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 617/617、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B9 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 610/610、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B8 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 606/606、真实库 375/375，strict 全绿 |

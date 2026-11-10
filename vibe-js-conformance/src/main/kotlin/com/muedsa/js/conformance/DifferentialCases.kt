@@ -4613,6 +4613,123 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // 派生类构造器在 super() 之前访问 this 必须抛 ReferenceError。
+    DifferentialCase(
+        "class-this-before-super",
+        """(function () {
+  class Base {}
+  class Derived extends Base {
+    constructor() {
+      try {
+        this;
+        return 'no-throw';
+      } catch (error) {
+        super();
+        return error.name;
+      }
+    }
+  }
+  return new Derived();
+})()""",
+    ),
+    // 基类构造器返回对象时，派生类字段初始化在返回对象上执行。
+    DifferentialCase(
+        "class-base-return-object-fields",
+        """(function () {
+  class Base {
+    constructor() { return { tag: 'base' }; }
+  }
+  class Derived extends Base {
+    value = 1;
+  }
+  var instance = new Derived();
+  return instance.tag + ':' + instance.value;
+})()""",
+    ),
+    // 字段初始化器可以调用 super 方法。
+    DifferentialCase(
+        "class-field-super-call",
+        """(function () {
+  class Base { method() { return 'base'; } }
+  class Derived extends Base {
+    value = super.method();
+  }
+  return new Derived().value;
+})()""",
+    ),
+    // 静态块中的 this 指向构造器，super 指向基类构造器。
+    DifferentialCase(
+        "class-static-block-super",
+        """(function () {
+  class Base { static method() { return 'base'; } }
+  class Derived extends Base {
+    static {
+      this.value = super.method();
+    }
+  }
+  return Derived.value;
+})()""",
+    ),
+    // 私有品牌检查不穿过 Proxy。
+    DifferentialCase(
+        "class-private-brand-proxy",
+        """(function () {
+  class Box {
+    #value = 1;
+    static has(object) { return #value in object; }
+  }
+  var box = new Box();
+  return [
+    Box.has(box),
+    Box.has(new Proxy(box, {})),
+    Box.has({})
+  ].join('|');
+})()""",
+    ),
+    // 通过 Proxy 读取私有字段必须抛 TypeError。
+    DifferentialCase(
+        "class-private-proxy-read",
+        """(function () {
+  class Box {
+    #value = 1;
+    static read(object) { return object.#value; }
+  }
+  try {
+    return Box.read(new Proxy(new Box(), {}));
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // 派生类通过 super 调用基类 setter 时，接收者仍是派生实例。
+    DifferentialCase(
+        "class-super-setter-receiver",
+        """(function () {
+  class Base {
+    set value(next) { this.received = next; }
+  }
+  class Derived extends Base {
+    write(next) { super.value = next; }
+  }
+  var instance = new Derived();
+  instance.write(7);
+  return instance.received;
+})()""",
+    ),
+    // 计算属性名在类求值时执行，方法体在调用时执行。
+    DifferentialCase(
+        "class-computed-key-order",
+        """(function () {
+  var log = [];
+  function key() { log.push('key'); return 'method'; }
+  class Example {
+    [key()]() { log.push('body'); return 1; }
+  }
+  log.push('defined');
+  new Example().method();
+  return log.join(',');
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",
