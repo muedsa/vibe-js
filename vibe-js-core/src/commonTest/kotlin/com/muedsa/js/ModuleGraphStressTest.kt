@@ -176,6 +176,32 @@ class ModuleGraphStressTest {
     }
 
     @Test
+    fun `失败重试后 namespace 不复用旧图`() = runTest {
+        var value = 1
+        var fail = false
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return if (fail) {
+                    ModuleSource(request.specifier, "throw new Error('broken');")
+                } else {
+                    ModuleSource(request.specifier, "export const value = $value;")
+                }
+            }
+        }
+        val engine = Engine()
+        val first = engine.runModule("entry", provider)
+        assertEquals(1.0, (engine.interpreter.getProperty(first, PropertyKey.Str("value")) as JSNumber).value)
+        fail = true
+        assertFailsWith<JSException> { engine.runModule("entry", provider) }
+        fail = false
+        value = 3
+        val third = engine.runModule("entry", provider)
+        assertNotSame(first, third)
+        assertEquals(1.0, (engine.interpreter.getProperty(first, PropertyKey.Str("value")) as JSNumber).value)
+        assertEquals(3.0, (engine.interpreter.getProperty(third, PropertyKey.Str("value")) as JSNumber).value)
+    }
+
+    @Test
     fun `深链恰好达到 maxModules 预算时成功`() = runTest {
         val depth = 16
         val sources = LinkedHashMap<String, String>()

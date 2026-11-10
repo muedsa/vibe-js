@@ -592,6 +592,34 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-promise-all-subclass",
+        """
+        var log = [];
+        class P extends Promise {}
+        var combined = P.all([Promise.resolve(1), 2]);
+        log.push(combined instanceof P, combined instanceof Promise);
+        combined.then(function (values) {
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-promise-all-subclass-species",
+        """
+        var log = [];
+        class P extends Promise {
+          static get [Symbol.species]() { return Promise; }
+        }
+        var combined = P.all([1]);
+        log.push(combined instanceof P, combined instanceof Promise);
+        combined.then(function (values) {
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-generator-return-finally",
         """
         var log = [];
