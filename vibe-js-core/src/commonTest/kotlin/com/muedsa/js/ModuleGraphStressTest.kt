@@ -2,6 +2,7 @@ package com.muedsa.js
 
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.EngineLimits
+import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.InMemoryModuleProvider
 import com.muedsa.js.runtime.module.ModuleLinkErrorKind
@@ -21,6 +22,9 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotSame
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -67,11 +71,60 @@ class ModuleGraphStressTest {
         val namespace = engine.runModule("entry", InMemoryModuleProvider(sources))
         val keys = namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value }
         assertEquals(count, keys.size)
+        assertEquals(keys.sorted(), keys)
+        assertEquals(null, namespace.prototype)
+        assertFalse(namespace.isExtensible())
+        val descriptor = assertNotNull(namespace.getOwnProperty(PropertyKey.Str("v0")))
+        assertEquals(0.0, (descriptor.value as JSNumber).value)
+        assertTrue(descriptor.writable)
+        assertTrue(descriptor.enumerable)
+        assertFalse(descriptor.configurable)
         assertEquals(0.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("v0")) as JSNumber).value)
         assertEquals(
             (count - 1).toDouble(),
             (engine.interpreter.getProperty(namespace, PropertyKey.Str("v${count - 1}")) as JSNumber).value,
         )
+    }
+
+    @Test
+    fun `同一 Provider 连续 runModule 生成独立图与 namespace`() = runTest {
+        val provider = InMemoryModuleProvider(
+            mapOf(
+                "./dep.js" to "globalThis.runCount = (globalThis.runCount || 0) + 1; " +
+                    "export const value = globalThis.runCount;",
+            ),
+        )
+        val entry = ModuleSource(
+            "entry",
+            "import { value } from './dep.js'; export { value };",
+        )
+        val engine = Engine()
+        val first = engine.runModule(entry, provider)
+        val second = engine.runModule(entry, provider)
+        assertNotSame(first, second)
+        assertEquals(1.0, (engine.interpreter.getProperty(first, PropertyKey.Str("value")) as JSNumber).value)
+        assertEquals(2.0, (engine.interpreter.getProperty(second, PropertyKey.Str("value")) as JSNumber).value)
+    }
+
+    @Test
+    fun `模块求值失败后同一 Engine 可用新图恢复`() = runTest {
+        var fail = true
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return if (fail) {
+                    ModuleSource("bad", "throw new Error('broken');")
+                } else {
+                    ModuleSource("good", "export const value = 7;")
+                }
+            }
+        }
+        val engine = Engine()
+        assertFailsWith<JSException> {
+            engine.runModule("entry", provider)
+        }
+        fail = false
+        val namespace = engine.runModule("entry", provider)
+        assertEquals(7.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
     }
 
     @Test
