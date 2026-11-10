@@ -4571,6 +4571,48 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Error.isError 只认内部 [[ErrorData]]，不认原型链或 Proxy。
+    DifferentialCase(
+        "error-is-error",
+        """(function () {
+  function FakeError() {}
+  FakeError.prototype = Object.create(Error.prototype);
+  return [
+    Error.isError(new Error('x')),
+    Error.isError(new TypeError('x')),
+    Error.isError(Object.create(Error.prototype)),
+    Error.isError(new FakeError()),
+    Error.isError(new Proxy(new Error('x'), {})),
+    Error.isError({})
+  ].join('|');
+})()""",
+    ),
+    // JSON.rawJSON 保留原始文本，isRawJSON 只认内部标记。
+    DifferentialCase(
+        "json-rawjson",
+        """(function () {
+  var raw = JSON.rawJSON('123');
+  return [
+    JSON.stringify({ a: raw }),
+    JSON.isRawJSON(raw),
+    JSON.isRawJSON({ rawJSON: '123' }),
+    JSON.stringify([JSON.rawJSON('1'), JSON.rawJSON('true')]),
+    raw.rawJSON
+  ].join('|');
+})()""",
+    ),
+    // JSON.rawJSON 拒绝非法 JSON 文本。
+    DifferentialCase(
+        "json-rawjson-invalid",
+        """(function () {
+  try {
+    JSON.rawJSON('01');
+    return 'no-throw';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",

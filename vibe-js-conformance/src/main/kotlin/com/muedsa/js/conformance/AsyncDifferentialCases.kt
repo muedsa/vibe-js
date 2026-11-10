@@ -591,4 +591,90 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         ];
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-generator-return-finally",
+        """
+        var log = [];
+        async function* g() {
+          try {
+            yield 1;
+            yield 2;
+          } finally {
+            log.push('finally');
+          }
+        }
+        (async function () {
+          var iterator = g();
+          log.push('first:' + (await iterator.next()).value);
+          var result = await iterator.return('ret');
+          log.push('ret:' + result.value + ':' + result.done);
+          globalThis.__diffResult = log;
+        })();
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-generator-throw-catch",
+        """
+        var log = [];
+        async function* g() {
+          try {
+            yield 1;
+          } catch (error) {
+            yield 'caught:' + error.message;
+          }
+        }
+        (async function () {
+          var iterator = g();
+          log.push('first:' + (await iterator.next()).value);
+          var result = await iterator.throw(new Error('boom'));
+          log.push('thrown:' + result.value + ':' + result.done);
+          globalThis.__diffResult = log;
+        })();
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-for-await-break-close",
+        """
+        var log = [];
+        async function* g() {
+          try {
+            yield 1;
+            yield 2;
+          } finally {
+            log.push('finally');
+          }
+        }
+        (async function () {
+          for await (var value of g()) {
+            log.push('value:' + value);
+            break;
+          }
+          globalThis.__diffResult = log;
+        })();
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-generator-yield-delegate-return",
+        """
+        var log = [];
+        async function* inner() {
+          try {
+            yield 'a';
+            yield 'b';
+          } finally {
+            log.push('inner finally');
+          }
+        }
+        async function* outer() {
+          var result = yield* inner();
+          log.push('delegated:' + result);
+        }
+        (async function () {
+          var iterator = outer();
+          log.push('first:' + (await iterator.next()).value);
+          await iterator.return('stop');
+          globalThis.__diffResult = log;
+        })();
+        """.trimIndent(),
+    ),
 )
