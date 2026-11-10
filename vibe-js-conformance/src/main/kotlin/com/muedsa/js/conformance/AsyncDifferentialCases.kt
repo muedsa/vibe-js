@@ -2733,6 +2733,36 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-done-function",
+        """
+        var log = [];
+        var iterator = {
+          next: function () {
+            return { value: 'a', done: function () {} };
+          }
+        };
+        Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-done-arrow",
+        """
+        var log = [];
+        var iterator = {
+          next: function () {
+            return { value: 'a', done: () => {} };
+          }
+        };
+        Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-extra-arguments-ignored",
         """
         var log = [];
