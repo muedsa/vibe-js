@@ -1455,6 +1455,38 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-inherited-index",
+        """
+        var log = [];
+        var proto = Object.create(Array.prototype);
+        proto[0] = 'proto';
+        var array = [];
+        Object.setPrototypeOf(array, proto);
+        array.length = 1;
+        Array.fromAsync(array).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-hole-inherited-index",
+        """
+        var log = [];
+        var proto = Object.create(Array.prototype);
+        proto[0] = 'proto';
+        var array = [,];
+        Object.setPrototypeOf(array, proto);
+        array.length = 1;
+        Array.fromAsync(array).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-mapper-thenable",
         """
         var log = [];
