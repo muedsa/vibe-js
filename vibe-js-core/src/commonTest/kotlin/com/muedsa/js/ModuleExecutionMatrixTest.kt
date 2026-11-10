@@ -603,6 +603,19 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `for_in 按排序枚举 namespace 导出且忽略标签符号`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("a", "export const b = 1; export const x = 2;"),
+        )
+        engine.registry.defineGlobal("ns", namespace)
+        val keys = engine.run(
+            "(function () { var result = []; for (var key in ns) result.push(key); return result.join(','); })()",
+        )
+        assertEquals("b,x", (keys as JSString).value)
+    }
+
+    @Test
     fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
