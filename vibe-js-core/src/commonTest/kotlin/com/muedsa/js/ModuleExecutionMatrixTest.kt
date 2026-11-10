@@ -666,6 +666,22 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `namespace 仅暴露 toStringTag 一个自有符号`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "1:true",
+            (
+                engine.run(
+                    "var symbols = Object.getOwnPropertySymbols(ns); " +
+                        "symbols.length + ':' + (symbols[0] === Symbol.toStringTag)",
+                ) as JSString
+                ).value,
+        )
+    }
+
+    @Test
     fun `JSON_stringify 按普通可枚举属性序列化 namespace`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
