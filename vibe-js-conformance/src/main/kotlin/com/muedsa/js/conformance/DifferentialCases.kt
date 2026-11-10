@@ -5204,6 +5204,48 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return reads;
 })()""",
     ),
+    // Object.fromEntries 以源对象为 this、无参调用 Symbol.iterator。
+    DifferentialCase(
+        "object-from-entries-iterator-call-contract",
+        """(function () {
+  var log = [];
+  var iterator = {
+    next: function () {
+      return { done: true };
+    }
+  };
+  var source = {
+    [Symbol.iterator]: function () {
+      log.push(arguments.length);
+      log.push(this === source);
+      return iterator;
+    }
+  };
+  Object.fromEntries(source);
+  return log.join(',');
+})()""",
+    ),
+    // Object.fromEntries 以迭代器为 this、无参调用 next。
+    DifferentialCase(
+        "object-from-entries-next-call-contract",
+        """(function () {
+  var log = [];
+  var iterator = {
+    next: function () {
+      log.push(arguments.length);
+      log.push(this === iterator);
+      return { done: true };
+    }
+  };
+  var source = {
+    [Symbol.iterator]: function () {
+      return iterator;
+    }
+  };
+  Object.fromEntries(source);
+  return log.join(',');
+})()""",
+    ),
     // Object.fromEntries 遇到字符串条目时抛 TypeError 并关闭迭代器。
     DifferentialCase(
         "object-from-entries-string-entry-close",
