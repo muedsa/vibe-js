@@ -2763,6 +2763,50 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-missing-value",
+        """
+        var log = [];
+        var index = 0;
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? { done: false } : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-value-getter-once",
+        """
+        var log = [];
+        var reads = 0;
+        var index = 0;
+        var iterator = {
+          next: function () {
+            if (index++ === 0) {
+              return {
+                done: false,
+                get value() {
+                  reads += 1;
+                  return 'a';
+                }
+              };
+            }
+            return { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values[0]);
+          log.push(reads);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-extra-arguments-ignored",
         """
         var log = [];
