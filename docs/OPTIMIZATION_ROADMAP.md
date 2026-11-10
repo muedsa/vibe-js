@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **591 / 591** | 含 L 系列同步与异步用例 |
+| Node 差分 | **599 / 599** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -570,6 +570,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2 第四批**：新增 msgpack-lite/d3-delaunay/topojson-client 共 9 条断言，覆盖 MessagePack、Delaunay 与 TopoJSON；库总数 99→102，真实库 366→375/375；差分新增 7 条（toSpliced 无参/删到末尾、with -0、groupBy Symbol/-0、toSorted 比较器、TypedArray with），567→574/574 |
 | 2026-11-10 | **S2.2-B5 运行时边界**：新增 using 释放顺序/异常释放、DisposableStack、RegExp.escape、Array.from mapper 关闭迭代器、Object.fromEntries Symbol 键共 6 条；差分 574→580/580 |
 | 2026-11-10 | **S2.2-B6 完成语义/异步资源**：新增 await using 顺序/异常、AsyncDisposableStack 3 条异步用例，以及 for-let/for-of/for-in 每迭代闭包、嵌套 finally、finally 中 continue、switch let TDZ、catch 参数作用域 8 条同步用例；差分 580→591/591 |
+| 2026-11-10 | **S2.2-B7 错误与完成语义**：新增 SuppressedError 字段、DisposableStack 多重释放错误、for/while/do-while 每迭代绑定、break 穿过 finally、finally return 覆盖 throw、switch 重复 let 共 8 条；差分 591→599/599 |
 | 2026-11-10 | **S6.2 门禁复跑（B6 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 591/591、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B5 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 580/580、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 574/574、真实库 375/375，strict 全绿 |

@@ -4378,6 +4378,108 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return error;
 })()""",
     ),
+    // SuppressedError 暴露 error/suppressed/message/name 四个可观察字段。
+    DifferentialCase(
+        "suppressed-error-properties",
+        """(function () {
+  var error = new SuppressedError('inner', 'outer', 'msg');
+  return [error.name, error.message, error.error, error.suppressed,
+    error instanceof Error].join('|');
+})()""",
+    ),
+    // DisposableStack 的多个释放错误嵌套为 SuppressedError。
+    DifferentialCase(
+        "disposable-stack-suppressed",
+        """(function () {
+  var stack = new DisposableStack();
+  stack.defer(function () { throw new Error('first'); });
+  stack.defer(function () { throw new Error('second'); });
+  try {
+    stack.dispose();
+    return 'no-throw';
+  } catch (error) {
+    return [error.name, error.error.message, error.suppressed.message].join('|');
+  }
+})()""",
+    ),
+    // break 离开 for-let 时闭包仍保留各自迭代绑定。
+    DifferentialCase(
+        "for-let-break-closure",
+        """(function () {
+  var callbacks = [];
+  for (let i = 0; i < 3; i++) {
+    callbacks.push(function () { return i; });
+    if (i === 1) break;
+  }
+  return callbacks.map(function (fn) { return fn(); }).join(',');
+})()""",
+    ),
+    // while 块内的 let 每次进入块都创建新绑定。
+    DifferentialCase(
+        "while-let-block-closure",
+        """(function () {
+  var callbacks = [];
+  var i = 0;
+  while (i < 3) {
+    let value = i;
+    callbacks.push(function () { return value; });
+    i++;
+  }
+  return callbacks.map(function (fn) { return fn(); }).join(',');
+})()""",
+    ),
+    // do-while 块内的 let 同样按块每次创建绑定。
+    DifferentialCase(
+        "do-while-let-block-closure",
+        """(function () {
+  var callbacks = [];
+  var i = 0;
+  do {
+    let value = i;
+    callbacks.push(function () { return value; });
+    i++;
+  } while (i < 3);
+  return callbacks.map(function (fn) { return fn(); }).join(',');
+})()""",
+    ),
+    // 同一 switch 的两个 case 不能重复声明同名 let。
+    DifferentialCase(
+        "switch-duplicate-lexical",
+        """(function () {
+  try {
+    eval('switch (1) { case 1: let x = 1; break; case 2: let x = 2; }');
+    return 'no-throw';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // break 穿过 finally 时先执行 finally，再离开标签循环。
+    DifferentialCase(
+        "try-finally-break-precedence",
+        """(function () {
+  var log = [];
+  outer: while (true) {
+    try {
+      break outer;
+    } finally {
+      log.push('finally');
+    }
+  }
+  return log.join(',');
+})()""",
+    ),
+    // finally 的 return 覆盖正在传播的 throw。
+    DifferentialCase(
+        "finally-return-overrides-throw",
+        """(function () {
+  try {
+    throw 'body';
+  } finally {
+    return 'finally';
+  }
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",
