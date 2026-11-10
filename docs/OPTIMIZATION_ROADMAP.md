@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **714 / 714** | 含 L 系列同步与异步用例 |
+| Node 差分 | **717 / 717** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -698,6 +698,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B132 namespace 名称与描述符反射**：新增 getOwnPropertyNames 与 getOwnPropertyDescriptors 只含导出 1 条核心单测；核心 1142/1126 |
 | 2026-11-10 | **S2.2-B133~B135 Object.fromEntries 键顺序**：新增整数键排序、符号键顺序与 -0 规范化 3 条同步用例；差分 708→711/711 |
 | 2026-11-10 | **S2.2-B136~B138 Object.fromEntries 键转换**：新增对象键 ToPropertyKey 一次、重复符号键覆盖与 nullish 键 3 条同步用例；差分 711→714/714 |
+| 2026-11-10 | **S2.2-B139~B141 Array.fromAsync mapper 索引**：新增 array-like、同步迭代器与异步迭代器的 mapper 索引 3 条异步用例；差分 714→717/717 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
