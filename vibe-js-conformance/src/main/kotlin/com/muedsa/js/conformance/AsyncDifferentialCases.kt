@@ -837,6 +837,49 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-length-read-once",
+        """
+        var log = [];
+        var reads = 0;
+        var source = {
+          get length() {
+            reads += 1;
+            return 2;
+          },
+          0: 'a',
+          1: 'b'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.join(','));
+          log.push(reads);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-iterable-precedence",
+        """
+        var log = [];
+        var index = 0;
+        var source = {
+          0: 'a',
+          length: 1,
+          [Symbol.iterator]: function () {
+            return {
+              next: function () {
+                return index++ === 0 ? { value: 'i', done: false } : { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-missing-length",
         """
         var log = [];
