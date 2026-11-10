@@ -4319,6 +4319,14 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    // Object.fromEntries 对短条目按 undefined 键值处理。
+    DifferentialCase(
+        "object-from-entries-short-entry",
+        """(function () {
+  var object = Object.fromEntries([[], ['k']]);
+  return Object.keys(object).join(',') + ':' + object.undefined + ':' + object.k;
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",

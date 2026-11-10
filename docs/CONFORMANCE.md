@@ -21,7 +21,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝）；允许 0 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **680 / 680** |
+| Node 差分 | **681 / 681** |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） |
 | conformance 单元测试 | **39 / 39**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4） |
 | host 单元测试 | **38 / 38**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
@@ -306,11 +306,11 @@ runner 当前只做以下注入/替换：
 
 ### 6.2 Node 差分
 
-差分基线：**680 / 680**，不一致 0。Node 侧使用裸 vm 上下文（同步用例共享上下文并在求值后冲刷微任务，异步用例各自独立），与 Vibe 侧全局/独立 Engine 对齐。
+差分基线：**681 / 681**，不一致 0。Node 侧使用裸 vm 上下文（同步用例共享上下文并在求值后冲刷微任务，异步用例各自独立），与 Vibe 侧全局/独立 Engine 对齐。
 
 覆盖范围包括：属性枚举/原型/符号键、解构/默认值/rest/计算键、类私有元素/静态块、函数 call/apply/bind/new、迭代器关闭、Unicode 规范化、异步微任务矩阵、UTF-16 字符串、Map/Set 实时迭代、数组描述符/稀疏、JSON 随机值树、正则（含 v 模式、属性转义、大小写折叠）、Date setter/解析、Number 格式化、URI 编解码、eval/with、Proxy/Reflect、Generator/async generator、TypedArray/ArrayBuffer/DataView/BigInt 等。
 
-最近一次扩展分多批新增 **128 条同步/异步用例**（`toSpliced` 复制/无参/负起点/删到末尾、`toReversed` 空位、`with` NaN/小数/-0/越界、`Object.hasOwn` 符号键、`Object/Map.groupBy`、`replaceAll` 的 `$&`/`$$`、`toSorted` 比较器、TypedArray `toReversed`/`with`、`using` 释放顺序、`DisposableStack`、`RegExp.escape`、`Array.from` mapper 关闭迭代器、`Object.fromEntries` Symbol 键/重复键/非法条目关闭迭代器、`await using`、`AsyncDisposableStack`、for/while/do-while 每迭代绑定、finally 完成语义、`SuppressedError` 嵌套、撤销 Proxy 的内建操作、bound function 的 `toString`、thenable getter/executor 异常、非可调用 then 与 Promise 子类/species、`Error.isError`、`JSON.rawJSON`、async generator 的 return/throw/for-await close/pending await、class 的 super/字段/私有品牌、Proxy 内建消费路径/数组方法（find/some/reduce/filter/indexOf）/迭代器关闭、Array.fromAsync 的 GetMethod/关闭/mapper Promise/字符串与稀疏数组输入/array-like length 与索引顺序/非法长度、Promise.all/race/any/allSettled 的迭代与异常路径（含全部组合器的 then getter 抛错）、全部组合器的子类构造与 capability 抛错、Promise.any 全拒绝与空输入、allSettled 元素顺序等）；此前覆盖 **45 条同步 + 8 条异步 L 系列用例**，并已有 for-var-let 与对象 rest 目标用例。完整用例见 `DifferentialCases.kt`、`AsyncDifferentialCases.kt`、`LSeriesDifferentialCases.kt`、`LSeriesAsyncDifferentialCases.kt`。
+最近一次扩展分多批新增 **129 条同步/异步用例**（`toSpliced` 复制/无参/负起点/删到末尾、`toReversed` 空位、`with` NaN/小数/-0/越界、`Object.hasOwn` 符号键、`Object/Map.groupBy`、`replaceAll` 的 `$&`/`$$`、`toSorted` 比较器、TypedArray `toReversed`/`with`、`using` 释放顺序、`DisposableStack`、`RegExp.escape`、`Array.from` mapper 关闭迭代器、`Object.fromEntries` Symbol 键/重复键/短条目/非法条目关闭迭代器、`await using`、`AsyncDisposableStack`、for/while/do-while 每迭代绑定、finally 完成语义、`SuppressedError` 嵌套、撤销 Proxy 的内建操作、bound function 的 `toString`、thenable getter/executor 异常、非可调用 then 与 Promise 子类/species、`Error.isError`、`JSON.rawJSON`、async generator 的 return/throw/for-await close/pending await、class 的 super/字段/私有品牌、Proxy 内建消费路径/数组方法（find/some/reduce/filter/indexOf）/迭代器关闭、Array.fromAsync 的 GetMethod/关闭/mapper Promise/字符串与稀疏数组输入/array-like length 与索引顺序/非法长度、Promise.all/race/any/allSettled 的迭代与异常路径（含全部组合器的 then getter 抛错）、全部组合器的子类构造与 capability 抛错、Promise.any 全拒绝与空输入、allSettled 元素顺序等）；此前覆盖 **45 条同步 + 8 条异步 L 系列用例**，并已有 for-var-let 与对象 rest 目标用例。完整用例见 `DifferentialCases.kt`、`AsyncDifferentialCases.kt`、`LSeriesDifferentialCases.kt`、`LSeriesAsyncDifferentialCases.kt`。
 
 ## 7. 运行器生命周期与失败隔离
 
