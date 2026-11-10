@@ -390,4 +390,34 @@ class ModuleProviderContractTest {
         assertEquals(ModuleLinkErrorKind.INVALID_MODULE, error.kind)
         assertEquals("", error.moduleId)
     }
+
+    @Test
+    fun `空白模块 id 进入 INVALID_MODULE`() = runTest {
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return ModuleSource("   ", "export const value = 1;")
+            }
+        }
+        val error = assertFailsWith<ModuleLinkException> {
+            Engine().runModule("entry", provider)
+        }
+        assertEquals(ModuleLinkErrorKind.INVALID_MODULE, error.kind)
+        assertEquals("   ", error.moduleId)
+    }
+
+    @Test
+    fun `模块 id 含内部空格时仍可运行`() = runTest {
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return ModuleSource("a b", "export const value = 1;")
+            }
+        }
+        val engine = Engine()
+        val namespace = engine.runModule("entry", provider)
+        assertEquals(
+            1.0,
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value,
+        )
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
 }

@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1148 / 1148** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1132 / 1132** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1150 / 1150** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1134 / 1134** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -728,6 +728,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B196 Object.fromEntries nullish 输入**：新增 null 与 undefined 输入均抛 TypeError 1 条同步用例；差分 766→767/767 |
 | 2026-11-10 | **S2.2-B197~B199 Array.fromAsync 非可迭代输入**：新增 null、undefined、原始值输入均拒绝为 TypeError 3 条异步用例；差分 767→770/770 |
 | 2026-11-10 | **S2.2-B200~B201 空模块 id 校验**：新增入口与依赖 id 为空均进入 INVALID_MODULE 2 条核心单测；核心 1148/1132 |
+| 2026-11-10 | **S2.2-B202~B203 模块 id 空白与内部空格**：新增纯空白 id 拒绝、内部空格 id 正常运行 2 条核心单测；核心 1150/1134 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
