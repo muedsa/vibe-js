@@ -2494,6 +2494,51 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-value-reject-not-awaited",
+        """
+        var log = [];
+        var index = 0;
+        var promise = Promise.reject(new Error('value-reject'));
+        promise.catch(function () {});
+        var iterator = {
+          next: function () {
+            return Promise.resolve(
+              index++ === 0 ? { value: promise, done: false } : { done: true }
+            );
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === promise);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-value-thenable-not-awaited",
+        """
+        var log = [];
+        var index = 0;
+        var thenable = {
+          then: function (resolve) {
+            resolve('resolved');
+          }
+        };
+        var iterator = {
+          next: function () {
+            return Promise.resolve(
+              index++ === 0 ? { value: thenable, done: false } : { done: true }
+            );
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === thenable);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-extra-arguments-ignored",
         """
         var log = [];
