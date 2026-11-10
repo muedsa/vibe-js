@@ -4964,6 +4964,61 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.fromEntries 关闭迭代器时 return 只调用一次且不传参、this 为迭代器。
+    DifferentialCase(
+        "object-from-entries-return-args-once",
+        """(function () {
+  var calls = 0;
+  var log = [];
+  var iterator = {
+    next: function () {
+      return { value: null, done: false };
+    },
+    return: function () {
+      calls += 1;
+      log.push(arguments.length);
+      log.push(this === iterator);
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  } catch (error) {
+    log.push(error.name);
+  }
+  log.push(calls);
+  return log.join(',');
+})()""",
+    ),
+    // Object.fromEntries 键错误触发关闭时 return 同样只调用一次。
+    DifferentialCase(
+        "object-from-entries-key-error-return-once",
+        """(function () {
+  var calls = 0;
+  var entry = {};
+  Object.defineProperty(entry, 0, {
+    get: function () {
+      throw new Error('key');
+    }
+  });
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: entry, done: false } : { done: true };
+    },
+    return: function () {
+      calls += 1;
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  } catch (error) {
+    // 只关心关闭次数。
+  }
+  return calls;
+})()""",
+    ),
     // Object.fromEntries 遇到字符串条目时抛 TypeError 并关闭迭代器。
     DifferentialCase(
         "object-from-entries-string-entry-close",
