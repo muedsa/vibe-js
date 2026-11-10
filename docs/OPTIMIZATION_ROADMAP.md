@@ -574,6 +574,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B8 Proxy/toString 边界**：新增撤销 Proxy 的 `Array.isArray`/JSON/`Object.prototype.toString`/`instanceof`、`Symbol.toStringTag` getter 异常、`Error.toString` name getter 异常、bound function `toString` 共 7 条；差分 599→606/606；修复 bound function 误带目标函数名的问题 |
 | 2026-11-10 | **S2.2-B9 Promise/Thenable 边界**：新增 thenable getter 抛错、executor resolve 后再抛错、Promise 子类与 species 共 4 条异步用例；差分 606→610/610 |
 | 2026-11-10 | **S2.2-B10 新内建与异步生成器**：新增 `Error.isError`、`JSON.rawJSON`/非法文本、async generator return/throw/`for await` close/yield* return 共 7 条；差分 610→617/617 |
+| 2026-11-10 | **S6.2 门禁复跑（B10 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 617/617、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B9 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 610/610、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B8 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 606/606、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B7 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 599/599、真实库 375/375，strict 全绿 |
