@@ -521,6 +521,28 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-non-callable-next",
+        """
+        var log = [];
+        var iterator = {
+          next: 1
+        };
+        var source = {
+          [Symbol.iterator]: function () {
+            return iterator;
+          }
+        };
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-from-async-iterable",
         """
         var log = [];
