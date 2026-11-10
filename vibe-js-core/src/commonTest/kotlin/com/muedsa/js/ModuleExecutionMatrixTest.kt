@@ -181,6 +181,28 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `显式导出优先于同名星号导出`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "entry",
+                "export { x } from './a.js'; export * from './b.js';",
+            ),
+            Provider(
+                mapOf(
+                    "./a.js" to source("a", "export const x = 1;"),
+                    "./b.js" to source("b", "export const x = 2;"),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf("x"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("x")) as JSNumber).value)
+    }
+
+    @Test
     fun `循环重命名导出保留别名实时绑定`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
