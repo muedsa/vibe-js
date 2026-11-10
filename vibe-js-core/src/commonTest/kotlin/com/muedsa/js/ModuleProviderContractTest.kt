@@ -10,6 +10,7 @@ import com.muedsa.js.runtime.module.ModuleProvider
 import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.value.JSNumber
+import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.PropertyKey
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -200,5 +201,36 @@ class ModuleProviderContractTest {
         )
         val namespace = engine.runModule("entry", provider)
         assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
+    }
+
+    @Test
+    fun `同一 id 的先后加载使用首次返回的源码`() = runTest {
+        var loads = 0
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                loads += 1
+                return when (request.specifier) {
+                    "entry" -> ModuleSource(
+                        "entry",
+                        """
+                        import { value as a } from './a.js';
+                        import { value as b } from './b.js';
+                        export const result = a + ':' + b;
+                        """.trimIndent(),
+                    )
+
+                    "./a.js" -> ModuleSource("shared", "export const value = 1;")
+                    "./b.js" -> ModuleSource("shared", "export const value = 2;")
+                    else -> null
+                }
+            }
+        }
+        val engine = Engine()
+        val namespace = engine.runModule("entry", provider)
+        assertEquals(3, loads)
+        assertEquals(
+            "1:1",
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSString).value,
+        )
     }
 }
