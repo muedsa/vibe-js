@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1113 / 1113** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1097 / 1097** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1114 / 1114** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1098 / 1098** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -634,6 +634,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B68 Array.fromAsync mapper Promise**：新增 mapper 返回 Promise 时按值等待 1 条异步用例；差分 675→676/676 |
 | 2026-11-10 | **S2.2-B69 maxModules 唯一计数**：新增两个 specifier 同 id 只占一个 maxModules 名额 1 条核心单测；核心 1112/1096 |
 | 2026-11-10 | **S2.2-B70 源码预算唯一计数**：新增两个 specifier 同 id 只计算一次源码长度 1 条核心单测；核心 1113/1097 |
+| 2026-11-10 | **S2.2-B71 模块源码长度预算**：新增模块源码超过 maxSourceLength 抛 SOURCE_LENGTH 且 Engine 可复用 1 条核心单测；核心 1114/1098 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

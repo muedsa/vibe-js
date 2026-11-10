@@ -237,4 +237,14 @@ class ModuleExecutionTest {
         assertEquals(ResourceLimitKind.PENDING_TASKS, error.kind)
         assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
+
+    @Test
+    fun `模块源码超出长度预算后 Engine 可复用`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxSourceLength = 10))
+        val error = assertFailsWith<ResourceLimitException> {
+            engine.runModule(source("a", "export const value = 1;"))
+        }
+        assertEquals(ResourceLimitKind.SOURCE_LENGTH, error.kind)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
 }
