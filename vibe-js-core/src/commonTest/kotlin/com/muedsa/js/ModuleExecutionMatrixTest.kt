@@ -182,6 +182,23 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `重复星号导出同一模块不产生歧义`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "entry",
+                "export * from './a.js'; export * from './a.js';",
+            ),
+            Provider(mapOf("./a.js" to source("a", "export const x = 1;"))),
+        )
+        assertEquals(
+            listOf("x"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("x")) as JSNumber).value)
+    }
+
+    @Test
     fun `循环依赖按深度优先逆序执行模块体`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
