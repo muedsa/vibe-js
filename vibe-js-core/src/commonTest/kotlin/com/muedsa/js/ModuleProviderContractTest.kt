@@ -233,4 +233,42 @@ class ModuleProviderContractTest {
             (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSString).value,
         )
     }
+
+    @Test
+    fun `同一 id 的先后加载保留首次来源 URL`() = runTest {
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return when (request.specifier) {
+                    "entry" -> ModuleSource(
+                        "entry",
+                        """
+                        import { url as a } from './a.js';
+                        import { url as b } from './b.js';
+                        export const result = a + ':' + b;
+                        """.trimIndent(),
+                    )
+
+                    "./a.js" -> ModuleSource(
+                        "shared",
+                        "export const url = import.meta.url;",
+                        url = "https://example.test/a.mjs",
+                    )
+
+                    "./b.js" -> ModuleSource(
+                        "shared",
+                        "export const url = import.meta.url;",
+                        url = "https://example.test/b.mjs",
+                    )
+
+                    else -> null
+                }
+            }
+        }
+        val engine = Engine()
+        val namespace = engine.runModule("entry", provider)
+        assertEquals(
+            "https://example.test/a.mjs:https://example.test/a.mjs",
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSString).value,
+        )
+    }
 }
