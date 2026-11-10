@@ -3026,6 +3026,69 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    // d3-dsv 是独立 UMD 模块，覆盖 CSV 解析、字段访问与行格式化。
+    LibrarySpec(
+        name = "d3-dsv",
+        url = "https://cdn.jsdelivr.net/npm/d3-dsv@3.0.1/dist/d3-dsv.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "parse rows",
+                assertion("d3.csvParse('a,b\\n1,2').length === 1"),
+            ),
+            SmokeCase(
+                "parse field",
+                assertion("d3.csvParse('a,b\\n1,2')[0].a === '1'"),
+            ),
+            SmokeCase(
+                "format rows",
+                assertion("d3.csvFormatRows([['a', 'b'], ['1', '2']]) === 'a,b\\n1,2'"),
+            ),
+        ),
+    ),
+    // cbor-js 覆盖 ArrayBuffer 编解码与对象/数组往返。
+    LibrarySpec(
+        name = "cbor-js",
+        url = "https://cdn.jsdelivr.net/npm/cbor-js@0.1.0/cbor.js",
+        globalName = "CBOR",
+        cases = listOf(
+            SmokeCase(
+                "object roundtrip",
+                assertion(
+                    "JSON.stringify(CBOR.decode(CBOR.encode({ a: 1, b: 'x' })))" +
+                        " === '{\"a\":1,\"b\":\"x\"}'"
+                ),
+            ),
+            SmokeCase(
+                "array roundtrip",
+                assertion("CBOR.decode(CBOR.encode([1, 2, 3])).join(',') === '1,2,3'"),
+            ),
+            SmokeCase(
+                "encode buffer",
+                assertion("CBOR.encode('hi').byteLength > 0"),
+            ),
+        ),
+    ),
+    // humanize-duration 验证毫秒到可读文本的整单位输出。
+    LibrarySpec(
+        name = "humanize-duration",
+        url = "https://cdn.jsdelivr.net/npm/humanize-duration@3.31.0/humanize-duration.js",
+        globalName = "humanizeDuration",
+        cases = listOf(
+            SmokeCase(
+                "seconds",
+                assertion("humanizeDuration(9000) === '9 seconds'"),
+            ),
+            SmokeCase(
+                "minutes",
+                assertion("humanizeDuration(120000) === '2 minutes'"),
+            ),
+            SmokeCase(
+                "explicit unit",
+                assertion("humanizeDuration(1000, { units: ['s'] }) === '1 second'"),
+            ),
+        ),
+    ),
 )
 
 

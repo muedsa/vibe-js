@@ -21,8 +21,8 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝）；允许 0 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **561 / 561** |
-| 真实库 UMD 冒烟 | **357 / 357**（96 个库） |
+| Node 差分 | **567 / 567** |
+| 真实库 UMD 冒烟 | **366 / 366**（99 个库） |
 | conformance 单元测试 | **39 / 39**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4） |
 | host 单元测试 | **38 / 38**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
 
@@ -193,7 +193,7 @@ runner 当前只做以下注入/替换：
 
 ### 6.1 真实库
 
-固定版本清单见 [Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt)。当前 **90 个库、357/357 用例通过，0 失败**。最近一次新增 fflate 0.8.2、js-base64 3.7.7、long 5.2.3、loglevel 1.9.1，共 12 条断言。
+固定版本清单见 [Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt)。当前 **90 个库、366/366 用例通过，0 失败**。最近一次新增 fflate 0.8.2、js-base64 3.7.7、long 5.2.3、loglevel 1.9.1，共 12 条断言。
 
 | 库 | 状态 | 用例 |
 |---|---|---:|
@@ -293,18 +293,21 @@ runner 当前只做以下注入/替换：
 | d3-array | 可加载 | 3/3 |
 | d3-hierarchy | 可加载 | 3/3 |
 | earcut | 可加载 | 2/2 |
+| d3-dsv | 可加载 | 3/3 |
+| cbor-js | 可加载 | 3/3 |
+| humanize-duration | 可加载 | 3/3 |
 
-真实库冒烟支持异步用例：脚本把布尔结果写入 `globalThis.__libResult`，`Engine.run` 结束冲刷微任务后由运行器读取。`astring` 与 `acorn-walk` 通过 `dependencies` 先加载 `acorn`，再加载目标库。本轮新增 `d3-array`、`d3-hierarchy` 与 `earcut`，覆盖 d3 命名空间挂载、层级遍历与多边形三角剖分。
+真实库冒烟支持异步用例：脚本把布尔结果写入 `globalThis.__libResult`，`Engine.run` 结束冲刷微任务后由运行器读取。`astring` 与 `acorn-walk` 通过 `dependencies` 先加载 `acorn`，再加载目标库。本轮新增 `d3-array`、`d3-hierarchy`、`earcut`、`d3-dsv`、`cbor-js` 与 `humanize-duration`，覆盖 d3 命名空间/层级/CSV、三角剖分、CBOR 二进制与时长格式化。
 
 > 依赖浏览器全局（如 `window` / `self` / `document`）的构建不纳入冒烟；seedrandom 在全局模式覆盖 `Math.random`，用例验证同种子确定性与不同种子差异；ajv 使用 `{ logger: false }` 适配裸 Engine（无 console）。
 
 ### 6.2 Node 差分
 
-差分基线：**561 / 561**，不一致 0。Node 侧使用裸 vm 上下文（同步用例共享上下文并在求值后冲刷微任务，异步用例各自独立），与 Vibe 侧全局/独立 Engine 对齐。
+差分基线：**567 / 567**，不一致 0。Node 侧使用裸 vm 上下文（同步用例共享上下文并在求值后冲刷微任务，异步用例各自独立），与 Vibe 侧全局/独立 Engine 对齐。
 
 覆盖范围包括：属性枚举/原型/符号键、解构/默认值/rest/计算键、类私有元素/静态块、函数 call/apply/bind/new、迭代器关闭、Unicode 规范化、异步微任务矩阵、UTF-16 字符串、Map/Set 实时迭代、数组描述符/稀疏、JSON 随机值树、正则（含 v 模式、属性转义、大小写折叠）、Date setter/解析、Number 格式化、URI 编解码、eval/with、Proxy/Reflect、Generator/async generator、TypedArray/ArrayBuffer/DataView/BigInt 等。
 
-最近一次扩展新增 **9 条同步用例**（`toSpliced` 复制语义、`toReversed` 空位、`with` 的 NaN/越界、`Object.hasOwn`、`Object.groupBy`、`Map.groupBy`、`replaceAll` 的 `$&` 替换、TypedArray `toReversed`）；此前覆盖 **45 条同步 + 8 条异步 L 系列用例**，并已有 for-var-let 与对象 rest 目标用例。完整用例见 `DifferentialCases.kt`、`LSeriesDifferentialCases.kt`、`LSeriesAsyncDifferentialCases.kt`。
+最近一次扩展分两批新增 **15 条同步用例**（`toSpliced` 复制/负起点、`toReversed` 空位、`with` NaN/小数/越界、`Object.hasOwn` 符号键、`Object/Map.groupBy`、`replaceAll` 的 `$&`/`$$`、TypedArray `toReversed` 等）；此前覆盖 **45 条同步 + 8 条异步 L 系列用例**，并已有 for-var-let 与对象 rest 目标用例。完整用例见 `DifferentialCases.kt`、`LSeriesDifferentialCases.kt`、`LSeriesAsyncDifferentialCases.kt`。
 
 ## 7. 运行器生命周期与失败隔离
 

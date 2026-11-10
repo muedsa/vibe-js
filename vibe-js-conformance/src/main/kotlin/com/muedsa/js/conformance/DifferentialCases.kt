@@ -4122,6 +4122,49 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
         "string-replaceall-dollar",
         "'abc'.replaceAll('b', '\$&\$&')",
     ),
+    // replaceAll 中 $$ 表示一个字面量美元符号。
+    DifferentialCase(
+        "string-replaceall-literal-dollar",
+        "'abc'.replaceAll('b', '\$\$')",
+    ),
+    // toSpliced 的负起点按长度归一化。
+    DifferentialCase(
+        "array-to-spliced-negative",
+        "JSON.stringify([1, 2, 3, 4].toSpliced(-2, 1, 9))",
+    ),
+    // with 的小数索引按 ToIntegerOrInfinity 截断。
+    DifferentialCase(
+        "array-with-fractional-index",
+        "JSON.stringify([1, 2, 3].with(1.9, 9))",
+    ),
+    // Object.hasOwn 支持符号键。
+    DifferentialCase(
+        "object-has-own-symbol",
+        """(function () {
+  var key = Symbol('key');
+  var object = {};
+  object[key] = 1;
+  return Object.hasOwn(object, key);
+})()""",
+    ),
+    // Map.groupBy 的 NaN 键按 SameValueZero 归入同一组。
+    DifferentialCase(
+        "map-group-by-nan-key",
+        """(function () {
+  var groups = Map.groupBy([1, 2], function () { return NaN; });
+  return groups.get(NaN).join(',');
+})()""",
+    ),
+    // Object.groupBy 对回调返回值执行 ToPropertyKey。
+    DifferentialCase(
+        "object-group-by-key-coercion",
+        """(function () {
+  var groups = Object.groupBy([1, 2], function (value) {
+    return { toString: function () { return 'group'; } };
+  });
+  return groups.group.join(',');
+})()""",
+    ),
     // TypedArray 的 toReversed 返回同类型新视图，原数组不变。
     DifferentialCase(
         "typedarray-to-reversed",

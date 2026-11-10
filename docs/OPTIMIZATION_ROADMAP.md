@@ -20,8 +20,8 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 沿用旧报告 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **561 / 561** | 含 L 系列同步与异步用例 |
-| 真实库 UMD 冒烟 | **357 / 357**（96 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut |
+| Node 差分 | **567 / 567** | 含 L 系列同步与异步用例 |
+| 真实库 UMD 冒烟 | **366 / 366**（99 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5 数字沿用旧报告；ES2015、parser、真实库与差分已在当前基线复跑。
 
@@ -565,6 +565,7 @@ data class EngineLimits(
 | 2026-11-09 | **S2.2 新一批**：新增 fflate/js-base64/long/loglevel 共 12 条真实库断言，库总数 90、341/341；差分新增 well-formed JSON、isWellFormed/toWellFormed、toSorted 空洞、with 负索引，548→552/552 |
 | 2026-11-10 | **S2.2 新一批**：新增 base64-js/jmespath/jssha 共 8 条断言，覆盖 TypedArray/Base64、JSON 查询与 SHA-256；库总数 90→93，真实库 341→349/349；差分新增 9 条（toSpliced/toReversed/with 边界、Object/Map.groupBy、hasOwn、replaceAll、TypedArray），552→561/561 |
 | 2026-11-10 | **S2.2 第二批**：新增 d3-array/d3-hierarchy/earcut 共 8 条断言，覆盖 d3 命名空间、层级遍历与三角剖分；库总数 93→96，真实库 349→357/357 |
+| 2026-11-10 | **S2.2 第三批**：新增 d3-dsv/cbor-js/humanize-duration 共 9 条断言，覆盖 CSV、CBOR 二进制往返与时长格式化；库总数 96→99，真实库 357→366/366；差分新增 6 条，561→567/567 |
 | 2026-11-10 | **S5.2 复测**：完整运行八组 JVM 基准并新增 `ModuleBenchmark`（入口 + 一个依赖，avg 28.307 us/op）；环境为 Windows 10 / 12 核 / JDK 21.0.12.1 / 4 GB 堆 / G1；只记录，不做优化承诺 |
 | 2026-11-10 | **模块执行设计完成（执行仍无计划）**：新增 [MODULE_DESIGN.md](MODULE_DESIGN.md)，冻结嵌入式静态模块 MVP 的 API、图生命周期、链接/求值、错误与预算决策，并列出阶段 0–8 详细任务 |
 | 2026-11-10 | **模块阶段 0–1 完成**：`requestedModules` 补空子句、`parseModule(SourceInfo)`、Import/Export entry range、类型化 `ModuleProgram.bindings`、`hasTopLevelAwait`，并收紧普通函数内 `await` 与零参数 `import()`；仅 Parser 前置，执行入口仍未实现 |
