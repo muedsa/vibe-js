@@ -1083,6 +1083,32 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-promise-allsettled-order",
+        """
+        var log = [];
+        var resolveFirst;
+        var rejectSecond;
+        var first = new Promise(function (resolve) {
+          resolveFirst = resolve;
+        });
+        var second = new Promise(function (_, reject) {
+          rejectSecond = reject;
+        });
+        Promise.allSettled([first, second]).then(function (results) {
+          log.push(results.map(function (result) {
+            return result.status + ':' +
+              (result.status === 'fulfilled' ? result.value : result.reason);
+          }).join('|'));
+          globalThis.__diffResult = log;
+        });
+        Promise.resolve().then(function () {
+          rejectSecond('bad');
+        }).then(function () {
+          resolveFirst('ok');
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-allsettled-next-throw",
         """
         var log = [];
