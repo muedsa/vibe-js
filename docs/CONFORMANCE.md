@@ -1,10 +1,10 @@
 # 解析一致性与 Test262 基线
 
-> 更新：2026-11-09。代码基线：`53fb71b`。
+> 更新：2026-11-10。代码基线：见最近提交。
 >
 > 本文件记录 `test262-parser-tests`（脚本 + 模块）、Test262 ES5/ES2015 子集、真实库 UMD 冒烟与 Node 差分的当前口径。
 > 最近一次全量运行的环境为 JDK 21、Kotlin 2.4.21、Gradle 9.8.2、Node v24.12.0、Windows 10/amd64；
-> 本次已在当前基线复跑 parser、ES2015 与差分；ES5 数字沿用旧报告。
+> 本次已在当前基线复跑 parser、ES2015、差分与真实库；ES5 数字沿用旧报告。
 
 ## 1. 范围与判定
 
@@ -22,7 +22,7 @@
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
 | Node 差分 | **552 / 552** |
-| 真实库 UMD 冒烟 | **341 / 341**（90 个库） |
+| 真实库 UMD 冒烟 | **349 / 349**（93 个库） |
 | conformance 单元测试 | **39 / 39**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4） |
 | host 单元测试 | **38 / 38**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
 
@@ -193,7 +193,7 @@ runner 当前只做以下注入/替换：
 
 ### 6.1 真实库
 
-固定版本清单见 [Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt)。当前 **90 个库、341/341 用例通过，0 失败**。最近一次新增 fflate 0.8.2、js-base64 3.7.7、long 5.2.3、loglevel 1.9.1，共 12 条断言。
+固定版本清单见 [Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt)。当前 **90 个库、349/349 用例通过，0 失败**。最近一次新增 fflate 0.8.2、js-base64 3.7.7、long 5.2.3、loglevel 1.9.1，共 12 条断言。
 
 | 库 | 状态 | 用例 |
 |---|---|---:|
@@ -347,12 +347,12 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 10. 推进顺序
 
-1. **文档与门禁收口（维护主线）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块 Parser 前置标为实验性实现，模块执行仍未实现。
+1. **文档与门禁收口（维护主线）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–8 标为 experimental，执行入口已存在但加载器/TLA/harness 仍无计划。
 2. **覆盖扩展（P1）**：继续补充差分与真实库用例，优先覆盖新特性与回归边界；保持“无 DOM/浏览器全局”的加载条件。
 3. **按需能力（P1）**：当前无；R1.3 资源约束加固已完成。
 4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
 
-**模块阶段 0–8（实验性）已完成，模块后续能力（L4.4、L4.6a+、L4.6b、L4.7）仍未实现**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–7 已补静态表、类型化声明、range、TLA 标记、语法收紧、公共 Provider/预算、内部图加载、ResolveExport/import 链接、声明实例化、namespace、`import.meta` 与同步 `runModule`；不投入宿主加载器/module harness/TLA 执行。
+**模块阶段 0–8（实验性）已完成，模块后续能力（L4.4、L4.6a+、L4.6b、L4.7）仍未实现**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–8 已补静态表、类型化声明、range、TLA 标记、语法收紧、公共 Provider/预算、内部图加载、ResolveExport/import 链接、声明实例化、namespace、`import.meta`、同步 `runModule` 与错误定位；不投入宿主加载器/module harness/TLA 执行。
 
 ## 11. CI
 

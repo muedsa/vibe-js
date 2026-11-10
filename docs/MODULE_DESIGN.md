@@ -639,7 +639,7 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
 当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.6、M3.1–M3.6、M4.1–M4.6、M5.1–M5.7、M6.1–M6.5、M7.1–M7.8、
-M8.1–M8.5 已完成；M8.6 未新增独立基准（按“不承诺优化”处理）。M0.2 的完整图 fixture 仍未单独建。
+M8.1–M8.6 已完成；模块图/求值 benchmark 已加入 JVM 基准套件。M0.2 的完整图 fixture 仍未单独建。
 
 ### 阶段 0：契约与脚手架（1–2 人日）
 
@@ -746,7 +746,7 @@ M8.1–M8.5 已完成；M8.6 未新增独立基准（按“不承诺优化”处
 | M8.3 | parser 回归 | 脚本/模块语料 strict 全绿；`parseProgram` 零改动（已完成） |
 | M8.4 | 文档 | README/COMPATIBILITY/CONFORMANCE/ARCHITECTURE 说明实验性模块（已完成） |
 | M8.5 | 代码审查与清理 | 不引入平台 API；公共类型默认 internal（已完成） |
-| M8.6 | 性能 sanity | 不承诺优化；未新增独立基准 |
+| M8.6 | 性能 sanity | 不承诺优化；已新增 `ModuleBenchmark` 并记录入口 + 单依赖路径耗时 |
 
 ### 后续阶段（不在 MVP）
 

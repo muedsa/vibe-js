@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1056 / 1056** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1040 / 1040** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1065 / 1065** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1049 / 1049** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -21,7 +21,7 @@
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 沿用旧报告 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
 | Node 差分 | **552 / 552** | 含 L 系列同步与异步用例 |
-| 真实库 UMD 冒烟 | **341 / 341**（90 个库） | 2026-11-09 新增 fflate/js-base64/long/loglevel |
+| 真实库 UMD 冒烟 | **349 / 349**（93 个库） | 2026-11-09 新增 fflate/js-base64/long/loglevel |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5 数字沿用旧报告；ES2015、parser、真实库与差分已在当前基线复跑。
 
@@ -53,7 +53,7 @@
 
 ### 2.1 为什么模块加载器仍不设默认主线
 
-阶段 0–7 已补齐核心内的同步模块执行；以下边界仍然成立：
+阶段 0–8 已补齐核心内的同步模块执行；以下边界仍然成立：
 
 1. **核心只接受宿主源码/Provider**：`Engine.runModule` 由宿主提供 `ModuleSource`/`ModuleProvider`；核心不读取文件、URL 或网络。
 2. **模块加载器涉及平台差异**：文件系统、URL、包解析在 JVM/Android/Native/Node 与浏览器/Wasm 上差异很大，放进核心会破坏“核心无平台 API”的约束。
@@ -65,22 +65,26 @@
 
 | 排位 | 编号 | 任务 | 优先级 | 人日 | 触发条件 | 验收摘要 |
 |---:|---|---|---|---:|---|---|
-| 0 | `DOC-1` | 路线图与基线文档同步 | P1（维护） | 0.5 | 立即 | 数字与 README/CONFORMANCE 一致；模块状态与实验性实现标注一致 |
-| 1 | `S6.2` | 门禁维护 | P0（维护） | 1–2 / 批 | 持续 | parser/Test262/真实库/差分 strict 全绿；allowlist 可审计；报告与能力同步 |
-| 2 | `S2.2` | 差分与真实库覆盖扩展 | P1 | 2–4 / 批 | 新特性、线上回归、季度维护 | 每批新增 3–5 个无 DOM 依赖 UMD 库；补运行时边界；strict 全绿 |
-| 3 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑 B1 七组基准；补四类专项基准；报告落盘；不做优化承诺 |
+| 0 | `DOC-1` | 路线图与基线文档同步 | P1（维护） | 0.5 | 立即 | 数字与 README/CONFORMANCE 一致；模块 experimental 状态一致 |
+| 1 | `MOD-1` | 模块 Provider 契约测试与宿主文档 | P0 | 1–2 | 模块 experimental 稳定化 | null/异常/referrer/id/url/取消契约固定；提供最小实现示例 |
+| 2 | `MOD-2` | 模块执行回归矩阵与跨平台验证 | P0 | 1–2 | MOD-1 后 | 循环、TDZ、re-export、namespace、错误定位、预算/取消覆盖 |
+| 3 | `S6.2` | 门禁维护 | P0（维护） | 1–2 / 批 | 持续 | parser/Test262/真实库/差分 strict 全绿；allowlist 可审计；报告与能力同步 |
+| 4 | `S2.2` | 差分与真实库覆盖扩展 | P1 | 2–4 / 批 | 新特性、线上回归、季度维护 | 每批新增 3–5 个无 DOM 依赖 UMD 库；补运行时边界；strict 全绿 |
+| 5 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑 B1 七组基准；补模块图/求值观测；报告落盘；不做优化承诺 |
 
 > `S5.2` 不产生 B2 排期；`B2` 仍为无计划。
 
 ## 4. 里程碑
 
-### M1：基线收口（0.5–2 人日）
+### M1：模块稳定化 + 基线收口（2.5–5.5 人日）
 
-`DOC-1 + S6.2`
+`DOC-1 + MOD-1 + MOD-2 + S6.2`
 
 - 更新路线图、README、CONFORMANCE 中的模块口径；
+- 固定 `ModuleProvider` 契约，补宿主实现示例；
+- 补模块执行回归矩阵并跨 JVM/JS/Wasm/Native 验证；
 - 保持 parser/Test262/真实库/差分 strict 全绿；
-- 模块 Parser 前置标为实验性实现；模块执行仍未实现，不出现 L4.2–L4.6b 的推进承诺。
+- 模块保持 experimental，不承诺正式版兼容性；不新增 CLI/平台加载器/TLA 执行承诺。
 
 ### M2：覆盖扩展（2–4 人日 / 批）
 
@@ -153,7 +157,7 @@ repeat(100) {
 }
 ```
 
-产物：`benchmarkEnvironment` + `jvmBenchmarkBenchmark` 报告，标注 JDK/OS/CPU/内存/GC 与 commit，只做纵向对比。
+产物：`benchmarkEnvironment` + `jvmBenchmarkBenchmark` 报告，标注 JDK/OS/CPU/内存/GC 与 commit，只做纵向对比；模块路径用 `-PbenchmarkFilter=ModuleBenchmark` 单独观测。
 
 ## 6. 无计划：模块后续能力（加载器/TLA）
 
@@ -176,15 +180,15 @@ repeat(100) {
 - `ImportCallExpr` 执行期仍按未支持报错；
 - 不新增模块加载器、module harness 或 TLA 执行。
 
-> 模块阶段 0–7 的 API 与实施细节见 §6.2；后续只保留加载器/TLA 的设计参考。
+> 模块阶段 0–8 的 API 与实施细节见 §6.2；后续只保留加载器/TLA 的设计参考。
 
 ### 6.2 模块实验性实现的参考方案
 
-> 阶段 0–7 已实现同步模块图执行；本节保留加载器/TLA 的后续设计参考与已实现语义摘要。类名、包名和签名仍可能调整。原则仍然是：**核心只定义纯 Kotlin 抽象并负责链接/求值；文件、URL、网络等 IO 全部由宿主提供。**
+> 阶段 0–8 已实现同步模块图执行；本节保留加载器/TLA 的后续设计参考与已实现语义摘要。类名、包名和签名仍可能调整。原则仍然是：**核心只定义纯 Kotlin 抽象并负责链接/求值；文件、URL、网络等 IO 全部由宿主提供。**
 >
 > 完整的设计决策、API 契约、实施顺序与详细任务见 [MODULE_DESIGN.md](MODULE_DESIGN.md)。
 >
-> 阶段 0–7 的 Parser、Provider API、内部图加载、静态链接、模块环境、namespace、`import.meta` 与同步求值（静态表、类型化声明、SourceInfo/range、TLA 标记、语法收紧、
+> 阶段 0–8 的 Parser、Provider API、内部图加载、静态链接、模块环境、namespace、`import.meta` 与同步求值（静态表、类型化声明、SourceInfo/range、TLA 标记、语法收紧、
 > `ModuleProvider`/`InMemoryModuleProvider`/模块图预算/递归加载/ResolveExport/ModuleEnvironment/JSModuleNamespace/runModule）已落地；
 > 以下宿主文件/URL 加载器、TLA 执行与动态 import 仍是未实现的设计储备。
 
@@ -515,7 +519,7 @@ data class EngineLimits(
 
 ## 10. 风险与约束
 
-1. **模块执行仍有限**：阶段 0–7 已实现同步模块图的链接/环境/namespace/`import.meta`/求值，但 TLA、动态 `import()` 执行、宿主文件/URL 加载器、module harness 仍未实现；实验性 API 不承诺兼容性。
+1. **模块执行仍有限**：阶段 0–8 已实现同步模块图的链接/环境/namespace/`import.meta`/求值，但 TLA、动态 `import()` 执行、宿主文件/URL 加载器、module harness 仍未实现；实验性 API 不承诺兼容性。
 2. **KMP 与文件 IO 不匹配**：核心不能假设文件系统；JVM/Android/Native/Node 与浏览器/Wasm 的 IO 能力差异大，未来若重启模块方向，只能采用“核心抽象 + 宿主加载器”或纯内存模块表。
 3. **`Engine.run()` 的边界**：多次 `run` 共享全局环境，但不是模块；全局 `let`/`const`/`class` 重复声明仍可能冲突，宿主需要自行管理脚本边界。
 4. **维护主线依赖语料稳定**：`S6.2`/`S2.2` 受 Test262/真实库下载与版本影响，报告必须带 commit 与跳过口径。
@@ -540,7 +544,7 @@ data class EngineLimits(
 | 模块环境（阶段 5） | `runtime/module/internal/ModuleEnvironment.kt`、`ModuleDeclarationInstantiator.kt` | import 只读转发、函数/TDZ 绑定、`*default*` |
 | 模块 namespace（阶段 6） | `runtime/module/internal/JSModuleNamespace.kt` | 实时数据描述符、排序键、Symbol.toStringTag、嵌套 namespace |
 | 模块求值（阶段 7） | [Engine.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Engine.kt)、[Interpreter.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Interpreter.kt)、`ModuleEvaluator.kt` | runModule/DFS 求值/import.meta/顶层 this；TLA/动态 import 未实现 |
-| 模块测试（阶段 0–7） | [ParserModuleTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ParserModuleTest.kt)、[ModuleApiTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleApiTest.kt)、[ModuleGraphResolverTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleGraphResolverTest.kt)、[ModuleExportResolverTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleExportResolverTest.kt)、[ModuleLinkerTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleLinkerTest.kt)、[ModuleEnvironmentTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleEnvironmentTest.kt)、[ModuleNamespaceTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleNamespaceTest.kt)、[ModuleExecutionTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleExecutionTest.kt)、[ParserConformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/ParserConformance.kt) | 单元测试 + 262 模块语料回归 |
+| 模块测试（阶段 0–8） | [ParserModuleTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ParserModuleTest.kt)、[ModuleApiTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleApiTest.kt)、[ModuleGraphResolverTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleGraphResolverTest.kt)、[ModuleExportResolverTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleExportResolverTest.kt)、[ModuleLinkerTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleLinkerTest.kt)、[ModuleEnvironmentTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleEnvironmentTest.kt)、[ModuleNamespaceTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleNamespaceTest.kt)、[ModuleExecutionTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleExecutionTest.kt)、[ParserConformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/ParserConformance.kt) | 单元测试 + 262 模块语料回归 |
 | 宿主生态（已完成） | [HostModule.kt](../vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/HostModule.kt)、`TextEncodingHost.kt`、`StructuredCloneHost.kt`、`UrlHost.kt`、`HostEcosystemSupport.kt` | L4.5 已完成；只做回归与边界扩展 |
 | Test262 筛选/运行器 | [Test262Selection.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Selection.kt)、[Test262Conformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Conformance.kt) | S6.2 / S2.2 |
 | 差分与真实库 | [DifferentialCases.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialCases.kt)、[LSeriesDifferentialCases.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/LSeriesDifferentialCases.kt)、[Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt) | S2.2 |
@@ -559,6 +563,8 @@ data class EngineLimits(
 | 2026-11-09 | **L4.5 完成**：宿主模块新增 TextEncoder/TextDecoder（UTF-8）、structuredClone、URL/URLSearchParams 常用子集与 13 条测试；从按需队列移除 |
 | 2026-11-09 | **R1.3 完成**：`JSON.stringify` 接入 `maxJsonDepth`；显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎；补资源约束测试与异常分类表；从按需队列移除 |
 | 2026-11-09 | **S2.2 新一批**：新增 fflate/js-base64/long/loglevel 共 12 条真实库断言，库总数 90、341/341；差分新增 well-formed JSON、isWellFormed/toWellFormed、toSorted 空洞、with 负索引，548→552/552 |
+| 2026-11-10 | **S2.2 新一批**：新增 base64-js/jmespath/jssha 共 8 条断言，覆盖 TypedArray/Base64、JSON 查询与 SHA-256；库总数 90→93，真实库 341→349/349 |
+| 2026-11-10 | **S5.2 复测**：完整运行八组 JVM 基准并新增 `ModuleBenchmark`（入口 + 一个依赖，avg 28.307 us/op）；环境为 Windows 10 / 12 核 / JDK 21.0.12.1 / 4 GB 堆 / G1；只记录，不做优化承诺 |
 | 2026-11-10 | **模块执行设计完成（执行仍无计划）**：新增 [MODULE_DESIGN.md](MODULE_DESIGN.md)，冻结嵌入式静态模块 MVP 的 API、图生命周期、链接/求值、错误与预算决策，并列出阶段 0–8 详细任务 |
 | 2026-11-10 | **模块阶段 0–1 完成**：`requestedModules` 补空子句、`parseModule(SourceInfo)`、Import/Export entry range、类型化 `ModuleProgram.bindings`、`hasTopLevelAwait`，并收紧普通函数内 `await` 与零参数 `import()`；仅 Parser 前置，执行入口仍未实现 |
 | 2026-11-10 | **模块阶段 2 完成**：新增实验性 `ModuleProvider` / `ModuleSource` / `ModuleRequest` / `InMemoryModuleProvider` / `ModuleLinkException`；`EngineLimits` 增加 `maxModules` 与 `maxTotalModuleSourceLength`；`Engine.runModule` 推迟到 M7 |
@@ -568,4 +574,6 @@ data class EngineLimits(
 | 2026-11-10 | **模块阶段 6 完成**：新增内部 `JSModuleNamespace`，空原型/不可扩展、实时数据描述符、排序导出键、`Symbol.toStringTag="Module"`、写/删/重定义防护与嵌套 namespace；`import.meta`、顶层 this、求值/公开入口仍未实现 |
 | 2026-11-10 | **模块阶段 7 完成**：新增 `ModuleEvaluator` 与 `Interpreter.runModule`，接通 `Engine.runModule`、Provider 图加载/链接、环境实例化、`import.meta`、顶层 this、同步 DFS 求值、TLA 链接期拒绝与动态 import 运行期错误；API 需 opt-in；加载器/TLA 执行仍无计划 |
 | 2026-11-10 | **模块阶段 8 完成**：补齐链接错误的 `sourceName`/`range`、`ParseException.sourceName`、模块执行栈来源、runModule 取消/图预算/失败恢复测试；文档同步；不新增独立性能基准/优化承诺 |
+| 2026-11-10 | **MOD-1/MOD-2 完成**：新增 Provider 契约测试（referrer/null/异常/sourceName）与执行矩阵（循环、依赖失败、namespace 描述符、import.meta 缓存）；CI 由 commonTest 自动覆盖；核心测试 1065/1049 |
+| 2026-11-10 | **DOC-1 完成**：同步模块阶段 0–8、测试数字、任务顺序与实验性边界；移除 CLI 任务 |
 | 2026-11-09 | **整个模块方向降级为无计划**：保留 `Engine.run()` 单脚本入口与现有 `parseModule` 回归；说明 KMP 核心不应承担文件/URL IO，未来若重启只能采用“核心抽象 + 宿主加载器/内存模块表” |

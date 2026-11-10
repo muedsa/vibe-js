@@ -1,0 +1,126 @@
+package com.muedsa.js
+
+import com.muedsa.js.runtime.Engine
+import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.module.ModuleProvider
+import com.muedsa.js.runtime.module.ModuleRequest
+import com.muedsa.js.runtime.module.ModuleSource
+import com.muedsa.js.runtime.value.JSNumber
+import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSUndefined
+import com.muedsa.js.runtime.value.PropertyKey
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+
+/** 阶段 3 回归矩阵：循环、依赖失败、namespace 描述符与 import.meta 缓存。 */
+@OptIn(ExperimentalModuleApi::class)
+class ModuleExecutionMatrixTest {
+
+    private class Provider(
+        private val sources: Map<String, ModuleSource>,
+    ) : ModuleProvider {
+        override suspend fun load(request: ModuleRequest): ModuleSource? = sources[request.specifier]
+    }
+
+    private fun source(id: String, code: String) = ModuleSource(id, code)
+
+    @Test
+    fun `循环依赖求值后函数与 live binding 可用`() = runTest {
+        val engine = Engine()
+        val entry = source(
+            "a",
+            """
+            import { getB } from "./b.js";
+            export { getB };
+            export const a = 1;
+            export function getA() { return a; }
+            """.trimIndent(),
+        )
+        val namespace = engine.runModule(
+            entry,
+            Provider(
+                mapOf(
+                    "./a.js" to entry,
+                    "./b.js" to source(
+                        "b",
+                        """
+                        import { getA } from "./a.js";
+                        export const b = 2;
+                        export function getB() { return getA() + b; }
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        val getB = engine.interpreter.getProperty(namespace, PropertyKey.Str("getB"))
+        assertEquals(3.0, (engine.interpreter.callFunction(getB, JSUndefined, emptyList()) as JSNumber).value)
+    }
+
+    @Test
+    fun `依赖求值失败后入口失败且 Engine 可复用`() = runTest {
+        val engine = Engine()
+        assertFailsWith<JSException> {
+            engine.runModule(
+                source("a", "import { x } from \"./b.js\"; export const y = x;"),
+                Provider(mapOf("./b.js" to source("b", "export const x = 1; throw new Error(\"dep boom\");"))),
+            )
+        }
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
+
+    @Test
+    fun `namespace 键与描述符端到端`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("a", "export const x = 1; export * as ns from \"./b.js\";"),
+            Provider(mapOf("./b.js" to source("b", "export const y = 2;"))),
+        )
+
+        assertEquals(
+            listOf("ns", "x"),
+            namespace.ownPropertyKeys()
+                .filterIsInstance<PropertyKey.Str>()
+                .map { it.value },
+        )
+        assertEquals(1, namespace.ownPropertyKeys().count { it is PropertyKey.Sym })
+
+        val descriptor = assertNotNull(
+            engine.interpreter.internalGetOwnProperty(namespace, PropertyKey.Str("x")),
+        )
+        assertEquals(1.0, (descriptor.value as JSNumber).value)
+        assertTrue(descriptor.writable)
+        assertTrue(descriptor.enumerable)
+        assertTrue(!descriptor.configurable)
+
+        val tag = assertNotNull(
+            engine.interpreter.internalGetOwnProperty(
+                namespace,
+                PropertyKey.Sym(engine.intrinsics.symbolToStringTag),
+            ),
+        )
+        assertEquals("Module", (tag.value as JSString).value)
+        assertIs<JSObject>(engine.interpreter.getProperty(namespace, PropertyKey.Str("ns")))
+    }
+
+    @Test
+    fun `同一模块的 import_meta 对象保持同一引用`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("a", "export const m1 = import.meta; export const m2 = import.meta;"),
+        )
+        val m1 = engine.interpreter.getProperty(namespace, PropertyKey.Str("m1"))
+        val m2 = engine.interpreter.getProperty(namespace, PropertyKey.Str("m2"))
+        assertIs<JSObject>(m1)
+        assertIs<JSObject>(m2)
+        assertSame(m1, m2)
+    }
+}

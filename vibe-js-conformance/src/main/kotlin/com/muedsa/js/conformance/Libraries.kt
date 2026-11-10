@@ -2900,6 +2900,68 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    // base64-js 覆盖 Uint8Array 与 Base64 互转，验证 TypedArray 与二进制字符串边界。
+    LibrarySpec(
+        name = "base64-js",
+        url = "https://cdn.jsdelivr.net/npm/base64-js@1.5.1/base64js.min.js",
+        globalName = "base64js",
+        cases = listOf(
+            SmokeCase(
+                "encode bytes",
+                assertion("base64js.fromByteArray(new Uint8Array([104, 105])) === 'aGk='"),
+            ),
+            SmokeCase(
+                "decode bytes",
+                assertion("base64js.toByteArray('aGk=').length === 2 && base64js.toByteArray('aGk=')[0] === 104"),
+            ),
+            SmokeCase(
+                "byte length",
+                assertion("base64js.byteLength('aGk=') === 2"),
+            ),
+        ),
+    ),
+    // jmespath 是无 DOM 依赖的 JSON 查询库，覆盖字段访问、数组下标与缺失值。
+    LibrarySpec(
+        name = "jmespath",
+        url = "https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js",
+        globalName = "jmespath",
+        cases = listOf(
+            SmokeCase(
+                "nested field",
+                assertion("jmespath.search({ a: { b: 2 } }, 'a.b') === 2"),
+            ),
+            SmokeCase(
+                "array index",
+                assertion("jmespath.search([1, 2, 3], '[1]') === 2"),
+            ),
+            SmokeCase(
+                "missing value",
+                assertion("jmespath.search({ a: 1 }, 'missing') === null"),
+            ),
+        ),
+    ),
+    // jsSHA 是纯 JS 哈希实现，覆盖 UTF-8 输入与 SHA-256 十六进制输出。
+    LibrarySpec(
+        name = "jssha",
+        url = "https://cdn.jsdelivr.net/npm/jssha@3.3.1/dist/sha256.js",
+        globalName = "jsSHA",
+        cases = listOf(
+            SmokeCase(
+                "sha256 abc",
+                assertion(
+                    "new jsSHA('SHA-256', 'TEXT').update('abc').getHash('HEX')" +
+                        " === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'"
+                ),
+            ),
+            SmokeCase(
+                "sha256 empty",
+                assertion(
+                    "new jsSHA('SHA-256', 'TEXT').getHash('HEX')" +
+                        " === 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'"
+                ),
+            ),
+        ),
+    ),
 )
 
 

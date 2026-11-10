@@ -130,18 +130,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1056** + 宿主 38 个测试（2026-11-10 记录） |
-| JS（Node） | ✅ | 核心 **1040** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1040** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1065** + 宿主 38 个测试（2026-11-10 记录） |
+| JS（Node） | ✅ | 核心 **1049** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1049** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1056 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1040。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1065 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1049。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-10）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **552/552**；真实库 **341/341**（90 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-10）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **552/552**；真实库 **349/349**（93 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -216,6 +216,8 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `RuntimeLimitsTest` / `ResourceLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用；源码长度/嵌套深度/AST 节点/对象数量/JSON.parse 与 JSON.stringify 深度/正则步数（含显式降低预算时的嵌套量词路由）/排队任务/单轮微任务预算与异常分类 |
 | `ParserModuleTest` | `Parser.parseModule` 的 import/export 基础形式、import.meta/import()、模块顶层 await、模块早期错误、脚本目标零影响 |
 | `ModuleExecutionTest` 等模块测试 | Provider 图加载/链接、ModuleEnvironment、namespace、`import.meta`、顶层 `this`、TLA 拒绝、动态 import 运行期错误与失败恢复 |
+| `ModuleProviderContractTest` | 入口/依赖 referrer、null/异常、sourceName/url 与精确 id 契约 |
+| `ModuleExecutionMatrixTest` | 循环依赖求值、依赖失败、namespace 描述符、import.meta 缓存 |
 | `PropertyAndPrototypeTest` | 属性描述符、原型链、访问器、call/apply/bind |
 | `StrictModeTest` | 严格/非严格模式差异 |
 | `BuiltinsTest` | 基础标准库 |

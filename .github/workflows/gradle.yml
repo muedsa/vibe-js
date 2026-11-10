@@ -22,6 +22,7 @@ jobs:
         include:
           - os: ubuntu-latest
             # Linux, JVM, Android, JS (Node), Wasm (Node)
+            # commonTest 包含模块 Provider/执行矩阵，随 jvmTest/jsNodeTest/wasmJsNodeTest 覆盖
             # :vibe-js-conformance:test 是 JVM-only 模块的运行器单元测试（用例分类/超时/关闭）
             tasks: >-
               jvmTest

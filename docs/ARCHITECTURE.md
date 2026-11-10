@@ -465,9 +465,9 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
 
 ### 9.1 基准现状（JVM，参考值）
 
-`./gradlew :vibe-js-core:jvmBenchmarkBenchmark` 运行 kotlinx-benchmark（JMH）基准，共七组：引擎生命周期、解析与缓存、解释器吞吐、对象与环境、异步与事件循环、标准库、集合。
+`./gradlew :vibe-js-core:jvmBenchmarkBenchmark` 运行 kotlinx-benchmark（JMH）基准，共八组：引擎生命周期、解析与缓存、解释器吞吐、对象与环境、异步与事件循环、标准库、集合、模块图/求值。
 
-- 只跑某一组：`-PbenchmarkFilter=<类名>`（例如 `CollectionBenchmark`）；
+- 只跑某一组：`-PbenchmarkFilter=<类名>`（例如 `CollectionBenchmark`、`ModuleBenchmark`）；
 - 环境信息：`./gradlew :vibe-js-core:benchmarkEnvironment` 写入 `build/reports/benchmarks/environment.md`（JDK/OS/CPU/内存/GC/Gradle/Kotlin）；
 - 原始 JSON：`build/reports/benchmarks/main/<时间戳>/jvmBenchmark.json`。
 
@@ -489,7 +489,23 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
 | 数组循环 | **−19%** |
 | `engineCreate` | **+37%** |
 
-可疑路径：内部方法 suspend 化后的全局标识符双查、`getPropertyFrom` / `putProperty` 每层 Proxy/TypedArray 分支、`CoreBuiltins` 安装量。B1 七组基准尚未覆盖 Generator / BigInt / TypedArray / Proxy 专项，B2 恢复前需先补基准并复测；见[后续路线](OPTIMIZATION_ROADMAP.md)。
+可疑路径：内部方法 suspend 化后的全局标识符双查、`getPropertyFrom` / `putProperty` 每层 Proxy/TypedArray 分支、`CoreBuiltins` 安装量。B1 七组脚本基准尚未覆盖 Generator / BigInt / TypedArray / Proxy 专项，B2 恢复前需先补基准并复测；见[后续路线](OPTIMIZATION_ROADMAP.md)。
+
+2026-11-10 的 S5.2 全量复测（Windows 10 amd64、12 逻辑核、JDK 21.0.12.1、最大堆 4 GB、G1；2 × 300ms 预热、3 或 10 × 300ms 测量）记录：
+
+| 指标 | 本次观测 |
+|---|---:|
+| `InterpreterBenchmark.arithmetic` | 143,764 ops/s |
+| `InterpreterBenchmark.arrayLoop` | 5,019.5 ops/s |
+| `InterpreterBenchmark.functionCall` | 96,940.9 ops/s |
+| `ParsingBenchmark.parseOnly` | 8.986 us/op |
+| `ParsingBenchmark.runSource` | 280.904 us/op |
+| `ObjectEnvironmentBenchmark.propertyGet` | 2,427.081 us/op |
+| `ObjectEnvironmentBenchmark.propertySet` | 2,526.619 us/op |
+| `EngineLifecycleBenchmark.engineCreate` | 128.659 us/op |
+| `ModuleBenchmark.runModule`（入口 + 一个依赖） | 28.307 us/op（min 15.596，max 44.925；预热短、波动大） |
+
+模块基准只用于纵向观测，不承诺优化；原始 JSON 在 `build/reports/benchmarks/main/<时间戳>/jvmBenchmark.json`。
 
 集合（单次操作，1k / 10k / 100k 规模基本持平；B1 历史值）：Map `get` 6–11 ns、`has` 4–6 ns、`set` 18–19 ns；`size` 读取约 0.02 ns/次。
 

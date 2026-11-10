@@ -139,10 +139,9 @@ buffer.detach()
 // 分离后 byteLength 为 0；slice、DataView/TypedArray 读写按规范抛 TypeError
 ```
 
-### 模块语法（仅解析）
+### 模块语法与执行（experimental）
 
-模块语法通过 `Parser.parseModule()` 解析，不会进入 `Engine.run`。可以读取静态表，
-但链接、求值、加载**无计划**：
+模块语法通过 `Parser.parseModule()` 解析，不会进入 `Engine.run`。可以读取静态表：
 
 ```kotlin
 import com.muedsa.js.lexer.Lexer
@@ -153,6 +152,34 @@ val module = Parser(
 ).parseModule()
 module.requestedModules // ["./value.js"]
 module.strict // true
+```
+
+实验性 `Engine.runModule` 由宿主实现 `ModuleProvider` 提供源码；核心不读取文件、URL 或网络：
+
+```kotlin
+import com.muedsa.js.runtime.Engine
+import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.module.ModuleProvider
+import com.muedsa.js.runtime.module.ModuleSource
+
+@OptIn(ExperimentalModuleApi::class)
+suspend fun runModuleExample() {
+    val engine = Engine()
+    val provider = ModuleProvider { request ->
+        when (request.specifier) {
+            "./dep.js" -> ModuleSource(
+                id = "dep",
+                source = "export const value = 1;",
+                sourceName = "./dep.js",
+            )
+            else -> null
+        }
+    }
+    val namespace = engine.runModule(
+        ModuleSource("entry", "import { value } from './dep.js'; export { value };"),
+        provider,
+    )
+}
 ```
 
 模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝
@@ -403,8 +430,9 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 # 基准测试：环境记录 + 全量运行（约 1.5 分钟）
 ./gradlew :vibe-js-core:benchmarkEnvironment
 ./gradlew :vibe-js-core:jvmBenchmarkBenchmark
-# 只跑某一组（七组见 docs/ARCHITECTURE.md §9.1）
+# 只跑某一组（八组见 docs/ARCHITECTURE.md §9.1）
 ./gradlew :vibe-js-core:jvmBenchmarkBenchmark -PbenchmarkFilter=CollectionBenchmark
+./gradlew :vibe-js-core:jvmBenchmarkBenchmark -PbenchmarkFilter=ModuleBenchmark
 
 # 解析一致性基线（首次运行自动下载 test262-parser-tests；脚本 + 模块语料）
 ./gradlew :vibe-js-conformance:parserConformance
@@ -429,15 +457,15 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1056 / 1056** |
-| core JS（Node）/ Wasm（Node） | 各 **1040 / 1040** |
+| core JVM | **1065 / 1065** |
+| core JS（Node）/ Wasm（Node） | 各 **1049 / 1049** |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** |
 | conformance 单元测试 | **39 / 39** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
 | Test262 ES5 | **15,248/15,248**（跳过 0） |
 | Test262 ES2015 | **61,786/61,786**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
-| Node 差分 / 真实库冒烟 | **552/552**、**341/341**（90 个库） |
+| Node 差分 / 真实库冒烟 | **552/552**、**349/349**（93 个库） |
 
 详细口径、跳过原因与推进顺序见 [docs/CONFORMANCE.md](docs/CONFORMANCE.md)。
 
