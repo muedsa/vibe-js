@@ -800,6 +800,43 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-negative-length-mapper",
+        """
+        var log = [];
+        var calls = 0;
+        var source = {
+          length: -1,
+          0: 'a'
+        };
+        Array.fromAsync(source, function (value) {
+          calls += 1;
+          return value;
+        }).then(function (values) {
+          log.push(values.length);
+          log.push(calls);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-missing-length-mapper",
+        """
+        var log = [];
+        var calls = 0;
+        var source = {
+          0: 'a'
+        };
+        Array.fromAsync(source, function (value) {
+          calls += 1;
+          return value;
+        }).then(function (values) {
+          log.push(values.length);
+          log.push(calls);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-missing-length",
         """
         var log = [];
