@@ -616,6 +616,29 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `Object_freeze 对 namespace 抛 TypeError 且状态为 sealed 不 frozen`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "TypeError",
+            (
+                engine.run(
+                    "(function () { try { Object.freeze(ns); return 'none'; } catch (e) { return e.name; } })()",
+                ) as JSString
+                ).value,
+        )
+        assertEquals(
+            "false:true:false",
+            (
+                engine.run(
+                    "Object.isExtensible(ns) + ':' + Object.isSealed(ns) + ':' + Object.isFrozen(ns)",
+                ) as JSString
+                ).value,
+        )
+    }
+
+    @Test
     fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
