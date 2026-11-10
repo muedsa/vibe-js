@@ -1187,6 +1187,18 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-promise-then-non-callable",
+        """
+        var log = [];
+        var value = { then: 1 };
+        Promise.resolve(value).then(function (result) {
+          log.push(result === value);
+          log.push(typeof result.then);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-promise-combinators-empty",
         """
         var log = [];
