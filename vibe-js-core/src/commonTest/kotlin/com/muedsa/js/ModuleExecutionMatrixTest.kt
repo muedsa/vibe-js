@@ -453,6 +453,25 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `同一模块的多个命名空间导出保持同一对象`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "entry",
+                "export * as ns1 from './a.js'; export * as ns2 from './a.js';",
+            ),
+            Provider(mapOf("./a.js" to source("a", "export const x = 1;"))),
+        )
+        val first = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("ns1")),
+        )
+        val second = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("ns2")),
+        )
+        assertSame(first, second)
+    }
+
+    @Test
     fun `依赖求值失败后后续依赖不再执行`() = runTest {
         val engine = Engine()
         assertFailsWith<JSException> {
