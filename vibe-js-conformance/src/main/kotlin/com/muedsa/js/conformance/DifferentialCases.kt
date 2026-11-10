@@ -4857,6 +4857,57 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.fromEntries 键读取失败时 return 抛错不覆盖原错误。
+    DifferentialCase(
+        "object-from-entries-key-error-close-error",
+        """(function () {
+  var entry = {};
+  Object.defineProperty(entry, 0, {
+    get: function () {
+      throw new Error('key');
+    }
+  });
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: entry, done: false } : { done: true };
+    },
+    return: function () {
+      throw new Error('close');
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
+    // Object.fromEntries 读取 done 失败时 return 抛错不覆盖原错误。
+    DifferentialCase(
+        "object-from-entries-done-error-close-error",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return {
+        get done() {
+          throw new Error('done');
+        }
+      };
+    },
+    return: function () {
+      throw new Error('close');
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
     // Object.fromEntries 遇到字符串条目时抛 TypeError 并关闭迭代器。
     DifferentialCase(
         "object-from-entries-string-entry-close",
