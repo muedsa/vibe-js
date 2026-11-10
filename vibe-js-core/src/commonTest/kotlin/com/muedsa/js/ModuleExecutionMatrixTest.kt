@@ -234,4 +234,30 @@ class ModuleExecutionMatrixTest {
         )
         assertEquals(2.0, (engine.interpreter.getProperty(bNamespace, PropertyKey.Str("b")) as JSNumber).value)
     }
+
+    @Test
+    fun `循环 default 重导出保留重命名别名`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * from './a.js'; export * from './b.js';"),
+            Provider(
+                mapOf(
+                    "./a.js" to source(
+                        "a",
+                        "export { default as aDefault } from './b.js'; export default 1;",
+                    ),
+                    "./b.js" to source(
+                        "b",
+                        "export { default as bDefault } from './a.js'; export default 2;",
+                    ),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf("aDefault", "bDefault"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(2.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("aDefault")) as JSNumber).value)
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("bDefault")) as JSNumber).value)
+    }
 }

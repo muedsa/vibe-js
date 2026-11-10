@@ -128,6 +128,30 @@ class ModuleGraphStressTest {
     }
 
     @Test
+    fun `深链恰好达到 maxModules 预算时成功`() = runTest {
+        val depth = 16
+        val sources = LinkedHashMap<String, String>()
+        sources["entry"] = "import { value } from './m1.js'; export const result = value;"
+        for (index in 1..depth) {
+            sources["./m$index.js"] = if (index == depth) {
+                "export const value = 1;"
+            } else {
+                "import { value as nextValue } from './m${index + 1}.js'; " +
+                    "export const value = nextValue + 1;"
+            }
+        }
+        val engine = Engine(limits = EngineLimits(maxModules = depth + 1))
+        val namespace = engine.runModule(
+            "entry",
+            InMemoryModuleProvider(sources),
+        )
+        assertEquals(
+            depth.toDouble(),
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSNumber).value,
+        )
+    }
+
+    @Test
     fun `深链超过 maxModules 在边界停止`() = runTest {
         val depth = 32
         val sources = LinkedHashMap<String, String>()
