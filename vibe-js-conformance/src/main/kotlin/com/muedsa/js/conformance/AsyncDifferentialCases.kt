@@ -677,4 +677,66 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         })();
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-generator-return-pending-await",
+        """
+        var log = [];
+        var release;
+        async function* g() {
+          try {
+            log.push('start');
+            await new Promise(function (resolve) { release = resolve; });
+            log.push('after await');
+            yield 1;
+          } finally {
+            log.push('finally');
+          }
+        }
+        (async function () {
+          var iterator = g();
+          var pending = iterator.next();
+          log.push('next queued');
+          await null;
+          var returned = iterator.return('ret');
+          log.push('return queued');
+          release();
+          var result = await returned;
+          log.push('ret:' + result.value + ':' + result.done);
+          await pending.catch(function () {});
+          globalThis.__diffResult = log;
+        })();
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-generator-throw-pending-await",
+        """
+        var log = [];
+        var release;
+        async function* g() {
+          try {
+            await new Promise(function (resolve) { release = resolve; });
+          } catch (error) {
+            log.push('caught:' + error.message);
+            yield 2;
+          } finally {
+            log.push('finally');
+          }
+        }
+        (async function () {
+          var iterator = g();
+          iterator.next();
+          await null;
+          var thrown = iterator.throw(new Error('boom'));
+          log.push('throw queued');
+          release();
+          try {
+            var result = await thrown;
+            log.push('result:' + result.value + ':' + result.done);
+          } catch (error) {
+            log.push('rejected:' + error.message);
+          }
+          globalThis.__diffResult = log;
+        })();
+        """.trimIndent(),
+    ),
 )
