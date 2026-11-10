@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1110 / 1110** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1094 / 1094** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1111 / 1111** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1095 / 1095** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -622,6 +622,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B56 Proxy 数组遍历补全**：新增 filter/indexOf 通过 Proxy 的读取与短路顺序 2 条同步差分；差分 665→667/667 |
 | 2026-11-10 | **S2.2-B57 重复星号导出去重**：新增同一模块重复 `export *` 不产生歧义 1 条核心单测；核心 1110/1094 |
 | 2026-11-10 | **S2.2-B58 Array.fromAsync length 单次读取**：新增 array-like `length` getter 只读取一次 1 条异步用例；差分 667→668/668 |
+| 2026-11-10 | **S2.2-B59 跨 specifier 命名空间身份**：新增不同 specifier 指向同一 module id 时命名空间身份一致 1 条核心单测；核心 1111/1095 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
