@@ -5025,4 +5025,46 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return capability.rejected ? capability.rejected.message : 'none';
 })()""",
     ),
+    // Promise.race 自定义 capability 的 resolve 抛错应转为 rejection。
+    DifferentialCase(
+        "promise-race-capability-resolve-throw",
+        """(function () {
+  function C(executor) {
+    var self = this;
+    executor(function (value) { self.resolved = value; },
+             function (error) { self.rejected = error; });
+  }
+  C.resolve = function () { throw new Error('race-resolve'); };
+  var capability = Promise.race.call(C, [1]);
+  return capability.rejected ? capability.rejected.message : 'none';
+})()""",
+    ),
+    // Promise.any 自定义 capability 的 resolve 抛错应转为 rejection。
+    DifferentialCase(
+        "promise-any-capability-resolve-throw",
+        """(function () {
+  function C(executor) {
+    var self = this;
+    executor(function (value) { self.resolved = value; },
+             function (error) { self.rejected = error; });
+  }
+  C.resolve = function () { throw new Error('any-resolve'); };
+  var capability = Promise.any.call(C, [1]);
+  return capability.rejected ? capability.rejected.message : 'none';
+})()""",
+    ),
+    // Promise.allSettled 自定义 capability 的 resolve 抛错应转为 rejection。
+    DifferentialCase(
+        "promise-allsettled-capability-resolve-throw",
+        """(function () {
+  function C(executor) {
+    var self = this;
+    executor(function (value) { self.resolved = value; },
+             function (error) { self.rejected = error; });
+  }
+  C.resolve = function () { throw new Error('settled-resolve'); };
+  var capability = Promise.allSettled.call(C, [1]);
+  return capability.rejected ? capability.rejected.message : 'none';
+})()""",
+    ),
 )
