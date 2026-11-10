@@ -4617,6 +4617,62 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).length + ':' + Object.getOwnPropertySymbols(object).length + ':' + object[key];
 })()""",
     ),
+    // Object.fromEntries 的 Symbol.iterator getter 抛错时直接传播。
+    DifferentialCase(
+        "object-from-entries-iterator-getter-throw",
+        """(function () {
+  var source = {
+    get [Symbol.iterator]() {
+      throw new Error('iterator-getter');
+    }
+  };
+  try {
+    Object.fromEntries(source);
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
+    // Object.fromEntries 的迭代器方法返回原始值时抛 TypeError。
+    DifferentialCase(
+        "object-from-entries-iterator-non-object",
+        """(function () {
+  var source = {
+    [Symbol.iterator]: function () {
+      return 1;
+    }
+  };
+  try {
+    Object.fromEntries(source);
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // Object.fromEntries 读取 next 方法失败时传播错误。
+    DifferentialCase(
+        "object-from-entries-next-getter-throw",
+        """(function () {
+  var iterator = {
+    get next() {
+      throw new Error('next-getter');
+    }
+  };
+  var source = {
+    [Symbol.iterator]: function () {
+      return iterator;
+    }
+  };
+  try {
+    Object.fromEntries(source);
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
