@@ -4327,6 +4327,37 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object.undefined + ':' + object.k;
 })()""",
     ),
+    // Object.fromEntries 条目键 getter 抛错时传播并关闭迭代器。
+    DifferentialCase(
+        "object-from-entries-key-getter-throw",
+        """(function () {
+  var log = [];
+  var entry = {
+    get 0() {
+      throw new Error('key-getter');
+    }
+  };
+  var source = {
+    [Symbol.iterator]: function () {
+      return {
+        next: function () {
+          return { value: entry, done: false };
+        },
+        return: function () {
+          log.push('return');
+          return { done: true };
+        }
+      };
+    }
+  };
+  try {
+    Object.fromEntries(source);
+  } catch (error) {
+    log.push(error.message);
+  }
+  return log.join(',');
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",

@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **681 / 681** | 含 L 系列同步与异步用例 |
+| Node 差分 | **682 / 682** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -659,6 +659,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B93 Object.fromEntries 重复键**：新增后者覆盖、保留首次插入顺序 1 条同步用例；差分 678→679/679 |
 | 2026-11-10 | **S2.2-B94 Object.fromEntries 非法条目关闭**：新增非对象条目抛 TypeError 并调用 iterator.return 1 条同步用例；差分 679→680/680 |
 | 2026-11-10 | **S2.2-B95 Object.fromEntries 短条目**：新增空条目/单元素条目按 undefined 键值处理 1 条同步用例；差分 680→681/681 |
+| 2026-11-10 | **S2.2-B96 Object.fromEntries 键 getter 抛错**：新增键 getter 异常传播并关闭迭代器 1 条同步用例；差分 681→682/682 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
