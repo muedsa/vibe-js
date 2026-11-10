@@ -538,6 +538,18 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * from './a.js';"),
+            Provider(mapOf("./a.js" to source("a", "export const __proto__ = 1;"))),
+        )
+        val descriptor = assertNotNull(namespace.getOwnProperty(PropertyKey.Str("__proto__")))
+        assertEquals(1.0, (descriptor.value as JSNumber).value)
+        assertEquals(null, namespace.prototype)
+    }
+
+    @Test
     fun `不同 specifier 指向同一模块时命名空间身份一致`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
