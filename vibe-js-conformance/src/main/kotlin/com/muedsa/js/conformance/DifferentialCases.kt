@@ -4758,6 +4758,45 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object.a;
 })()""",
     ),
+    // Object.fromEntries 的 next 结果缺少 done 时按 false 处理；无效条目抛 TypeError。
+    DifferentialCase(
+        "object-from-entries-missing-done",
+        """(function () {
+  var source = {
+    [Symbol.iterator]: function () {
+      return {
+        next: function () {
+          return {};
+        }
+      };
+    }
+  };
+  try {
+    Object.fromEntries(source);
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // Object.fromEntries 的条目不提供键值时按 undefined 字符串键处理。
+    DifferentialCase(
+        "object-from-entries-empty-pair",
+        """(function () {
+  var index = 0;
+  var source = {
+    [Symbol.iterator]: function () {
+      return {
+        next: function () {
+          return index++ === 0 ? { value: [], done: false } : { done: true };
+        }
+      };
+    }
+  };
+  var object = Object.fromEntries(source);
+  return Object.keys(object).join(',') + ':' + object.undefined;
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
