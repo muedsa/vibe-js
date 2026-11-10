@@ -249,6 +249,10 @@ object FunctionBuiltins {
                         interpreter.typeError("Function.prototype.toString requires that 'this' be a Function")
                     }
                     JSString("function () { [native code] }")
+                } else if (thisValue is JSNativeFunction && thisValue.boundTarget != null) {
+                    // 规范未规定 bound function 的源码文本；与 V8/Node 一致，
+                    // bound function 不携带目标函数名。
+                    JSString("function () { [native code] }")
                 } else if (thisValue is JSFunction || thisValue is JSNativeFunction) {
                     JSString(thisValue.toPrimitiveString())
                 } else {

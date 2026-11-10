@@ -386,6 +386,10 @@ class RuntimeSemanticsRegressionTest {
         assertEquals(true, runtime.evalBoolean(
             "function F(x) { this.x = x; } var B = F.bind(null, 7); new B().x === 7"
         ))
+        assertEquals(
+            "function () { [native code] }",
+            runtime.evalString("(function () {}).bind(null).toString()"),
+        )
         assertEquals(true, runtime.evalBoolean(
             """
                 (function () { 'use strict'; function f() {}

@@ -4480,6 +4480,97 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Array.isArray 对已撤销代理抛 TypeError，而普通代理按数组判定。
+    DifferentialCase(
+        "array-isarray-revoked-proxy",
+        """(function () {
+  var before = Array.isArray(new Proxy([], {}));
+  var revocable = Proxy.revocable([], {});
+  revocable.revoke();
+  try {
+    return before + '|' + Array.isArray(revocable.proxy);
+  } catch (error) {
+    return before + '|' + error.name;
+  }
+})()""",
+    ),
+    // JSON.stringify 访问已撤销代理的内部方法时抛 TypeError。
+    DifferentialCase(
+        "json-stringify-revoked-proxy",
+        """(function () {
+  var revocable = Proxy.revocable({}, {});
+  revocable.revoke();
+  try {
+    JSON.stringify(revocable.proxy);
+    return 'no-throw';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // Object.prototype.toString 对已撤销代理抛 TypeError。
+    DifferentialCase(
+        "object-tostring-revoked-proxy",
+        """(function () {
+  var revocable = Proxy.revocable({}, {});
+  revocable.revoke();
+  try {
+    Object.prototype.toString.call(revocable.proxy);
+    return 'no-throw';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // instanceof 访问已撤销代理的原型时抛 TypeError。
+    DifferentialCase(
+        "instanceof-revoked-proxy",
+        """(function () {
+  var revocable = Proxy.revocable({}, {});
+  revocable.revoke();
+  try {
+    return revocable.proxy instanceof Object;
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // bind 后的函数 toString 统一为 native code。
+    DifferentialCase(
+        "function-tostring-bound",
+        "(function () {}).bind(null).toString()",
+    ),
+    // Object.prototype.toString 读取 Symbol.toStringTag 时传播 getter 异常。
+    DifferentialCase(
+        "object-tostring-tag-throw",
+        """(function () {
+  var object = {
+    get [Symbol.toStringTag]() { throw new Error('tag-error'); }
+  };
+  try {
+    Object.prototype.toString.call(object);
+    return 'no-throw';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
+    // Error.prototype.toString 读取 name getter 时传播异常。
+    DifferentialCase(
+        "error-tostring-name-throw",
+        """(function () {
+  var error = new Error('x');
+  Object.defineProperty(error, 'name', {
+    get: function () { throw new Error('name-error'); }
+  });
+  try {
+    error.toString();
+    return 'no-throw';
+  } catch (thrown) {
+    return thrown.message;
+  }
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",
