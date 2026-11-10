@@ -569,6 +569,23 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `namespace 属性删除被拒绝`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(false, (engine.run("Reflect.deleteProperty(ns, 'x')") as JSBoolean).value)
+        assertEquals(
+            "TypeError",
+            (
+                engine.run(
+                    "(function () { 'use strict'; try { delete ns.x; return 'none'; } catch (e) { return e.name; } })()",
+                ) as JSString
+                ).value,
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("x")) as JSNumber).value)
+    }
+
+    @Test
     fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
