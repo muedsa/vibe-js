@@ -601,6 +601,23 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-length-too-large",
+        """
+        var log = [];
+        var source = {
+          length: 4294967296
+        };
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name + ':' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-non-callable-next",
         """
         var log = [];
