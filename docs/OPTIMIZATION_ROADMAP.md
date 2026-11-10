@@ -179,6 +179,8 @@ repeat(100) {
 ### 6.2 未来若重启模块方向的参考实现方案
 
 > 本节是设计储备，不改变“模块方向无计划”的状态；类名、包名和签名都可能在真正重启时调整。原则仍然是：**核心只定义纯 Kotlin 抽象并负责链接/求值；文件、URL、网络等 IO 全部由宿主提供。**
+>
+> 完整的设计决策、API 契约、实施顺序与详细任务见 [MODULE_DESIGN.md](MODULE_DESIGN.md)。
 
 #### 6.2.1 核心 API：ModuleRequest / ModuleSource / ModuleProvider
 
@@ -405,6 +407,9 @@ data class EngineLimits(
 
 如果未来重启，建议按以下顺序落地（估算仅供参考，不构成排期）：
 
+> 以下是早期粗粒度参考；若真正重启，以 [MODULE_DESIGN.md](MODULE_DESIGN.md) 的阶段 0–8 为准。
+> CLI 与 Test262 module harness 在详细设计中被后置，不属于静态模块 MVP。
+
 | 阶段 | 内容 | 参考人日 |
 |---|---|---:|
 | 0 | 冻结 `ModuleRequest` / `ModuleSource` / `ModuleProvider` API；实现 `InMemoryModuleProvider` | 1–2 |
@@ -543,4 +548,5 @@ data class EngineLimits(
 | 2026-11-09 | **L4.5 完成**：宿主模块新增 TextEncoder/TextDecoder（UTF-8）、structuredClone、URL/URLSearchParams 常用子集与 13 条测试；从按需队列移除 |
 | 2026-11-09 | **R1.3 完成**：`JSON.stringify` 接入 `maxJsonDepth`；显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎；补资源约束测试与异常分类表；从按需队列移除 |
 | 2026-11-09 | **S2.2 新一批**：新增 fflate/js-base64/long/loglevel 共 12 条真实库断言，库总数 90、341/341；差分新增 well-formed JSON、isWellFormed/toWellFormed、toSorted 空洞、with 负索引，548→552/552 |
+| 2026-11-10 | **模块执行设计完成（仍无计划）**：新增 [MODULE_DESIGN.md](MODULE_DESIGN.md)，冻结嵌入式静态模块 MVP 的 API、图生命周期、链接/求值、错误与预算决策，并列出阶段 0–8 详细任务 |
 | 2026-11-09 | **整个模块方向降级为无计划**：保留 `Engine.run()` 单脚本入口与现有 `parseModule` 回归；说明 KMP 核心不应承担文件/URL IO，未来若重启只能采用“核心抽象 + 宿主加载器/内存模块表” |
