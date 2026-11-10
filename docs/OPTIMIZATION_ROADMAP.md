@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1115 / 1115** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1099 / 1099** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1116 / 1116** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1100 / 1100** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -636,6 +636,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B70 源码预算唯一计数**：新增两个 specifier 同 id 只计算一次源码长度 1 条核心单测；核心 1113/1097 |
 | 2026-11-10 | **S2.2-B71 模块源码长度预算**：新增模块源码超过 maxSourceLength 抛 SOURCE_LENGTH 且 Engine 可复用 1 条核心单测；核心 1114/1098 |
 | 2026-11-10 | **S2.2-B72 模块 AST 节点预算**：新增模块解析超过 maxAstNodes 抛 AST_NODES 且 Engine 可复用 1 条核心单测；核心 1115/1099 |
+| 2026-11-10 | **S2.2-B73 模块嵌套深度预算**：新增模块解析超过 maxNestingDepth 抛 NESTING_DEPTH 且 Engine 可复用 1 条核心单测；核心 1116/1100 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

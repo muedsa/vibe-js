@@ -257,4 +257,14 @@ class ModuleExecutionTest {
         assertEquals(ResourceLimitKind.AST_NODES, error.kind)
         assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
+
+    @Test
+    fun `模块解析超出嵌套深度预算后 Engine 可复用`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxNestingDepth = 2))
+        val error = assertFailsWith<ResourceLimitException> {
+            engine.runModule(source("a", "export const value = ((((1))));"))
+        }
+        assertEquals(ResourceLimitKind.NESTING_DEPTH, error.kind)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
 }
