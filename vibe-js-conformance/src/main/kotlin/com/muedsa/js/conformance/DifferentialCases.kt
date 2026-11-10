@@ -4064,4 +4064,72 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return JSON.stringify(result) + '|' + JSON.stringify(source);
 })()""",
     ),
+    // toSpliced 返回新数组、保留未删除元素，原数组不变。
+    DifferentialCase(
+        "array-to-spliced-copy",
+        """(function () {
+  var source = [1, 2, 3];
+  var result = source.toSpliced(1, 1, 8, 9);
+  return JSON.stringify(result) + '|' + JSON.stringify(source);
+})()""",
+    ),
+    // toReversed 对空位按 undefined 处理，JSON 序列化为 null。
+    DifferentialCase(
+        "array-to-reversed-holes",
+        "JSON.stringify([1, , 3].toReversed())",
+    ),
+    // with 的索引按 ToIntegerOrInfinity 归一化，NaN 等价于 0。
+    DifferentialCase(
+        "array-with-nan-index",
+        "(function () { return [1, 2, 3].with(NaN, 9).join(','); })()",
+    ),
+    // with 越界必须抛 RangeError，而不是静默扩展数组。
+    DifferentialCase(
+        "array-with-out-of-range",
+        "(function () { try { [1, 2, 3].with(3, 9); return 'no'; } catch (e) { return e.name; } })()",
+    ),
+    // Object.hasOwn 只检查自有属性，并允许原始值作为目标。
+    DifferentialCase(
+        "object-has-own",
+        """(function () {
+  var object = Object.create({ inherited: 1 });
+  object.own = 2;
+  return [Object.hasOwn(object, 'inherited'), Object.hasOwn(object, 'own'),
+    Object.hasOwn('abc', 1)].join(',');
+})()""",
+    ),
+    // Object.groupBy 返回 null 原型对象，属性键按回调返回值分组。
+    DifferentialCase(
+        "object-group-by",
+        """(function () {
+  var groups = Object.groupBy([1, 2, 3, 4], function (value) {
+    return value % 2 ? 'odd' : 'even';
+  });
+  return [Object.getPrototypeOf(groups) === null, groups.odd.join(','),
+    groups.even.join(',')].join('|');
+})()""",
+    ),
+    // Map.groupBy 使用 SameValueZero 键，组值是普通数组。
+    DifferentialCase(
+        "map-group-by",
+        """(function () {
+  var groups = Map.groupBy([1, 2, 3, 4], function (value) { return value % 2; });
+  return [groups instanceof Map, groups.get(1).join(','), groups.get(0).join(',')].join('|');
+})()""",
+    ),
+    // replaceAll 的字符串替换支持 $& 等替换模式。
+    DifferentialCase(
+        "string-replaceall-dollar",
+        "'abc'.replaceAll('b', '\$&\$&')",
+    ),
+    // TypedArray 的 toReversed 返回同类型新视图，原数组不变。
+    DifferentialCase(
+        "typedarray-to-reversed",
+        """(function () {
+  var source = new Uint8Array([1, 2, 3]);
+  var result = source.toReversed();
+  return [result.join(','), source.join(','),
+    result instanceof Uint8Array].join('|');
+})()""",
+    ),
 )
