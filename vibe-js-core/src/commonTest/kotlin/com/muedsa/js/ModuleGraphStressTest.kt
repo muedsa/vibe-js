@@ -152,6 +152,30 @@ class ModuleGraphStressTest {
     }
 
     @Test
+    fun `失败的模块图不会被跨 runModule 缓存`() = runTest {
+        var calls = 0
+        var fail = true
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                calls += 1
+                return if (fail) {
+                    ModuleSource(request.specifier, "throw new Error('broken');")
+                } else {
+                    ModuleSource(request.specifier, "export const value = 9;")
+                }
+            }
+        }
+        val engine = Engine()
+        repeat(2) {
+            assertFailsWith<JSException> { engine.runModule("entry", provider) }
+        }
+        fail = false
+        val namespace = engine.runModule("entry", provider)
+        assertEquals(3, calls)
+        assertEquals(9.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
+    }
+
+    @Test
     fun `深链恰好达到 maxModules 预算时成功`() = runTest {
         val depth = 16
         val sources = LinkedHashMap<String, String>()

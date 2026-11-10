@@ -1010,4 +1010,28 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         });
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-allsettled-next-throw",
+        """
+        var log = [];
+        var iterator = {
+          index: 0,
+          next: function () {
+            log.push('next' + this.index);
+            if (this.index++ === 1) throw new Error('settled-next');
+            return { value: Promise.resolve(1), done: false };
+          },
+          return: function () { log.push('return'); return { done: true }; }
+        };
+        var source = { [Symbol.iterator]: function () { return iterator; } };
+        Promise.allSettled(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
 )

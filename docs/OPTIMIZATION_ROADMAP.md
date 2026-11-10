@@ -12,15 +12,15 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1090 / 1090** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1074 / 1074** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1091 / 1091** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1075 / 1075** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **650 / 650** | 含 L 系列同步与异步用例 |
+| Node 差分 | **651 / 651** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -595,6 +595,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B29 多轮 namespace 与 Promise.all**：新增多轮 runModule 描述符互不影响、Promise.all 消费 Proxy 迭代器 2 条用例；差分 645→646/646，核心 1090/1074 |
 | 2026-11-10 | **S2.2-B30 Promise.all 迭代异常**：新增 next 抛错、next 返回非对象 2 条异步用例，确认不调用迭代器 return；差分 646→648/648 |
 | 2026-11-10 | **S2.2-B31 Promise.race/any 迭代异常**：新增 race/any 的 next 抛错 2 条异步用例，确认不调用迭代器 return；差分 648→650/650 |
+| 2026-11-10 | **S2.2-B32 allSettled 与失败图重试**：新增 allSettled 的 next 抛错、失败模块图不跨 runModule 缓存 2 条用例；差分 650→651/651，核心 1091/1075 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
