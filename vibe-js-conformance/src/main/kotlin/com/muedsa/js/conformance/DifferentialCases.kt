@@ -4736,6 +4736,28 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.fromEntries 在 done 为 true 时不读取 value。
+    DifferentialCase(
+        "object-from-entries-done-true-value",
+        """(function () {
+  var index = 0;
+  var iterator = {
+    next: function () {
+      if (index++ === 0) {
+        return { value: ['a', 1], done: false };
+      }
+      return {
+        done: true,
+        get value() {
+          throw new Error('done-value');
+        }
+      };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).join(',') + ':' + object.a;
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
