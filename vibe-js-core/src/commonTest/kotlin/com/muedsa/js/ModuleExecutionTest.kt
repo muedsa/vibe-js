@@ -249,6 +249,14 @@ class ModuleExecutionTest {
     }
 
     @Test
+    fun `模块源码恰好达到长度预算时成功`() = runTest {
+        val code = "export const value = 1;"
+        val engine = Engine(limits = EngineLimits(maxSourceLength = code.length))
+        val namespace = engine.runModule(source("a", code))
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
+    }
+
+    @Test
     fun `模块 AST 超出节点预算后 Engine 可复用`() = runTest {
         val engine = Engine(limits = EngineLimits(maxAstNodes = 5))
         val error = assertFailsWith<ResourceLimitException> {
