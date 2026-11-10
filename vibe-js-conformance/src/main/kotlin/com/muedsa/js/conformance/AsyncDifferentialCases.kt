@@ -618,6 +618,35 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-value-getter-throw",
+        """
+        var log = [];
+        var iterator = {
+          next: function () {
+            return {
+              done: false,
+              get value() {
+                throw new Error('value-getter');
+              }
+            };
+          }
+        };
+        var source = {
+          [Symbol.iterator]: function () {
+            return iterator;
+          }
+        };
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-from-async-iterable",
         """
         var log = [];
