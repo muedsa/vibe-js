@@ -4291,6 +4291,34 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return JSON.stringify(object) + ':' + Object.keys(object).join(',');
 })()""",
     ),
+    // Object.fromEntries 遇到非对象条目时抛出 TypeError 并关闭迭代器。
+    DifferentialCase(
+        "object-from-entries-invalid-entry-close",
+        """(function () {
+  var log = [];
+  var source = {
+    [Symbol.iterator]: function () {
+      var index = 0;
+      return {
+        next: function () {
+          log.push('n' + index);
+          return index++ < 1 ? { value: 1, done: false } : { value: ['x', 2], done: false };
+        },
+        return: function () {
+          log.push('return');
+          return { done: true };
+        }
+      };
+    }
+  };
+  try {
+    Object.fromEntries(source);
+  } catch (error) {
+    log.push(error.name);
+  }
+  return log.join(',');
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
