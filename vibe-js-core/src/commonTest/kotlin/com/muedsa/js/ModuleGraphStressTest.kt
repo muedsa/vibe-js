@@ -197,6 +197,21 @@ class ModuleGraphStressTest {
     }
 
     @Test
+    fun `跨模块总源码长度恰好达到预算时成功`() = runTest {
+        val first = "export const first = 1;"
+        val second = "export const second = 2;"
+        val entry = "export { first } from './m1.js'; export { second } from './m2.js';"
+        val limit = entry.length + first.length + second.length
+        val engine = Engine(limits = EngineLimits(maxTotalModuleSourceLength = limit))
+        val namespace = engine.runModule(
+            ModuleSource("entry", entry),
+            InMemoryModuleProvider(mapOf("./m1.js" to first, "./m2.js" to second)),
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("first")) as JSNumber).value)
+        assertEquals(2.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("second")) as JSNumber).value)
+    }
+
+    @Test
     fun `取消加载后不再继续调用 Provider`() = runTest {
         var calls = 0
         val provider = object : ModuleProvider {

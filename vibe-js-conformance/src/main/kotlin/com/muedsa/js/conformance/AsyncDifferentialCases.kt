@@ -859,4 +859,28 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         });
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-from-async-array-like-length-throw",
+        """
+        var log = [];
+        var source = {
+          get length() {
+            log.push('length');
+            throw new Error('length-error');
+          },
+          get 0() {
+            log.push('index0');
+            return 'x';
+          }
+        };
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
 )
