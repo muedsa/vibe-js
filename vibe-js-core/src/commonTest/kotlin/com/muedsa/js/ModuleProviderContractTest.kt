@@ -161,4 +161,24 @@ class ModuleProviderContractTest {
         assertEquals(3, loads)
         assertEquals(1.0, (engine.run("globalThis.sharedExecutions") as JSNumber).value)
     }
+
+    @Test
+    fun `同一 id 的多 specifier 只占用一个 maxModules 名额`() = runTest {
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return when (request.specifier) {
+                    "entry" -> ModuleSource(
+                        "entry",
+                        "import './a.js'; import './b.js'; export const value = 1;",
+                    )
+
+                    "./a.js", "./b.js" -> ModuleSource("shared", "export const value = 2;")
+                    else -> null
+                }
+            }
+        }
+        val engine = Engine(limits = EngineLimits(maxModules = 2))
+        val namespace = engine.runModule("entry", provider)
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
+    }
 }
