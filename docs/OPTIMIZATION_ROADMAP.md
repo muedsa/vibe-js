@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **646 / 646** | 含 L 系列同步与异步用例 |
+| Node 差分 | **648 / 648** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -593,6 +593,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B27 模块对象预算**：新增模块体大量对象分配触发 maxObjectCount、异常后同一 Engine 可复用 1 条核心单测；核心 1088/1072 |
 | 2026-11-10 | **S2.2-B28 模块微任务预算**：新增模块体批量 Promise.then 触发 maxMicrotasksPerRun、异常后同一 Engine 可复用 1 条核心单测；核心 1089/1073 |
 | 2026-11-10 | **S2.2-B29 多轮 namespace 与 Promise.all**：新增多轮 runModule 描述符互不影响、Promise.all 消费 Proxy 迭代器 2 条用例；差分 645→646/646，核心 1090/1074 |
+| 2026-11-10 | **S2.2-B30 Promise.all 迭代异常**：新增 next 抛错、next 返回非对象 2 条异步用例，确认不调用迭代器 return；差分 646→648/648 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

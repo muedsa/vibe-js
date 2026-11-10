@@ -914,4 +914,52 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         });
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-promise-all-next-throw",
+        """
+        var log = [];
+        var iterator = {
+          index: 0,
+          next: function () {
+            log.push('next' + this.index);
+            if (this.index++ === 1) throw new Error('next-failed');
+            return { value: 1, done: false };
+          },
+          return: function () { log.push('return'); return { done: true }; }
+        };
+        var source = { [Symbol.iterator]: function () { return iterator; } };
+        Promise.all(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-promise-all-next-non-object",
+        """
+        var log = [];
+        var iterator = {
+          index: 0,
+          next: function () {
+            log.push('next' + this.index);
+            if (this.index++ === 1) return 1;
+            return { value: 1, done: false };
+          },
+          return: function () { log.push('return'); return { done: true }; }
+        };
+        var source = { [Symbol.iterator]: function () { return iterator; } };
+        Promise.all(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.constructor.name);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
 )
