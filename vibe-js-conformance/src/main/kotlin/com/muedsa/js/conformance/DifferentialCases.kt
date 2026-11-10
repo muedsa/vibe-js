@@ -4193,6 +4193,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.hasOwn 的 Proxy 陷阱返回非对象描述符时触发不变量 TypeError。
+    DifferentialCase(
+        "object-has-own-proxy-invalid-descriptor",
+        """(function () {
+  var proxy = new Proxy({ x: 1 }, {
+    getOwnPropertyDescriptor: function () {
+      return 1;
+    }
+  });
+  try {
+    return String(Object.hasOwn(proxy, 'x'));
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
     // Map.groupBy 的 NaN 键按 SameValueZero 归入同一组。
     DifferentialCase(
         "map-group-by-nan-key",
