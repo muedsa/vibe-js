@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **774 / 774** | 含 L 系列同步与异步用例 |
+| Node 差分 | **776 / 776** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -732,6 +732,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B204~B205 依赖空白 id 与空 sourceName**：新增依赖空白 id 进入 INVALID_MODULE、空 sourceName 保留在错误栈 2 条核心单测；核心 1152/1136 |
 | 2026-11-10 | **S2.2-B206~B207 Object.fromEntries 关闭异常优先级**：新增 return getter 抛错与非函数时保留原始 TypeError 2 条同步用例；差分 770→772/772 |
 | 2026-11-10 | **S2.2-B208~B209 Object.fromEntries 原错误优先**：新增键读取失败与 done 读取失败时 return 抛错不覆盖原错误 2 条同步用例；差分 772→774/774 |
+| 2026-11-10 | **S2.2-B210~B211 Object.fromEntries 值/键错误与关闭错误**：新增值读取失败时 return 抛错、键读取失败时 return getter 抛错均保留原错误 2 条同步用例；差分 774→776/776 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
