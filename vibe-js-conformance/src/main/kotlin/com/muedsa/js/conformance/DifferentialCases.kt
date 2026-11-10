@@ -4162,6 +4162,24 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.hasOwn(proxy, 'x') + ':' + log.join(',');
 })()""",
     ),
+    // Object.hasOwn 触发 Proxy 陷阱不变量：不可配置属性不能被报告为不存在。
+    DifferentialCase(
+        "object-has-own-proxy-invariant",
+        """(function () {
+  var target = {};
+  Object.defineProperty(target, 'x', { value: 1, configurable: false });
+  var proxy = new Proxy(target, {
+    getOwnPropertyDescriptor: function () {
+      return undefined;
+    }
+  });
+  try {
+    return String(Object.hasOwn(proxy, 'x'));
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
     // Map.groupBy 的 NaN 键按 SameValueZero 归入同一组。
     DifferentialCase(
         "map-group-by-nan-key",
