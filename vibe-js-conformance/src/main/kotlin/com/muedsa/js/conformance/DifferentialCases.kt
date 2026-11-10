@@ -4506,6 +4506,39 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object[0] + ':' + object[-0];
 })()""",
     ),
+    // Object.fromEntries 对对象键执行一次 ToPropertyKey。
+    DifferentialCase(
+        "object-from-entries-object-key-coercion",
+        """(function () {
+  var calls = 0;
+  var key = {
+    toString: function () {
+      calls += 1;
+      return 'k';
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return object.k + ':' + calls + ':' + Object.keys(object).join(',');
+})()""",
+    ),
+    // Object.fromEntries 重复符号键由后者覆盖并保留首次顺序。
+    DifferentialCase(
+        "object-from-entries-duplicate-symbol",
+        """(function () {
+  var key = Symbol('key');
+  var object = Object.fromEntries([[key, 1], ['a', 2], [key, 3]]);
+  return object[key] + ':' + Object.keys(object).join(',') + ':' +
+    Object.getOwnPropertySymbols(object).length;
+})()""",
+    ),
+    // Object.fromEntries 将 null 与 undefined 键转为字符串。
+    DifferentialCase(
+        "object-from-entries-nullish-key",
+        """(function () {
+  var object = Object.fromEntries([[null, 'n'], [undefined, 'u']]);
+  return Object.keys(object).join(',') + ':' + object.null + ':' + object.undefined;
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
