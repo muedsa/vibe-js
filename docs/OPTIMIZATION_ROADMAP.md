@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **747 / 747** | 含 L 系列同步与异步用例 |
+| Node 差分 | **749 / 749** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -715,6 +715,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B169~B170 Array.fromAsync 空输入不调用 mapper**：新增负数与缺失 length 时 mapper 调用次数为 0 2 条异步用例；差分 741→743/743 |
 | 2026-11-10 | **S2.2-B171~B172 Array.fromAsync length 读取与迭代器优先级**：新增 length 只读一次、迭代器优先于 array-like 2 条异步用例；差分 743→745/745 |
 | 2026-11-10 | **S2.2-B173~B174 Array.fromAsync 正常完成不调用 return**：新增同步与异步迭代器正常结束不调用 return 2 条异步用例；差分 745→747/747 |
+| 2026-11-10 | **S2.2-B175~B176 Array.fromAsync 异步 next 结果形状**：新增异步 next 返回同步结果/原始值 2 条异步用例；差分 747→749/749 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
