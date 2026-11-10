@@ -1413,6 +1413,44 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-revoked-constructor",
+        """
+        var log = [];
+        var revocable = Proxy.revocable(function () {}, {});
+        revocable.revoke();
+        Array.fromAsync.call(revocable.proxy, [1]).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-proxy-prototype-throw",
+        """
+        var log = [];
+        var proxy = new Proxy(function () {}, {
+          get: function (target, key, receiver) {
+            if (key === 'prototype') {
+              throw new Error('proxy-prototype');
+            }
+            return Reflect.get(target, key, receiver);
+          }
+        });
+        Array.fromAsync.call(proxy, [1]).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-string",
         """
         var log = [];
