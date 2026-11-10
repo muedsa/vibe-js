@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1137 / 1137** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1121 / 1121** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1138 / 1138** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1122 / 1122** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -690,6 +690,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B124 Array.fromAsync 负数 length**：新增负数截断为 0 1 条异步用例；差分 704→705/705 |
 | 2026-11-10 | **S2.2-B125 Array.fromAsync 缺失 length**：新增缺失 length 按 0 处理 1 条异步用例；差分 705→706/706 |
 | 2026-11-10 | **S2.2-B126 Array.fromAsync BigInt length**：新增 BigInt 转长度抛 TypeError 拒绝 1 条异步用例；差分 706→707/707 |
+| 2026-11-10 | **S2.2-B127 同 id 首次 sourceName 优先**：新增错误栈使用首次 sourceName 1 条核心单测；核心 1138/1122 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

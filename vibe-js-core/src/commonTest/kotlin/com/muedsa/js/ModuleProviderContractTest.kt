@@ -2,6 +2,7 @@ package com.muedsa.js
 
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.EngineLimits
+import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.InMemoryModuleProvider
 import com.muedsa.js.runtime.module.ModuleLinkErrorKind
@@ -18,6 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /** ModuleProvider 的最小契约：入口/依赖 referrer、null、异常与源码元数据。 */
 @OptIn(ExperimentalModuleApi::class)
@@ -270,5 +272,38 @@ class ModuleProviderContractTest {
             "https://example.test/a.mjs:https://example.test/a.mjs",
             (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSString).value,
         )
+    }
+
+    @Test
+    fun `同一 id 的先后加载保留首次 sourceName`() = runTest {
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return when (request.specifier) {
+                    "entry" -> ModuleSource(
+                        "entry",
+                        "import './a.js'; import './b.js';",
+                    )
+
+                    "./a.js" -> ModuleSource(
+                        "shared",
+                        "throw new Error('shared');",
+                        sourceName = "a.mjs",
+                    )
+
+                    "./b.js" -> ModuleSource(
+                        "shared",
+                        "throw new Error('shared');",
+                        sourceName = "b.mjs",
+                    )
+
+                    else -> null
+                }
+            }
+        }
+        val engine = Engine()
+        val error = assertFailsWith<JSException> {
+            engine.runModule("entry", provider)
+        }
+        assertTrue(error.stack.any { it.sourceInfo.name == "a.mjs" })
     }
 }
