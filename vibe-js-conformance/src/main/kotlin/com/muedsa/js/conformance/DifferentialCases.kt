@@ -4797,6 +4797,50 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object.undefined;
 })()""",
     ),
+    // Object.fromEntries 遇到 null 条目时抛 TypeError 并关闭迭代器。
+    DifferentialCase(
+        "object-from-entries-null-entry-close",
+        """(function () {
+  var log = [];
+  var iterator = {
+    next: function () {
+      return { value: null, done: false };
+    },
+    return: function () {
+      log.push('return');
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  } catch (error) {
+    log.push(error.name);
+  }
+  return log.join(',');
+})()""",
+    ),
+    // Object.fromEntries 遇到字符串条目时抛 TypeError 并关闭迭代器。
+    DifferentialCase(
+        "object-from-entries-string-entry-close",
+        """(function () {
+  var log = [];
+  var iterator = {
+    next: function () {
+      return { value: 'x', done: false };
+    },
+    return: function () {
+      log.push('return');
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  } catch (error) {
+    log.push(error.name);
+  }
+  return log.join(',');
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
