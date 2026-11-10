@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1152 / 1152** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1136 / 1136** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1154 / 1154** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1138 / 1138** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -737,6 +737,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B214~B215 Object.fromEntries return 原始值优先级**：新增键错误与 done 错误时 return 返回原始值仍保留原错误 2 条同步用例；差分 778→780/780 |
 | 2026-11-10 | **S2.2-B216~B217 Object.fromEntries 不读取 return 结果**：新增 return 结果 done/value getter 抛错均不被读取 2 条同步用例；差分 780→782/782 |
 | 2026-11-10 | **S2.2-B218 Object.fromEntries next getter 不关闭迭代器**：新增读取 next getter 失败时不调用 return 1 条同步用例；差分 782→783/783（next 调用抛错分支 Node 与规范不一致，继续由核心单测固定） |
+| 2026-11-10 | **S2.2-B219~B220 Object.fromEntries next 非对象与 done 错误不关闭迭代器**：新增 2 条核心单测固定规范行为（Node 24 均会关闭，已记入已知差异）；核心 1154/1138 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

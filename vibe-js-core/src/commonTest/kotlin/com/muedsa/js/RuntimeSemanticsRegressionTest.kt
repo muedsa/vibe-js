@@ -1130,6 +1130,70 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Object fromEntries next 结果非对象不关闭迭代器`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var log = [];
+                var source = {
+                    [Symbol.iterator]: function () {
+                        return {
+                            next: function () {
+                                log.push('next');
+                                return 1;
+                            },
+                            return: function () {
+                                log.push('return');
+                                return { done: true };
+                            }
+                        };
+                    }
+                };
+                try {
+                    Object.fromEntries(source);
+                } catch (error) {
+                    log.push(error.name);
+                }
+            """.trimIndent()
+        )
+        assertEquals("next,TypeError", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
+    fun `Object fromEntries done getter 抛错不关闭迭代器`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var log = [];
+                var source = {
+                    [Symbol.iterator]: function () {
+                        return {
+                            next: function () {
+                                return {
+                                    get done() {
+                                        log.push('done');
+                                        throw new Error('done');
+                                    }
+                                };
+                            },
+                            return: function () {
+                                log.push('return');
+                                return { done: true };
+                            }
+                        };
+                    }
+                };
+                try {
+                    Object.fromEntries(source);
+                } catch (error) {
+                    log.push(error.message);
+                }
+            """.trimIndent()
+        )
+        assertEquals("done,done", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
     fun `Array flat 与 flatMap 的深度与 species`() = runTest {
         val runtime = TestRuntime()
         assertEquals("[1,2,3,[4]]", runtime.evalString(
