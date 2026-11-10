@@ -275,6 +275,59 @@ class ModuleProviderContractTest {
     }
 
     @Test
+    fun `同一 id 首次来源 URL 为空时回退 module id`() = runTest {
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return when (request.specifier) {
+                    "entry" -> ModuleSource(
+                        "entry",
+                        """
+                        import { url as a } from './a.js';
+                        import { url as b } from './b.js';
+                        export const result = a + ':' + b;
+                        """.trimIndent(),
+                    )
+
+                    "./a.js" -> ModuleSource(
+                        "shared",
+                        "export const url = import.meta.url;",
+                    )
+
+                    "./b.js" -> ModuleSource(
+                        "shared",
+                        "export const url = import.meta.url;",
+                        url = "https://example.test/b.mjs",
+                    )
+
+                    else -> null
+                }
+            }
+        }
+        val engine = Engine()
+        val namespace = engine.runModule("entry", provider)
+        assertEquals(
+            "module:shared:module:shared",
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSString).value,
+        )
+    }
+
+    @Test
+    fun `入口来源 URL 为空字符串时保留空字符串`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            ModuleSource(
+                "entry",
+                "export const url = import.meta.url;",
+                url = "",
+            ),
+        )
+        assertEquals(
+            "",
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("url")) as JSString).value,
+        )
+    }
+
+    @Test
     fun `同一 id 的先后加载保留首次 sourceName`() = runTest {
         val provider = object : ModuleProvider {
             override suspend fun load(request: ModuleRequest): ModuleSource? {

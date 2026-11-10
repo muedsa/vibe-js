@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1144 / 1144** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1128 / 1128** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1146 / 1146** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1130 / 1130** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -720,6 +720,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B180~B182 Array.fromAsync 异步迭代器可调用性与拒绝**：新增迭代器方法非函数、next 非函数、next 拒绝 3 条异步用例；差分 752→755/755 |
 | 2026-11-10 | **S2.2-B183~B184 Array.fromAsync 异步 done/value getter**：新增异步 done 与 value getter 抛错 2 条异步用例；差分 755→757/757 |
 | 2026-11-10 | **S2.2-B185~B186 Array.fromAsync 值 await 语义**：新增异步迭代器值不再 await、同步迭代器值会 await 2 条异步用例；差分 757→759/759 |
+| 2026-11-10 | **S2.2-B187~B188 模块 URL 空值边界**：新增首次 URL 为空回退 `module:<id>`、入口 URL 为空字符串保留 2 条核心单测；核心 1146/1130 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
