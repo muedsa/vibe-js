@@ -3089,6 +3089,82 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
             ),
         ),
     ),
+    // Luxon 需要 Intl，当前核心不提供，故不纳入真实库基线。
+    // topojson-client 覆盖 TopoJSON 到 GeoJSON 的点要素转换。
+    LibrarySpec(
+        name = "topojson-client",
+        url = "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js",
+        globalName = "topojson",
+        cases = listOf(
+            SmokeCase(
+                "point feature",
+                assertion(
+                    "(function () { var topology = { type: 'Topology', objects: { point: " +
+                        "{ type: 'GeometryCollection', geometries: [{ type: 'Point', coordinates: [1, 2] }] } }, " +
+                        "arcs: [] }; return topojson.feature(topology, topology.objects.point).features.length === 1; })()"
+                ),
+            ),
+            SmokeCase(
+                "geometry type",
+                assertion(
+                    "(function () { var topology = { type: 'Topology', objects: { point: " +
+                        "{ type: 'GeometryCollection', geometries: [{ type: 'Point', coordinates: [1, 2] }] } }, " +
+                        "arcs: [] }; return topojson.feature(topology, topology.objects.point)" +
+                        ".features[0].geometry.type === 'Point'; })()"
+                ),
+            ),
+            SmokeCase(
+                "coordinates",
+                assertion(
+                    "(function () { var topology = { type: 'Topology', objects: { point: " +
+                        "{ type: 'GeometryCollection', geometries: [{ type: 'Point', coordinates: [1, 2] }] } }, " +
+                        "arcs: [] }; var coordinates = topojson.feature(topology, topology.objects.point)" +
+                        ".features[0].geometry.coordinates; return coordinates[0] === 1 && coordinates[1] === 2; })()"
+                ),
+            ),
+        ),
+    ),
+    // msgpack-lite 覆盖对象/数组编解码与二进制输出长度。
+    LibrarySpec(
+        name = "msgpack-lite",
+        url = "https://cdn.jsdelivr.net/npm/msgpack-lite@0.1.26/dist/msgpack.min.js",
+        globalName = "msgpack",
+        cases = listOf(
+            SmokeCase(
+                "object roundtrip",
+                assertion("JSON.stringify(msgpack.decode(msgpack.encode({ a: 1, b: 'x' })))" +
+                    " === '{\"a\":1,\"b\":\"x\"}'"),
+            ),
+            SmokeCase(
+                "array roundtrip",
+                assertion("msgpack.decode(msgpack.encode([1, 2, 3])).join(',') === '1,2,3'"),
+            ),
+            SmokeCase(
+                "encoded length",
+                assertion("msgpack.encode({ a: 1 }).length > 0"),
+            ),
+        ),
+    ),
+    // d3-delaunay 验证点集、三角索引与最近点查询。
+    LibrarySpec(
+        name = "d3-delaunay",
+        url = "https://cdn.jsdelivr.net/npm/d3-delaunay@6.0.4/dist/d3-delaunay.min.js",
+        globalName = "d3",
+        cases = listOf(
+            SmokeCase(
+                "points",
+                assertion("d3.Delaunay.from([[0, 0], [1, 0], [0, 1]]).points.length === 6"),
+            ),
+            SmokeCase(
+                "triangles",
+                assertion("d3.Delaunay.from([[0, 0], [1, 0], [0, 1]]).triangles.length === 3"),
+            ),
+            SmokeCase(
+                "find",
+                assertion("d3.Delaunay.from([[0, 0], [1, 0], [0, 1]]).find(0.1, 0.1) === 0"),
+            ),
+        ),
+    ),
 )
 
 

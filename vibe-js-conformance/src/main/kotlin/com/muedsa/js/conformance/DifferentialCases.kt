@@ -4165,6 +4165,54 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return groups.group.join(',');
 })()""",
     ),
+    // toSpliced 无参数时只复制数组，不删除或插入。
+    DifferentialCase(
+        "array-to-spliced-no-args",
+        "JSON.stringify([1, 2, 3].toSpliced())",
+    ),
+    // toSpliced 只有一个起点参数时删除到数组末尾。
+    DifferentialCase(
+        "array-to-spliced-delete-to-end",
+        "JSON.stringify([1, 2, 3].toSpliced(1))",
+    ),
+    // with 的 -0 索引按 0 处理。
+    DifferentialCase(
+        "array-with-negative-zero",
+        "JSON.stringify([1, 2, 3].with(-0, 9))",
+    ),
+    // Object.groupBy 允许 Symbol 作为分组键。
+    DifferentialCase(
+        "object-group-by-symbol",
+        """(function () {
+  var groups = Object.groupBy([1, 2], function () { return Symbol.for('group'); });
+  return groups[Symbol.for('group')].join(',');
+})()""",
+    ),
+    // Map.groupBy 的 -0 与 0 按 SameValueZero 合并。
+    DifferentialCase(
+        "map-group-by-negative-zero",
+        """(function () {
+  var groups = Map.groupBy([1, 2], function (value) { return value === 1 ? -0 : 0; });
+  return groups.get(0).join(',');
+})()""",
+    ),
+    // toSorted 接受比较函数，且不修改原数组。
+    DifferentialCase(
+        "array-to-sorted-compare",
+        """(function () {
+  var source = [10, 2, 1];
+  var result = source.toSorted(function (a, b) { return a - b; });
+  return result.join(',') + '|' + source.join(',');
+})()""",
+    ),
+    // TypedArray.with 支持负索引并保持元素类型。
+    DifferentialCase(
+        "typedarray-with-negative",
+        """(function () {
+  var result = new Uint8Array([1, 2, 3]).with(-1, 9);
+  return [result.join(','), result instanceof Uint8Array].join('|');
+})()""",
+    ),
     // TypedArray 的 toReversed 返回同类型新视图，原数组不变。
     DifferentialCase(
         "typedarray-to-reversed",
