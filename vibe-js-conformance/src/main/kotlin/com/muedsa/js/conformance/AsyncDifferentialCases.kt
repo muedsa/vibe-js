@@ -1381,6 +1381,38 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-padded-binary-length",
+        """
+        var log = [];
+        var source = {
+          length: ' 0b10 ',
+          0: 'a',
+          1: 'b'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-newline-octal-length",
+        """
+        var log = [];
+        var source = {
+          length: '0o2\n',
+          0: 'a',
+          1: 'b'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-mapper-thenable",
         """
         var log = [];
