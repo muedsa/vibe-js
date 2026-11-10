@@ -4841,6 +4841,30 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    // Object.fromEntries 不把普通 array-like 当作可迭代对象。
+    DifferentialCase(
+        "object-from-entries-array-like-reject",
+        """(function () {
+  try {
+    Object.fromEntries({ 0: 'a', length: 1 });
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // Object.fromEntries 对 Symbol.iterator 为 undefined 的对象抛 TypeError。
+    DifferentialCase(
+        "object-from-entries-undefined-iterator",
+        """(function () {
+  try {
+    Object.fromEntries({ [Symbol.iterator]: undefined });
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
