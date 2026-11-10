@@ -4950,6 +4950,38 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return result + '|' + log.join(',');
 })()""",
     ),
+    // Array.prototype.filter 通过 Proxy 读取全部索引。
+    DifferentialCase(
+        "proxy-array-filter-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ length: 3, 0: 1, 1: 2, 2: 3 }, {
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var result = Array.prototype.filter.call(source, function (value) {
+    return value > 1;
+  });
+  return result.join(',') + '|' + log.join(',');
+})()""",
+    ),
+    // Array.prototype.indexOf 通过 Proxy 读取 length 与索引并在命中后短路。
+    DifferentialCase(
+        "proxy-array-indexof-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ length: 3, 0: 1, 1: 2, 2: 2 }, {
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var result = Array.prototype.indexOf.call(source, 2);
+  return result + '|' + log.join(',');
+})()""",
+    ),
     // Object.setPrototypeOf 通过 Proxy 的 setPrototypeOf trap。
     DifferentialCase(
         "proxy-setprototypeof-trap",
