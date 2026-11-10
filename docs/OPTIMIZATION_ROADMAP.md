@@ -570,6 +570,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2 第四批**：新增 msgpack-lite/d3-delaunay/topojson-client 共 9 条断言，覆盖 MessagePack、Delaunay 与 TopoJSON；库总数 99→102，真实库 366→375/375；差分新增 7 条（toSpliced 无参/删到末尾、with -0、groupBy Symbol/-0、toSorted 比较器、TypedArray with），567→574/574 |
 | 2026-11-10 | **S2.2-B5 运行时边界**：新增 using 释放顺序/异常释放、DisposableStack、RegExp.escape、Array.from mapper 关闭迭代器、Object.fromEntries Symbol 键共 6 条；差分 574→580/580 |
 | 2026-11-10 | **S2.2-B6 完成语义/异步资源**：新增 await using 顺序/异常、AsyncDisposableStack 3 条异步用例，以及 for-let/for-of/for-in 每迭代闭包、嵌套 finally、finally 中 continue、switch let TDZ、catch 参数作用域 8 条同步用例；差分 580→591/591 |
+| 2026-11-10 | **S6.2 门禁复跑（B6 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 591/591、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B5 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 580/580、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 574/574、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **DOC-2 完成**：推进列表只保留周期性 `S6.2`、`S2.2-B5` 与 `S5.2`；M1/M3 标记完成，M2 改为持续覆盖；S6.2 命令补 ES5 与真实库 |
