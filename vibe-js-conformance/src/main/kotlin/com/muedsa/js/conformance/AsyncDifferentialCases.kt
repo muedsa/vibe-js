@@ -1413,6 +1413,48 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-index-getter",
+        """
+        var log = [];
+        var array = [];
+        Object.defineProperty(array, '0', {
+          get: function () {
+            log.push('getter');
+            return 'a';
+          },
+          configurable: true
+        });
+        array.length = 1;
+        Array.fromAsync(array).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-index-getter-throw",
+        """
+        var log = [];
+        var array = [];
+        Object.defineProperty(array, '0', {
+          get: function () {
+            throw new Error('index-getter');
+          },
+          configurable: true
+        });
+        array.length = 1;
+        Array.fromAsync(array).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-mapper-thenable",
         """
         var log = [];
