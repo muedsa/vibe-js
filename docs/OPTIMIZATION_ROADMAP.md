@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1092 / 1092** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1076 / 1076** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1093 / 1093** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1077 / 1077** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -600,6 +600,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B34 Promise.all 构造/capability 异常**：新增子类构造函数抛错同步传播、自定义 capability `resolve` 抛错转 rejection 2 条同步用例；差分 653→655/655 |
 | 2026-11-10 | **S2.2-B35 组合器 capability 异常矩阵**：新增 race/any/allSettled 自定义 capability `resolve` 抛错转 rejection 3 条同步用例；差分 655→658/658 |
 | 2026-11-10 | **S2.2-B36 组合器构造异常补全**：新增 race/any/allSettled 子类构造函数抛错同步传播 1 条同步用例；差分 658→659/659 |
+| 2026-11-10 | **S2.2-B37 模块待处理任务预算**：新增模块体批量 Promise 微任务触发 maxPendingTasks、异常后同一 Engine 可复用 1 条核心单测；核心 1093/1077 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

@@ -4,6 +4,8 @@ import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.EngineLimits
 import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.exception.ResourceLimitException
+import com.muedsa.js.runtime.exception.ResourceLimitKind
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleLinkErrorKind
 import com.muedsa.js.runtime.module.ModuleLinkException
@@ -221,6 +223,18 @@ class ModuleExecutionTest {
             )
         }
         assertEquals("maxMicrotasksPerRun", error.limitName)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
+
+    @Test
+    fun `模块求值超出待处理任务预算后 Engine 可复用`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxPendingTasks = 10))
+        val error = assertFailsWith<ResourceLimitException> {
+            engine.runModule(
+                source("a", "for (let i = 0; i < 100; i++) { Promise.resolve().then(() => {}); }"),
+            )
+        }
+        assertEquals(ResourceLimitKind.PENDING_TASKS, error.kind)
         assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
 }
