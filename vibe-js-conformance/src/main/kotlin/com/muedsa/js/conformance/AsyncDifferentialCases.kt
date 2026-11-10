@@ -2953,6 +2953,37 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-promise-length",
+        """
+        var log = [];
+        var source = {
+          length: Promise.resolve(2),
+          0: 'a',
+          1: 'b'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-rejected-promise-length",
+        """
+        var log = [];
+        var pending = Promise.reject(new Error('length-reject'));
+        pending.catch(function () {});
+        var source = {
+          length: pending,
+          0: 'a'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-extra-arguments-ignored",
         """
         var log = [];
