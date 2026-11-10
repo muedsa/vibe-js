@@ -522,6 +522,22 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `嵌套命名空间的 toStringTag 仍为 Module`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * as ns from './a.js';"),
+            Provider(mapOf("./a.js" to source("a", "export const x = 1;"))),
+        )
+        val nested = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("ns")),
+        )
+        val tag = assertNotNull(
+            nested.getOwnProperty(PropertyKey.Sym(engine.intrinsics.symbolToStringTag)),
+        )
+        assertEquals("Module", (tag.value as JSString).value)
+    }
+
+    @Test
     fun `不同 specifier 指向同一模块时命名空间身份一致`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
