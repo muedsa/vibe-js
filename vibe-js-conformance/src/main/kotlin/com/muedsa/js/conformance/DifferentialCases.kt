@@ -5067,4 +5067,25 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return capability.rejected ? capability.rejected.message : 'none';
 })()""",
     ),
+    // race/any/allSettled 的子类构造函数抛错均同步传播。
+    DifferentialCase(
+        "promise-combinators-constructor-throw",
+        """(function () {
+  function attempt(name) {
+    class P extends Promise {
+      constructor(executor) {
+        super(executor);
+        throw new Error(name);
+      }
+    }
+    try {
+      P[name]([1]);
+      return 'ok';
+    } catch (error) {
+      return name + ':' + error.message;
+    }
+  }
+  return ['race', 'any', 'allSettled'].map(attempt).join('|');
+})()""",
+    ),
 )

@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **658 / 658** | 含 L 系列同步与异步用例 |
+| Node 差分 | **659 / 659** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -599,6 +599,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B33 Promise 子类组合器与重试 namespace**：新增 `Promise.all` 子类/species 构造 2 条异步用例、失败重试后 namespace 不复用旧图 1 条核心单测；差分 651→653/653，核心 1092/1076 |
 | 2026-11-10 | **S2.2-B34 Promise.all 构造/capability 异常**：新增子类构造函数抛错同步传播、自定义 capability `resolve` 抛错转 rejection 2 条同步用例；差分 653→655/655 |
 | 2026-11-10 | **S2.2-B35 组合器 capability 异常矩阵**：新增 race/any/allSettled 自定义 capability `resolve` 抛错转 rejection 3 条同步用例；差分 655→658/658 |
+| 2026-11-10 | **S2.2-B36 组合器构造异常补全**：新增 race/any/allSettled 子类构造函数抛错同步传播 1 条同步用例；差分 658→659/659 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
