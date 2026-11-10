@@ -883,4 +883,35 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         });
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-promise-all-proxy-iterable",
+        """
+        var log = [];
+        var iterator = {
+          index: 0,
+          next: function () {
+            log.push('next');
+            return this.index < 2
+              ? { value: ++this.index, done: false }
+              : { done: true };
+          }
+        };
+        var target = {
+          [Symbol.iterator]: function () {
+            log.push('iterator');
+            return iterator;
+          }
+        };
+        var source = new Proxy(target, {
+          get: function (object, key, receiver) {
+            log.push('get:' + String(key));
+            return Reflect.get(object, key, receiver);
+          }
+        });
+        Promise.all(source).then(function (values) {
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
 )

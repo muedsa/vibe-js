@@ -107,6 +107,30 @@ class ModuleGraphStressTest {
     }
 
     @Test
+    fun `多轮 runModule 的 namespace 描述符互不影响`() = runTest {
+        val provider = InMemoryModuleProvider(
+            mapOf(
+                "./dep.js" to "globalThis.descriptorCount = (globalThis.descriptorCount || 0) + 1; " +
+                    "export const value = globalThis.descriptorCount;",
+            ),
+        )
+        val entry = ModuleSource(
+            "entry",
+            "import { value } from './dep.js'; export { value };",
+        )
+        val engine = Engine()
+        val first = engine.runModule(entry, provider)
+        val firstDescriptor = assertNotNull(first.getOwnProperty(PropertyKey.Str("value")))
+        assertEquals(1.0, (firstDescriptor.value as JSNumber).value)
+        assertFalse(firstDescriptor.configurable)
+        val second = engine.runModule(entry, provider)
+        val secondDescriptor = assertNotNull(second.getOwnProperty(PropertyKey.Str("value")))
+        assertEquals(2.0, (secondDescriptor.value as JSNumber).value)
+        assertFalse(secondDescriptor.configurable)
+        assertEquals(1.0, (firstDescriptor.value as JSNumber).value)
+    }
+
+    @Test
     fun `模块求值失败后同一 Engine 可用新图恢复`() = runTest {
         var fail = true
         val provider = object : ModuleProvider {
