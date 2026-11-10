@@ -130,13 +130,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1133** + 宿主 38 个测试（2026-11-10 记录） |
-| JS（Node） | ✅ | 核心 **1117** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1117** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1134** + 宿主 38 个测试（2026-11-10 记录） |
+| JS（Node） | ✅ | 核心 **1118** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1118** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1133 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1117。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1134 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1118。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
@@ -184,6 +184,7 @@
 - 参数初始化阶段的直接 eval 若声明与参数环境同名绑定（包括隐式 `arguments`），按规范与 Test262 期望抛 `SyntaxError`；Node/V8 对隐式 `arguments` 允许该声明，该分支不纳入差分用例；
 - `++super[key]` 按规范在 ToPropertyKey 之前读取 GetSuperBase（Test262 期望）；Node/V8 在键转换后读取原型，二者结果不同，该分支不纳入差分用例；
 - 严格模式下对 RHS 求值前已不可解析的标识符赋值（如 `x = (globalThis.x = 1)`），按规范/Test262 抛 `ReferenceError`；Node/V8 会重新解析并成功写入，该分支不纳入差分用例；
+- `Array.fromAsync` 的同步迭代器在 `done: true` 时不读取 `value`（规范与 Test262 期望）；Node 24 会读取并可能抛出 getter 错误，该分支不纳入差分，由核心单测固定规范行为；
 - `Number.prototype.toString(radix)` 在非 2 的幂进制下按规范生成最短往返表示（有效数字最短且能解析回同一 double）；Node/V8 的实现会截断/近似，部分输出无法解析回原 double（如 `(0.1).toString(5)`），因此差分仅对 2 的幂进制比较完整文本，其余进制由自校验与用例覆盖。
 
 ## 7. 测试对应
@@ -243,7 +244,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
 | `EventLoopLifecycleTest` / `EventLoopConcurrencyTest` / `HostEventLoopLifecycleTest` | 关闭、任务快照、空闲等待、在途取消、跨线程串行化、宿主定时器生命周期 |
 | `RuntimeErrorStackTest` | 错误创建与重抛位置、脚本来源和偏移、跨脚本调用、async/Promise 拒绝转发、资源释放、万层栈快照 |
-| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、可选 catch 绑定、稳定排序、JSON 超集与 rawJSON/reviver source、属性枚举顺序、Annex B RegExp compile/escape/unescape、RegExp dotAll、Error.prototype.stack、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
+| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、可选 catch 绑定、稳定排序、JSON 超集与 rawJSON/reviver source、属性枚举顺序、Annex B RegExp compile/escape/unescape、RegExp dotAll、Error.prototype.stack、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径与 done=true 不读取 value、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `DiagnosticTest` | 词法/语法异常转换为结构化诊断（类别、纯描述、源码范围、来源文件名与行偏移），其他异常不产生诊断，原异常类型与 message 格式保持不变 |

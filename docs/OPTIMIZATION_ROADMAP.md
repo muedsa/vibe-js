@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1133 / 1133** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1117 / 1117** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1134 / 1134** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1118 / 1118** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -679,6 +679,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B113 Array.fromAsync 空 next 结果**：新增空对象按 done=false、value=undefined 处理 1 条异步用例；差分 697→698/698 |
 | 2026-11-10 | **S2.2-B114 Array.fromAsync done getter 抛错**：新增 done 读取异常拒绝 1 条异步用例；差分 698→699/699 |
 | 2026-11-10 | **S2.2-B115 Array.fromAsync value getter 抛错**：新增 value 读取异常拒绝 1 条异步用例；差分 699→700/700 |
+| 2026-11-10 | **S2.2-B116 Array.fromAsync done=true 不读 value**：核心单测固定规范行为；Node 24 会读取 value，记录为已知差异且不纳入差分；核心 1134/1118 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

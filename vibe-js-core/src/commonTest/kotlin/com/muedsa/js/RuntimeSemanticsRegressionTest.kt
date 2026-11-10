@@ -1508,6 +1508,36 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Array fromAsync 同步迭代器 done 为 true 时不读取 value`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var out = '';
+                var source = {
+                    [Symbol.iterator]: function () {
+                        return {
+                            next: function () {
+                                return {
+                                    done: true,
+                                    get value() {
+                                        throw new Error('value');
+                                    }
+                                };
+                            }
+                        };
+                    }
+                };
+                Array.fromAsync(source).then(function (a) {
+                    out = String(a.length);
+                }, function (e) {
+                    out = e.message;
+                });
+            """.trimIndent()
+        )
+        assertEquals("0", runtime.evalString("out"))
+    }
+
+    @Test
     fun `数组泛型方法支持 2 的 53 次方级 array-like 长度`() = runTest {
         val runtime = TestRuntime()
         // pop：ToLength 裁剪到 2^53-1，并按 Long 索引读取/删除
