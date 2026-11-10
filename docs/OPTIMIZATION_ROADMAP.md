@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **702 / 702** | 含 L 系列同步与异步用例 |
+| Node 差分 | **703 / 703** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -685,6 +685,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B119 同 id 首次 URL 优先**：新增同 id 不同 url 时 import.meta.url 取首次来源 1 条核心单测；核心 1136/1120 |
 | 2026-11-10 | **S2.2-B120 Object.fromEntries next 抛错不关闭**：核心单测固定规范行为；Node 24 会调用 return，记录为已知差异且不纳入差分；核心 1137/1121 |
 | 2026-11-10 | **S2.2-B121 Object.fromEntries __proto__ 键**：新增 CreateDataProperty 语义 1 条同步用例；差分 701→702/702 |
+| 2026-11-10 | **S2.2-B122 Array.fromAsync 小数 length**：新增 ToLength 截断为 2 1 条异步用例；差分 702→703/703 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
