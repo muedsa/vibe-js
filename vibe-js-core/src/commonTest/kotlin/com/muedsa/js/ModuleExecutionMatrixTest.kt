@@ -586,6 +586,23 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `namespace 属性定义被拒绝`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            false,
+            (engine.run("Reflect.defineProperty(ns, 'x', { value: 2 })") as JSBoolean).value,
+        )
+        assertEquals(
+            false,
+            (engine.run("Reflect.defineProperty(ns, 'y', { value: 1 })") as JSBoolean).value,
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("x")) as JSNumber).value)
+        assertEquals(null, namespace.getOwnProperty(PropertyKey.Str("y")))
+    }
+
+    @Test
     fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
