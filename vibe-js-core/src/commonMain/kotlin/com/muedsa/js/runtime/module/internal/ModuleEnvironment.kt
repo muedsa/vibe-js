@@ -64,4 +64,52 @@ internal class ModuleEnvironment(
         if (record.importBindings.containsKey(name)) return false
         return super.deleteBinding(name)
     }
+
+    /**
+     * 非挂起地解析一个导出名的当前值，供 namespace 数据描述符使用。
+     *
+     * 这里重复走 ResolveExport（不缓存），保证 `export *` 与 live binding 的
+     * 语义一致；值本身通过目标模块的本地/import 链实时读取。
+     */
+    internal fun resolveExportedValue(exportName: String): JSValue =
+        when (val result = ModuleExportResolver.resolveExport(record, exportName)) {
+            is ResolveExportResult.Resolved -> {
+                result.module.environment?.resolveBindingValue(result.bindingName)
+                    ?: throw JSException(
+                        JSError(
+                            "ReferenceError",
+                            "Export '$exportName' is not initialized in ${result.module.id}",
+                        ),
+                    )
+            }
+
+            is ResolveExportResult.Namespace -> {
+                result.module.namespace
+                    ?: throw JSException(
+                        JSError("ReferenceError", "Module namespace is not initialized: ${result.module.id}"),
+                    )
+            }
+
+            ResolveExportResult.Ambiguous -> throw JSException(
+                JSError("SyntaxError", "Ambiguous export '$exportName'"),
+            )
+
+            ResolveExportResult.NotFound -> throw JSException(
+                JSError("ReferenceError", "Export '$exportName' not found"),
+            )
+        }
+
+    /** 按本地名读取：import 名递归转发，本地名走 DeclarativeEnvironment。 */
+    internal fun resolveBindingValue(name: String): JSValue? {
+        when (val imported = record.importBindings[name]) {
+            is ModuleImportBinding.Resolved ->
+                return imported.target.environment?.resolveBindingValue(imported.bindingName)
+
+            is ModuleImportBinding.Namespace ->
+                return imported.target.namespace
+
+            null -> Unit
+        }
+        return getLocalBindingValue(name)
+    }
 }

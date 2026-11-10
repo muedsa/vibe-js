@@ -1,10 +1,11 @@
 # 模块执行设计与实现方案
 
-> 状态：**阶段 0–5 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
+> 状态：**阶段 0–6 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
 > 类型化声明、TLA 标记和语法收紧；公共 `ModuleProvider` / `ModuleSource` / `InMemoryModuleProvider`
 > 与模块图预算已提供；内部 `ModuleGraphLoader`、`ModuleExportResolver`、`ModuleLinker`、
-> `ModuleEnvironment` 与声明实例化已能加载/链接/建环境；但顶层 `this` 的模块执行帧、
-> namespace 对象、求值、公开 `Engine.runModule` 与宿主加载器均未实现。只有需求方明确继续重启时，才进入阶段 6+。
+> `ModuleEnvironment`、声明实例化与 namespace exotic 对象已能加载/链接/建环境/暴露实时导出；
+> 但 `import.meta`、顶层 `this` 的模块执行帧、求值、公开 `Engine.runModule` 与宿主加载器均未实现。
+> 只有需求方明确继续重启时，才进入阶段 7+。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -350,7 +351,7 @@ internal class ModuleRecord(
     val program: ModuleProgram,
     var status: ModuleStatus = ModuleStatus.NEW,
     var environment: ModuleEnvironment? = null,
-    var namespace: JSModuleNamespace? = null,
+    var namespace: JSObject? = null,
     var importMeta: JSObject? = null,
     var evaluationError: JSException? = null,
 ) {
@@ -495,7 +496,7 @@ evaluate(record):
 - 每次 `runModule` 的模块图独立，副作用不会跨调用复用。
 - `runModule` 返回入口 namespace；返回值不依赖模块体最后表达式。
 
-### 7.4 `import.meta`
+### 7.4 `import.meta`（阶段 7 实现）
 
 - 每个 `ModuleRecord` 缓存一个 `import.meta` 对象。
 - 空原型、普通对象。
@@ -503,7 +504,7 @@ evaluate(record):
 - `import.meta` 对象在同一模块内复用；不同模块不共享。
 - 不实现 `import.meta.resolve`。
 
-## 8. 模块命名空间
+## 8. 模块命名空间（阶段 6 已实现）
 
 新增 `JSModuleNamespace`，作为专用 exotic 对象：
 
@@ -516,7 +517,7 @@ evaluate(record):
 - `[[Set]]` / `[[Delete]]` / 不兼容的 `[[DefineOwnProperty]]` 抛 TypeError 或返回 false。
 - `Symbol.toStringTag` 为 `"Module"`。
 - `export * as ns` 的 namespace 对象按同一规则创建。
-- namespace 对象在首次需要时创建并缓存；同一 `runModule` 图内同一模块复用。
+- namespace 对象在声明实例化时创建并缓存；同一 `runModule` 图内同一模块复用。
 
 ## 9. 错误、预算与取消
 
@@ -632,9 +633,9 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
-当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5、M3.1–M3.6、M4.1–M4.6、M5.1–M5.3、M5.5、M5.7 已完成；
-M5.4 的 import 只读转发已完成，namespace 值待阶段 6；M5.6（模块执行帧的顶层 `this`）随求值阶段实现；
-M2.6（`Engine.runModule` 签名）推迟到 M7；M0.2 的完整图 fixture 与阶段 6+ 尚未开始。
+当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5、M3.1–M3.6、M4.1–M4.6、M5.1–M5.3、M5.5、M5.7、M6.1–M6.5 已完成；
+M5.4 已完成 import 只读转发与 namespace 值接入；M5.6（模块执行帧的顶层 `this`）与 M7.4（`import.meta`）
+随求值阶段实现；M2.6（`Engine.runModule` 签名）推迟到 M7；M0.2 的完整图 fixture 与阶段 7+ 尚未开始。
 
 ### 阶段 0：契约与脚手架（1–2 人日）
 
@@ -714,7 +715,7 @@ M2.6（`Engine.runModule` 签名）推迟到 M7；M0.2 的完整图 fixture 与�
 | M6.1 | `JSModuleNamespace` exotic 对象 | 空原型、不可扩展 |
 | M6.2 | live get / descriptor / ownKeys | 读取实时绑定；keys 排序；描述符符合规范 |
 | M6.3 | 写/删/重定义防护 | 正确抛 TypeError/返回 false |
-| M6.4 | `export * as ns` 嵌套 namespace | 惰性创建、同模块缓存 |
+| M6.4 | `export * as ns` 嵌套 namespace | 同一模块缓存；声明实例化时创建 |
 | M6.5 | namespace 测试 | 属性描述符、`Object.keys`、`Symbol.toStringTag` |
 
 ### 阶段 7：同步求值与 `runModule`（6–9 人日）
@@ -797,7 +798,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 阶段 0–5 的 Parser 前置、公共 Provider API、内部图加载、静态链接与模块环境/声明实例化已按本文落地；阶段 6+ 仍未排期。
+- 阶段 0–6 的 Parser 前置、公共 Provider API、内部图加载、静态链接、模块环境/声明实例化与 namespace 已按本文落地；阶段 7+ 仍未排期。
 - `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

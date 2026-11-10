@@ -237,6 +237,20 @@ open class DeclarativeEnvironment(
     /** 当前作用域是否存在尚未初始化的绑定。 */
     fun hasUninitializedLocal(name: String): Boolean = bindings[name]?.initialized == false
 
+    /**
+     * 非挂起地读取当前作用域的本地绑定值。
+     *
+     * 模块 namespace 的属性描述符是数据属性，但值必须实时读取；这条入口只供
+     * 模块内部使用，仍保留 TDZ 的 ReferenceError。
+     */
+    internal fun getLocalBindingValue(name: String): JSValue? {
+        val binding = bindings[name] ?: return null
+        if (!binding.initialized) {
+            throw JSException(JSError("ReferenceError", "Cannot access '$name' before initialization"))
+        }
+        return binding.value
+    }
+
     /** 当前作用域是否存在同名词法绑定（let/const/class）。 */
     fun hasOwnLexicalBinding(name: String): Boolean = bindings[name]?.lexical == true
 

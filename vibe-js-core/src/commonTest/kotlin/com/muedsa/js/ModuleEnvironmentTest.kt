@@ -13,11 +13,13 @@ import com.muedsa.js.runtime.module.internal.ModuleGraphLoader
 import com.muedsa.js.runtime.module.internal.ModuleLinker
 import com.muedsa.js.runtime.value.JSFunction
 import com.muedsa.js.runtime.value.JSNumber
+import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSUndefined
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -102,7 +104,7 @@ class ModuleEnvironmentTest {
     }
 
     @Test
-    fun `命名空间 import 建立只读绑定但不创建 namespace 对象`() = runTest {
+    fun `命名空间 import 复用目标模块的 namespace 绑定`() = runTest {
         val engine = Engine()
         val graph = graph(
             source("a", "import * as ns from \"./b.js\";"),
@@ -114,7 +116,8 @@ class ModuleEnvironmentTest {
         val aEnvironment = instantiator.instantiate(graph.entry)
 
         assertTrue(aEnvironment.hasOwnBinding("ns"))
-        assertFailsWith<JSException> { aEnvironment.getBinding("ns") }
+        val namespace = assertIs<JSObject>(assertNotNull(aEnvironment.getBinding("ns")))
+        assertEquals(false, namespace.isExtensible())
         assertFailsWith<JSException> { aEnvironment.setBinding("ns", JSNumber(1.0), strict = true) }
         assertEquals(false, aEnvironment.deleteBinding("ns"))
     }

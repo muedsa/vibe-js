@@ -63,6 +63,12 @@ internal class ModuleDeclarationInstantiator(
         }
 
         record.environment = environment
+        if (record.namespace == null) {
+            record.namespace = JSModuleNamespace(
+                record = record,
+                symbolToStringTag = interpreter.intrinsics.symbolToStringTag,
+            ).attachAllocationBudget(interpreter.context.objectAllocations)
+        }
         return environment
     }
 }
