@@ -1606,6 +1606,56 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-iterator-skips-sync-getter",
+        """
+        var log = [];
+        var index = 0;
+        var source = {
+          [Symbol.asyncIterator]: function () {
+            return {
+              next: function () {
+                return Promise.resolve(index++ === 0 ? { value: 'async', done: false } : { done: true });
+              }
+            };
+          },
+          get [Symbol.iterator]() {
+            throw new Error('sync-getter');
+          }
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-iterator-getter-throw-before-sync",
+        """
+        var log = [];
+        var source = {
+          get [Symbol.asyncIterator]() {
+            throw new Error('async-getter');
+          },
+          [Symbol.iterator]: function () {
+            return {
+              next: function () {
+                return { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-mapper-thenable",
         """
         var log = [];
