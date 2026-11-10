@@ -181,4 +181,24 @@ class ModuleProviderContractTest {
         val namespace = engine.runModule("entry", provider)
         assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
     }
+
+    @Test
+    fun `同一 id 的多 specifier 只计算一次源码预算`() = runTest {
+        val entrySource = "import './a.js'; import './b.js'; export const value = 1;"
+        val sharedSource = "export const value = 2;"
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return when (request.specifier) {
+                    "entry" -> ModuleSource("entry", entrySource)
+                    "./a.js", "./b.js" -> ModuleSource("shared", sharedSource)
+                    else -> null
+                }
+            }
+        }
+        val engine = Engine(
+            limits = EngineLimits(maxTotalModuleSourceLength = entrySource.length + sharedSource.length),
+        )
+        val namespace = engine.runModule("entry", provider)
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value)
+    }
 }
