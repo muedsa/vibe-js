@@ -795,4 +795,68 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         });
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-from-async-sync-mapper-close",
+        """
+        var log = [];
+        var source = {
+          [Symbol.iterator]: function () {
+            var index = 0;
+            return {
+              next: function () {
+                log.push('next');
+                return index < 3
+                  ? { value: ++index, done: false }
+                  : { done: true };
+              },
+              return: function () { log.push('return'); return { done: true }; }
+            };
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          if (value === 2) throw new Error('map');
+          return value;
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-from-async-mapper-reject",
+        """
+        var log = [];
+        var source = {
+          [Symbol.asyncIterator]: function () {
+            var index = 0;
+            return {
+              next: function () {
+                log.push('next');
+                return Promise.resolve(index < 2
+                  ? { value: ++index, done: false }
+                  : { done: true });
+              },
+              return: function () {
+                log.push('return');
+                return Promise.resolve({ done: true });
+              }
+            };
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          return Promise.reject(new Error('async-map'));
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
 )
