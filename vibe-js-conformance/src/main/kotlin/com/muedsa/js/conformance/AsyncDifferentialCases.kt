@@ -686,6 +686,63 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-iterator-before-constructor",
+        """
+        var log = [];
+        function Result() {
+          log.push('construct');
+          return [];
+        }
+        var source = {
+          get [Symbol.iterator]() {
+            log.push('iterator');
+            return function () {
+              return {
+                next: function () {
+                  return { done: true };
+                }
+              };
+            };
+          }
+        };
+        Array.fromAsync.call(Result, source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-constructor-throw-no-close",
+        """
+        var log = [];
+        function Result() {
+          log.push('construct');
+          throw new Error('constructor');
+        }
+        var source = {
+          [Symbol.iterator]: function () {
+            return {
+              next: function () {
+                return { value: 1, done: false };
+              },
+              return: function () {
+                log.push('return');
+                return { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync.call(Result, source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push(error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-string",
         """
         var log = [];
