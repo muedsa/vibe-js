@@ -650,6 +650,22 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `namespace 的 toStringTag 是自有属性但不参与枚举`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "true:false:x",
+            (
+                engine.run(
+                    "Object.hasOwn(ns, Symbol.toStringTag) + ':' + " +
+                        "Object.keys(ns).includes(String(Symbol.toStringTag)) + ':' + Object.keys(ns).join(',')",
+                ) as JSString
+                ).value,
+        )
+    }
+
+    @Test
     fun `JSON_stringify 按普通可枚举属性序列化 namespace`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
