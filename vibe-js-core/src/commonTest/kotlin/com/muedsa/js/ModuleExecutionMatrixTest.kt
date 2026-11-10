@@ -236,6 +236,44 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `菱形依赖只求值一次并按深度优先顺序执行`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "entry",
+                """
+                import './a.js';
+                import './b.js';
+                export const order = globalThis.order;
+                export { sharedCount } from './shared.js';
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./a.js" to source(
+                        "a",
+                        "import './shared.js'; globalThis.order = (globalThis.order || '') + 'a,';",
+                    ),
+                    "./b.js" to source(
+                        "b",
+                        "import './shared.js'; globalThis.order = (globalThis.order || '') + 'b,';",
+                    ),
+                    "./shared.js" to source(
+                        "shared",
+                        """
+                        globalThis.sharedCount = (globalThis.sharedCount || 0) + 1;
+                        globalThis.order = (globalThis.order || '') + 'shared,';
+                        export const sharedCount = globalThis.sharedCount;
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        assertEquals("shared,a,b,", (engine.interpreter.getProperty(namespace, PropertyKey.Str("order")) as JSString).value)
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("sharedCount")) as JSNumber).value)
+    }
+
+    @Test
     fun `循环重命名导出保留别名实时绑定`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
