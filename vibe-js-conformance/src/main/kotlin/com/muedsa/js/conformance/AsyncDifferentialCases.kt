@@ -1146,6 +1146,28 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-promise-any-thenable-getter-throw",
+        """
+        var log = [];
+        var thenable = {
+          get then() {
+            throw new Error('any-getter');
+          }
+        };
+        Promise.any([thenable, Promise.reject('other')]).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push(error.name);
+          log.push(error.errors.length);
+          log.push(error.errors[0].message);
+          log.push(error.errors[1]);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-promise-combinators-empty",
         """
         var log = [];
