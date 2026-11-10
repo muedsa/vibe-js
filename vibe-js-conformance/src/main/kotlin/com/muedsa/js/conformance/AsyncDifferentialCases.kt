@@ -954,6 +954,20 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-from-async-array-like-invalid-length",
+        """
+        var log = [];
+        Array.fromAsync({ length: Infinity }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push(error.name + ':' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-promise-all-proxy-iterable",
         """
         var log = [];
