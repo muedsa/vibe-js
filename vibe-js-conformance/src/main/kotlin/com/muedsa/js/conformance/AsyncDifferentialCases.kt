@@ -920,6 +920,31 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-done-true-no-return",
+        """
+        var log = [];
+        var iterator = {
+          next: function () {
+            return Promise.resolve({
+              done: true,
+              get value() {
+                throw new Error('async-done-value');
+              }
+            });
+          },
+          return: function () {
+            log.push('return');
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(log.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-sync-result",
         """
         var log = [];

@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **759 / 759** | 含 L 系列同步与异步用例 |
+| Node 差分 | **760 / 760** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -721,6 +721,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B183~B184 Array.fromAsync 异步 done/value getter**：新增异步 done 与 value getter 抛错 2 条异步用例；差分 755→757/757 |
 | 2026-11-10 | **S2.2-B185~B186 Array.fromAsync 值 await 语义**：新增异步迭代器值不再 await、同步迭代器值会 await 2 条异步用例；差分 757→759/759 |
 | 2026-11-10 | **S2.2-B187~B188 模块 URL 空值边界**：新增首次 URL 为空回退 `module:<id>`、入口 URL 为空字符串保留 2 条核心单测；核心 1146/1130 |
+| 2026-11-10 | **S2.2-B189 异步迭代器 done=true 不调用 return**：新增异步迭代器 done=true 且 value getter 抛错时不读 value、不调用 return 1 条异步用例；差分 759→760/760 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
