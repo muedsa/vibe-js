@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **888 / 888** | 含 L 系列同步与异步用例 |
+| Node 差分 | **890 / 890** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -793,6 +793,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B325~B326 Array.fromAsync 迭代器 getter 优先级**：新增异步迭代器存在时不读同步 getter、异步 getter 抛错先于同步 2 条异步用例；差分 882→884/884 |
 | 2026-11-11 | **S2.2-B327~B328 Array.fromAsync 异步 next 空结果**：新增解析为 undefined、null 均拒绝 TypeError 2 条异步用例；差分 884→886/886 |
 | 2026-11-11 | **S2.2-B329~B330 Array.fromAsync 同步 next 空结果**：新增返回 undefined、null 均拒绝 TypeError 2 条异步用例；差分 886→888/888 |
+| 2026-11-11 | **S2.2-B331~B332 Object.fromEntries 迭代器方法为 null/非函数**：新增两者均抛 TypeError 2 条同步用例；差分 888→890/890 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

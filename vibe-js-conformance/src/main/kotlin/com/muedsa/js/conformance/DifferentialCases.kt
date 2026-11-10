@@ -5292,6 +5292,30 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.fromEntries 的 Symbol.iterator 为 null 时抛 TypeError。
+    DifferentialCase(
+        "object-from-entries-null-iterator",
+        """(function () {
+  try {
+    Object.fromEntries({ [Symbol.iterator]: null });
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // Object.fromEntries 的 Symbol.iterator 非函数时抛 TypeError。
+    DifferentialCase(
+        "object-from-entries-non-callable-iterator",
+        """(function () {
+  try {
+    Object.fromEntries({ [Symbol.iterator]: 1 });
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
     // Object.fromEntries 对 null 与 undefined 输入抛 TypeError。
     DifferentialCase(
         "object-from-entries-nullish-input",
