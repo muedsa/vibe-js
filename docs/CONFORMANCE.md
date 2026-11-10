@@ -4,7 +4,7 @@
 >
 > 本文件记录 `test262-parser-tests`（脚本 + 模块）、Test262 ES5/ES2015 子集、真实库 UMD 冒烟与 Node 差分的当前口径。
 > 最近一次全量运行的环境为 JDK 21、Kotlin 2.4.21、Gradle 9.8.2、Node v24.12.0、Windows 10/amd64；
-> 本次已在当前基线复跑 parser、ES2015、差分与真实库；ES5 数字沿用旧报告。
+> 本次已在当前基线复跑 parser、ES5、ES2015、差分与真实库。
 
 ## 1. 范围与判定
 
