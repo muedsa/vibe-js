@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
@@ -415,6 +416,40 @@ class ModuleExecutionMatrixTest {
             namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
         )
         assertEquals(7.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("default")) as JSNumber).value)
+    }
+
+    @Test
+    fun `嵌套命名空间保持 namespace exotic 描述符`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * as ns from './a.js';"),
+            Provider(
+                mapOf(
+                    "./a.js" to source(
+                        "a",
+                        "export const x = 1; export * as nested from './b.js';",
+                    ),
+                    "./b.js" to source("b", "export const y = 2;"),
+                ),
+            ),
+        )
+        val nested = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("ns")),
+        )
+        assertEquals(null, nested.prototype)
+        assertFalse(nested.isExtensible())
+        assertEquals(
+            listOf("nested", "x"),
+            nested.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        val xDescriptor = assertNotNull(nested.getOwnProperty(PropertyKey.Str("x")))
+        assertTrue(xDescriptor.writable)
+        assertTrue(xDescriptor.enumerable)
+        assertFalse(xDescriptor.configurable)
+        val inner = assertIs<JSObject>(
+            engine.interpreter.getProperty(nested, PropertyKey.Str("nested")),
+        )
+        assertEquals(2.0, (engine.interpreter.getProperty(inner, PropertyKey.Str("y")) as JSNumber).value)
     }
 
     @Test
