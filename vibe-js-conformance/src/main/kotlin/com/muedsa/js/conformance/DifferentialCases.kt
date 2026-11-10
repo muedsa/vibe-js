@@ -4865,6 +4865,24 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.fromEntries 对 null 与 undefined 输入抛 TypeError。
+    DifferentialCase(
+        "object-from-entries-nullish-input",
+        """(function () {
+  var names = [];
+  try {
+    Object.fromEntries(null);
+  } catch (error) {
+    names.push(error.name);
+  }
+  try {
+    Object.fromEntries(undefined);
+  } catch (error) {
+    names.push(error.name);
+  }
+  return names.join(',');
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
