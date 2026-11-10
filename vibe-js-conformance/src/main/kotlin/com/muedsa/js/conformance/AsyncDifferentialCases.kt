@@ -1281,6 +1281,42 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-subclass-this",
+        """
+        var log = [];
+        class Sub extends Array {}
+        Array.fromAsync.call(Sub, [1, 2]).then(function (values) {
+          log.push(values instanceof Sub);
+          log.push(Object.getPrototypeOf(values) === Sub.prototype);
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-subclass-this-async-iterable",
+        """
+        var log = [];
+        class Sub extends Array {}
+        var index = 0;
+        var source = {
+          [Symbol.asyncIterator]: function () {
+            return {
+              next: function () {
+                return Promise.resolve(index++ === 0 ? { value: 1, done: false } : { done: true });
+              }
+            };
+          }
+        };
+        Array.fromAsync.call(Sub, source).then(function (values) {
+          log.push(values instanceof Sub);
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-string",
         """
         var log = [];
