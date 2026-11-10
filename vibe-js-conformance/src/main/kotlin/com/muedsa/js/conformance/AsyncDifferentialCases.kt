@@ -535,6 +535,72 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-element-failure-closes-iterator",
+        """
+        var log = [];
+        var iterator = {
+          index: 0,
+          next: function () {
+            return this.index++ < 2 ? { value: 1, done: false } : { done: true };
+          },
+          return: function () {
+            log.push('return');
+            return { done: true };
+          }
+        };
+        function Result() {
+          return Object.preventExtensions({});
+        }
+        Array.fromAsync.call(Result, {
+          [Symbol.iterator]: function () {
+            return iterator;
+          }
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push(error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-length-failure-closes-iterator",
+        """
+        var log = [];
+        var iterator = {
+          index: 0,
+          next: function () {
+            return this.index++ < 2 ? { value: 1, done: false } : { done: true };
+          },
+          return: function () {
+            log.push('return');
+            return { done: true };
+          }
+        };
+        var result = {};
+        Object.defineProperty(result, 'length', {
+          set: function () {
+            throw new Error('length');
+          }
+        });
+        function Result() {
+          return result;
+        }
+        Array.fromAsync.call(Result, {
+          [Symbol.iterator]: function () {
+            return iterator;
+          }
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push(error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-string",
         """
         var log = [];
