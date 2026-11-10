@@ -1,10 +1,10 @@
 # 模块执行设计与实现方案
 
-> 状态：**阶段 0–4 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
+> 状态：**阶段 0–5 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
 > 类型化声明、TLA 标记和语法收紧；公共 `ModuleProvider` / `ModuleSource` / `InMemoryModuleProvider`
-> 与模块图预算已提供；内部 `ModuleGraphLoader` 已能递归加载/去重，`ModuleExportResolver` /
-> `ModuleLinker` 已能解析 import、星号导出与歧义并在链接期拒绝 TLA；但
-> `Engine.runModule`、ModuleEnvironment、求值、宿主加载器均未实现。只有需求方明确继续重启时，才进入阶段 5+。
+> 与模块图预算已提供；内部 `ModuleGraphLoader`、`ModuleExportResolver`、`ModuleLinker`、
+> `ModuleEnvironment` 与声明实例化已能加载/链接/建环境；但顶层 `this` 的模块执行帧、
+> namespace 对象、求值、公开 `Engine.runModule` 与宿主加载器均未实现。只有需求方明确继续重启时，才进入阶段 6+。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -433,23 +433,22 @@ ModuleEnvironment/声明实例化与求值属于阶段 5+。
 
 ### 7.1 `ModuleEnvironment`
 
-`DeclarativeEnvironment` 目前是 final。建议改为 `open`，新增：
+`DeclarativeEnvironment` 已改为 `open`，新增 `ModuleEnvironment`：
 
 ```kotlin
 internal class ModuleEnvironment(
     parent: Environment? = null,
-    private val record: ModuleRecord,
-) : DeclarativeEnvironment(parent)
+    val record: ModuleRecord,
+) : DeclarativeEnvironment(parent, isVarScope = true)
 ```
 
 - 本地 `let/const/class` 继续使用父类 Map 与 TDZ。
-- `import` 名维护 `importBindings: Map<String, ModuleImportBinding>`。
-- `hasBinding(name)`：import 名或父类本地绑定。
-- `getBinding(name)`：import 名实时读取目标模块的导出绑定；本地走父类。
-- `setBinding(name, ...)`：import 名抛 TypeError；本地走父类。
-- `deleteBinding(name)`：import 名返回 false。
-- 每个模块独立环境，父环境为 `context.globalEnvironment`。
-- 模块顶层 `this = undefined`，由 Interpreter 的模块执行帧设置。
+- `import` 名维护在 `ModuleRecord.importBindings`，只读转发目标绑定。
+- `hasBinding` / `getBinding`：import 名实时读取目标模块环境；本地走父类。
+- `setBinding`：import 名抛 TypeError；本地走父类。
+- `deleteBinding`：import 名返回 false。
+- 模块环境自身是 var 作用域，顶层 var/function 不进入 globalThis；父环境为 `context.globalEnvironment`。
+- 模块顶层 `this = undefined` 由阶段 7 的执行帧设置。
 
 ```kotlin
 internal data class ModuleImportBinding(
@@ -462,13 +461,14 @@ internal data class ModuleImportBinding(
 
 ### 7.2 声明实例化
 
-在求值前完成 `ModuleDeclarationInstantiation`：
+阶段 5 已实现内部 `ModuleDeclarationInstantiator(interpreter)`：
 
+- 创建 `ModuleEnvironment`，父环境为 `context.globalEnvironment`。
 - 创建 `var` 绑定，初始化为 `undefined`。
 - 创建 function 声明绑定并初始化函数对象；模块顶层 function 按词法绑定处理。
-- 创建 `let` / `const` / `class` 未初始化绑定，进入 TDZ。
-- 创建 import 本地名；命名导入为只读转发，命名空间导入为不可变 namespace 值。
-- 创建 `*default*` 绑定；`export default function/class` 按源码位置初始化。
+- 创建 `let` / `const` / `class` / `using` 未初始化绑定，进入 TDZ。
+- 创建 `*default*` 未初始化绑定；匿名 `export default` 在求值点初始化。
+- import 名只登记到 `ModuleRecord.importBindings`；命名空间导入的 namespace 值在阶段 6 创建。
 - 不执行任何用户语句。
 - 绑定种类全部来自 `ModuleProgram.bindings`，不在运行时扫描 AST。
 
@@ -632,8 +632,9 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
-当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5、M3.1–M3.6、M4.1–M4.6 已完成；M2.6（`Engine.runModule` 签名）推迟到 M7，
-避免暴露抛错桩；M0.2 的完整图 fixture 与阶段 5+ 尚未开始。
+当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5、M3.1–M3.6、M4.1–M4.6、M5.1–M5.3、M5.5、M5.7 已完成；
+M5.4 的 import 只读转发已完成，namespace 值待阶段 6；M5.6（模块执行帧的顶层 `this`）随求值阶段实现；
+M2.6（`Engine.runModule` 签名）推迟到 M7；M0.2 的完整图 fixture 与阶段 6+ 尚未开始。
 
 ### 阶段 0：契约与脚手架（1–2 人日）
 
@@ -796,7 +797,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 阶段 0–4 的 Parser 前置、公共 Provider API、内部图加载与静态导出/import 链接已按本文落地；阶段 5+ 仍未排期。
+- 阶段 0–5 的 Parser 前置、公共 Provider API、内部图加载、静态链接与模块环境/声明实例化已按本文落地；阶段 6+ 仍未排期。
 - `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

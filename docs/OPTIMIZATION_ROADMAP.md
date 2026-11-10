@@ -4,7 +4,7 @@
 >
 > 本文只列**尚未完成**的工作。已实现能力只作为后续工作的依赖与不可破坏契约出现，不逐项重复。
 >
-> **2026-11-10 调整：模块 Parser 阶段 0–1、公共 Provider API 阶段 2、内部模块图加载阶段 3 与静态链接阶段 4 作为实验性前置完成**（静态表、类型化声明、SourceInfo/range、TLA 标记、语法收紧、`ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部递归图加载、ResolveExport/import 链接/TLA 拒绝）；模块执行、公开 `runModule`、ModuleEnvironment、求值、加载器、CLI、Test262 module harness、模块执行语义与顶层 await 执行仍为无计划。当前唯一执行入口保持 `Engine.run(source)`（单个脚本文本）；核心继续不引入平台文件/URL IO。
+> **2026-11-10 调整：模块 Parser 阶段 0–1、公共 Provider API 阶段 2、内部模块图加载阶段 3、静态链接阶段 4 与模块环境/声明实例化阶段 5 作为实验性前置完成**（静态表、类型化声明、SourceInfo/range、TLA 标记、语法收紧、`ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部递归图加载、ResolveExport/import 链接/TLA 拒绝、ModuleEnvironment/函数与 TDZ 绑定）；模块执行、公开 `runModule`、namespace 对象、求值、顶层 `this` 帧、加载器、CLI、Test262 module harness、模块执行语义与顶层 await 执行仍为无计划。当前唯一执行入口保持 `Engine.run(source)`（单个脚本文本）；核心继续不引入平台文件/URL IO。
 
 ## 1. 当前基线
 
@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1035 / 1035** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1019 / 1019** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1039 / 1039** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1023 / 1023** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -42,18 +42,18 @@
 
 ## 2. 排序原则
 
-模块执行仍不设默认主线；阶段 0–4 的 Parser 前置、公共 Provider API、内部模块图加载与静态链接已作为**实验性实现**落地，执行入口与加载器仍未计划。
+模块执行仍不设默认主线；阶段 0–5 的 Parser 前置、公共 Provider API、内部模块图加载、静态链接与模块环境/声明实例化已作为**实验性实现**落地，执行入口与加载器仍未计划。
 
 | 队列 | 范围 | 说明 |
 |---|---|---|
 | **维护主线** | `DOC-1` → `S6.2` → `S2.2` | 保持文档/门禁绿色，持续补差分与真实库覆盖 |
 | **观测** | `S5.2` | 只做性能复测，B2 仍无计划 |
-| **实验性实现** | 模块 Parser + Provider API + 内部图加载 + 静态链接（阶段 0–4 已完成） | 仅静态元数据/语法收紧/Provider 契约/图加载/导出解析，无公开 `runModule`、ModuleEnvironment、求值、加载器、CLI 或 harness |
+| **实验性实现** | 模块 Parser + Provider API + 内部图加载 + 静态链接 + 模块环境（阶段 0–5 已完成） | 仅静态元数据/语法收紧/Provider 契约/图加载/导出解析/环境骨架，无公开 `runModule`、namespace 对象、求值、加载器、CLI 或 harness |
 | **无计划** | 模块执行与加载、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
 
 ### 2.1 为什么模块执行仍不设默认主线
 
-阶段 0–4 只补齐了链接需要的静态表、类型化声明、TLA 标记、语法收紧、公共 Provider 契约、内部图加载与导出/import 解析；以下边界仍然成立：
+阶段 0–5 只补齐了链接/环境需要的静态表、类型化声明、TLA 标记、语法收紧、公共 Provider 契约、内部图加载、导出/import 解析与声明实例化；以下边界仍然成立：
 
 1. **单脚本入口是当前产品边界**：`Engine.run(source)` 直接接受脚本文本，宿主可以自行拼接、打包或分段执行；不需要核心理解多文件模块图。
 2. **模块天然涉及多文件加载**：ES Module 的常见用法是从文件系统/URL 读取多个 `.mjs`，而核心是 Kotlin Multiplatform 库，不能假设存在文件系统、路径或 Node `fs`。
@@ -181,13 +181,13 @@ repeat(100) {
 
 ### 6.2 未来若重启模块方向的参考实现方案
 
-> 本节是执行侧设计储备；阶段 0–4 的 Parser 前置、公共 Provider API、内部图加载与静态链接已完成，但 ModuleEnvironment/求值/公开入口仍无计划。类名、包名和签名都可能在真正重启时调整。原则仍然是：**核心只定义纯 Kotlin 抽象并负责链接/求值；文件、URL、网络等 IO 全部由宿主提供。**
+> 本节是执行侧设计储备；阶段 0–5 的 Parser 前置、公共 Provider API、内部图加载、静态链接与模块环境已完成，但 namespace 对象/求值/公开入口仍无计划。类名、包名和签名都可能在真正重启时调整。原则仍然是：**核心只定义纯 Kotlin 抽象并负责链接/求值；文件、URL、网络等 IO 全部由宿主提供。**
 >
 > 完整的设计决策、API 契约、实施顺序与详细任务见 [MODULE_DESIGN.md](MODULE_DESIGN.md)。
 >
-> 阶段 0–4 的 Parser 前置、公共 Provider API、内部图加载与静态链接（静态表、类型化声明、SourceInfo/range、TLA 标记、语法收紧、
-> `ModuleProvider`/`InMemoryModuleProvider`/模块图预算/递归加载/ResolveExport）已落地；
-> 以下 `Engine.runModule` / ModuleEnvironment / 求值 / 公开加载器仍是未实现的执行侧设计储备。
+> 阶段 0–5 的 Parser 前置、公共 Provider API、内部图加载、静态链接与模块环境（静态表、类型化声明、SourceInfo/range、TLA 标记、语法收紧、
+> `ModuleProvider`/`InMemoryModuleProvider`/模块图预算/递归加载/ResolveExport/ModuleEnvironment）已落地；
+> 以下 `Engine.runModule` / namespace 对象 / 求值 / 公开加载器仍是未实现的执行侧设计储备。
 
 #### 6.2.1 核心 API：ModuleRequest / ModuleSource / ModuleProvider
 
@@ -517,7 +517,7 @@ data class EngineLimits(
 
 ## 10. 风险与约束
 
-1. **模块执行未实现**：阶段 0–4 的 Parser 静态前置、公共 Provider API、内部图加载与静态链接已完成，但核心仍不提供 ModuleEnvironment/求值/live binding/命名空间对象语义；多文件宿主需要自行打包、拼接或实现外部加载器。
+1. **模块执行未实现**：阶段 0–5 的 Parser 静态前置、公共 Provider API、内部图加载、静态链接与模块环境已完成，但核心仍不提供 namespace 对象/求值/顶层 `this` 帧/live binding 的运行期语义；多文件宿主需要自行打包、拼接或实现外部加载器。
 2. **KMP 与文件 IO 不匹配**：核心不能假设文件系统；JVM/Android/Native/Node 与浏览器/Wasm 的 IO 能力差异大，未来若重启模块方向，只能采用“核心抽象 + 宿主加载器”或纯内存模块表。
 3. **`Engine.run()` 的边界**：多次 `run` 共享全局环境，但不是模块；全局 `let`/`const`/`class` 重复声明仍可能冲突，宿主需要自行管理脚本边界。
 4. **维护主线依赖语料稳定**：`S6.2`/`S2.2` 受 Test262/真实库下载与版本影响，报告必须带 commit 与跳过口径。
@@ -539,7 +539,8 @@ data class EngineLimits(
 | 模块 Provider API（阶段 2） | `runtime/module/ModuleApi.kt`、[EngineLimits.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/EngineLimits.kt) | 实验性 Provider/错误/预算契约；公开 `runModule` 未实现 |
 | 模块图加载（阶段 3） | `runtime/module/internal/ModuleGraph.kt`、`ModuleGraphLoader.kt` | 内部递归加载/去重/预算；未链接/求值 |
 | 模块静态链接（阶段 4） | `runtime/module/internal/ModuleExportResolver.kt`、`ModuleLinker.kt` | ResolveExport/星号/namespace 导出名/import 链接/TLA 拒绝；无环境/求值 |
-| 模块测试（阶段 0–4） | [ParserModuleTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ParserModuleTest.kt)、[ModuleApiTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleApiTest.kt)、[ModuleGraphLoaderTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleGraphLoaderTest.kt)、[ModuleExportResolverTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleExportResolverTest.kt)、[ModuleLinkerTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleLinkerTest.kt)、[ParserConformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/ParserConformance.kt) | 单元测试 + 262 模块语料回归；执行测试未实现 |
+| 模块环境（阶段 5） | `runtime/module/internal/ModuleEnvironment.kt`、`ModuleDeclarationInstantiator.kt` | import 只读转发、函数/TDZ 绑定；无 namespace 对象/求值/顶层 this |
+| 模块测试（阶段 0–5） | [ParserModuleTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ParserModuleTest.kt)、[ModuleApiTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleApiTest.kt)、[ModuleGraphLoaderTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleGraphLoaderTest.kt)、[ModuleExportResolverTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleExportResolverTest.kt)、[ModuleLinkerTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleLinkerTest.kt)、[ModuleEnvironmentTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleEnvironmentTest.kt)、[ParserConformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/ParserConformance.kt) | 单元测试 + 262 模块语料回归；执行测试未实现 |
 | 宿主生态（已完成） | [HostModule.kt](../vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/HostModule.kt)、`TextEncodingHost.kt`、`StructuredCloneHost.kt`、`UrlHost.kt`、`HostEcosystemSupport.kt` | L4.5 已完成；只做回归与边界扩展 |
 | Test262 筛选/运行器 | [Test262Selection.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Selection.kt)、[Test262Conformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Test262Conformance.kt) | S6.2 / S2.2 |
 | 差分与真实库 | [DifferentialCases.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/DifferentialCases.kt)、[LSeriesDifferentialCases.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/LSeriesDifferentialCases.kt)、[Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt) | S2.2 |
@@ -563,4 +564,5 @@ data class EngineLimits(
 | 2026-11-10 | **模块阶段 2 完成**：新增实验性 `ModuleProvider` / `ModuleSource` / `ModuleRequest` / `InMemoryModuleProvider` / `ModuleLinkException`；`EngineLimits` 增加 `maxModules` 与 `maxTotalModuleSourceLength`；`Engine.runModule` 推迟到 M7 |
 | 2026-11-10 | **模块阶段 3 完成**：新增内部 `ModuleRecord`/`ModuleGraph`/`ModuleGraphLoader`，递归加载 requestedModules、按 `(specifier, referrer)` 缓存请求、按 id 复用 record，并处理缺失依赖、循环、菱形依赖、Provider 异常与图预算；仍无链接/求值/公开入口 |
 | 2026-11-10 | **模块阶段 4 完成**：新增内部 `ModuleExportResolver` 与 `ModuleLinker`，实现 ResolveExport、`export *`/`export * as ns`、循环/歧义/缺失、namespace 导出名与链接期 TLA 拒绝；仍未创建 ModuleEnvironment 或求值 |
+| 2026-11-10 | **模块阶段 5 完成**：`DeclarativeEnvironment` 改为 open；新增内部 `ModuleEnvironment` 与 `ModuleDeclarationInstantiator`，实现 import 只读转发、var/function/let/const/class/using 绑定、函数对象与 TDZ、匿名 default 的 `*default*` 绑定；namespace 对象、顶层 this、求值仍未实现 |
 | 2026-11-09 | **整个模块方向降级为无计划**：保留 `Engine.run()` 单脚本入口与现有 `parseModule` 回归；说明 KMP 核心不应承担文件/URL IO，未来若重启只能采用“核心抽象 + 宿主加载器/内存模块表” |

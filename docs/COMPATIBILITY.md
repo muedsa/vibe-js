@@ -6,8 +6,8 @@
 > Generator / async generator、`for await`、Proxy / Reflect、BigInt、
 > TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
-> `import()` 表达式与模块顶层 `await` 语法；阶段 0–4 已补静态表/类型化声明/TLA 标记、公共 Provider API、
-> 内部模块图加载与静态链接，但 **ModuleEnvironment、求值、公开 runModule 尚未实现，不能执行模块**；当前唯一执行入口是单脚本 `Engine.run(source)`。
+> `import()` 表达式与模块顶层 `await` 语法；阶段 0–5 已补静态表/类型化声明/TLA 标记、公共 Provider API、
+> 内部模块图加载、静态链接与模块环境/声明实例化，但 **namespace 对象、求值、公开 runModule 尚未实现，不能执行模块**；当前唯一执行入口是单脚本 `Engine.run(source)`。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
 > SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；模块执行、
 > 顶层 await、性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
@@ -129,13 +129,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1035** + 宿主 38 个测试（2026-11-10 记录） |
-| JS（Node） | ✅ | 核心 **1019** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1019** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1039** + 宿主 38 个测试（2026-11-10 记录） |
+| JS（Node） | ✅ | 核心 **1023** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1023** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1035 包含 L4/R1/M2/模块前置、Provider API、内部图加载与静态链接新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1019。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1039 包含 L4/R1/M2/模块前置、Provider API、内部图加载、静态链接与模块环境新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1023。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。

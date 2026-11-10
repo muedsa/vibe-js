@@ -5,6 +5,7 @@ package com.muedsa.js.runtime.module.internal
 import com.muedsa.js.ast.ModuleProgram
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleSource
+import com.muedsa.js.runtime.value.JSObject
 /** 模块图内的求值/链接状态。阶段 3 只创建 NEW 状态。 */
 internal enum class ModuleStatus {
     NEW,
@@ -51,6 +52,12 @@ internal class ModuleRecord(
     /** namespace 的排序、去重导出名；链接阶段填充。 */
     var exportedNames: List<String> = emptyList()
     var status: ModuleStatus = ModuleStatus.NEW
+
+    /** 声明实例化后的模块环境；阶段 5 填充。 */
+    var environment: ModuleEnvironment? = null
+
+    /** 阶段 6 创建 namespace exotic 对象后填充。 */
+    var namespace: JSObject? = null
 
     /** 按原说明符查找已加载的依赖；requestedModules 与 dependencies 顺序一致。 */
     fun dependencyFor(specifier: String): ModuleRecord? {

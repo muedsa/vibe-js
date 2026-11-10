@@ -96,7 +96,7 @@ sealed class Environment(val parent: Environment?) {
 /**
  * 声明式环境：函数作用域、块作用域、catch 作用域等。
  */
-class DeclarativeEnvironment(
+open class DeclarativeEnvironment(
     parent: Environment? = null,
     override val isVarScope: Boolean = false,
     /**

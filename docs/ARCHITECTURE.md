@@ -97,7 +97,7 @@ Lexer ──► Parser ──► AST (Program / ModuleProgram)
 5. 模块恒为严格模式；顶层 `super` / `new.target`、Annex B 语法、重复顶层函数声明等按模块早期错误处理；
 6. 表达式层：`import.meta` 解析为 `ImportMetaExpr`，`import(specifier[, options])` 解析为 `ImportCallExpr`；模块顶层 `await` 解析为 `UnaryOp("await", ...)` 并记录 `hasTopLevelAwait`，非 async 函数体中的 `await` 是语法错误；
 7. `moduleContext` 会传播到模板字符串 `${...}` 的子解析器与子词法器，保证模块语境在嵌套表达式里一致；
-8. 当前执行模型：`Engine.run` 仍只接受 `Program`；若模块表达式节点意外进入解释器，`ImportMetaExpr` 与 `ImportCallExpr` 会分别抛出“仅模块可用”/“动态 import 未支持”的 `SyntaxError`。阶段 0–4 已补 Parser 静态表/类型化声明/TLA 标记、公共 Provider API、内部模块图加载与静态链接，但 ModuleEnvironment、求值、公开 `runModule`、加载器、CLI 与 module harness **尚未实现**；当前唯一执行入口是单脚本 `Engine.run(source)`。
+8. 当前执行模型：`Engine.run` 仍只接受 `Program`；若模块表达式节点意外进入解释器，`ImportMetaExpr` 与 `ImportCallExpr` 会分别抛出“仅模块可用”/“动态 import 未支持”的 `SyntaxError`。阶段 0–5 已补 Parser 静态表/类型化声明/TLA 标记、公共 Provider API、内部模块图加载、静态链接与模块环境/声明实例化，但 namespace 对象、求值、顶层 `this` 帧、公开 `runModule`、加载器、CLI 与 module harness **尚未实现**；当前唯一执行入口是单脚本 `Engine.run(source)`。
 
 已知限制：import attributes、`import.meta.resolve`、`export using` 尚未覆盖；模块执行与加载仍未排期。
 
@@ -511,11 +511,11 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
   与 URL/URLSearchParams 常用子集。
 - **L 系列（已完成，2026-11）**：同步/异步 Generator、`for await`、Proxy/Reflect、BigInt、
   ArrayBuffer/DataView/TypedArray（含 BigInt 视图与 detach）；对应特性已纳入 Test262 ES2015 基线。
-- **模块（阶段 0–4 已完成 Parser 前置、Provider API、内部图加载与静态链接，执行未实现）**：`Parser.parseModule` 支持 `import` / `export`
+- **模块（阶段 0–5 已完成 Parser 前置、Provider API、内部图加载、静态链接与模块环境，执行未实现）**：`Parser.parseModule` 支持 `import` / `export`
   基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表、类型化绑定、
   entry range 与 `hasTopLevelAwait`；公共 `ModuleProvider` / `InMemoryModuleProvider`、模块图预算、内部
-  `ModuleGraphLoader`（递归加载、id/请求去重、缺失依赖 fail-fast）、`ModuleExportResolver` 与 `ModuleLinker`
-  （ResolveExport、星号导出、链接期 TLA 拒绝）已提供；ModuleEnvironment、求值、公开 `runModule`、宿主加载器、
+  `ModuleGraphLoader`、`ModuleExportResolver` / `ModuleLinker`、`ModuleEnvironment` /
+  `ModuleDeclarationInstantiator` 已提供；namespace 对象、求值、顶层 `this`、公开 `runModule`、宿主加载器、
   CLI 与 Test262 module harness **尚未实现**，`Engine` 当前只执行 Script。
 - **当前无计划/按需**：WeakRef / FinalizationRegistry、WeakMap/WeakSet 的真实弱引用（M2）、Intl、DOM/fetch 等真实 Web API、SharedArrayBuffer/Atomics、
   resizable/transfer ArrayBuffer 无计划；R1 资源约束已覆盖主要路径；性能优化（B2）与 API 契约（PKG1）无计划，
