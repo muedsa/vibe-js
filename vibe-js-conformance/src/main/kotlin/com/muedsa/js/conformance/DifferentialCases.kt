@@ -4730,6 +4730,112 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    // Object.assign 走 Proxy 的 ownKeys/getOwnPropertyDescriptor/get。
+    DifferentialCase(
+        "proxy-object-assign-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ a: 1, b: 2 }, {
+    ownKeys: function (target) { log.push('ownKeys'); return Reflect.ownKeys(target); },
+    getOwnPropertyDescriptor: function (target, key) {
+      log.push('gopd:' + key);
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var target = {};
+  Object.assign(target, source);
+  return log.join(',') + '|' + target.a + ':' + target.b;
+})()""",
+    ),
+    // 对象解构读取属性时经过 Proxy get。
+    DifferentialCase(
+        "proxy-destructuring-get",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ a: 1, b: 2 }, {
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var { a, b } = source;
+  return a + ':' + b + '|' + log.join(',');
+})()""",
+    ),
+    // Array.from 对 Proxy array-like 按 length/索引读取。
+    DifferentialCase(
+        "proxy-array-from-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ length: 2, 0: 'a', 1: 'b' }, {
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var result = Array.from(source);
+  return result.join('') + '|' + log.join(',');
+})()""",
+    ),
+    // 对象 spread 走 ownKeys/getOwnPropertyDescriptor/get。
+    DifferentialCase(
+        "proxy-object-spread-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ a: 1 }, {
+    ownKeys: function (target) { log.push('ownKeys'); return Reflect.ownKeys(target); },
+    getOwnPropertyDescriptor: function (target, key) {
+      log.push('gopd:' + key);
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var copy = { ...source };
+  return copy.a + '|' + log.join(',');
+})()""",
+    ),
+    // Object.keys 走 ownKeys/getOwnPropertyDescriptor，不触发 get。
+    DifferentialCase(
+        "proxy-object-keys-order",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ a: 1, b: 2 }, {
+    ownKeys: function (target) { log.push('ownKeys'); return Reflect.ownKeys(target); },
+    getOwnPropertyDescriptor: function (target, key) {
+      log.push('gopd:' + key);
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var keys = Object.keys(source);
+  return keys.join(',') + '|' + log.join(',');
+})()""",
+    ),
+    // JSON.stringify 读取 toJSON 方法后调用，不读取普通属性。
+    DifferentialCase(
+        "proxy-json-tojson",
+        """(function () {
+  var log = [];
+  var source = new Proxy({ toJSON: function () { return { x: 1 }; }, ignored: 2 }, {
+    get: function (target, key, receiver) {
+      log.push('get:' + key);
+      return Reflect.get(target, key, receiver);
+    }
+  });
+  var json = JSON.stringify(source);
+  return json + '|' + log.join(',');
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",
