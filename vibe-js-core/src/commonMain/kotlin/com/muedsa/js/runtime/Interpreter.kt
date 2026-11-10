@@ -6974,6 +6974,52 @@ class Interpreter(
         return isCallable(getV(objectValue, PropertyKey.Sym(intrinsics.symbolIterator)))
     }
 
+    /**
+     * GetMethod(value, @@iterator)：缺失返回 null，非可调用抛 TypeError。
+     *
+     * Array.from 需要在构造结果对象前只读取一次方法，再在稍后用它创建迭代器，
+     * 避免重复触发带副作用的 Symbol.iterator getter。
+     */
+    suspend fun getIteratorMethod(value: JSValue): JSValue? {
+        if (value is JSNull || value is JSUndefined) return null
+        val objectValue = if (value is JSObject) value else toObject(value)
+        val method = getV(objectValue, PropertyKey.Sym(intrinsics.symbolIterator))
+        if (method is JSUndefined || method is JSNull) return null
+        if (!isCallable(method)) {
+            throw typeError("${describeValue(value)} is not iterable")
+        }
+        return method
+    }
+
+    /** 使用已取得的 @@iterator 方法逐项消费；consumer 抛错时关闭迭代器并保留原异常。 */
+    suspend fun consumeIterator(
+        value: JSValue,
+        iteratorMethod: JSValue,
+        consumer: suspend (JSValue) -> Unit,
+    ) {
+        if (value is JSNull || value is JSUndefined) {
+            throw typeError("Cannot convert undefined or null to object")
+        }
+        val objectValue = if (value is JSObject) value else toObject(value)
+        val iteratorValue = callFunction(iteratorMethod, objectValue, emptyList())
+        if (iteratorValue !is JSObject) {
+            throw typeError("Result of the Symbol.iterator method is not an object")
+        }
+        val record = IteratorRecord(
+            iteratorValue,
+            getV(iteratorValue, PropertyKey.Str("next")),
+        )
+        while (true) {
+            val next = iteratorNext(record) ?: break
+            try {
+                consumer(next)
+            } catch (error: JSException) {
+                iteratorClose(record, throwCompletion = true)
+                throw error
+            }
+        }
+    }
+
     /** 按迭代器协议逐项消费；consumer 抛错时关闭迭代器并保留原异常。 */
     suspend fun consumeIterator(value: JSValue, consumer: suspend (JSValue) -> Unit) {
         val record = getIterator(value)

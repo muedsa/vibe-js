@@ -1369,7 +1369,7 @@ object ArrayBuiltins {
                 if (source is JSNull || source is JSUndefined) {
                     interpreter.typeError("Array.from requires an array-like or iterable object")
                 }
-                val iterable = interpreter.isIterable(source)
+                val iteratorMethod = interpreter.getIteratorMethod(source)
 
                 suspend fun applyMap(item: JSValue, index: Long): JSValue =
                     if (mapFn != null) {
@@ -1384,7 +1384,7 @@ object ArrayBuiltins {
 
                 val array: JSObject
                 var index = 0L
-                if (iterable) {
+                if (iteratorMethod != null) {
                     // 迭代路径：GetMethod 之后再构造结果对象
                     array = if (interpreter.isConstructor(thisValue)) {
                         interpreter.construct(thisValue, emptyList()) as? JSObject
@@ -1392,7 +1392,7 @@ object ArrayBuiltins {
                     } else {
                         JSArray(prototype = arrayPrototype)
                     }
-                    interpreter.consumeIterator(source) { item ->
+                    interpreter.consumeIterator(source, iteratorMethod) { item ->
                         interpreter.checkExecution()
                         if (index >= MAX_SAFE_INTEGER) {
                             interpreter.typeError("Array.from result exceeds the maximum safe length")

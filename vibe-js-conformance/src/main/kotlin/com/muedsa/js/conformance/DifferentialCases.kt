@@ -4916,6 +4916,65 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.getPrototypeOf(target).marker + '|' + log.join(',');
 })()""",
     ),
+    // for-of 提前 break 时通过 Proxy 取得迭代器并调用 return。
+    DifferentialCase(
+        "proxy-for-of-break-close",
+        """(function () {
+  var log = [];
+  var iterator = {
+    index: 0,
+    next: function () {
+      log.push('next');
+      return this.index < 2 ? { value: ++this.index, done: false } : { done: true };
+    },
+    return: function () { log.push('return'); return { done: true }; }
+  };
+  var target = {
+    [Symbol.iterator]: function () { log.push('iterator'); return iterator; }
+  };
+  var source = new Proxy(target, {
+    get: function (object, key, receiver) {
+      log.push('get:' + String(key));
+      return Reflect.get(object, key, receiver);
+    }
+  });
+  for (var value of source) {
+    log.push('value:' + value);
+    break;
+  }
+  return log.join(',');
+})()""",
+    ),
+    // Array.from 的 mapper 抛错时通过 Proxy 迭代器关闭。
+    DifferentialCase(
+        "proxy-array-from-mapper-close",
+        """(function () {
+  var log = [];
+  var iterator = {
+    index: 0,
+    next: function () {
+      log.push('next');
+      return this.index < 2 ? { value: ++this.index, done: false } : { done: true };
+    },
+    return: function () { log.push('return'); return { done: true }; }
+  };
+  var target = {
+    [Symbol.iterator]: function () { log.push('iterator'); return iterator; }
+  };
+  var source = new Proxy(target, {
+    get: function (object, key, receiver) {
+      log.push('get:' + String(key));
+      return Reflect.get(object, key, receiver);
+    }
+  });
+  try {
+    Array.from(source, function () { throw new Error('map'); });
+  } catch (error) {
+    log.push('caught');
+  }
+  return log.join(',');
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",

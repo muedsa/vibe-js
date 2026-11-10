@@ -130,6 +130,26 @@ class BuiltinArrayStringAdvancedTest {
             "2,4",
             runtime.evalString("Array.from([1, 2], function (x) { return x * 2; }).join(',')")
         )
+        assertEquals(
+            "1",
+            runtime.evalString(
+                """
+                (function () {
+                    var reads = 0;
+                    var source = {
+                        get [Symbol.iterator]() {
+                            reads++;
+                            return function () {
+                                return { next: function () { return { done: true }; } };
+                            };
+                        }
+                    };
+                    Array.from(source);
+                    return String(reads);
+                })()
+                """.trimIndent()
+            )
+        )
     }
 
     @Test
