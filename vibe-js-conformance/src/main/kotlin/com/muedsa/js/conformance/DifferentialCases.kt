@@ -4539,6 +4539,66 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object.null + ':' + object.undefined;
 })()""",
     ),
+    // Object.fromEntries 生成的属性为可写、可枚举、可配置的数据属性。
+    DifferentialCase(
+        "object-from-entries-property-descriptor",
+        """(function () {
+  var object = Object.fromEntries([['k', 1]]);
+  var descriptor = Object.getOwnPropertyDescriptor(object, 'k');
+  return descriptor.writable + ':' + descriptor.enumerable + ':' +
+    descriptor.configurable + ':' + Object.isExtensible(object);
+})()""",
+    ),
+    // Object.fromEntries 键 ToString 抛错时传播并关闭迭代器。
+    DifferentialCase(
+        "object-from-entries-key-to-string-throw",
+        """(function () {
+  var log = [];
+  var key = {
+    toString: function () {
+      throw new Error('key-coerce');
+    }
+  };
+  var source = {
+    [Symbol.iterator]: function () {
+      return {
+        next: function () {
+          return { value: { 0: key, 1: 1 }, done: false };
+        },
+        return: function () {
+          log.push('return');
+          return { done: true };
+        }
+      };
+    }
+  };
+  try {
+    Object.fromEntries(source);
+  } catch (error) {
+    log.push(error.message);
+  }
+  return log.join(',');
+})()""",
+    ),
+    // Object.fromEntries 先读取键再读取值。
+    DifferentialCase(
+        "object-from-entries-key-before-value",
+        """(function () {
+  var log = [];
+  var entry = {
+    get 0() {
+      log.push('key');
+      return 'k';
+    },
+    get 1() {
+      log.push('value');
+      return 1;
+    }
+  };
+  Object.fromEntries([entry]);
+  return log.join(',');
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
