@@ -739,4 +739,60 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         })();
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-from-async-getter-once",
+        """
+        var log = [];
+        var source = {
+          get [Symbol.asyncIterator]() {
+            log.push('async-get');
+            return function () {
+              var index = 0;
+              return {
+                next: function () {
+                  log.push('next');
+                  return Promise.resolve(index < 2
+                    ? { value: ++index, done: false }
+                    : { done: true });
+                }
+              };
+            };
+          },
+          get [Symbol.iterator]() {
+            log.push('sync-get');
+            return function () { return [1][Symbol.iterator](); };
+          }
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-from-async-sync-getter-once",
+        """
+        var log = [];
+        var source = {
+          get [Symbol.iterator]() {
+            log.push('get');
+            var index = 0;
+            return function () {
+              return {
+                next: function () {
+                  log.push('next');
+                  return index < 2
+                    ? { value: ++index, done: false }
+                    : { done: true };
+                }
+              };
+            };
+          }
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
 )
