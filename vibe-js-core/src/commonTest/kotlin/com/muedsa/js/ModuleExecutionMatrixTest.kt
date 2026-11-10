@@ -291,6 +291,30 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `依赖求值失败后后续依赖不再执行`() = runTest {
+        val engine = Engine()
+        assertFailsWith<JSException> {
+            engine.runModule(
+                source(
+                    "entry",
+                    "import './a.js'; import './b.js';",
+                ),
+                Provider(
+                    mapOf(
+                        "./a.js" to source(
+                            "a",
+                            "globalThis.aExecuted = 1; throw new Error('a-failed');",
+                        ),
+                        "./b.js" to source("b", "globalThis.bExecuted = 1;"),
+                    ),
+                ),
+            )
+        }
+        assertEquals(1.0, (engine.run("globalThis.aExecuted") as JSNumber).value)
+        assertEquals("undefined", (engine.run("typeof globalThis.bExecuted") as JSString).value)
+    }
+
+    @Test
     fun `循环重命名导出保留别名实时绑定`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(

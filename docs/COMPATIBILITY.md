@@ -130,13 +130,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1097** + 宿主 38 个测试（2026-11-10 记录） |
-| JS（Node） | ✅ | 核心 **1081** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1081** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1098** + 宿主 38 个测试（2026-11-10 记录） |
+| JS（Node） | ✅ | 核心 **1082** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1082** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1097 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1081。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1098 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1082。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
@@ -217,7 +217,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `ParserModuleTest` | `Parser.parseModule` 的 import/export 基础形式、import.meta/import()、模块顶层 await、模块早期错误、脚本目标零影响 |
 | `ModuleExecutionTest` 等模块测试 | Provider 图加载/链接、ModuleEnvironment、namespace、`import.meta`、顶层 `this`、TLA 拒绝、动态 import 运行期错误、执行/对象/微任务/待处理任务预算与失败恢复 |
 | `ModuleProviderContractTest` | 入口/依赖 referrer、null/异常、sourceName/url 与精确 id 契约 |
-| `ModuleExecutionMatrixTest` | 循环依赖求值、菱形依赖去重、依赖失败、namespace 描述符、显式导出、`export * as default`、import.meta 缓存 |
+| `ModuleExecutionMatrixTest` | 循环依赖求值、菱形依赖去重、依赖失败隔离、namespace 描述符、显式导出、`export * as default`、import.meta 缓存 |
 | `IteratorCombinatorsTest` | `Iterator.concat`/`zip`/`zipKeyed` 的顺序、长度模式、padding 与错误传播 |
 | `ModuleGraphStressTest` | 128 层深依赖链、128 个星号导出模块、namespace 描述符、循环星号/重命名/default 导出、歧义省略、显式导出优先与实时绑定、重复 runModule、失败恢复与预算/取消边界 |
 | `PropertyAndPrototypeTest` | 属性描述符、原型链、访问器、call/apply/bind |
