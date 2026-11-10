@@ -1,9 +1,9 @@
 # 模块执行设计与实现方案
 
-> 状态：**阶段 0–2 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
+> 状态：**阶段 0–3 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
 > 类型化声明、TLA 标记和语法收紧；公共 `ModuleProvider` / `ModuleSource` / `InMemoryModuleProvider`
-> 与模块图预算已提供，但 `Engine.runModule`、链接/求值、加载器均未实现。
-> 只有需求方明确继续重启时，才进入阶段 3+。
+> 与模块图预算已提供，内部 `ModuleGraphLoader` 已能递归加载、去重并拒绝缺失依赖；但
+> `Engine.runModule`、链接/求值、宿主加载器均未实现。只有需求方明确继续重启时，才进入阶段 4+。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -345,8 +345,7 @@ internal enum class ModuleStatus {
 }
 
 internal class ModuleRecord(
-    val id: String,
-    val sourceName: String,
+    val source: ModuleSource,
     val program: ModuleProgram,
     var status: ModuleStatus = ModuleStatus.NEW,
     var environment: ModuleEnvironment? = null,
@@ -354,6 +353,9 @@ internal class ModuleRecord(
     var importMeta: JSObject? = null,
     var evaluationError: JSException? = null,
 ) {
+    val id: String get() = source.id
+    val sourceName: String get() = source.sourceName
+
     /** 加载阶段按 requestedModules 顺序填充；循环引用时允许先建 record 再回填。 */
     val dependencies: MutableList<ModuleRecord> = mutableListOf()
 }
@@ -621,8 +623,8 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
-当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5 已完成；M2.6（`Engine.runModule` 签名）推迟到 M7，
-避免暴露抛错桩；M0.2 的完整图 fixture 与阶段 3+ 尚未开始。
+当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5、M3.1–M3.6 已完成；M2.6（`Engine.runModule` 签名）推迟到 M7，
+避免暴露抛错桩；M0.2 的完整图 fixture 与阶段 4+ 尚未开始。
 
 ### 阶段 0：契约与脚手架（1–2 人日）
 
@@ -785,7 +787,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 阶段 0–2 的 Parser 前置与公共 Provider API 已按本文落地；阶段 3+ 仍未排期。
+- 阶段 0–3 的 Parser 前置、公共 Provider API 与内部模块图加载已按本文落地；阶段 4+ 仍未排期。
 - `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

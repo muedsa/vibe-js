@@ -78,7 +78,7 @@
 
 模块早期错误（early-module）共 63 条，解析成功 0、被拒绝 63、意外接受 0。模块允许列表 `parser-module-allowlist.txt` 当前为空；新增条目必须逐条写“相对语料根目录的 POSIX 路径 + 原因”，且只允许 `.module.js`，禁止目录/后缀/通配符。
 
-> 模块语法已纳入 parser 门禁，但这只证明**能解析**，不代表能链接或执行；阶段 0–2 已补静态表/类型化声明/TLA 标记与公共 Provider API，模块执行仍未实现，当前执行入口只有单脚本 `Engine.run(source)`。
+> 模块语法已纳入 parser 门禁，但这只证明**能解析**，不代表能链接或执行；阶段 0–3 已补静态表/类型化声明/TLA 标记、公共 Provider API 与内部模块图加载，模块执行仍未实现，当前执行入口只有单脚本 `Engine.run(source)`。
 
 ### 3.4 早期错误（脚本）
 
@@ -334,7 +334,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 9. 已知范围与缺口
 
-- **模块执行未实现**：`import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法已可解析；阶段 0–2 已补静态表、类型化绑定、entry range、`hasTopLevelAwait` 与公共 Provider API，但链接、求值、加载、CLI 与 Test262 module harness 尚未实现。当前执行入口只有单脚本 `Engine.run(source)`。Test262 的 322 个 `flags: [module]` 用例继续跳过，parser 的 262 个模块用例保留为现状回归门禁。
+- **模块执行未实现**：`import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法已可解析；阶段 0–3 已补静态表、类型化绑定、entry range、`hasTopLevelAwait`、公共 Provider API 与内部模块图加载，但链接、求值、公开 `runModule`、加载器、CLI 与 Test262 module harness 尚未实现。当前执行入口只有单脚本 `Engine.run(source)`。Test262 的 322 个 `flags: [module]` 用例继续跳过，parser 的 262 个模块用例保留为现状回归门禁。
 - **顶层 await**：只有语法解析和 `hasTopLevelAwait` 标记，没有异步模块求值；模块执行未排期。
 - **模块扩展语法**：import attributes、`import.meta.resolve`、`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝。
 - **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。
@@ -352,7 +352,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 3. **按需能力（P1）**：当前无；R1.3 资源约束加固已完成。
 4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
 
-**模块前置（阶段 0–2：Parser + Provider API）已完成，模块执行（L4.2–L4.4b、L4.6a+、L4.6b、L4.7）仍未实现**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–2 只补静态表、类型化声明、range、TLA 标记、语法收紧和公共 Provider/预算，不投入链接/求值/加载/CLI/harness。单脚本 `Engine.run(source)` 是当前唯一执行入口。
+**模块前置（阶段 0–3：Parser + Provider API + 内部图加载）已完成，模块执行（L4.2–L4.4b、L4.6a+、L4.6b、L4.7）仍未实现**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–3 只补静态表、类型化声明、range、TLA 标记、语法收紧、公共 Provider/预算与内部图加载，不投入链接/求值/公开入口/加载器/CLI/harness。单脚本 `Engine.run(source)` 是当前唯一执行入口。
 
 ## 11. CI
 
