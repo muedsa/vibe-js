@@ -5132,6 +5132,67 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.fromEntries 关闭时 return 返回原始值仍保留原错误。
+    DifferentialCase(
+        "object-from-entries-value-error-return-primitive",
+        """(function () {
+  var entry = { 0: 'k' };
+  Object.defineProperty(entry, 1, {
+    get: function () {
+      throw new Error('value');
+    }
+  });
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: entry, done: false } : { done: true };
+    },
+    return: function () {
+      return 1;
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
+    // Object.fromEntries 关闭时 return 结果对象不被读取。
+    DifferentialCase(
+        "object-from-entries-value-error-return-object",
+        """(function () {
+  var entry = { 0: 'k' };
+  Object.defineProperty(entry, 1, {
+    get: function () {
+      throw new Error('value');
+    }
+  });
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: entry, done: false } : { done: true };
+    },
+    return: function () {
+      return {
+        get value() {
+          throw new Error('close-value');
+        },
+        get done() {
+          throw new Error('close-done');
+        }
+      };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
     // Object.fromEntries 读取 next getter 失败时不关闭迭代器。
     DifferentialCase(
         "object-from-entries-next-getter-no-close",
