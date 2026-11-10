@@ -108,4 +108,25 @@ class ModuleProviderContractTest {
         }
         assertEquals(true, error.stack.any { it.sourceInfo.name == "custom-name.mjs" })
     }
+
+    @Test
+    fun `重复 specifier 依赖只加载一次`() = runTest {
+        var loads = 0
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                loads += 1
+                return when (request.specifier) {
+                    "entry" -> ModuleSource(
+                        "entry",
+                        "import './dep.js'; import './dep.js'; export const value = 1;",
+                    )
+
+                    "./dep.js" -> ModuleSource("./dep.js", "export const value = 2;")
+                    else -> null
+                }
+            }
+        }
+        Engine().runModule("entry", provider)
+        assertEquals(2, loads)
+    }
 }
