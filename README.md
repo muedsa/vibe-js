@@ -457,15 +457,15 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1157 / 1157** |
-| core JS（Node）/ Wasm（Node） | 各 **1141 / 1141** |
+| core JVM | **1158 / 1158** |
+| core JS（Node）/ Wasm（Node） | 各 **1142 / 1142** |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** |
 | conformance 单元测试 | **39 / 39** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
 | Test262 ES5 | **15,248/15,248**（跳过 0） |
 | Test262 ES2015 | **61,786/61,786**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
-| Node 差分 / 真实库冒烟 | **902/902**、**375/375**（102 个库） |
+| Node 差分 / 真实库冒烟 | **903/903**、**375/375**（102 个库） |
 
 详细口径、跳过原因与推进顺序见 [docs/CONFORMANCE.md](docs/CONFORMANCE.md)。
 
