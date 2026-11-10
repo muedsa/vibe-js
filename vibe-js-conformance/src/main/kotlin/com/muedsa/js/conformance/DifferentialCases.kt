@@ -4469,6 +4469,15 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    // Object.fromEntries 以 CreateDataProperty 处理 __proto__ 键。
+    DifferentialCase(
+        "object-from-entries-proto-key",
+        """(function () {
+  var object = Object.fromEntries([['__proto__', 1]]);
+  return (Object.getPrototypeOf(object) === Object.prototype) + ':' +
+    Object.hasOwn(object, '__proto__') + ':' + object.__proto__;
+})()""",
+    ),
     // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
     DifferentialCase(
         "for-let-per-iteration-closure",
