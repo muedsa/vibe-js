@@ -1,8 +1,9 @@
 # 模块执行设计与实现方案
 
-> 状态：**阶段 0–1 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
-> 类型化声明、TLA 标记和语法收紧，但 `Engine.runModule`、链接/求值、加载器均未实现。
-> 只有需求方明确继续重启时，才进入阶段 2+。
+> 状态：**阶段 0–2 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
+> 类型化声明、TLA 标记和语法收紧；公共 `ModuleProvider` / `ModuleSource` / `InMemoryModuleProvider`
+> 与模块图预算已提供，但 `Engine.runModule`、链接/求值、加载器均未实现。
+> 只有需求方明确继续重启时，才进入阶段 3+。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -174,7 +175,7 @@ class InMemoryModuleProvider(
 - provider 可以跨 `runModule` 复用；核心不缓存 provider 实例。
 - `InMemoryModuleProvider` 使用精确 id，不做相对路径解析；宿主需要自行规范化。
 
-### 4.3 Engine 入口
+### 4.3 Engine 入口（目标 API，尚未实现）
 
 ```kotlin
 suspend fun Engine.runModule(
@@ -187,6 +188,8 @@ suspend fun Engine.runModule(
     provider: ModuleProvider,
 ): JSObject
 ```
+
+> 当前不暴露该入口：模块图/链接/求值尚未实现，M2.6 推迟到 M7，避免提供会抛错的公共桩。
 
 - 两个重载都返回**入口模块的 namespace 对象**。
 - `ModuleSource` 入口允许省略 provider；如果源码包含静态 import，缺失 provider 会链接失败。
@@ -618,7 +621,8 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
-当前进度：M0.1/M0.3、M1.1–M1.7 已完成；M0.2 的完整图 fixture 与阶段 2+ 尚未开始。
+当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5 已完成；M2.6（`Engine.runModule` 签名）推迟到 M7，
+避免暴露抛错桩；M0.2 的完整图 fixture 与阶段 3+ 尚未开始。
 
 ### 阶段 0：契约与脚手架（1–2 人日）
 
@@ -651,7 +655,7 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 | M2.3 | `InMemoryModuleProvider` | 精确 id 测试；重复 id 语义 |
 | M2.4 | `ModuleLinkException` 与错误 kind | 字段/消息测试 |
 | M2.5 | `EngineLimits` 新增字段与校验 | 默认 10k / 10M；0/负数拒绝 |
-| M2.6 | `Engine.runModule` 签名与入口校验 | 编译通过；未实现阶段明确 TODO 行为 |
+| M2.6 | `Engine.runModule` 签名与入口校验 | **推迟到 M7**：当前不暴露会抛错的公共桩；链接/求值可用后再实现入口 |
 
 ### 阶段 3：模块图加载（3–4 人日）
 
@@ -781,7 +785,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 阶段 0–1 的 Parser 前置已按本文落地；阶段 2+ 仍未排期。
+- 阶段 0–2 的 Parser 前置与公共 Provider API 已按本文落地；阶段 3+ 仍未排期。
 - `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

@@ -6,7 +6,7 @@
 > Generator / async generator、`for await`、Proxy / Reflect、BigInt、
 > TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
-> `import()` 表达式与模块顶层 `await` 语法；阶段 0–1 已补静态表/类型化声明/TLA 标记，
+> `import()` 表达式与模块顶层 `await` 语法；阶段 0–2 已补静态表/类型化声明/TLA 标记与公共 Provider API，
 > 但**链接、求值、加载尚未实现，不能执行模块**；当前唯一执行入口是单脚本 `Engine.run(source)`。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
 > SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；模块执行、
@@ -129,18 +129,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1006** + 宿主 38 个测试（2026-11-09 记录，`53fb71b`） |
-| JS（Node） | ✅ | 核心 **990** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **990** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1011** + 宿主 38 个测试（2026-11-10 记录） |
+| JS（Node） | ✅ | 核心 **995** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **995** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1006 包含 L4/R1/M2/模块前置新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 990。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1011 包含 L4/R1/M2/模块前置与 Provider API 新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 995。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-09，`53fb71b`）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **552/552**；真实库 **341/341**（90 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-10）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **552/552**；真实库 **341/341**（90 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 

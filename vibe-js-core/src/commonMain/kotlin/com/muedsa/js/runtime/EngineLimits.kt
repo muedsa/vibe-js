@@ -47,6 +47,10 @@ import com.muedsa.js.runtime.exception.ResourceLimitKind
  * null 表示不限制。用于终止不经过 AST、只靠微任务自我驱动的 async generator 泵；
  * 正常 async/await 链远低于该上限，不受影响。
  * 超限抛出 [ResourceLimitException]（kind = [ResourceLimitKind.MICROTASKS_PER_RUN]）。
+ * @property maxModules 单次 runModule 模块图中的唯一模块数上限（含入口），默认 10,000；
+ * null 表示不限制。模块执行尚未实现，该字段先作为公共契约与后续链接阶段的预算。
+ * @property maxTotalModuleSourceLength 单次 runModule 中所有模块源码字符数总和上限，
+ * 默认 10,000,000；null 表示不限制。单模块仍受 [maxSourceLength] 约束。
  */
 data class EngineLimits(
     val maxSteps: Long? = null,
@@ -59,6 +63,8 @@ data class EngineLimits(
     val maxAstNodes: Int? = 5_000_000,
     val maxObjectCount: Int? = 2_000_000,
     val maxMicrotasksPerRun: Int? = 1_000_000,
+    val maxModules: Int? = 10_000,
+    val maxTotalModuleSourceLength: Int? = 10_000_000,
 ) {
     companion object {
         /** 默认正则预算；显式降到更低值时才启用高风险模式的路由。 */
@@ -91,6 +97,12 @@ data class EngineLimits(
         }
         require(maxMicrotasksPerRun == null || maxMicrotasksPerRun > 0) {
             "maxMicrotasksPerRun must be > 0 or null"
+        }
+        require(maxModules == null || maxModules > 0) {
+            "maxModules must be > 0 or null"
+        }
+        require(maxTotalModuleSourceLength == null || maxTotalModuleSourceLength > 0) {
+            "maxTotalModuleSourceLength must be > 0 or null"
         }
     }
 
