@@ -420,4 +420,41 @@ class ModuleProviderContractTest {
         )
         assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
+
+    @Test
+    fun `依赖模块 id 为空白时进入 INVALID_MODULE`() = runTest {
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return when (request.specifier) {
+                    "entry" -> ModuleSource("entry", "import './dep.js';")
+                    else -> ModuleSource(" \t ", "export const value = 1;")
+                }
+            }
+        }
+        val error = assertFailsWith<ModuleLinkException> {
+            Engine().runModule("entry", provider)
+        }
+        assertEquals(ModuleLinkErrorKind.INVALID_MODULE, error.kind)
+        assertEquals(" \t ", error.moduleId)
+    }
+
+    @Test
+    fun `空 sourceName 保留在错误栈`() = runTest {
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                return when (request.specifier) {
+                    "entry" -> ModuleSource("entry", "import './dep.js';")
+                    else -> ModuleSource(
+                        "dep",
+                        "throw new Error('empty-source-name');",
+                        sourceName = "",
+                    )
+                }
+            }
+        }
+        val error = assertFailsWith<JSException> {
+            Engine().runModule("entry", provider)
+        }
+        assertTrue(error.stack.any { it.sourceInfo.name == "" })
+    }
 }
