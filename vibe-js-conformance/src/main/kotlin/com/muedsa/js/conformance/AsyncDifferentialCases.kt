@@ -1055,6 +1055,34 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-promise-combinators-empty",
+        """
+        var log = [];
+        Promise.all([]).then(function (values) {
+          log.push('all:' + values.length);
+        });
+        Promise.allSettled([]).then(function (values) {
+          log.push('allSettled:' + values.length);
+        });
+        Promise.any([]).then(function () {
+          log.push('any:ok');
+        }, function (error) {
+          log.push('any:' + error.name + ':' + error.errors.length);
+        });
+        Promise.race([]).then(function () {
+          log.push('race:fulfilled');
+        }, function () {
+          log.push('race:rejected');
+        });
+        Promise.resolve().then(function () {
+          return null;
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-allsettled-next-throw",
         """
         var log = [];
