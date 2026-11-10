@@ -4180,6 +4180,19 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.hasOwn 对被撤销的 Proxy 抛出 TypeError。
+    DifferentialCase(
+        "object-has-own-revoked-proxy",
+        """(function () {
+  var revocable = Proxy.revocable({}, {});
+  revocable.revoke();
+  try {
+    return String(Object.hasOwn(revocable.proxy, 'x'));
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
     // Map.groupBy 的 NaN 键按 SameValueZero 归入同一组。
     DifferentialCase(
         "map-group-by-nan-key",
