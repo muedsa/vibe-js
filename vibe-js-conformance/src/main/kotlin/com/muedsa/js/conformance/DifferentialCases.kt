@@ -5132,6 +5132,28 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.fromEntries 读取 next getter 失败时不关闭迭代器。
+    DifferentialCase(
+        "object-from-entries-next-getter-no-close",
+        """(function () {
+  var log = [];
+  var iterator = {
+    get next() {
+      throw new Error('next-getter');
+    },
+    return: function () {
+      log.push('return');
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  } catch (error) {
+    log.push(error.message);
+  }
+  return log.join(',');
+})()""",
+    ),
     // Object.fromEntries 遇到字符串条目时抛 TypeError 并关闭迭代器。
     DifferentialCase(
         "object-from-entries-string-entry-close",
