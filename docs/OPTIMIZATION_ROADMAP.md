@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1074 / 1074** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1058 / 1058** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1077 / 1077** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1061 / 1061** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -579,6 +579,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B13 异步生成器 pending await**：新增 `.return()`/`.throw()` 在生成器暂停于 `await` 时的排队、恢复与 finally 语义 2 条；差分 625→627/627 |
 | 2026-11-10 | **S2.2-B14 Proxy 内建消费路径**：新增 `Object.assign`、解构、`Array.from`、对象 spread、`Object.keys`、`JSON.stringify` 的 Proxy trap 顺序共 6 条；差分 627→633/633 |
 | 2026-11-10 | **S2.2-B15 模块图压力**：新增 128 层深依赖链与 128 个星号导出模块的核心单测，验证链接/求值顺序与导出完整性；核心 1074/1058 |
+| 2026-11-10 | **S2.2-B16 模块预算/取消边界**：新增深链 maxModules 截断、跨模块总源码长度超限、取消后不再调用 Provider 3 条核心单测；核心 1077/1061 |
 | 2026-11-10 | **S6.2 门禁复跑（B14 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 633/633、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B13 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 627/627、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B11 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 625/625、真实库 375/375，strict 全绿 |
