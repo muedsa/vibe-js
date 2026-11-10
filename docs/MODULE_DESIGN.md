@@ -33,6 +33,47 @@
 
 结论：**核心模型接近规范，宿主边界接近 QuickJS；首版功能集是受控嵌入式子集，不是通用 ESM 运行时。**
 
+### 2.1 与主流引擎一致
+
+- 内部使用 `ModuleRecord`、`ModuleStatus`、`ResolveExport`、live binding、namespace exotic
+  对象和 DFS 后序求值；这些与 V8、JavaScriptCore、SpiderMonkey 的模块实现方向一致。
+- 说明符解析、源码读取和模块身份由宿主提供；QuickJS 的 `JS_SetModuleLoaderFunc` 是同类
+  host hook，浏览器/Node 则由运行时内置 loader 完成。
+- 静态链接错误发生在求值前，模块内 `try/catch` 不能捕获；这与规范模块的链接阶段一致，
+  只是本设计把错误暴露为 Kotlin 异常而不是 JS 异常。
+- `runModule` 返回入口 namespace，类似动态 `import()` 的解析结果；这是宿主 API 便利性，
+  不改变模块求值本身的完成值。
+
+### 2.2 与主流引擎的关键差异
+
+| 差异 | 本设计 | 主流引擎 | 影响 |
+|---|---|---|---|
+| 模块图生命周期 | 每次 `runModule` 独立图 | Node/浏览器按模块表缓存 | 同一模块重复求值，副作用重复；宿主需自行缓存 |
+| 说明符规范化 | Provider 全权负责 | Node package/URL；浏览器 URL/import maps | 宿主需实现相对路径、包解析、URL 规则 |
+| 动态 `import()` | 执行到表达式时报错 | 支持 | 路由懒加载、插件动态加载、`await import()` 不可用 |
+| Top-Level Await | 链接期拒绝 | 支持 | 大量现代 ESM 包不能直接运行 |
+| import attributes | 不支持 | Node 22+/现代浏览器支持 | JSON/WASM 模块导入不可用 |
+| 诊断 | MVP 才补 entry range | 文件/行/列/导入链完整 | 链接错误定位弱于主流引擎 |
+| 加载方式 | 顺序 DFS | 可并行/预加载 | 网络/文件慢时吞吐较低 |
+| CLI/harness | 不做 | Node CLI / Test262 harness | 无法直接作为通用运行时或宣称完整 ESM 一致性 |
+| 错误模型 | 链接错误 Kotlin 异常 | 多为 JS `SyntaxError`/宿主错误码 | 嵌入式 API 更自然，但和 JS 生态习惯不同 |
+
+其他需要明确记录的差异：
+
+- `import.meta.url` 在缺少 provider URL 时回退为 `module:<id>`，不是文件 URL 或页面 URL。
+- 模块内普通函数体中的 `await`、零参数 `import()` 目前 parser 比 V8/Node 宽松，首版前
+  需要收紧；否则会出现“能解析但运行不标准”。
+- 首版不提供 Engine 级/进程级模块表；如果宿主期望 Node 式单例模块，需要自行实现缓存，
+  或等待后续设计。
+
+### 2.3 适用性判断
+
+**适合**：Kotlin 宿主嵌入执行受控模块、插件/配置脚本、由宿主自行解析说明符、需要资源预算
+和取消传播的场景。
+
+**不适合**：直接运行任意 npm ESM 包、浏览器式懒加载、依赖 TLA/import attributes 的现代应用、
+期望模块只求值一次的 Node 式宿主。
+
 ## 3. 总体架构
 
 ```text
