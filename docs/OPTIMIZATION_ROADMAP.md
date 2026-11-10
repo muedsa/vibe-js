@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **791 / 791** | 含 L 系列同步与异步用例 |
+| Node 差分 | **793 / 793** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -744,6 +744,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B226~B227 Array.fromAsync length 零值与无 setter**：新增不可写 length=0 仍拒绝、仅有 getter 的 length 拒绝 2 条异步用例；差分 785→787/787 |
 | 2026-11-10 | **S2.2-B228~B229 Array.fromAsync 构造器顺序与抛错**：新增迭代器先于构造器、构造器抛错不关闭迭代器 2 条异步用例；差分 787→789/789 |
 | 2026-11-10 | **S2.2-B230~B231 Array.fromAsync 非构造器 this**：新增普通对象 this 得到数组、函数 this 得到普通对象 2 条异步用例；差分 789→791/791 |
+| 2026-11-10 | **S2.2-B232~B233 Array.fromAsync 构造参数与 Proxy 构造**：新增构造器无参调用、Proxy construct 结果复用 2 条异步用例；差分 791→793/793 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
