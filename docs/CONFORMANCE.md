@@ -78,7 +78,7 @@
 
 模块早期错误（early-module）共 63 条，解析成功 0、被拒绝 63、意外接受 0。模块允许列表 `parser-module-allowlist.txt` 当前为空；新增条目必须逐条写“相对语料根目录的 POSIX 路径 + 原因”，且只允许 `.module.js`，禁止目录/后缀/通配符。
 
-> 模块语法已纳入 parser 门禁；阶段 0–7 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/同步求值），但 Test262 module harness、宿主加载器、CLI 与 TLA 执行仍未实现，模块能力仍需 opt-in。
+> 模块语法已纳入 parser 门禁；阶段 0–8 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/同步求值/错误定位），但 Test262 module harness、宿主加载器、CLI 与 TLA 执行仍未实现，模块能力仍需 opt-in。
 
 ### 3.4 早期错误（脚本）
 
@@ -352,7 +352,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 3. **按需能力（P1）**：当前无；R1.3 资源约束加固已完成。
 4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
 
-**模块阶段 0–7（实验性）已完成，模块后续能力（L4.4–L4.4b、L4.6a+、L4.6b、L4.7）仍未实现**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–7 已补静态表、类型化声明、range、TLA 标记、语法收紧、公共 Provider/预算、内部图加载、ResolveExport/import 链接、声明实例化、namespace、`import.meta` 与同步 `runModule`；不投入宿主加载器/CLI/module harness/TLA 执行。
+**模块阶段 0–8（实验性）已完成，模块后续能力（L4.4–L4.4b、L4.6a+、L4.6b、L4.7）仍未实现**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–7 已补静态表、类型化声明、range、TLA 标记、语法收紧、公共 Provider/预算、内部图加载、ResolveExport/import 链接、声明实例化、namespace、`import.meta` 与同步 `runModule`；不投入宿主加载器/CLI/module harness/TLA 执行。
 
 ## 11. CI
 

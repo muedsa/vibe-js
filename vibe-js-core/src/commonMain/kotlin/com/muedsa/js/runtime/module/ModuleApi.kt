@@ -1,10 +1,12 @@
 package com.muedsa.js.runtime.module
 
+import com.muedsa.js.lexer.SourceRange
+
 /**
  * 实验性模块执行 API。
  *
- * 当前只提供模块图/Provider 的公共契约；链接与求值尚未实现。该注解表示
- * 名称、签名和行为都不承诺稳定兼容，宿主需要显式 opt-in。
+ * 提供模块图/Provider、链接结果与错误契约；签名和行为都不承诺稳定兼容，
+ * 宿主需要显式 opt-in。
  */
 @RequiresOptIn(
     level = RequiresOptIn.Level.ERROR,
@@ -109,6 +111,10 @@ public class ModuleLinkException(
     public val referrer: String? = null,
     public val moduleId: String? = null,
     public val exportName: String? = null,
+    /** 触发错误的模块源码名；来自 ModuleSource.sourceName。 */
+    public val sourceName: String? = null,
+    /** 触发错误的 import/export 声明范围。 */
+    public val range: SourceRange? = null,
     message: String,
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)

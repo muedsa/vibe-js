@@ -4,7 +4,7 @@
 >
 > 本文只列**尚未完成**的工作。已实现能力只作为后续工作的依赖与不可破坏契约出现，不逐项重复。
 >
-> **2026-11-10 调整：模块阶段 0–7 已作为实验性实现完成**（Parser 静态表、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`、`Engine.runModule` 与同步模块求值）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器、CLI、Test262 module harness、TLA 执行与动态 `import()` 执行仍无计划；核心继续不引入平台文件/URL IO。
+> **2026-11-10 调整：模块阶段 0–8 已作为实验性实现完成**（Parser 静态表、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器、CLI、Test262 module harness、TLA 执行与动态 `import()` 执行仍无计划；核心继续不引入平台文件/URL IO。
 
 ## 1. 当前基线
 
@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1053 / 1053** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1037 / 1037** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1056 / 1056** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1040 / 1040** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -42,13 +42,13 @@
 
 ## 2. 排序原则
 
-模块阶段 0–7 已作为**实验性实现**落地；同一 Engine 可执行 Script 或同步模块图，但模块 API 不承诺正式兼容性，加载器/TLA/动态 import/CLI 仍无计划。
+模块阶段 0–8 已作为**实验性实现**落地；同一 Engine 可执行 Script 或同步模块图，但模块 API 不承诺正式兼容性，加载器/TLA/动态 import/CLI 仍无计划。
 
 | 队列 | 范围 | 说明 |
 |---|---|---|
 | **维护主线** | `DOC-1` → `S6.2` → `S2.2` | 保持文档/门禁绿色，持续补差分与真实库覆盖 |
 | **观测** | `S5.2` | 只做性能复测，B2 仍无计划 |
-| **实验性实现** | 模块阶段 0–7（已完成） | Parser/Provider/图加载/链接/环境/namespace/import.meta/runModule；opt-in；无加载器/CLI/harness/TLA 执行 |
+| **实验性实现** | 模块阶段 0–8（已完成） | Parser/Provider/图加载/链接/环境/namespace/import.meta/runModule + 错误定位/预算/取消/恢复加固；opt-in；无加载器/CLI/harness/TLA 执行 |
 | **无计划** | 模块加载器、TLA 执行、动态 import、CLI、module harness、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
 
 ### 2.1 为什么模块加载器仍不设默认主线
@@ -569,4 +569,5 @@ data class EngineLimits(
 | 2026-11-10 | **模块阶段 5 完成**：`DeclarativeEnvironment` 改为 open；新增内部 `ModuleEnvironment` 与 `ModuleDeclarationInstantiator`，实现 import 只读转发、var/function/let/const/class/using 绑定、函数对象与 TDZ、匿名 default 的 `*default*` 绑定；namespace 对象、顶层 this、求值仍未实现 |
 | 2026-11-10 | **模块阶段 6 完成**：新增内部 `JSModuleNamespace`，空原型/不可扩展、实时数据描述符、排序导出键、`Symbol.toStringTag="Module"`、写/删/重定义防护与嵌套 namespace；`import.meta`、顶层 this、求值/公开入口仍未实现 |
 | 2026-11-10 | **模块阶段 7 完成**：新增 `ModuleEvaluator` 与 `Interpreter.runModule`，接通 `Engine.runModule`、Provider 图加载/链接、环境实例化、`import.meta`、顶层 this、同步 DFS 求值、TLA 链接期拒绝与动态 import 运行期错误；API 需 opt-in；加载器/CLI/TLA 执行仍无计划 |
+| 2026-11-10 | **模块阶段 8 完成**：补齐链接错误的 `sourceName`/`range`、`ParseException.sourceName`、模块执行栈来源、runModule 取消/图预算/失败恢复测试；文档同步；不新增独立性能基准/优化承诺 |
 | 2026-11-09 | **整个模块方向降级为无计划**：保留 `Engine.run()` 单脚本入口与现有 `parseModule` 回归；说明 KMP 核心不应承担文件/URL IO，未来若重启只能采用“核心抽象 + 宿主加载器/内存模块表” |

@@ -1,6 +1,7 @@
 package com.muedsa.js
 
 import com.muedsa.js.runtime.Engine
+import com.muedsa.js.runtime.EngineLimits
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleLinkErrorKind
@@ -13,6 +14,11 @@ import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.PropertyKey
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,7 +28,7 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /** 阶段 7：模块求值、import.meta、顶层 this 与公开 runModule。 */
-@OptIn(ExperimentalModuleApi::class)
+@OptIn(ExperimentalModuleApi::class, ExperimentalCoroutinesApi::class)
 class ModuleExecutionTest {
 
     private class Provider(
@@ -146,5 +152,42 @@ class ModuleExecutionTest {
             engine.runModule(source("bad", "throw new Error(\"boom\");"))
         }
         assertEquals(2.0, (engine.run("1 + 1") as JSNumber).value)
+    }
+
+    @Test
+    fun `模块求值错误栈保留 sourceName`() = runTest {
+        val engine = Engine()
+        val error = assertFailsWith<JSException> {
+            engine.runModule(source("bad.mjs", "throw new Error(\"boom\");"))
+        }
+        assertTrue(error.stack.any { it.sourceInfo.name == "bad.mjs" })
+    }
+
+    @Test
+    fun `runModule 可被取消且 Engine 可复用`() = runTest {
+        val engine = Engine()
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? = awaitCancellation()
+        }
+        val job = launch {
+            engine.runModule(source("a", "import \"./b.js\";"), provider)
+        }
+        runCurrent()
+        assertTrue(job.isActive)
+        job.cancelAndJoin()
+        assertTrue(job.isCancelled)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
+
+    @Test
+    fun `runModule 图预算错误直接透传`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxModules = 1))
+        val error = assertFailsWith<ModuleLinkException> {
+            engine.runModule(
+                source("a", "import \"./b.js\";"),
+                Provider(mapOf("./b.js" to source("b", "export const x = 1;"))),
+            )
+        }
+        assertEquals(ModuleLinkErrorKind.TOO_MANY_MODULES, error.kind)
     }
 }

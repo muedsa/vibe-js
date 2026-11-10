@@ -1,9 +1,10 @@
 # 模块执行设计与实现方案
 
-> 状态：**阶段 0–7 已作为实验性模块实现落地；模块执行仍不承诺稳定兼容**。Parser、
-> 公共 Provider API、内部图加载/链接、ModuleEnvironment、namespace、`import.meta` 与
-> `Engine.runModule` 已接通；剩余工作是阶段 8 的错误定位、预算/取消边界、文档与审查。
-> 该 API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。
+> 状态：**阶段 0–8 已作为实验性模块实现落地；不承诺正式版兼容性**。Parser、
+> 公共 Provider API、内部图加载/链接、ModuleEnvironment、namespace、`import.meta`、
+> `Engine.runModule`、同步求值以及错误定位/预算/取消/恢复加固已接通。
+> 模块加载器、TLA 执行、动态 `import()`、CLI 与 Test262 module harness 仍无计划。
+> 该 API 需要 `@ExperimentalModuleApi` opt-in。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -555,12 +556,14 @@ class ModuleLinkException(
     val referrer: String? = null,
     val moduleId: String? = null,
     val exportName: String? = null,
+    val sourceName: String? = null,
+    val range: SourceRange? = null,
     message: String,
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)
 ```
 
-静态链接错误不被模块内 `try/catch` 捕获；错误发生在模块代码执行前。
+静态链接错误不被模块内 `try/catch` 捕获；错误发生在模块代码执行前。`sourceName`/`range` 来自触发错误的模块与 import/export 声明；解析错误由 `ParseException.sourceName` 补齐。
 
 ### 9.2 预算
 
@@ -635,8 +638,8 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
-当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.6、M3.1–M3.6、M4.1–M4.6、M5.1–M5.7、M6.1–M6.5、M7.1–M7.8 已完成；
-阶段 8（错误定位、预算/取消/失败恢复、文档审查）待执行。M0.2 的完整图 fixture 仍未单独建。
+当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.6、M3.1–M3.6、M4.1–M4.6、M5.1–M5.7、M6.1–M6.5、M7.1–M7.8、
+M8.1–M8.5 已完成；M8.6 未新增独立基准（按“不承诺优化”处理）。M0.2 的完整图 fixture 仍未单独建。
 
 ### 阶段 0：契约与脚手架（1–2 人日）
 
@@ -738,12 +741,12 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 | ID | 任务 | 产出/验收 |
 |---|---|---|
-| M8.1 | 模块错误栈/sourceName/range | 解析、链接、求值错误可定位 |
-| M8.2 | 预算/取消/失败恢复边界 | 超限、取消、Engine 复用测试 |
-| M8.3 | parser 回归 | 脚本/模块语料 strict 全绿；`parseProgram` 零改动 |
-| M8.4 | 文档 | README/COMPATIBILITY/CONFORMANCE/ARCHITECTURE 说明实验性模块 |
-| M8.5 | 代码审查与清理 | 不引入平台 API；公共类型默认 internal |
-| M8.6 | 性能 sanity | 不承诺优化；记录大图/深链的耗时 |
+| M8.1 | 模块错误栈/sourceName/range | 解析、链接、求值错误可定位（已完成） |
+| M8.2 | 预算/取消/失败恢复边界 | 超限、取消、Engine 复用测试（已完成） |
+| M8.3 | parser 回归 | 脚本/模块语料 strict 全绿；`parseProgram` 零改动（已完成） |
+| M8.4 | 文档 | README/COMPATIBILITY/CONFORMANCE/ARCHITECTURE 说明实验性模块（已完成） |
+| M8.5 | 代码审查与清理 | 不引入平台 API；公共类型默认 internal（已完成） |
+| M8.6 | 性能 sanity | 不承诺优化；未新增独立基准 |
 
 ### 后续阶段（不在 MVP）
 
@@ -799,7 +802,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 阶段 0–7 的 Parser、Provider API、内部图加载、静态链接、模块环境/声明实例化、namespace 与求值已按本文落地；阶段 8 的加固与审查仍待执行。
+- 阶段 0–8 的 Parser、Provider API、内部图加载、静态链接、模块环境/声明实例化、namespace、求值与加固已按本文落地；后续能力（加载器/TLA/CLI/harness）仍无计划。
 - `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

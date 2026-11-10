@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 
 /** 阶段 4：import 解析、TLA 拒绝、namespace 导出名与链接错误。 */
 @OptIn(ExperimentalModuleApi::class)
@@ -101,6 +102,8 @@ class ModuleLinkerTest {
         assertEquals("a", error.referrer)
         assertEquals("b", error.moduleId)
         assertEquals("missing", error.exportName)
+        assertEquals("a", error.sourceName)
+        assertNotNull(error.range)
     }
 
     @Test
@@ -120,6 +123,8 @@ class ModuleLinkerTest {
         assertEquals("a", error.referrer)
         assertEquals("b", error.moduleId)
         assertEquals("x", error.exportName)
+        assertEquals("a", error.sourceName)
+        assertNotNull(error.range)
     }
 
     @Test

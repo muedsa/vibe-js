@@ -20,6 +20,8 @@ internal object ModuleLinker {
                 throw ModuleLinkException(
                     kind = ModuleLinkErrorKind.UNSUPPORTED_TLA,
                     moduleId = record.id,
+                    sourceName = record.source.sourceName,
+                    range = record.program.range,
                     message = "Top-level await is not supported by the module MVP: ${record.id}",
                 )
             }
@@ -30,6 +32,8 @@ internal object ModuleLinker {
                         specifier = entry.moduleRequest,
                         referrer = record.id,
                         moduleId = record.id,
+                        sourceName = record.source.sourceName,
+                        range = entry.range,
                         message = "Module dependency was not loaded: ${entry.moduleRequest}",
                     )
 
@@ -55,6 +59,8 @@ internal object ModuleLinker {
                         referrer = record.id,
                         moduleId = target.id,
                         exportName = entry.importName,
+                        sourceName = record.source.sourceName,
+                        range = entry.range,
                         message = "Ambiguous export '${entry.importName}' requested by ${record.id}",
                     )
 
@@ -64,6 +70,8 @@ internal object ModuleLinker {
                         referrer = record.id,
                         moduleId = target.id,
                         exportName = entry.importName,
+                        sourceName = record.source.sourceName,
+                        range = entry.range,
                         message = "Missing export '${entry.importName}' in ${target.id} requested by ${record.id}",
                     )
                 }

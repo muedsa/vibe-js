@@ -3,7 +3,9 @@
 package com.muedsa.js.runtime.module.internal
 
 import com.muedsa.js.lexer.Lexer
+import com.muedsa.js.lexer.LexerException
 import com.muedsa.js.lexer.SourceInfo
+import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.EngineLimits
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
@@ -140,16 +142,30 @@ internal class ModuleGraphLoader(
     }
 
     private fun parse(source: ModuleSource): com.muedsa.js.ast.ModuleProgram {
-        val tokens = Lexer(
-            source.source,
-            maxNestingDepth = limits.maxNestingDepth,
-            moduleContext = true,
-        ).tokenize()
-        return Parser(
-            tokens,
-            source = source.source,
-            maxNestingDepth = limits.maxNestingDepth,
-            maxAstNodes = limits.maxAstNodes,
-        ).parseModule(SourceInfo(source.sourceName))
+        try {
+            val tokens = Lexer(
+                source.source,
+                maxNestingDepth = limits.maxNestingDepth,
+                moduleContext = true,
+            ).tokenize()
+            return Parser(
+                tokens,
+                source = source.source,
+                maxNestingDepth = limits.maxNestingDepth,
+                maxAstNodes = limits.maxAstNodes,
+            ).parseModule(SourceInfo(source.sourceName))
+        } catch (error: ParseException) {
+            throw ParseException(
+                message = error.detail,
+                range = error.range,
+                sourceName = error.sourceName ?: source.sourceName,
+            )
+        } catch (error: LexerException) {
+            throw ParseException(
+                message = error.detail,
+                range = error.range,
+                sourceName = source.sourceName,
+            )
+        }
     }
 }

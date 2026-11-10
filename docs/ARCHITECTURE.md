@@ -511,7 +511,7 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
   与 URL/URLSearchParams 常用子集。
 - **L 系列（已完成，2026-11）**：同步/异步 Generator、`for await`、Proxy/Reflect、BigInt、
   ArrayBuffer/DataView/TypedArray（含 BigInt 视图与 detach）；对应特性已纳入 Test262 ES2015 基线。
-- **模块（阶段 0–7 实验性实现，阶段 8 加固待做）**：`Parser.parseModule` 支持 `import` / `export`
+- **模块（阶段 0–8 实验性实现）**：`Parser.parseModule` 支持 `import` / `export`
   基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表、类型化绑定、
   entry range 与 `hasTopLevelAwait`；公共 `ModuleProvider` / `InMemoryModuleProvider`、内部
   `ModuleGraphLoader`、`ModuleExportResolver` / `ModuleLinker`、`ModuleEnvironment` /

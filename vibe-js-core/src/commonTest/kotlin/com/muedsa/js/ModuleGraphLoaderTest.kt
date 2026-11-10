@@ -184,6 +184,8 @@ class ModuleGraphLoaderTest {
                 source("bad", "export { missing };"),
                 RecordingProvider(emptyMap()),
             )
+        }.also { error ->
+            assertEquals("bad", error.sourceName)
         }
     }
 

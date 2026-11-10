@@ -6,11 +6,15 @@ import com.muedsa.js.lexer.SourceRange
  * 语法错误异常。
  *
  * @property range 错误发生的源码范围
+ * @property sourceName 可选来源名；模块加载器会为每个模块补齐
  */
 class ParseException(
     message: String,
     val range: SourceRange,
-) : Exception("[$range] $message") {
+    val sourceName: String? = null,
+) : Exception(
+    if (sourceName == null) "[$range] $message" else "$sourceName:[$range] $message",
+) {
 
     /**
      * 不含位置前缀的原始错误描述。

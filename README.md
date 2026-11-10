@@ -156,7 +156,7 @@ module.strict // true
 ```
 
 模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝
-`import` / `export`。阶段 0–7 已接通实验性 `Engine.runModule`（Provider、图加载/链接、环境、namespace、
+`import` / `export`。阶段 0–8 已接通实验性 `Engine.runModule`（Provider、图加载/链接、环境、namespace、
 `import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in）；模块加载器、CLI、TLA 执行与动态
 `import()` 执行尚未实现。详见
 [兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
@@ -429,8 +429,8 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1053 / 1053** |
-| core JS（Node）/ Wasm（Node） | 各 **1037 / 1037** |
+| core JVM | **1056 / 1056** |
+| core JS（Node）/ Wasm（Node） | 各 **1040 / 1040** |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** |
 | conformance 单元测试 | **39 / 39** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
@@ -463,7 +463,7 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 ## 阶段状态
 
 - **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 基线。
-- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–7 前置（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta` 与 `Engine.runModule` 同步求值）已完成；模块加载器、CLI、TLA 执行、动态 `import()` 执行与 Test262 module harness **未实现/无计划**，API 需 opt-in。
+- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–8 前置（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`、`Engine.runModule` 同步求值与错误定位/预算/取消加固）已完成；模块加载器、CLI、TLA 执行、动态 `import()` 执行与 Test262 module harness **未实现/无计划**，API 需 opt-in。
 - **未完成/无计划**：WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划；宿主生态已提供 TextEncoder/TextDecoder、structuredClone 与 URL 子集。
 
 ## 说明
