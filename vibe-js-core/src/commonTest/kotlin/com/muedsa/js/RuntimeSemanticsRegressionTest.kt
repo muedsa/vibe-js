@@ -1715,6 +1715,45 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Array fromAsync 同步值 thenable 拒绝只关闭一次迭代器`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var log = [];
+                var index = 0;
+                var iterator = {
+                    next: function () {
+                        if (index++ === 0) {
+                            return {
+                                done: false,
+                                value: {
+                                    then: function (resolve, reject) {
+                                        reject(new Error('thenable'));
+                                    }
+                                }
+                            };
+                        }
+                        return { done: true };
+                    },
+                    return: function () {
+                        log.push('return');
+                        return { done: true };
+                    }
+                };
+                Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(
+                    function () {
+                        log.push('fulfilled');
+                    },
+                    function (error) {
+                        log.push('reject:' + error.message);
+                    }
+                );
+            """.trimIndent()
+        )
+        assertEquals("return,reject:thenable", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
     fun `Array fromAsync 同步迭代器 done 为 true 时不读取 value`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(
