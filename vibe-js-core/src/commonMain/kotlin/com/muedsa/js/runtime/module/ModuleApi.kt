@@ -68,8 +68,9 @@ public object EmptyModuleProvider : ModuleProvider {
 /**
  * 纯内存 Provider，按精确 id 查找。
  *
- * 不做 `./`、`../`、URL 或平台路径规范化；需要相对路径的宿主必须提供自己的
- * Provider 或先规范化 id。
+ * 这是核心保留的最基础使用方式/示例，不是平台加载器：不做 `./`、`../`、URL 或
+ * 平台路径规范化。需要相对路径、文件或网络的宿主必须提供自己的 Provider，或在
+ * 传入前自行规范化 id。
  */
 @ExperimentalModuleApi
 public class InMemoryModuleProvider(

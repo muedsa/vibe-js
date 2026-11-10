@@ -31,8 +31,8 @@
 - 变量提升信息由 Parser 预计算（`varDeclarations` / `functionDeclarations`），运行时不得全量扫描 AST。
 - Promise/async 使用 `EventLoop` 的微任务队列与协程调度；不得用平台线程或平台定时器替代。
 - 新增循环、迭代器消费、正则、JSON、集合操作、异步生成器泵或缓存时，必须接入现有执行预算/资源检查点；不得引入无界循环、无界缓存或无检查点的大批量操作。
-- 模块方向整体无计划：`Parser.parseModule` 仅保留现状；`parseProgram` 脚本路径零改动；不得新增 `runModule`、加载器、CLI 或 module harness 脚手架；脚本目标继续拒绝 `import` / `export`。
-- 核心不得引入文件/URL/网络 IO；`Engine.run(source)` 是唯一执行入口。若未来重启模块方向，核心只定义纯 Kotlin 抽象，IO 放在 `:vibe-js-host`，且不得假设浏览器/Wasm 有文件系统。
+- 模块方向为 experimental：`Parser.parseModule`、`Engine.runModule`、Provider/链接/环境/namespace 已存在；`parseProgram` 脚本路径零改动；不得新增平台文件/URL 加载器或 module harness 脚手架；脚本目标继续拒绝 `import` / `export`。
+- 核心不得引入文件/URL/网络 IO；`Engine.run(source)` 与实验性 `Engine.runModule(...)` 是执行入口，IO 由宿主 `ModuleProvider` 提供，且不得假设浏览器/Wasm 有文件系统。
 - 范围外与无计划项以 `docs/OPTIMIZATION_ROADMAP.md` 为准；不得顺手实现、承诺或写成“下一版本支持”。
 
 ## 验证与门禁

@@ -3,7 +3,7 @@
 > 状态：**阶段 0–8 已作为实验性模块实现落地；不承诺正式版兼容性**。Parser、
 > 公共 Provider API、内部图加载/链接、ModuleEnvironment、namespace、`import.meta`、
 > `Engine.runModule`、同步求值以及错误定位/预算/取消/恢复加固已接通。
-> 模块加载器、TLA 执行、动态 `import()`、CLI 与 Test262 module harness 仍无计划。
+> 模块加载器、TLA 执行、动态 `import()`、Test262 module harness 仍无计划。
 > 该 API 需要 `@ExperimentalModuleApi` opt-in。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
@@ -16,7 +16,7 @@
 - 首版支持：静态 `import` / `export`、默认导出、re-export、`export *`、`export * as ns`、
   命名空间导入、`import.meta`、循环依赖、live binding。
 - 首版不支持：动态 `import()` 执行、Top-Level Await 执行、import attributes/JSON modules、
-  文件/URL/网络加载器、CLI、Test262 module harness。
+  文件/URL/网络加载器、Test262 module harness。
 - `Engine.runModule` 每次调用使用独立模块图；同一模块在单次调用内只求值一次。
 - 模块共享 `Engine` 的 realm/global，但每个模块有独立 `ModuleEnvironment`。
 - 模块顶层 `this = undefined`，恒严格模式。
@@ -32,7 +32,7 @@
 | 动态 `import()` | 后置 | 支持 | 支持 | 视版本/loader |
 | TLA | 后置，链接期拒绝 | 支持 | 支持 | 视版本 |
 | import attributes | 不支持 | 支持 | 支持 | 视版本 |
-| CLI/harness | 首版不做 | Node CLI | 无 CLI | qjs CLI |
+| Test262 harness | 不纳入核心 | 运行时提供 | 运行时提供 | 宿主工具 |
 
 结论：**核心模型接近规范，宿主边界接近 QuickJS；首版功能集是受控嵌入式子集，不是通用 ESM 运行时。**
 
@@ -58,7 +58,7 @@
 | import attributes | 不支持 | Node 22+/现代浏览器支持 | JSON/WASM 模块导入不可用 |
 | 诊断 | MVP 才补 entry range | 文件/行/列/导入链完整 | 链接错误定位弱于主流引擎 |
 | 加载方式 | 顺序 DFS | 可并行/预加载 | 网络/文件慢时吞吐较低 |
-| CLI/harness | 不做 | Node CLI / Test262 harness | 无法直接作为通用运行时或宣称完整 ESM 一致性 |
+| Test262 harness | 不纳入核心 | 运行时提供 | 无法直接作为通用运行时或宣称完整 ESM 一致性 |
 | 错误模型 | 链接错误 Kotlin 异常 | 多为 JS `SyntaxError`/宿主错误码 | 嵌入式 API 更自然，但和 JS 生态习惯不同 |
 
 其他需要明确记录的差异：
@@ -585,10 +585,10 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 ## 10. Host 边界
 
 - 核心只定义 `ModuleProvider`，不出现 `Path`、`URL`、`Files`、网络 API。
-- `InMemoryModuleProvider` 是首版参考实现，精确 id、不做相对路径规范化。
-- `FileModuleProvider`、URL/fetch provider、Node fs provider 全部后置到 `:vibe-js-host`。
-- 文件加载器必须做根目录约束、路径穿越、大小限制、编码/BOM、符号链接和取消处理。
-- CLI 与 Test262 module harness 不属于首版。
+- `InMemoryModuleProvider` 是核心保留的最基础使用方式，精确 id、不做相对路径规范化；平台加载器仍由使用方实现。
+- 文件/URL/网络 Provider 由使用方按平台自行实现，不属于核心或本项目任务。
+- 使用方实现文件加载器时应自行处理根目录约束、路径穿越、大小限制、编码/BOM、符号链接和取消。
+- Test262 module harness 不属于首版。
 
 ## 11. 测试策略
 
@@ -647,7 +647,7 @@ M8.1–M8.5 已完成；M8.6 未新增独立基准（按“不承诺优化”处
 |---|---|---|
 | M0.1 | 冻结公共 API、错误模型、预算契约 | 本文评审通过；`ModuleRequest`/`ModuleSource`/`ModuleProvider` 签名不再反复 |
 | M0.2 | 建立模块 fixture 清单 | 正常图、菱形、循环、星号歧义、缺失、TLA、超限各至少一条 |
-| M0.3 | 明确不做的项 | 动态 import、TLA、attributes、CLI、harness 写入设计文档 |
+| M0.3 | 明确不做的项 | 动态 import、TLA、attributes、harness 写入设计文档 |
 
 ### 阶段 1：Parser/AST 前置（4–6 人日）
 
@@ -757,7 +757,6 @@ M8.1–M8.5 已完成；M8.6 未新增独立基准（按“不承诺优化”处
 | L3 | import attributes / JSON modules | 3–5 | M1/M4 |
 | L4 | 文件/URL/网络 Provider（仅 host） | 3–5 | M2/M3 |
 | L5 | Test262 module harness + 全量 module 门禁 | 5–9 | L1/L2 |
-| L6 | CLI 与退出码 | 2–4 | L4/L5 |
 
 ### 任务依赖
 
@@ -765,7 +764,7 @@ M8.1–M8.5 已完成；M8.6 未新增独立基准（按“不承诺优化”处
 M0 -> M1 -> M3 -> M4 -> M5 -> M7 -> M8
 M0 -> M2 -> M3
 M4 -> M6 -> M7
-M7 -> L1/L2/L3/L4/L5/L6
+M7 -> L1/L2/L3/L4/L5
 ```
 
 - M1 与 M2 可以并行。
@@ -802,7 +801,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 阶段 0–8 的 Parser、Provider API、内部图加载、静态链接、模块环境/声明实例化、namespace、求值与加固已按本文落地；后续能力（加载器/TLA/CLI/harness）仍无计划。
-- `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
+- 阶段 0–8 的 Parser、Provider API、内部图加载、静态链接、模块环境/声明实例化、namespace、求值与加固已按本文落地；后续能力（加载器/TLA/harness）仍无计划。
+- `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器与 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

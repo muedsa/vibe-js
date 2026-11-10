@@ -97,7 +97,7 @@ Lexer ──► Parser ──► AST (Program / ModuleProgram)
 5. 模块恒为严格模式；顶层 `super` / `new.target`、Annex B 语法、重复顶层函数声明等按模块早期错误处理；
 6. 表达式层：`import.meta` 解析为 `ImportMetaExpr`，`import(specifier[, options])` 解析为 `ImportCallExpr`；模块顶层 `await` 解析为 `UnaryOp("await", ...)` 并记录 `hasTopLevelAwait`，非 async 函数体中的 `await` 是语法错误；
 7. `moduleContext` 会传播到模板字符串 `${...}` 的子解析器与子词法器，保证模块语境在嵌套表达式里一致；
-8. 当前执行模型：`Engine.run` 接受 Script；`Engine.runModule`（实验性，需 opt-in）加载 Provider 模块图、链接、建模块环境/namespace 并同步求值，返回入口 namespace。模块求值帧 `this = undefined`、严格模式；TLA、动态 `import()` 执行、宿主文件/URL 加载器、CLI 与 module harness **尚未实现**。
+8. 当前执行模型：`Engine.run` 接受 Script；`Engine.runModule`（实验性，需 opt-in）加载 Provider 模块图、链接、建模块环境/namespace 并同步求值，返回入口 namespace。模块求值帧 `this = undefined`、严格模式；TLA、动态 `import()` 执行、宿主文件/URL 加载器、module harness **尚未实现**。
 
 已知限制：import attributes、`import.meta.resolve`、`export using` 尚未覆盖；模块执行与加载仍未排期。
 
@@ -514,9 +514,9 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
 - **模块（阶段 0–8 实验性实现）**：`Parser.parseModule` 支持 `import` / `export`
   基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表、类型化绑定、
   entry range 与 `hasTopLevelAwait`；公共 `ModuleProvider` / `InMemoryModuleProvider`、内部
-  `ModuleGraphLoader`、`ModuleExportResolver` / `ModuleLinker`、`ModuleEnvironment` /
+  `ModuleGraphResolver`、`ModuleExportResolver` / `ModuleLinker`、`ModuleEnvironment` /
   `ModuleDeclarationInstantiator`、`JSModuleNamespace` 与 `Engine.runModule` 已提供；
-  TLA、动态 `import()` 执行、宿主加载器、CLI 与 Test262 module harness **尚未实现**，API 需 opt-in。
+  TLA、动态 `import()` 执行、宿主加载器与 Test262 module harness **尚未实现**，API 需 opt-in。
 - **当前无计划/按需**：WeakRef / FinalizationRegistry、WeakMap/WeakSet 的真实弱引用（M2）、Intl、DOM/fetch 等真实 Web API、SharedArrayBuffer/Atomics、
   resizable/transfer ArrayBuffer 无计划；R1 资源约束已覆盖主要路径；性能优化（B2）与 API 契约（PKG1）无计划，
   S5.2 只做性能复测观测（见[后续路线](OPTIMIZATION_ROADMAP.md)）。

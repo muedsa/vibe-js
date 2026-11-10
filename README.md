@@ -157,7 +157,7 @@ module.strict // true
 
 模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝
 `import` / `export`。阶段 0–8 已接通实验性 `Engine.runModule`（Provider、图加载/链接、环境、namespace、
-`import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in）；模块加载器、CLI、TLA 执行与动态
+`import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in）；模块加载器、TLA 执行与动态
 `import()` 执行尚未实现。详见
 [兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
 
@@ -344,7 +344,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 
 当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
-- **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in；模块加载器、CLI、TLA 执行、动态 `import()` 执行与 Test262 module harness **未实现/无计划**；
+- **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in；模块加载器、TLA 执行、动态 `import()` 执行与 Test262 module harness **未实现/无计划**；
 - **无计划**：顶层 await 的执行（L4.7）、WeakRef / FinalizationRegistry；
 - **宿主生态（已实现子集）**：`TextEncoder` / `TextDecoder`（UTF-8、fatal/ignoreBOM/stream）、`structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）、`URL` / `URLSearchParams` 常用能力，均位于 `:vibe-js-host`；
 - **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供通用宿主能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
@@ -463,7 +463,7 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 ## 阶段状态
 
 - **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 基线。
-- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–8 前置（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`、`Engine.runModule` 同步求值与错误定位/预算/取消加固）已完成；模块加载器、CLI、TLA 执行、动态 `import()` 执行与 Test262 module harness **未实现/无计划**，API 需 opt-in。
+- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–8 前置（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`、`Engine.runModule` 同步求值与错误定位/预算/取消加固）已完成；模块加载器、TLA 执行、动态 `import()` 执行与 Test262 module harness **未实现/无计划**，API 需 opt-in。
 - **未完成/无计划**：WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划；宿主生态已提供 TextEncoder/TextDecoder、structuredClone 与 URL 子集。
 
 ## 说明

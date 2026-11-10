@@ -8,7 +8,7 @@ import com.muedsa.js.runtime.module.ModuleLinkException
 import com.muedsa.js.runtime.module.ModuleProvider
 import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
-import com.muedsa.js.runtime.module.internal.ModuleGraphLoader
+import com.muedsa.js.runtime.module.internal.ModuleGraphResolver
 import com.muedsa.js.runtime.module.internal.ModuleStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 
 /** 阶段 3：模块图递归加载、请求缓存、id 去重与预算；不涉及链接/求值。 */
 @OptIn(ExperimentalModuleApi::class, ExperimentalCoroutinesApi::class)
-class ModuleGraphLoaderTest {
+class ModuleGraphResolverTest {
 
     private class RecordingProvider(
         private val sources: Map<String, ModuleSource>,
@@ -57,7 +57,7 @@ class ModuleGraphLoaderTest {
             import { c } from "./c.js";
             """.trimIndent(),
         )
-        val graph = ModuleGraphLoader(EngineLimits()).load(entry, provider)
+        val graph = ModuleGraphResolver(EngineLimits()).load(entry, provider)
 
         assertEquals("a", graph.entry.id)
         assertEquals(listOf("b", "c"), graph.entry.dependencies.map { it.id })
@@ -76,7 +76,7 @@ class ModuleGraphLoaderTest {
                 "./a.js" to entry,
             ),
         )
-        val graph = ModuleGraphLoader(EngineLimits()).load(entry, provider)
+        val graph = ModuleGraphResolver(EngineLimits()).load(entry, provider)
 
         assertEquals(2, graph.records.size)
         assertSame(graph.records["b"], graph.entry.dependencies.single())
@@ -97,7 +97,7 @@ class ModuleGraphLoaderTest {
             "a",
             "import { b } from \"./b.js\"; import { c } from \"./c.js\";",
         )
-        val graph = ModuleGraphLoader(EngineLimits()).load(entry, provider)
+        val graph = ModuleGraphResolver(EngineLimits()).load(entry, provider)
 
         assertEquals(setOf("a", "b", "c", "d"), graph.records.keys)
         val shared = graph.records.getValue("d")
@@ -118,7 +118,7 @@ class ModuleGraphLoaderTest {
             "a",
             "import { b } from \"./b.js\"; import { b as alias } from \"./alias-b.js\";",
         )
-        val graph = ModuleGraphLoader(EngineLimits()).load(entry, provider)
+        val graph = ModuleGraphResolver(EngineLimits()).load(entry, provider)
 
         assertEquals(listOf("a", "b"), graph.records.keys.toList())
         assertEquals(2, graph.entry.dependencies.size)
@@ -130,7 +130,7 @@ class ModuleGraphLoaderTest {
     fun `缺失依赖抛出 NOT_FOUND 并保留定位信息`() = runTest {
         val provider = RecordingProvider(emptyMap())
         val error = assertFailsWith<ModuleLinkException> {
-            ModuleGraphLoader(EngineLimits()).load(
+            ModuleGraphResolver(EngineLimits()).load(
                 source("a", "import { x } from \"./missing.js\";"),
                 provider,
             )
@@ -145,7 +145,7 @@ class ModuleGraphLoaderTest {
         val failure = IllegalStateException("disk offline")
         val provider = RecordingProvider(emptyMap(), failure)
         val error = assertFailsWith<IllegalStateException> {
-            ModuleGraphLoader(EngineLimits()).load(
+            ModuleGraphResolver(EngineLimits()).load(
                 source("a", "import \"./dep.js\";"),
                 provider,
             )
@@ -161,19 +161,19 @@ class ModuleGraphLoaderTest {
         val entry = source("a", "import { b } from \"./b.js\";")
 
         val tooMany = assertFailsWith<ModuleLinkException> {
-            ModuleGraphLoader(EngineLimits(maxModules = 1)).load(entry, provider)
+            ModuleGraphResolver(EngineLimits(maxModules = 1)).load(entry, provider)
         }
         assertEquals(ModuleLinkErrorKind.TOO_MANY_MODULES, tooMany.kind)
 
         val tooLarge = assertFailsWith<ModuleLinkException> {
-            ModuleGraphLoader(EngineLimits(maxTotalModuleSourceLength = 10)).load(entry, provider)
+            ModuleGraphResolver(EngineLimits(maxTotalModuleSourceLength = 10)).load(entry, provider)
         }
         assertEquals(ModuleLinkErrorKind.TOTAL_SOURCE_TOO_LARGE, tooLarge.kind)
     }
 
     @Test
     fun `空 id 被拒绝而解析错误保持 ParseException`() = runTest {
-        val loader = ModuleGraphLoader(EngineLimits())
+        val loader = ModuleGraphResolver(EngineLimits())
         val invalid = assertFailsWith<ModuleLinkException> {
             loader.load(source("", "export const x = 1;"), RecordingProvider(emptyMap()))
         }
@@ -194,7 +194,7 @@ class ModuleGraphLoaderTest {
         val provider = RecordingProvider(
             mapOf("entry" to source("entry", "export const x = 1;")),
         )
-        val graph = ModuleGraphLoader(EngineLimits()).load("entry", provider)
+        val graph = ModuleGraphResolver(EngineLimits()).load("entry", provider)
 
         assertEquals("entry", graph.entry.id)
         assertEquals(ModuleRequest("entry", referrer = null), provider.requests.single())
@@ -202,7 +202,7 @@ class ModuleGraphLoaderTest {
 
     @Test
     fun `同一个 loader 重复 load 不保留上一张图`() = runTest {
-        val loader = ModuleGraphLoader(EngineLimits())
+        val loader = ModuleGraphResolver(EngineLimits())
         val provider = RecordingProvider(emptyMap())
 
         val first = loader.load(source("a", "export const a = 1;"), provider)
@@ -219,7 +219,7 @@ class ModuleGraphLoaderTest {
             override suspend fun load(request: ModuleRequest): ModuleSource? = awaitCancellation()
         }
         val job = launch {
-            ModuleGraphLoader(EngineLimits()).load(
+            ModuleGraphResolver(EngineLimits()).load(
                 source("a", "import \"./b.js\";"),
                 provider,
             )

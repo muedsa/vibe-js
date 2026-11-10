@@ -7,7 +7,7 @@ import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.module.internal.ModuleExportResolver
 import com.muedsa.js.runtime.module.internal.ModuleGraph
-import com.muedsa.js.runtime.module.internal.ModuleGraphLoader
+import com.muedsa.js.runtime.module.internal.ModuleGraphResolver
 import com.muedsa.js.runtime.module.internal.ResolveExportResult
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -26,7 +26,7 @@ class ModuleExportResolverTest {
     private suspend fun graph(
         entry: ModuleSource,
         sources: Map<String, ModuleSource> = emptyMap(),
-    ): ModuleGraph = ModuleGraphLoader(EngineLimits()).load(entry, Provider(sources))
+    ): ModuleGraph = ModuleGraphResolver(EngineLimits()).load(entry, Provider(sources))
 
     private fun source(id: String, code: String) = ModuleSource(id, code)
 

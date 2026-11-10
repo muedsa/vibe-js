@@ -63,7 +63,7 @@
 | 私有字段/方法/访问器 | ✅ | 品牌检查、不可扩展与重复初始化报错、直接 eval 可见性 |
 | Generator（`function*` / `yield`） | ✅ | 同步/异步生成器、`yield*` 委托、`return`/`throw`/`next`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定在调用时完成 |
 | BigInt（字面量与运算） | ✅ | `123n`、算术/位运算/移位/比较/幂运算、`BigInt()` / `asIntN` / `asUintN`、与 Number 混用抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制 |
-| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；实验性 `Engine.runModule` 已支持 Provider 图加载、链接、声明实例化、同步求值与 namespace，需 opt-in；宿主加载器/CLI/TLA 执行未实现。脚本目标继续拒绝 `import` / `export` |
+| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；实验性 `Engine.runModule` 已支持 Provider 图加载、链接、声明实例化、同步求值与 namespace，需 opt-in；宿主加载器/TLA 执行未实现。脚本目标继续拒绝 `import` / `export` |
 | 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；模块求值中 `import.meta` 返回缓存的 url 对象，`import()` 执行时抛 `Dynamic import is not supported`；零参数在解析期报错 |
 | 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 并记录 `hasTopLevelAwait`；非 async 函数体中的 `await` 在解析期报错；链接期直接拒绝 TLA，异步求值未实现 |
 | Proxy / Reflect | ✅ | Proxy 13 个 trap、`Proxy.revocable`、撤销状态与完整不变量校验；Reflect 13 个方法；解释器属性/调用/构造内部方法统一分派 |
@@ -160,7 +160,7 @@
 | `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
 | `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
-- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta` 与同步求值；TLA 在链接期拒绝，动态 `import()` 执行到表达式时抛 `SyntaxError`。模块加载器、CLI、Test262 module harness 仍无计划；API 需 opt-in；
+- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta` 与同步求值；TLA 在链接期拒绝，动态 `import()` 执行到表达式时抛 `SyntaxError`。模块加载器、Test262 module harness 仍无计划；API 需 opt-in；
 - 模块语法限制：import attributes、`import.meta.resolve`、`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；
 - 顶层 await 只有语法解析和 `hasTopLevelAwait` 标记，没有模块异步求值；

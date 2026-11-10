@@ -15,7 +15,7 @@ import com.muedsa.js.runtime.module.ModuleProvider
 import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.module.internal.ModuleEvaluator
 import com.muedsa.js.runtime.module.internal.ModuleGraph
-import com.muedsa.js.runtime.module.internal.ModuleGraphLoader
+import com.muedsa.js.runtime.module.internal.ModuleGraphResolver
 import com.muedsa.js.runtime.module.internal.ModuleLinker
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSObject
@@ -244,7 +244,7 @@ class Engine(
     ): JSObject {
         currentCoroutineContext().ensureActive()
         eventLoop.ensureOpen()
-        val graph = ModuleGraphLoader(limits).load(entry, provider)
+        val graph = ModuleGraphResolver(limits).load(entry, provider)
         return executeModuleGraph(graph)
     }
 
@@ -256,7 +256,7 @@ class Engine(
     ): JSObject {
         currentCoroutineContext().ensureActive()
         eventLoop.ensureOpen()
-        val graph = ModuleGraphLoader(limits).load(entrySpecifier, provider)
+        val graph = ModuleGraphResolver(limits).load(entrySpecifier, provider)
         return executeModuleGraph(graph)
     }
 

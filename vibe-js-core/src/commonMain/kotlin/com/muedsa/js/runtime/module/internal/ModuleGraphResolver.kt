@@ -18,12 +18,12 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 /**
- * 模块图加载器：解析入口、递归调用 Provider、按 id/请求去重。
+ * 模块图解析器：解析入口、递归调用宿主 Provider、按 id/请求去重。
  *
- * 阶段 3 只做加载与解析，不链接、不求值。所有状态（records/requestCache）
- * 属于单次 [load] 调用，不跨 run 缓存。
+ * 它不读取文件/URL/网络，也不是平台加载器；只把 Provider 返回的源码解析为
+ * 内部模块图。所有状态（records/requestCache）属于单次 [load] 调用，不跨 run 缓存。
  */
-internal class ModuleGraphLoader(
+internal class ModuleGraphResolver(
     private val limits: EngineLimits,
 ) {
     private data class RequestKey(
