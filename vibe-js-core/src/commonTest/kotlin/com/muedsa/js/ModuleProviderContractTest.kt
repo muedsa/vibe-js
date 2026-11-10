@@ -129,4 +129,36 @@ class ModuleProviderContractTest {
         Engine().runModule("entry", provider)
         assertEquals(2, loads)
     }
+
+    @Test
+    fun `不同 specifier 返回同一 id 时只求值一次`() = runTest {
+        var loads = 0
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                loads += 1
+                return when (request.specifier) {
+                    "entry" -> ModuleSource(
+                        "entry",
+                        "import './a.js'; import './b.js'; export const value = 1;",
+                    )
+
+                    "./a.js", "./b.js" -> {
+                        ModuleSource(
+                            "shared",
+                            """
+                            globalThis.sharedExecutions = (globalThis.sharedExecutions || 0) + 1;
+                            export const value = 2;
+                            """.trimIndent(),
+                        )
+                    }
+
+                    else -> null
+                }
+            }
+        }
+        val engine = Engine()
+        engine.runModule("entry", provider)
+        assertEquals(3, loads)
+        assertEquals(1.0, (engine.run("globalThis.sharedExecutions") as JSNumber).value)
+    }
 }

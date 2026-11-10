@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1106 / 1106** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1090 / 1090** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1107 / 1107** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1091 / 1091** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -615,6 +615,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B49 命名空间导出 default**：新增 `export * as ns` 的嵌套 namespace 同时包含 `default` 与普通导出 1 条核心单测；核心 1102/1086 |
 | 2026-11-10 | **S2.2-B50 默认导出与实时绑定边界**：新增星号导出排除 default、命名空间导出 live binding、default 显式重导出 3 条核心单测；核心 1105/1089 |
 | 2026-11-10 | **S2.2-B51 重复依赖加载去重**：新增同一 specifier 重复 import 只向 Provider 请求一次 1 条核心单测；核心 1106/1090 |
+| 2026-11-10 | **S2.2-B52 同 id 多 specifier 去重**：新增不同 specifier 返回同一 module id 时只求值一次 1 条核心单测；核心 1107/1091 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
