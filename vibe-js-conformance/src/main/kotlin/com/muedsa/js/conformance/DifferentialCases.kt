@@ -4819,6 +4819,44 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    // Object.fromEntries 关闭迭代器时 return getter 抛错仍保留原始 TypeError。
+    DifferentialCase(
+        "object-from-entries-return-getter-precedence",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: null, done: false };
+    },
+    get return() {
+      throw new Error('close');
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // Object.fromEntries 关闭迭代器时 return 非函数仍保留原始 TypeError。
+    DifferentialCase(
+        "object-from-entries-return-non-callable-precedence",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: null, done: false };
+    },
+    return: 1
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
     // Object.fromEntries 遇到字符串条目时抛 TypeError 并关闭迭代器。
     DifferentialCase(
         "object-from-entries-string-entry-close",
