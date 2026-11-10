@@ -337,6 +337,28 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `命名空间导出包含目标的 default 与普通导出`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * as ns from './a.js';"),
+            Provider(
+                mapOf(
+                    "./a.js" to source("a", "export default 7; export const x = 1;"),
+                ),
+            ),
+        )
+        val nested = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("ns")),
+        )
+        assertEquals(
+            listOf("default", "x"),
+            nested.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(7.0, (engine.interpreter.getProperty(nested, PropertyKey.Str("default")) as JSNumber).value)
+        assertEquals(1.0, (engine.interpreter.getProperty(nested, PropertyKey.Str("x")) as JSNumber).value)
+    }
+
+    @Test
     fun `依赖求值失败后后续依赖不再执行`() = runTest {
         val engine = Engine()
         assertFailsWith<JSException> {
