@@ -377,6 +377,24 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `空模块的命名空间导出保持空对象语义`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * as ns from './a.js';"),
+            Provider(mapOf("./a.js" to source("a", "export {};"))),
+        )
+        val nested = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("ns")),
+        )
+        assertEquals(
+            0,
+            nested.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().size,
+        )
+        assertEquals(null, nested.prototype)
+        assertFalse(nested.isExtensible())
+    }
+
+    @Test
     fun `星号导出不包含目标的 default`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
