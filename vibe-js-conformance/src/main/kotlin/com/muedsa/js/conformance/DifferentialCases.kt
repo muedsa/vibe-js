@@ -4147,6 +4147,21 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.hasOwn(object, key);
 })()""",
     ),
+    // Object.hasOwn 通过 Proxy 的 getOwnPropertyDescriptor 陷阱检查属性。
+    DifferentialCase(
+        "object-has-own-proxy-trap",
+        """(function () {
+  var log = [];
+  var target = { x: 1 };
+  var proxy = new Proxy(target, {
+    getOwnPropertyDescriptor: function (object, key) {
+      log.push(key);
+      return Reflect.getOwnPropertyDescriptor(object, key);
+    }
+  });
+  return Object.hasOwn(proxy, 'x') + ':' + log.join(',');
+})()""",
+    ),
     // Map.groupBy 的 NaN 键按 SameValueZero 归入同一组。
     DifferentialCase(
         "map-group-by-nan-key",
