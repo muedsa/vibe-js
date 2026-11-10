@@ -5070,6 +5070,68 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.fromEntries 不读取 return 结果对象的 done。
+    DifferentialCase(
+        "object-from-entries-return-done-not-read",
+        """(function () {
+  var entry = {};
+  Object.defineProperty(entry, 0, {
+    get: function () {
+      throw new Error('key');
+    }
+  });
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: entry, done: false } : { done: true };
+    },
+    return: function () {
+      return {
+        get done() {
+          throw new Error('close-done');
+        }
+      };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
+    // Object.fromEntries 不读取 return 结果对象的 value。
+    DifferentialCase(
+        "object-from-entries-return-value-not-read",
+        """(function () {
+  var entry = {};
+  Object.defineProperty(entry, 0, {
+    get: function () {
+      throw new Error('key');
+    }
+  });
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: entry, done: false } : { done: true };
+    },
+    return: function () {
+      return {
+        get value() {
+          throw new Error('close-value');
+        }
+      };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
     // Object.fromEntries 遇到字符串条目时抛 TypeError 并关闭迭代器。
     DifferentialCase(
         "object-from-entries-string-entry-close",
