@@ -26,7 +26,9 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -52,6 +54,19 @@ class ModuleExecutionTest {
 
         assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("x")) as JSNumber).value)
         assertEquals(2.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("default")) as JSNumber).value)
+    }
+
+    @Test
+    fun `default 导出保持 namespace 描述符`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export default 2;"))
+        val descriptor = assertNotNull(namespace.getOwnProperty(PropertyKey.Str("default")))
+        assertEquals(2.0, (descriptor.value as JSNumber).value)
+        assertTrue(descriptor.writable)
+        assertTrue(descriptor.enumerable)
+        assertFalse(descriptor.configurable)
+        assertEquals(null, namespace.prototype)
+        assertFalse(namespace.isExtensible())
     }
 
     @Test
