@@ -359,6 +359,65 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `星号导出不包含目标的 default`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * from './a.js';"),
+            Provider(
+                mapOf(
+                    "./a.js" to source("a", "export default 7; export const x = 1;"),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf("x"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(null, namespace.getOwnProperty(PropertyKey.Str("default")))
+    }
+
+    @Test
+    fun `命名空间导出保持目标的实时绑定`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * as ns from './a.js';"),
+            Provider(
+                mapOf(
+                    "./a.js" to source(
+                        "a",
+                        """
+                        export let x = 1;
+                        export function setX(next) {
+                          x = next;
+                        }
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val nested = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("ns")),
+        )
+        val setX = engine.interpreter.getProperty(nested, PropertyKey.Str("setX"))
+        engine.interpreter.callFunction(setX, JSUndefined, listOf(JSNumber(5.0)))
+        assertEquals(5.0, (engine.interpreter.getProperty(nested, PropertyKey.Str("x")) as JSNumber).value)
+    }
+
+    @Test
+    fun `default 可以显式重导出`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export { default } from './a.js';"),
+            Provider(mapOf("./a.js" to source("a", "export default 7;"))),
+        )
+        assertEquals(
+            listOf("default"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(7.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("default")) as JSNumber).value)
+    }
+
+    @Test
     fun `依赖求值失败后后续依赖不再执行`() = runTest {
         val engine = Engine()
         assertFailsWith<JSException> {
