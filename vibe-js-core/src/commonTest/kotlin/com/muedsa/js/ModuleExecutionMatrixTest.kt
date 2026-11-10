@@ -174,4 +174,64 @@ class ModuleExecutionMatrixTest {
         )
         assertEquals(null, namespace.getOwnProperty(PropertyKey.Str("x")))
     }
+
+    @Test
+    fun `循环重命名导出保留别名实时绑定`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * from './a.js'; export * from './b.js';"),
+            Provider(
+                mapOf(
+                    "./a.js" to source(
+                        "a",
+                        "export { value as aValue } from './b.js'; " +
+                            "export const a = 1; export let value = 10;",
+                    ),
+                    "./b.js" to source(
+                        "b",
+                        "export { value as bValue } from './a.js'; " +
+                            "export const b = 2; export const value = 20;",
+                    ),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf("a", "aValue", "b", "bValue"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(20.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("aValue")) as JSNumber).value)
+        assertEquals(10.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("bValue")) as JSNumber).value)
+        assertEquals(null, namespace.getOwnProperty(PropertyKey.Str("value")))
+    }
+
+    @Test
+    fun `循环星号命名空间导出保持嵌套命名空间身份`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * from './a.js'; export * from './b.js';"),
+            Provider(
+                mapOf(
+                    "./a.js" to source(
+                        "a",
+                        "export const a = 1; export * as bNamespace from './b.js';",
+                    ),
+                    "./b.js" to source(
+                        "b",
+                        "export const b = 2; export * as aNamespace from './a.js';",
+                    ),
+                ),
+            ),
+        )
+        val bNamespace = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("bNamespace")),
+        )
+        val aNamespace = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("aNamespace")),
+        )
+        assertSame(
+            bNamespace,
+            engine.interpreter.getProperty(aNamespace, PropertyKey.Str("bNamespace")),
+        )
+        assertEquals(2.0, (engine.interpreter.getProperty(bNamespace, PropertyKey.Str("b")) as JSNumber).value)
+    }
 }

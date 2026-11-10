@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1081 / 1081** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1065 / 1065** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1083 / 1083** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1067 / 1067** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -583,6 +583,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B17 namespace 与重复运行**：宽图 namespace 键排序/描述符/不可扩展、同一 Provider 连续 runModule 独立图、失败后新图恢复 3 条核心单测；核心 1079/1063 |
 | 2026-11-10 | **S2.2-B18 Proxy 数组/迭代路径**：新增 `map`、`push`、数组展开、`join`、`setPrototypeOf` 5 条 Proxy trap 差分；差分 633→638/638 |
 | 2026-11-10 | **S2.2-B19 循环星号 namespace**：新增循环星号导出实时绑定、同名歧义省略 2 条核心单测；修复 namespace 暴露歧义名的问题（GetModuleNamespace 只保留唯一解析名）；核心 1081/1065 |
+| 2026-11-10 | **S2.2-B20 循环重命名/命名空间导出**：新增循环重命名别名实时绑定、循环 `export * as` 命名空间身份 2 条核心单测；核心 1083/1067 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B14 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 633/633、真实库 375/375，strict 全绿 |
