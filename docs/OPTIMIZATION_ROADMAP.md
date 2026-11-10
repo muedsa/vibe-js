@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **836 / 836** | 含 L 系列同步与异步用例 |
+| Node 差分 | **838 / 838** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -767,6 +767,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B272~B273 Array.fromAsync 内建构造器 this**：新增 Date 与 Map 作为 this 时写入 length/索引 2 条异步用例；差分 831→833/833 |
 | 2026-11-11 | **S2.2-B274~B275 Array.fromAsync String 包装对象 length**：新增 String 作为 this 时 length 写入失败拒绝 TypeError 1 条核心单测；差分新增 Promise this 1 条至 834/834，核心 1157/1141，并记录 Node 静默完成差异 |
 | 2026-11-11 | **S2.2-B276~B277 Array.fromAsync Boolean/Number 包装对象**：新增 Boolean 与 Number 作为 this 时写入 length/索引 2 条异步用例；差分 834→836/836 |
+| 2026-11-11 | **S2.2-B278~B279 Array.fromAsync BigInt/Symbol this**：新增两者作为构造器时均以 TypeError 拒绝 2 条异步用例；差分 836→838/838 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
