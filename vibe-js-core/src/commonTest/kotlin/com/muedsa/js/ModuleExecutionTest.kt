@@ -201,4 +201,14 @@ class ModuleExecutionTest {
         assertEquals("maxSteps", error.limitName)
         assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
+
+    @Test
+    fun `模块求值超出对象预算后 Engine 可复用`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxObjectCount = 100))
+        val error = assertFailsWith<ExecutionLimitException> {
+            engine.runModule(source("a", "for (let i = 0; i < 1000; i++) { ({ i: i }); }"))
+        }
+        assertEquals("maxObjectCount", error.limitName)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
 }
