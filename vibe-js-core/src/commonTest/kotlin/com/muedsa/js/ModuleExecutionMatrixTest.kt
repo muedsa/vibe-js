@@ -663,6 +663,19 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `对象展开复制 namespace 的可枚举导出`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("a", "export const b = 1; export const x = 2;"),
+        )
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "{\"b\":1,\"x\":2}",
+            (engine.run("JSON.stringify({ ...ns })") as JSString).value,
+        )
+    }
+
+    @Test
     fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(

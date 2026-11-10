@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1131 / 1131** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1115 / 1115** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1132 / 1132** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1116 / 1116** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -652,6 +652,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B86 namespace freeze**：新增 Object.freeze 抛 TypeError、sealed 但未 frozen 1 条核心单测；核心 1129/1113 |
 | 2026-11-10 | **S2.2-B87 namespace Object_toString**：新增 `[object Module]` 标签消费 1 条核心单测；核心 1130/1114 |
 | 2026-11-10 | **S2.2-B88 namespace JSON 序列化**：新增 JSON.stringify 按可枚举导出输出 1 条核心单测；核心 1131/1115 |
+| 2026-11-10 | **S2.2-B89 namespace 对象展开**：新增 `{ ...ns }` 复制可枚举导出 1 条核心单测；核心 1132/1116 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
