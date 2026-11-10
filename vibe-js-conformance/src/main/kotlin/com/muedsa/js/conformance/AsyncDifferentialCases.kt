@@ -3092,6 +3092,34 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-arrow-mapper-ignores-this-arg",
+        """
+        var log = [];
+        var context = { tag: 1 };
+        Array.fromAsync([1], (value) => {
+          log.push(this === globalThis);
+          return value;
+        }, context).then(function (values) {
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-arrow-mapper-ignores-this-arg",
+        """
+        var log = [];
+        var context = { tag: 1 };
+        Array.fromAsync([1], async (value) => {
+          log.push(this === globalThis);
+          return value;
+        }, context).then(function (values) {
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-extra-arguments-ignored",
         """
         var log = [];
