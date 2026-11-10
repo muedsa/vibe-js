@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleProvider
 import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
+import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
@@ -548,6 +549,23 @@ class ModuleExecutionMatrixTest {
         assertFalse(tag.writable)
         assertFalse(tag.enumerable)
         assertFalse(tag.configurable)
+    }
+
+    @Test
+    fun `namespace 属性写入返回 false 且严格模式抛 TypeError`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(false, (engine.run("Reflect.set(ns, 'x', 2)") as JSBoolean).value)
+        assertEquals(
+            "TypeError",
+            (
+                engine.run(
+                    "(function () { 'use strict'; try { ns.x = 3; return 'none'; } catch (e) { return e.name; } })()",
+                ) as JSString
+                ).value,
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("x")) as JSNumber).value)
     }
 
     @Test
