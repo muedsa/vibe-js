@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1117 / 1117** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1101 / 1101** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1118 / 1118** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1102 / 1102** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -638,6 +638,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B72 模块 AST 节点预算**：新增模块解析超过 maxAstNodes 抛 AST_NODES 且 Engine 可复用 1 条核心单测；核心 1115/1099 |
 | 2026-11-10 | **S2.2-B73 模块嵌套深度预算**：新增模块解析超过 maxNestingDepth 抛 NESTING_DEPTH 且 Engine 可复用 1 条核心单测；核心 1116/1100 |
 | 2026-11-10 | **S2.2-B74 源码长度边界成功**：新增模块源码长度恰好达到 maxSourceLength 时成功 1 条核心单测；核心 1117/1101 |
+| 2026-11-10 | **S2.2-B75 源码长度少一字符**：新增 maxSourceLength 比源码少 1 时失败并校验 limit/actual 1 条核心单测；核心 1118/1102 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
