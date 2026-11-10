@@ -1039,6 +1039,22 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-promise-any-all-rejected",
+        """
+        var log = [];
+        Promise.any([Promise.reject('a'), Promise.reject('b')]).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push(error.name);
+          log.push(error instanceof AggregateError);
+          log.push(error.errors.join(','));
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-allsettled-next-throw",
         """
         var log = [];
