@@ -871,6 +871,74 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-mapper-second-throw",
+        """
+        var log = [];
+        var index = 0;
+        var source = {
+          [Symbol.iterator]: function () {
+            return {
+              next: function () {
+                return index++ < 2 ? { value: index, done: false } : { done: true };
+              },
+              return: function () {
+                log.push('return');
+                return { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          log.push('map:' + value);
+          if (value === 2) {
+            throw new Error('second');
+          }
+          return value;
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-mapper-second-reject",
+        """
+        var log = [];
+        var index = 0;
+        var source = {
+          [Symbol.iterator]: function () {
+            return {
+              next: function () {
+                return index++ < 2 ? { value: index, done: false } : { done: true };
+              },
+              return: function () {
+                log.push('return');
+                return { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          log.push('map:' + value);
+          if (value === 2) {
+            return Promise.reject(new Error('second'));
+          }
+          return value;
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-string",
         """
         var log = [];
