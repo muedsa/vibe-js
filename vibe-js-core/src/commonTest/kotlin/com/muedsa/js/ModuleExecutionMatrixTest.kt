@@ -181,6 +181,30 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `循环依赖按深度优先逆序执行模块体`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "entry",
+                "import './a.js'; export const log = globalThis.cycleLog;",
+            ),
+            Provider(
+                mapOf(
+                    "./a.js" to source(
+                        "a",
+                        "globalThis.cycleLog = (globalThis.cycleLog || '') + 'a'; import './b.js';",
+                    ),
+                    "./b.js" to source(
+                        "b",
+                        "globalThis.cycleLog = (globalThis.cycleLog || '') + 'b'; import './a.js';",
+                    ),
+                ),
+            ),
+        )
+        assertEquals("ba", (engine.interpreter.getProperty(namespace, PropertyKey.Str("log")) as JSString).value)
+    }
+
+    @Test
     fun `显式导出优先于同名星号导出`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
