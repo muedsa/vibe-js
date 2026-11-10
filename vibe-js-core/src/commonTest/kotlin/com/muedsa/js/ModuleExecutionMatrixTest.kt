@@ -538,6 +538,19 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `namespace 的 toStringTag 描述符只读且不可配置`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        val tag = assertNotNull(
+            namespace.getOwnProperty(PropertyKey.Sym(engine.intrinsics.symbolToStringTag)),
+        )
+        assertEquals("Module", (tag.value as JSString).value)
+        assertFalse(tag.writable)
+        assertFalse(tag.enumerable)
+        assertFalse(tag.configurable)
+    }
+
+    @Test
     fun `namespace 的 __proto__ 导出保持普通数据属性`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(

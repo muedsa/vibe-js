@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1123 / 1123** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1107 / 1107** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1124 / 1124** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1108 / 1108** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -644,6 +644,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B78 default namespace 描述符**：新增入口 default 导出的 descriptor 与 namespace 不变量 1 条核心单测；核心 1121/1105 |
 | 2026-11-10 | **S2.2-B79 嵌套 namespace toStringTag**：新增嵌套 namespace 的 Symbol.toStringTag 仍为 Module 1 条核心单测；核心 1122/1106 |
 | 2026-11-10 | **S2.2-B80 namespace __proto__ 导出**：新增 `__proto__` 导出保持普通数据属性且原型仍为 null 1 条核心单测；核心 1123/1107 |
+| 2026-11-10 | **S2.2-B81 namespace toStringTag 描述符**：新增 toStringTag 只读、不可枚举、不可配置 1 条核心单测；核心 1124/1108 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
