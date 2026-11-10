@@ -4283,6 +4283,101 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return object[key];
 })()""",
     ),
+    // for-let 每次迭代创建独立绑定，闭包捕获各自的 i。
+    DifferentialCase(
+        "for-let-per-iteration-closure",
+        """(function () {
+  var callbacks = [];
+  for (let i = 0; i < 3; i++) callbacks.push(function () { return i; });
+  return callbacks.map(function (fn) { return fn(); }).join(',');
+})()""",
+    ),
+    // continue 不改变 per-iteration 绑定语义。
+    DifferentialCase(
+        "for-let-continue-closure",
+        """(function () {
+  var callbacks = [];
+  for (let i = 0; i < 4; i++) {
+    if (i === 1) continue;
+    callbacks.push(function () { return i; });
+  }
+  return callbacks.map(function (fn) { return fn(); }).join(',');
+})()""",
+    ),
+    // for-of 的 const 绑定同样按迭代创建。
+    DifferentialCase(
+        "for-of-const-per-iteration-closure",
+        """(function () {
+  var callbacks = [];
+  for (const value of [1, 2, 3]) callbacks.push(function () { return value; });
+  return callbacks.map(function (fn) { return fn(); }).join(',');
+})()""",
+    ),
+    // for-in 的 let 绑定按属性迭代创建。
+    DifferentialCase(
+        "for-in-let-per-iteration-closure",
+        """(function () {
+  var callbacks = [];
+  for (let key in { a: 1, b: 2 }) callbacks.push(function () { return key; });
+  return callbacks.map(function (fn) { return fn(); }).join(',');
+})()""",
+    ),
+    // 嵌套 finally 中抛出的异常覆盖内层 throw。
+    DifferentialCase(
+        "finally-throw-precedence",
+        """(function () {
+  try {
+    try { throw 'inner'; } finally { throw 'outer'; }
+  } catch (error) {
+    return error;
+  }
+})()""",
+    ),
+    // continue 穿过 finally 时仍执行 finally，再继续外层循环。
+    DifferentialCase(
+        "finally-labeled-continue",
+        """(function () {
+  var log = [];
+  outer: for (var i = 0; i < 3; i++) {
+    try {
+      if (i === 1) continue outer;
+      log.push('body' + i);
+    } finally {
+      log.push('finally' + i);
+    }
+  }
+  return log.join(',');
+})()""",
+    ),
+    // switch 的 let 声明在 case 内仍受 TDZ 约束。
+    DifferentialCase(
+        "switch-let-tdz",
+        """(function () {
+  try {
+    switch (1) {
+      case 1:
+        value;
+        let value = 2;
+    }
+    return 'no-throw';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    // catch 参数是独立绑定，不覆盖外层同名变量。
+    DifferentialCase(
+        "catch-param-scope",
+        """(function () {
+  var error = 'outer';
+  try {
+    throw 'inner';
+  } catch (error) {
+    error = 'caught';
+  }
+  return error;
+})()""",
+    ),
     // TypedArray.with 支持负索引并保持元素类型。
     DifferentialCase(
         "typedarray-with-negative",

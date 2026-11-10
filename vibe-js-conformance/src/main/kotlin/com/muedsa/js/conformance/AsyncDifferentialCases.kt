@@ -480,7 +480,65 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
           throw new Error('h');
         }
         h().catch(function () { mark('hCatch'); });
-
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-await-using-order",
+        """
+        var log = [];
+        async function run() {
+          await using first = {
+            [Symbol.asyncDispose]: function () {
+              log.push('first');
+              return Promise.resolve();
+            }
+          };
+          log.push('body');
+          await null;
+          log.push('after');
+        }
+        run();
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-await-using-throw",
+        """
+        var log = [];
+        async function run() {
+          await using resource = {
+            [Symbol.asyncDispose]: function () {
+              log.push('dispose');
+              return Promise.resolve();
+            }
+          };
+          throw new Error('body');
+        }
+        run().catch(function (error) { log.push(error.message); });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-disposable-stack-order",
+        """
+        var log = [];
+        async function run() {
+          var stack = new AsyncDisposableStack();
+          stack.defer(function () {
+            log.push('defer');
+            return Promise.resolve();
+          });
+          stack.use({
+            [Symbol.asyncDispose]: function () {
+              log.push('use');
+              return Promise.resolve();
+            }
+          });
+          await stack.disposeAsync();
+          log.push('done');
+        }
+        run();
         globalThis.__diffResult = log;
         """.trimIndent(),
     ),
