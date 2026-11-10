@@ -130,13 +130,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1072** + 宿主 38 个测试（2026-11-10 记录） |
-| JS（Node） | ✅ | 核心 **1056** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1056** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1074** + 宿主 38 个测试（2026-11-10 记录） |
+| JS（Node） | ✅ | 核心 **1058** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1058** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1072 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1056。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1074 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1058。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
@@ -219,6 +219,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `ModuleProviderContractTest` | 入口/依赖 referrer、null/异常、sourceName/url 与精确 id 契约 |
 | `ModuleExecutionMatrixTest` | 循环依赖求值、依赖失败、namespace 描述符、import.meta 缓存 |
 | `IteratorCombinatorsTest` | `Iterator.concat`/`zip`/`zipKeyed` 的顺序、长度模式、padding 与错误传播 |
+| `ModuleGraphStressTest` | 128 层深依赖链、128 个星号导出模块的链接/求值 |
 | `PropertyAndPrototypeTest` | 属性描述符、原型链、访问器、call/apply/bind |
 | `StrictModeTest` | 严格/非严格模式差异 |
 | `BuiltinsTest` | 基础标准库 |
