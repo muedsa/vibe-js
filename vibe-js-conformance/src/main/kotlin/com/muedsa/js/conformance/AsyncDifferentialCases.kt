@@ -939,6 +939,51 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-delete-during-map",
+        """
+        var log = [];
+        var source = {
+          length: 2,
+          0: 'a',
+          get 1() {
+            delete source[1];
+            return 'b';
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          log.push(String(value));
+          return value;
+        }).then(function (values) {
+          log.push(values.length);
+          log.push(values[1] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-index-read-once",
+        """
+        var log = [];
+        var reads = 0;
+        var source = {
+          length: 2,
+          get 0() {
+            reads += 1;
+            return 'a';
+          },
+          get 1() {
+            reads += 1;
+            return 'b';
+          }
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.join(','));
+          log.push(reads);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-string",
         """
         var log = [];
