@@ -395,6 +395,21 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `无导出的入口模块仍执行副作用并返回空 namespace`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "globalThis.sideEffect = 1;"),
+        )
+        assertEquals(
+            0,
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().size,
+        )
+        assertEquals(null, namespace.prototype)
+        assertFalse(namespace.isExtensible())
+        assertEquals(1.0, (engine.run("globalThis.sideEffect") as JSNumber).value)
+    }
+
+    @Test
     fun `星号导出不包含目标的 default`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
