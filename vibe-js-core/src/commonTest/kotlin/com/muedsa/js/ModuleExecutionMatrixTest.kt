@@ -274,6 +274,23 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `export_star_as_default 暴露嵌套命名空间`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("entry", "export * as default from './a.js';"),
+            Provider(mapOf("./a.js" to source("a", "export const x = 1;"))),
+        )
+        assertEquals(
+            listOf("default"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        val nested = assertIs<JSObject>(
+            engine.interpreter.getProperty(namespace, PropertyKey.Str("default")),
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(nested, PropertyKey.Str("x")) as JSNumber).value)
+    }
+
+    @Test
     fun `循环重命名导出保留别名实时绑定`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
