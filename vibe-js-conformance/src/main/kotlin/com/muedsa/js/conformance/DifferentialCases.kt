@@ -5154,6 +5154,56 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    // Object.fromEntries 正常完成时不读取 return getter。
+    DifferentialCase(
+        "object-from-entries-return-getter-not-read",
+        """(function () {
+  var log = [];
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: ['a', 1], done: false } : { done: true };
+    },
+    get return() {
+      log.push('return-getter');
+      throw new Error('close');
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return log.length + ':' + object.a;
+})()""",
+    ),
+    // Object.fromEntries 异常关闭时只读取一次 return getter。
+    DifferentialCase(
+        "object-from-entries-return-getter-once",
+        """(function () {
+  var reads = 0;
+  var entry = {};
+  Object.defineProperty(entry, 0, {
+    get: function () {
+      throw new Error('key');
+    }
+  });
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: entry, done: false } : { done: true };
+    },
+    get return() {
+      reads += 1;
+      return function () {
+        return { done: true };
+      };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  } catch (error) {
+    // 只关心 getter 读取次数。
+  }
+  return reads;
+})()""",
+    ),
     // Object.fromEntries 遇到字符串条目时抛 TypeError 并关闭迭代器。
     DifferentialCase(
         "object-from-entries-string-entry-close",
