@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1142 / 1142** | 2026-11-10 本地运行 |
-| core JS / Wasm（Node） | 各 **1126 / 1126** | 2026-11-10 复跑 |
+| core JVM 单元测试 | **1144 / 1144** | 2026-11-10 本地运行 |
+| core JS / Wasm（Node） | 各 **1128 / 1128** | 2026-11-10 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -700,6 +700,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B136~B138 Object.fromEntries 键转换**：新增对象键 ToPropertyKey 一次、重复符号键覆盖与 nullish 键 3 条同步用例；差分 711→714/714 |
 | 2026-11-10 | **S2.2-B139~B141 Array.fromAsync mapper 索引**：新增 array-like、同步迭代器与异步迭代器的 mapper 索引 3 条异步用例；差分 714→717/717 |
 | 2026-11-10 | **S2.2-B142~B144 Object.fromEntries 描述符与读取顺序**：新增属性描述符、键 ToString 抛错关闭迭代器、键先于值读取 3 条同步用例；差分 717→720/720 |
+| 2026-11-10 | **S2.2-B145~B146 namespace 普通对象互操作**：新增 Object.assign 复制与 Array.from 无 length 处理 2 条核心单测；核心 1144/1128 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

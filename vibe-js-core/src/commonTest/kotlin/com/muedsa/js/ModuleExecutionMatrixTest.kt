@@ -716,6 +716,38 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `Object_assign 将 namespace 导出复制到普通对象`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const b = 1; export const x = 2;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "{\"b\":1,\"x\":2}:true",
+            (
+                engine.run(
+                    "var copy = Object.assign({}, ns); " +
+                        "JSON.stringify(copy) + ':' + (Object.getPrototypeOf(copy) === Object.prototype)",
+                ) as JSString
+                ).value,
+        )
+    }
+
+    @Test
+    fun `Array_from 将 namespace 视为无 length 的普通对象`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "0:true",
+            (
+                engine.run(
+                    "var values = Array.from(ns); " +
+                        "values.length + ':' + Array.isArray(values)",
+                ) as JSString
+                ).value,
+        )
+    }
+
+    @Test
     fun `JSON_stringify 按普通可枚举属性序列化 namespace`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
