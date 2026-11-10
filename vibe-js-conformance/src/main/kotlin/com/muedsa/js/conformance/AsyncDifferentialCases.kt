@@ -1519,6 +1519,51 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-null-async-iterator-sync-fallback",
+        """
+        var log = [];
+        var source = {
+          [Symbol.asyncIterator]: null,
+          [Symbol.iterator]: function () {
+            return {
+              next: function () {
+                return { value: 'sync', done: false };
+              }
+            };
+          }
+        };
+        var index = 0;
+        source[Symbol.iterator] = function () {
+          return {
+            next: function () {
+              return index++ === 0 ? { value: 'sync', done: false } : { done: true };
+            }
+          };
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-null-async-iterator-array-like",
+        """
+        var log = [];
+        var source = {
+          [Symbol.asyncIterator]: null,
+          length: 1,
+          0: 'a'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-mapper-thenable",
         """
         var log = [];
