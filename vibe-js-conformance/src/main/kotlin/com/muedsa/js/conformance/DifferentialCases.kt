@@ -4993,4 +4993,36 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     result instanceof Uint8Array].join('|');
 })()""",
     ),
+    // Promise.all 子类构造函数抛错同步传播。
+    DifferentialCase(
+        "promise-all-constructor-throw",
+        """(function () {
+  class P extends Promise {
+    constructor(executor) {
+      super(executor);
+      throw new Error('constructor');
+    }
+  }
+  try {
+    P.all([1]);
+    return 'ok';
+  } catch (error) {
+    return 'caught:' + error.message;
+  }
+})()""",
+    ),
+    // Promise.all 自定义 capability 的 resolve 抛错应转为 rejection。
+    DifferentialCase(
+        "promise-all-capability-resolve-throw",
+        """(function () {
+  function C(executor) {
+    var self = this;
+    executor(function (value) { self.resolved = value; },
+             function (error) { self.rejected = error; });
+  }
+  C.resolve = function () { throw new Error('resolve'); };
+  var capability = Promise.all.call(C, [1]);
+  return capability.rejected ? capability.rejected.message : 'none';
+})()""",
+    ),
 )
