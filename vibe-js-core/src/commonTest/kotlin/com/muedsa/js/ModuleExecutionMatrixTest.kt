@@ -682,6 +682,40 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `Reflect_ownKeys 先列导出字符串再列标签符号`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "2:true:true",
+            (
+                engine.run(
+                    "var keys = Reflect.ownKeys(ns); " +
+                        "keys.length + ':' + (keys[0] === 'x') + ':' + (keys[1] === Symbol.toStringTag)",
+                ) as JSString
+                ).value,
+        )
+    }
+
+    @Test
+    fun `namespace 的字符串名与描述符只包含导出`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(source("a", "export const x = 1;"))
+        engine.registry.defineGlobal("ns", namespace)
+        assertEquals(
+            "x:x:true",
+            (
+                engine.run(
+                    "var names = Object.getOwnPropertyNames(ns); " +
+                        "var descriptors = Object.getOwnPropertyDescriptors(ns); " +
+                        "names.join(',') + ':' + Object.keys(descriptors).join(',') + ':' + " +
+                        "(Object.getOwnPropertyDescriptor(ns, Symbol.toStringTag).value === 'Module')",
+                ) as JSString
+                ).value,
+        )
+    }
+
+    @Test
     fun `JSON_stringify 按普通可枚举属性序列化 namespace`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
