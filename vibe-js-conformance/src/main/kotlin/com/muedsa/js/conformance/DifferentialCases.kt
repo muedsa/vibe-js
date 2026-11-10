@@ -5225,6 +5225,58 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    // Object.fromEntries 关闭时以迭代器为 this、无参调用 return。
+    DifferentialCase(
+        "object-from-entries-return-call-contract",
+        """(function () {
+  var log = [];
+  var entry = {};
+  Object.defineProperty(entry, 0, {
+    get: function () {
+      throw new Error('key');
+    }
+  });
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: entry, done: false } : { done: true };
+    },
+    get return() {
+      return function () {
+        log.push(arguments.length);
+        log.push(this === iterator);
+        return { done: true };
+      };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  } catch (error) {
+    log.push(error.message);
+  }
+  return log.join(',');
+})()""",
+    ),
+    // Object.fromEntries 只调用一次 Symbol.iterator。
+    DifferentialCase(
+        "object-from-entries-iterator-called-once",
+        """(function () {
+  var calls = 0;
+  var index = 0;
+  var source = {
+    [Symbol.iterator]: function () {
+      calls += 1;
+      return {
+        next: function () {
+          return index++ === 0 ? { value: ['a', 1], done: false } : { done: true };
+        }
+      };
+    }
+  };
+  Object.fromEntries(source);
+  return calls;
+})()""",
+    ),
     // Object.fromEntries 以迭代器为 this、无参调用 next。
     DifferentialCase(
         "object-from-entries-next-call-contract",

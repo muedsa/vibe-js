@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **942 / 942** | 含 L 系列同步与异步用例 |
+| Node 差分 | **944 / 944** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -824,6 +824,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B385~B386 Array.fromAsync class/Proxy mapper**：新增 class 不可调用拒绝、Proxy apply 陷阱传递 thisArg 2 条异步用例；差分 938→940/940 |
 | 2026-11-11 | **S2.2-B387~B388 Array.fromAsync then getter 形态**：新增 then getter 返回函数被调用、返回非函数保留原对象 2 条异步用例；差分 940→942/942 |
 | 2026-11-11 | **S6.2 门禁复跑（942 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 942/942、真实库 375/375，strict 全绿 |
+| 2026-11-11 | **S2.2-B390~B391 Object.fromEntries return 调用契约与迭代器只调用一次**：新增 return 无参且 this 为迭代器、Symbol.iterator 仅调用一次 2 条同步用例；差分 942→944/944 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
