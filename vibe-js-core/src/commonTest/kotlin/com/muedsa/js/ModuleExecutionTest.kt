@@ -247,4 +247,14 @@ class ModuleExecutionTest {
         assertEquals(ResourceLimitKind.SOURCE_LENGTH, error.kind)
         assertEquals(1.0, (engine.run("1") as JSNumber).value)
     }
+
+    @Test
+    fun `模块 AST 超出节点预算后 Engine 可复用`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxAstNodes = 5))
+        val error = assertFailsWith<ResourceLimitException> {
+            engine.runModule(source("a", "export const value = 1 + 2 + 3;"))
+        }
+        assertEquals(ResourceLimitKind.AST_NODES, error.kind)
+        assertEquals(1.0, (engine.run("1") as JSNumber).value)
+    }
 }
