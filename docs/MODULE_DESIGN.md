@@ -1,9 +1,10 @@
 # 模块执行设计与实现方案
 
-> 状态：**阶段 0–3 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
+> 状态：**阶段 0–4 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
 > 类型化声明、TLA 标记和语法收紧；公共 `ModuleProvider` / `ModuleSource` / `InMemoryModuleProvider`
-> 与模块图预算已提供，内部 `ModuleGraphLoader` 已能递归加载、去重并拒绝缺失依赖；但
-> `Engine.runModule`、链接/求值、宿主加载器均未实现。只有需求方明确继续重启时，才进入阶段 4+。
+> 与模块图预算已提供；内部 `ModuleGraphLoader` 已能递归加载/去重，`ModuleExportResolver` /
+> `ModuleLinker` 已能解析 import、星号导出与歧义并在链接期拒绝 TLA；但
+> `Engine.runModule`、ModuleEnvironment、求值、宿主加载器均未实现。只有需求方明确继续重启时，才进入阶段 5+。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -366,6 +367,11 @@ internal sealed interface ResolveExportResult {
         val bindingName: String,
     ) : ResolveExportResult
 
+    /** `export * as ns`：解析到目标模块的 namespace，而非普通绑定。 */
+    data class Namespace(
+        val module: ModuleRecord,
+    ) : ResolveExportResult
+
     data object Ambiguous : ResolveExportResult
     data object NotFound : ResolveExportResult
 }
@@ -406,11 +412,14 @@ internal fun resolveExport(
 - 本地导出：返回 `Resolved(module, localName)`。
 - 间接导出：递归目标模块的 `importName`。
 - `export *`：遍历目标模块的导出名，排除 `default`；同名来自不同目标且不一致 → `Ambiguous`。
-- `export * as ns`：作为命名空间导出解析，不参与普通星号歧义。
+- `export * as ns`：返回 `Namespace(target)`，不参与普通星号歧义。
 - 循环：`resolveSet` 中重复出现同一 `(module, exportName)` → `NotFound`，避免无限递归。
 - 缓存仅在解析完成且不依赖未完成递归时写入；保守实现可以先不缓存，正确性优先。
 
 ### 6.4 链接阶段
+
+当前实现范围（阶段 4）：解析可达图、拒绝 TLA、为每条 import 解析目标导出、填充 namespace 导出名；
+ModuleEnvironment/声明实例化与求值属于阶段 5+。
 
 - 解析整个可达图。
 - 对每个模块创建环境骨架和声明绑定（见第 7 节）。
@@ -623,8 +632,8 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
-当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5、M3.1–M3.6 已完成；M2.6（`Engine.runModule` 签名）推迟到 M7，
-避免暴露抛错桩；M0.2 的完整图 fixture 与阶段 4+ 尚未开始。
+当前进度：M0.1/M0.3、M1.1–M1.7、M2.1–M2.5、M3.1–M3.6、M4.1–M4.6 已完成；M2.6（`Engine.runModule` 签名）推迟到 M7，
+避免暴露抛错桩；M0.2 的完整图 fixture 与阶段 5+ 尚未开始。
 
 ### 阶段 0：契约与脚手架（1–2 人日）
 
@@ -787,7 +796,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 阶段 0–3 的 Parser 前置、公共 Provider API 与内部模块图加载已按本文落地；阶段 4+ 仍未排期。
+- 阶段 0–4 的 Parser 前置、公共 Provider API、内部图加载与静态导出/import 链接已按本文落地；阶段 5+ 仍未排期。
 - `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

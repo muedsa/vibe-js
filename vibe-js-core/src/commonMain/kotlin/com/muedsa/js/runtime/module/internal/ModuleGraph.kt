@@ -5,7 +5,6 @@ package com.muedsa.js.runtime.module.internal
 import com.muedsa.js.ast.ModuleProgram
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleSource
-
 /** 模块图内的求值/链接状态。阶段 3 只创建 NEW 状态。 */
 internal enum class ModuleStatus {
     NEW,
@@ -14,6 +13,20 @@ internal enum class ModuleStatus {
     EVALUATING,
     EVALUATED,
     ERRORED,
+}
+
+/** 链接阶段解析后的 import 绑定；求值阶段据此建立 live binding。 */
+internal sealed interface ModuleImportBinding {
+    /** 具名/默认导入：目标模块中的本地绑定。 */
+    data class Resolved(
+        val target: ModuleRecord,
+        val bindingName: String,
+    ) : ModuleImportBinding
+
+    /** `import * as ns` 或导入 `export * as ns`：需要目标模块的 namespace。 */
+    data class Namespace(
+        val target: ModuleRecord,
+    ) : ModuleImportBinding
 }
 
 /**
@@ -31,7 +44,19 @@ internal class ModuleRecord(
     val sourceName: String get() = source.sourceName
     val sourceLength: Int get() = source.source.length
     val dependencies: MutableList<ModuleRecord> = mutableListOf()
+
+    /** 本地 import 名 → 链接后的目标绑定；阶段 5 的声明实例化直接使用。 */
+    val importBindings: MutableMap<String, ModuleImportBinding> = LinkedHashMap()
+
+    /** namespace 的排序、去重导出名；链接阶段填充。 */
+    var exportedNames: List<String> = emptyList()
     var status: ModuleStatus = ModuleStatus.NEW
+
+    /** 按原说明符查找已加载的依赖；requestedModules 与 dependencies 顺序一致。 */
+    fun dependencyFor(specifier: String): ModuleRecord? {
+        val index = program.requestedModules.indexOf(specifier)
+        return if (index >= 0) dependencies.getOrNull(index) else null
+    }
 }
 
 /** 一次 runModule / 图加载的完整记录集合；不跨调用缓存。 */
