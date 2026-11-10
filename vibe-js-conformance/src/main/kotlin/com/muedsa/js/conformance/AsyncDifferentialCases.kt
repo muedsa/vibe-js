@@ -555,6 +555,21 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-negative-length",
+        """
+        var log = [];
+        var source = {
+          length: -1,
+          0: 'a'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-non-callable-next",
         """
         var log = [];
