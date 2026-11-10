@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **694 / 694** | 含 L 系列同步与异步用例 |
+| Node 差分 | **695 / 695** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -673,6 +673,7 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B107 Array.fromAsync 生成器 return**：新增生成器 return 值被忽略 1 条异步用例；差分 691→692/692 |
 | 2026-11-10 | **S2.2-B108 Array.fromAsync 迭代器 getter 抛错**：新增 Symbol.iterator getter 异常拒绝 1 条异步用例；差分 692→693/693 |
 | 2026-11-10 | **S2.2-B109 Array.fromAsync 非可调用迭代器**：新增 Symbol.iterator 非函数时拒绝为 TypeError 1 条异步用例；差分 693→694/694 |
+| 2026-11-10 | **S2.2-B110 Array.fromAsync 非对象迭代器**：新增 Symbol.iterator 返回原始值时拒绝为 TypeError 1 条异步用例；差分 694→695/695 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B18 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
