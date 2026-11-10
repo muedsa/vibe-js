@@ -90,8 +90,10 @@ class ModuleGraphStressTest {
     fun `同一 Provider 连续 runModule 生成独立图与 namespace`() = runTest {
         val provider = InMemoryModuleProvider(
             mapOf(
-                "./dep.js" to "globalThis.runCount = (globalThis.runCount || 0) + 1; " +
-                    "export const value = globalThis.runCount;",
+                "./dep.js" to """
+                globalThis.runCount = (globalThis.runCount || 0) + 1;
+                export const value = globalThis.runCount;
+                """.trimIndent(),
             ),
         )
         val entry = ModuleSource(
@@ -110,8 +112,10 @@ class ModuleGraphStressTest {
     fun `多轮 runModule 的 namespace 描述符互不影响`() = runTest {
         val provider = InMemoryModuleProvider(
             mapOf(
-                "./dep.js" to "globalThis.descriptorCount = (globalThis.descriptorCount || 0) + 1; " +
-                    "export const value = globalThis.descriptorCount;",
+                "./dep.js" to """
+                globalThis.descriptorCount = (globalThis.descriptorCount || 0) + 1;
+                export const value = globalThis.descriptorCount;
+                """.trimIndent(),
             ),
         )
         val entry = ModuleSource(
@@ -210,8 +214,10 @@ class ModuleGraphStressTest {
             sources["./m$index.js"] = if (index == depth) {
                 "export const value = 1;"
             } else {
-                "import { value as nextValue } from './m${index + 1}.js'; " +
-                    "export const value = nextValue + 1;"
+                """
+                import { value as nextValue } from './m${index + 1}.js';
+                export const value = nextValue + 1;
+                """.trimIndent()
             }
         }
         val engine = Engine(limits = EngineLimits(maxModules = depth + 1))

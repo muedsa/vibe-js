@@ -26,7 +26,11 @@ class RuntimeErrorStackTest {
     fun `错误创建时保存调用位置且延迟读取与重抛不会覆盖`() = runTest {
         val engine = Engine()
         val error = engine.run(
-            "function outer() { return inner(); }\nfunction inner() { return new Error('boom'); }\nouter();",
+            """
+            function outer() { return inner(); }
+            function inner() { return new Error('boom'); }
+            outer();
+            """.trimIndent(),
             sourceName = "creation.js", lineOffset = 20,
         )
         val expected = "Error: boom\n" +
@@ -45,7 +49,14 @@ class RuntimeErrorStackTest {
     @Test
     fun `函数保留定义脚本而调用方保留当前脚本`() = runTest {
         val engine = Engine()
-        engine.run("function fail() {\n  missingName;\n}", "library.js", 100)
+        engine.run(
+            """
+            function fail() {
+              missingName;
+            }
+            """.trimIndent(),
+            "library.js", 100,
+        )
         val error = assertFailsWith<JSException> { engine.run("\nfail();", "caller.js", 10) }
         assertEquals(listOf("caller.js", "library.js"), error.stack.map { it.sourceInfo.name })
         assertTrue(error.toString().contains("at fail (library.js:102:3)"), error.toString())
@@ -72,9 +83,37 @@ class RuntimeErrorStackTest {
     @Test
     fun `环境异常和属性错误定位到最内层表达式并补齐错误原型`() = runTest {
         for ((source, location, kind) in listOf(
-            Triple("function fail() {\n  return x; let x;\n}\nfail();", "2:10", "ReferenceError"),
-            Triple("function fail() {\n  const x = 1;\n  x = 2;\n}\nfail();", "3:3", "TypeError"),
-            Triple("function fail() {\n  null.value;\n}\nfail();", "2:3", "TypeError"),
+            Triple(
+                """
+                function fail() {
+                  return x; let x;
+                }
+                fail();
+                """.trimIndent(),
+                "2:10",
+                "ReferenceError",
+            ),
+            Triple(
+                """
+                function fail() {
+                  const x = 1;
+                  x = 2;
+                }
+                fail();
+                """.trimIndent(),
+                "3:3",
+                "TypeError",
+            ),
+            Triple(
+                """
+                function fail() {
+                  null.value;
+                }
+                fail();
+                """.trimIndent(),
+                "2:3",
+                "TypeError",
+            ),
         )) {
             val engine = Engine()
             val error = assertFailsWith<JSException> { engine.run(source, "failure.js") }
@@ -88,7 +127,15 @@ class RuntimeErrorStackTest {
     fun `任意抛出值的宿主异常保存首次抛出位置`() = runTest {
         val engine = Engine()
         val error = assertFailsWith<JSException> {
-            engine.run("function fail() {\n  throw 42;\n}\nfail();", "primitive.js")
+            engine.run(
+                """
+                function fail() {
+                  throw 42;
+                }
+                fail();
+                """.trimIndent(),
+                "primitive.js",
+            )
         }
         assertEquals("42\n    at fail (primitive.js:2:3)\n    at <global> (primitive.js:4:1)", error.toString())
     }
@@ -100,7 +147,15 @@ class RuntimeErrorStackTest {
             throw IllegalStateException("host failure")
         })
         val error = assertFailsWith<JSException> {
-            engine.run("function caller() {\n  explode();\n}\ncaller();", "host.js")
+            engine.run(
+                """
+                function caller() {
+                  explode();
+                }
+                caller();
+                """.trimIndent(),
+                "host.js",
+            )
         }
         assertEquals("InternalError", assertIs<JSError>(error.value).errorName)
         assertTrue(error.toString().contains("at explode (host.js:2:3)"), error.toString())
@@ -161,8 +216,24 @@ class RuntimeErrorStackTest {
     fun `async在await前后抛错均保留创建调用链`() = runTest {
         for (suspension in listOf("", "await 0;")) {
             val engine = Engine()
-            engine.run("async function worker() {\n  $suspension\n  throw new Error('async');\n}", "async.js")
-            val promise = assertIs<JSPromise>(engine.run("function start() { return worker(); }\nstart();", "start.js"))
+            engine.run(
+                """
+                async function worker() {
+                  $suspension
+                  throw new Error('async');
+                }
+                """.trimIndent(),
+                "async.js",
+            )
+            val promise = assertIs<JSPromise>(
+                engine.run(
+                    """
+                    function start() { return worker(); }
+                    start();
+                    """.trimIndent(),
+                    "start.js",
+                ),
+            )
             val error = assertFailsWith<JSException> { promise.awaitResult() }
             assertTrue(error.toString().contains("at worker (async.js:3:9)"), error.toString())
             assertTrue(error.toString().contains("at async start (start.js:1:27)"), error.toString())
@@ -183,9 +254,15 @@ class RuntimeErrorStackTest {
             gate.complete(Unit)
             JSUndefined
         })
-        val promise = assertIs<JSPromise>(engine.run(
-            "async function delayed() { waitHost(); throw new Error('later'); }\ndelayed();", "old.js", 10,
-        ))
+        val promise = assertIs<JSPromise>(
+            engine.run(
+                """
+                async function delayed() { waitHost(); throw new Error('later'); }
+                delayed();
+                """.trimIndent(),
+                "old.js", 10,
+            ),
+        )
         engine.run("releaseHost()", "new.js", 200)
         val error = assertFailsWith<JSException> { promise.awaitResult() }
         assertTrue(error.stack.all { it.sourceInfo.name == "old.js" }, error.toString())

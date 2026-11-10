@@ -152,21 +152,39 @@ class RuntimeSemanticsRegressionTest {
         // NEL(U+0085) 不是 JS 行终止符，Java MULTILINE 却会在此断行
         assertEquals("0", runtime.evalString(
             """
-                var r = /^/gm; var a = []; var m; while ((m = r.exec('a\u0085b')) !== null)
-                { a.push(m.index); r.lastIndex = m.index + 1; } a.join(',')
+            var r = /^/gm;
+            var a = [];
+            var m;
+            while ((m = r.exec('a\u0085b')) !== null) {
+              a.push(m.index);
+              r.lastIndex = m.index + 1;
+            }
+            a.join(',')
             """.trimIndent()
         ))
         // CRLF 在 JS 中是两个独立行终止符，^ 可在 \\r 与 \\n 之间匹配
         assertEquals("0,2,3", runtime.evalString(
             """
-                var r = /^/gm; var a = []; var m; while ((m = r.exec('a\r\nb')) !== null)
-                { a.push(m.index); r.lastIndex = m.index + 1; } a.join(',')
+            var r = /^/gm;
+            var a = [];
+            var m;
+            while ((m = r.exec('a\r\nb')) !== null) {
+              a.push(m.index);
+              r.lastIndex = m.index + 1;
+            }
+            a.join(',')
             """.trimIndent()
         ))
         assertEquals("1,2,4", runtime.evalString(
             """
-                var r = /$/gm; var a = []; var m; while ((m = r.exec('a\r\nb')) !== null)
-                { a.push(m.index); r.lastIndex = m.index + 1; } a.join(',')
+            var r = /$/gm;
+            var a = [];
+            var m;
+            while ((m = r.exec('a\r\nb')) !== null) {
+              a.push(m.index);
+              r.lastIndex = m.index + 1;
+            }
+            a.join(',')
             """.trimIndent()
         ))
     }
@@ -1727,10 +1745,25 @@ class RuntimeSemanticsRegressionTest {
     @Test
     fun `hashbang 注释仅允许位于源文件开头`() = runTest {
         val runtime = TestRuntime()
-        assertEquals(1.0, runtime.evalNumber("#! /usr/bin/env node\n1"))
+        assertEquals(
+            1.0,
+            runtime.evalNumber(
+                """
+                #! /usr/bin/env node
+                1
+                """.trimIndent()
+            )
+        )
         assertEquals(2.0, runtime.evalNumber("#!line\r2"))
         assertFailsWith<LexerException> { runtime.eval(" #! not at start") }
-        assertFailsWith<LexerException> { runtime.eval("// comment\n#! not at start") }
+        assertFailsWith<LexerException> {
+            runtime.eval(
+                """
+                // comment
+                #! not at start
+                """.trimIndent()
+            )
+        }
     }
 
     @Test
@@ -4349,10 +4382,20 @@ class RuntimeSemanticsRegressionTest {
         val runtime = TestRuntime()
         // let 后换行：表达式语句 let + ASI，后续块/赋值作为独立语句执行
         assertEquals(true, runtime.evalBoolean(
-            "var body = 0; for (var x in null) let\n{ body = 1; } body === 1"
+            """
+            var body = 0;
+            for (var x in null) let
+            { body = 1; }
+            body === 1
+            """.trimIndent()
         ))
         assertEquals(true, runtime.evalBoolean(
-            "var value = 0; for (var x in null) let\nvalue = 1; value === 1"
+            """
+            var value = 0;
+            for (var x in null) let
+            value = 1;
+            value === 1
+            """.trimIndent()
         ))
         // `let [` 受 ExpressionStatement 前瞻限制，仍需报早期错误
         assertEquals("SyntaxError", runtime.evalString(

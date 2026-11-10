@@ -134,7 +134,15 @@ class BasicExecutionTest {
         assertEquals(1.0, runtime.evalNumber("function f() {}; var a = 1; a"))
         assertEquals(
             "undefined",
-            runtime.evalString("function f() { return\n1; } typeof f()")
+            runtime.evalString(
+                """
+                function f() {
+                  return
+                  1;
+                }
+                typeof f()
+                """.trimIndent()
+            )
         )
     }
 

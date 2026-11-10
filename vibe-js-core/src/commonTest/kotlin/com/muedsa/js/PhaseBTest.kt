@@ -234,9 +234,25 @@ class PhaseBTest {
     @Test
     fun `自动分号插入与语法错误`() = runTest {
         val runtime = TestRuntime()
-        assertEquals(3.0, runtime.evalNumber("var a = 1\nvar b = 2\na + b"))
+        assertEquals(
+            3.0,
+            runtime.evalNumber(
+                """
+                var a = 1
+                var b = 2
+                a + b
+                """.trimIndent()
+            )
+        )
         assertFailsWith<ParseException> { runtime.eval("var a = 1 var b = 2") }
-        assertFailsWith<ParseException> { runtime.eval("throw\n1") }
+        assertFailsWith<ParseException> {
+            runtime.eval(
+                """
+                throw
+                1
+                """.trimIndent()
+            )
+        }
     }
 
     @Test

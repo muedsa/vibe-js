@@ -58,7 +58,12 @@ class LexerTest {
 
     @Test
     fun `注释被忽略且换行信息保留`() {
-        val tokens = tokenize("a // comment\nb")
+        val tokens = tokenize(
+            """
+            a // comment
+            b
+            """.trimIndent()
+        )
         assertEquals("a", tokens[0].value)
         assertEquals(false, tokens[0].precededByNewline)
         assertEquals("b", tokens[1].value)
@@ -67,7 +72,12 @@ class LexerTest {
 
     @Test
     fun `多行注释中的换行也会被记录`() {
-        val tokens = tokenize("a /* x\ny */ b")
+        val tokens = tokenize(
+            """
+            a /* x
+            y */ b
+            """.trimIndent()
+        )
         assertEquals("b", tokens[1].value)
         assertTrue(tokens[1].precededByNewline)
     }

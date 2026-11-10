@@ -73,13 +73,42 @@ class ParserModuleTest {
     @Test
     fun `模块目标禁用 Annex B HTML 注释而脚本目标允许`() {
         // 脚本目标：Annex B 的 `<!--` 与行首 `-->` 按单行注释跳过
-        parseScript("<!-- comment\nvar x = 1;")
-        parseScript("-->\nvar x = 1;")
+        parseScript(
+            """
+            <!-- comment
+            var x = 1;
+            """.trimIndent()
+        )
+        parseScript(
+            """
+            -->
+            var x = 1;
+            """.trimIndent()
+        )
         // 模块目标：同样的注释是词法错误（必须在 Lexer 阶段声明模块语境）
-        assertFailsWith<LexerException> { parseModule("<!-- comment\nvar x = 1;") }
-        assertFailsWith<LexerException> { parseModule("-->\nvar x = 1;") }
+        assertFailsWith<LexerException> {
+            parseModule(
+                """
+                <!-- comment
+                var x = 1;
+                """.trimIndent()
+            )
+        }
+        assertFailsWith<LexerException> {
+            parseModule(
+                """
+                -->
+                var x = 1;
+                """.trimIndent()
+            )
+        }
         // 普通行注释与块注释在模块中仍然合法
-        parseModule("// line\n/* block */ export const a = 1;")
+        parseModule(
+            """
+            // line
+            /* block */ export const a = 1;
+            """.trimIndent()
+        )
     }
 
     @Test

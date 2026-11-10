@@ -77,7 +77,14 @@ class ParserTest {
 
     @Test
     fun `return 后换行返回 undefined`() {
-        val program = parse("function f() { return\n1; }")
+        val program = parse(
+            """
+            function f() {
+              return
+              1;
+            }
+            """.trimIndent()
+        )
         val function = assertIs<FunctionDeclaration>(program.body.single())
         assertEquals(2, function.body.statements.size)
     }

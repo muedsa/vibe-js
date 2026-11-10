@@ -68,11 +68,22 @@ class ParserEdgeTest {
         val runtime = TestRuntime()
         assertEquals(
             2.0,
-            runtime.evalNumber("var x = 1; <!-- HTML comment\nx + 1")
+            runtime.evalNumber(
+                """
+                var x = 1; <!-- HTML comment
+                x + 1
+                """.trimIndent()
+            )
         )
         assertEquals(
             2.0,
-            runtime.evalNumber("var x = 1;\n  --> HTML close comment\nx + 1")
+            runtime.evalNumber(
+                """
+                var x = 1;
+                  --> HTML close comment
+                x + 1
+                """.trimIndent()
+            )
         )
     }
 
@@ -521,15 +532,38 @@ class ParserEdgeTest {
         val runtime = TestRuntime()
         assertEquals(
             1.0,
-            runtime.evalNumber("var b = function (x) { return x; }; var a; a = b\n(1); a")
+            runtime.evalNumber(
+                """
+                var b = function (x) { return x; };
+                var a;
+                a = b
+                (1);
+                a
+                """.trimIndent()
+            )
         )
         assertEquals(
             3.0,
-            runtime.evalNumber("var a = 1, b = 2; a\n++b; b")
+            runtime.evalNumber(
+                """
+                var a = 1, b = 2;
+                a
+                ++b;
+                b
+                """.trimIndent()
+            )
         )
         assertEquals(
             "undefined",
-            runtime.evalString("function f() { return\n1; } typeof f()")
+            runtime.evalString(
+                """
+                function f() {
+                  return
+                  1;
+                }
+                typeof f()
+                """.trimIndent()
+            )
         )
     }
     // ================================================================
@@ -632,10 +666,38 @@ class ParserEdgeTest {
     @Test
     fun `class 字段名 get 或 set 后换行接生成器方法`() {
         // 访问器与生成器不能组合：`get`/`set` 应作为字段名，由 ASI 结束字段
-        parse("class A { get\n*a() {} }")
-        parse("class B { static get\n*a() {} }")
-        parse("class C { set\n*a(x) {} }")
-        parse("class D { static set\n*a(x) {} }")
+        parse(
+            """
+            class A {
+              get
+              *a() {}
+            }
+            """.trimIndent()
+        )
+        parse(
+            """
+            class B {
+              static get
+              *a() {}
+            }
+            """.trimIndent()
+        )
+        parse(
+            """
+            class C {
+              set
+              *a(x) {}
+            }
+            """.trimIndent()
+        )
+        parse(
+            """
+            class D {
+              static set
+              *a(x) {}
+            }
+            """.trimIndent()
+        )
         // 同一行缺少 ASI 时仍是语法错误
         assertFailsWith<ParseException> { parse("class E { get *a() {} }") }
     }

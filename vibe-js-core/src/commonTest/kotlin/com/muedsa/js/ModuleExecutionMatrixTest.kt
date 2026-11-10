@@ -136,8 +136,13 @@ class ModuleExecutionMatrixTest {
                 mapOf(
                     "./a.js" to source(
                         "a",
-                        "export * from './b.js'; " +
-                            "export let value = 1; export function setValue(next) { value = next; }",
+                        """
+                        export * from './b.js';
+                        export let value = 1;
+                        export function setValue(next) {
+                          value = next;
+                        }
+                        """.trimIndent(),
                     ),
                     "./b.js" to source("b", "export * from './a.js'; export const b = 2;"),
                 ),
@@ -184,13 +189,19 @@ class ModuleExecutionMatrixTest {
                 mapOf(
                     "./a.js" to source(
                         "a",
-                        "export { value as aValue } from './b.js'; " +
-                            "export const a = 1; export let value = 10;",
+                        """
+                        export { value as aValue } from './b.js';
+                        export const a = 1;
+                        export let value = 10;
+                        """.trimIndent(),
                     ),
                     "./b.js" to source(
                         "b",
-                        "export { value as bValue } from './a.js'; " +
-                            "export const b = 2; export const value = 20;",
+                        """
+                        export { value as bValue } from './a.js';
+                        export const b = 2;
+                        export const value = 20;
+                        """.trimIndent(),
                     ),
                 ),
             ),
