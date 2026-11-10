@@ -1,7 +1,8 @@
 # 模块执行设计与实现方案
 
-> 状态：**设计储备，模块方向仍为无计划**。本文不改变 `docs/OPTIMIZATION_ROADMAP.md` 的无计划状态，
-> 也不承诺排期。只有需求方明确重启模块方向时，才按本文进入实现。
+> 状态：**阶段 0–1 已作为实验性前置实现落地；模块执行仍无计划**。Parser 已补静态表、
+> 类型化声明、TLA 标记和语法收紧，但 `Engine.runModule`、链接/求值、加载器均未实现。
+> 只有需求方明确继续重启时，才进入阶段 2+。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -270,6 +271,9 @@ enum class ModuleBindingKind {
     CLASS,
     FUNCTION,
     VAR,
+    USING,
+    /** 匿名 export default 的 *default* 绑定。 */
+    DEFAULT,
 }
 
 /** 仅用于 IMPORT 绑定：本地名指向哪个模块的哪个导出名。 */
@@ -308,12 +312,11 @@ Parser 预计算，不在运行时扫描 AST。需要覆盖：
 val hasTopLevelAwait: Boolean
 ```
 
-同时修复两个与主流引擎不一致的宽松点：
+同时修复两个与主流引擎不一致的宽松点（阶段 1 已实现）：
 
 1. 模块中的普通函数/箭头函数体不应因为 `moduleContext` 而接受 `await`；只允许
-   `asyncContext` 或顶层模块上下文。建议补单测：`function f() { await 1; }` 必须是语法错误。
-2. `import()` 零参数在语法层允许，但规范要求至少一个实参；建议在解析期直接拒绝，
-   或在模块链接/执行前明确报 SyntaxError。
+   `asyncContext` 或顶层模块上下文。`function f() { await 1; }` 已是语法错误。
+2. `import()` 零参数在解析期直接拒绝，并保留 1–2 个实参与尾逗号的测试。
 
 TLA 首版处理：
 
@@ -615,6 +618,8 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 
 估算仅供相对排序，不构成排期承诺。阶段 0–8 约 35–50 人日；后续能力另计。
 
+当前进度：M0.1/M0.3、M1.1–M1.7 已完成；M0.2 的完整图 fixture 与阶段 2+ 尚未开始。
+
 ### 阶段 0：契约与脚手架（1–2 人日）
 
 | ID | 任务 | 产出/验收 |
@@ -630,7 +635,7 @@ val maxTotalModuleSourceLength: Int? = 10_000_000,
 | M1.1 | 修复 `requestedModules` 空子句 | `import {} from` / `export {} from` 被加载；单测 + 262 语料 |
 | M1.2 | `parseModule(sourceInfo)` | `ModuleProgram.sourceInfo` 生效；错误栈带 sourceName |
 | M1.3 | 给 Import/Export entry 加 range | 链接错误能定位声明 |
-| M1.4 | 预计算类型化模块绑定 | `ModuleProgram.bindings` 覆盖 import/var/let/const/class/function/default |
+| M1.4 | 预计算类型化模块绑定 | `ModuleProgram.bindings` 覆盖 import/var/let/const/class/function/using/default |
 | M1.5 | 预计算 `hasTopLevelAwait` | 正例/反例；链接期拒绝使用该标记 |
 | M1.6 | 收紧普通函数内 `await` 与零参数 `import()` | 与 V8/Node 行为一致；把现有“宽松点合法”的断言改为 SyntaxError，保留覆盖，不删除用例；模块语料不回归 |
 | M1.7 | 更新 AST/Parser KDoc | 移除过期的“字符串导入名未覆盖”等注释 |
@@ -776,7 +781,7 @@ M7 -> L1/L2/L3/L4/L5/L6
 
 ## 15. 与路线图的关系
 
-- 本文是设计储备，不改变 `docs/OPTIMIZATION_ROADMAP.md` 的“模块方向无计划”。
-- 路线图 §6.2 保留参考 API/草案，并链接本文。
-- 只有需求方明确重启时，才把阶段 0–8 转为实际排期。
+- 阶段 0–1 的 Parser 前置已按本文落地；阶段 2+ 仍未排期。
+- `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器、CLI 和 harness 仍无计划。
+- 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
 - 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。

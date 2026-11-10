@@ -3,6 +3,7 @@ package com.muedsa.js.parser
 import com.muedsa.js.ast.*
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.lexer.LexerException
+import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.lexer.SourcePosition
 import com.muedsa.js.lexer.SourceRange
 import com.muedsa.js.lexer.TemplatePart
@@ -129,6 +130,28 @@ class Parser(
 
     /** 当前是否处于 async 函数体（用于解析 await）。 */
     private var asyncContext = false
+
+    /**
+     * 模板字符串子解析器继承父解析器的 await/函数/class 字段语境。
+     *
+     * 这些是 Parser 内部状态，不扩展 public 构造函数；模板子解析器创建后立即调用。
+     */
+    internal fun inheritTemplateState(
+        asyncContext: Boolean,
+        functionDepth: Int,
+        classFieldInitializerDepth: Int,
+        inFormalParameters: Boolean,
+        awaitIdentifierForbidden: Boolean,
+    ) {
+        this.asyncContext = asyncContext
+        this.functionDepth = functionDepth
+        this.classFieldInitializerDepth = classFieldInitializerDepth
+        this.inFormalParameters = inFormalParameters
+        this.awaitIdentifierForbidden = awaitIdentifierForbidden
+    }
+
+    /** 当前模块是否出现顶层 await（用于 MVP 链接期拒绝 TLA）。 */
+    private var moduleHasTopLevelAwait = false
 
     /**
      * 当前是否处于同步生成器函数的参数/函数体（用于解析 yield）。
@@ -2084,7 +2107,10 @@ class Parser(
      */
     private fun parseUsingDeclaration(isAwait: Boolean, requireTerminator: Boolean): UsingDeclaration {
         val start = peek().range.start
-        if (isAwait) advance() // await
+        if (isAwait) {
+            if (moduleContext && functionDepth == 0) moduleHasTopLevelAwait = true
+            advance() // await
+        }
         advance() // using
         val declarations = mutableListOf<UsingDeclarator>()
         do {
@@ -2183,6 +2209,7 @@ class Parser(
             peek().value == "await" &&
             !peek().containsEscape
         if (isAwait) {
+            if (moduleContext && functionDepth == 0) moduleHasTopLevelAwait = true
             advance()
         }
         consume(TokenType.LPAREN, "Expected '(' after 'for'")
@@ -2972,6 +2999,9 @@ class Parser(
         // 箭头函数体同样有独立的 [Await] 语境，不受外层 class 字段初始化器限制
         val outerClassFieldInitializerDepth = classFieldInitializerDepth
         classFieldInitializerDepth = 0
+        // 表达式体同样是函数边界：await 不能再被误判为模块顶层 TLA。
+        val outerFunctionDepth = functionDepth
+        functionDepth++
         // 表达式体沿用当前严格模式上下文
         validateFunctionParameters(params, strict, isArrow = true)
         try {
@@ -2991,6 +3021,7 @@ class Parser(
                 sourceText = sourceSlice(SourceRange(start, expression.range.end)),
             ))
         } finally {
+            functionDepth = outerFunctionDepth
             asyncContext = outerAsync
             awaitIdentifierForbidden = outerAwaitForbidden
             classFieldInitializerDepth = outerClassFieldInitializerDepth
@@ -3163,22 +3194,26 @@ class Parser(
             throw error("Await expression is not allowed in async function parameters")
         }
 
-        // async 函数中的 await
-        if (asyncContext && token.type == TokenType.IDENTIFIER && token.value == "await") {
+        // async 函数中的 await；模块顶层走单独的 TLA 分支
+        if (asyncContext && functionDepth > 0 && token.type == TokenType.IDENTIFIER &&
+            token.value == "await"
+        ) {
             advance()
             val operand = parseUnary()
             return trackAstNode(UnaryOp("await", operand, SourceRange(token.range.start, operand.range.end)))
         }
 
         // 模块代码中的 await：
-        // - 模块顶层与函数体内的 await 按 AwaitExpression 解析（语法层，运行期由 L4.3 处理）；
-        // - 形参列表、class 字段初始化器与 static 块是 [~Await] 语境，await 只能按
-        //   保留字处理（随后由标识符校验报错）；
+        // - 模块顶层（functionDepth == 0）的 await 是 TLA，记录标记供链接期拒绝；
+        // - 非 async 函数/方法/箭头体是 [~Await] 语境，必须按保留字拒绝；
+        // - 形参列表、class 字段初始化器与 static 块是 [~Await] 语境。
         // - 转义形式（aw\u0061it）不构成 await 运算符。
-        if (moduleContext && !inFormalParameters && classFieldInitializerDepth == 0 &&
-            !awaitIdentifierForbidden && token.type == TokenType.IDENTIFIER &&
+        if (moduleContext && functionDepth == 0 && !inFormalParameters &&
+            classFieldInitializerDepth == 0 && !awaitIdentifierForbidden &&
+            token.type == TokenType.IDENTIFIER &&
             token.value == "await" && !token.containsEscape
         ) {
+            moduleHasTopLevelAwait = true
             advance()
             val operand = parseUnary()
             return trackAstNode(UnaryOp("await", operand, SourceRange(token.range.start, operand.range.end)))
@@ -3693,12 +3728,15 @@ class Parser(
     /**
      * 动态导入 `import(specifier[, options])`（`import` 已定位但尚未消费）。
      *
-     * 语法层允许 0..2 个实参（规范要求 1..2，零参数留给运行期按规范拒绝），
-     * 并允许尾逗号；实参必须是 AssignmentExpression，因此 `...x` 展开是早期错误。
+     * 规范要求 1..2 个实参；零参数在解析期直接拒绝。允许尾逗号；
+     * 实参必须是 AssignmentExpression，因此 `...x` 展开是早期错误。
      */
     private fun parseImportCallExpression(start: SourcePosition): Expression {
         advance() // import
         consume(TokenType.LPAREN, "Expected '(' after 'import'")
+        if (check(TokenType.RPAREN)) {
+            throw error("import() requires a module specifier")
+        }
         val arguments = mutableListOf<Expression>()
         if (!check(TokenType.RPAREN)) {
             while (true) {
@@ -3767,7 +3805,15 @@ class Parser(
                         // 模板表达式继承模块语境（import.meta / import() / 顶层 await）
                         moduleContext = moduleContext,
                     )
+                    subParser.inheritTemplateState(
+                        asyncContext = asyncContext,
+                        functionDepth = functionDepth,
+                        classFieldInitializerDepth = classFieldInitializerDepth,
+                        inFormalParameters = inFormalParameters,
+                        awaitIdentifierForbidden = awaitIdentifierForbidden,
+                    )
                     val subExpression = subParser.parseExpressionInput()
+                    if (subParser.moduleHasTopLevelAwait) moduleHasTopLevelAwait = true
                     // 子解析器新增的节点计入父解析器，后续模板与节点继续共用剩余预算。
                     astNodeCount += subParser.astNodeTotal() - inheritedNodeCount
                     expressions.add(subExpression)
@@ -4387,14 +4433,18 @@ class Parser(
      * `Lexer(moduleContext = true)` 在词法阶段拒绝）。
      *
      * 表达式层（L4.1b）：`import.meta` 解析为 [ImportMetaExpr]，`import(...)` 解析为
-     * [ImportCallExpr]；模块顶层与函数体内的 `await` 解析为 `UnaryOp("await", ...)`。
+     * [ImportCallExpr]；模块顶层 `await` 解析为 `UnaryOp("await", ...)` 并记录
+     * [ModuleProgram.hasTopLevelAwait]；非 async 函数体内的 `await` 是语法错误。
      * 以上节点暂不参与求值，链接/执行语义属于 L4.2/L4.3。
+     *
+     * @param sourceInfo 错误栈显示来源；不参与语法/模块身份判定
      */
-    fun parseModule(): ModuleProgram {
+    fun parseModule(sourceInfo: SourceInfo = SourceInfo()): ModuleProgram {
         // 模块代码恒为严格模式：先置位，后续所有语句都按严格模式解析与校验
         strict = true
         // 置位模块语境：表达式层识别 import.meta / import()，并启用模块专属早期错误
         moduleContext = true
+        moduleHasTopLevelAwait = false
         val start = peek().range.start
         val items = mutableListOf<ModuleItem>()
         val statements = mutableListOf<Statement>()
@@ -4435,7 +4485,11 @@ class Parser(
                     is ExportDefaultDeclaration -> item.declaration?.let { statements.add(it) }
                     is ImportDeclaration, is ExportAllDeclaration -> Unit
                 }
-                importEntries.addAll(result.imports)
+                importEntries.addAll(
+                    result.imports.map {
+                        ImportEntry(it.moduleRequest, it.importName, it.localName, result.item.range)
+                    }
+                )
                 for (entry in result.exports) {
                     // export * 不产生具名导出（ExportName 为 null），但仍要进入导出表，
                     // 由链接阶段做星号解析
@@ -4446,11 +4500,20 @@ class Parser(
                             result.item.range,
                         )
                     }
-                    exportEntries.add(entry)
+                    exportEntries.add(
+                        ExportEntry(
+                            entry.exportName,
+                            entry.moduleRequest,
+                            entry.importName,
+                            entry.localName,
+                            result.item.range,
+                        )
+                    )
                 }
                 lexicalNames.addAll(result.lexicalNames)
                 for (entry in result.imports) requestedModules.add(entry.moduleRequest)
                 for (entry in result.exports) entry.moduleRequest?.let { requestedModules.add(it) }
+                requestedModules.addAll(result.moduleRequests)
             }
         } finally {
             asyncContext = outerAsyncContext
@@ -4511,7 +4574,86 @@ class Parser(
             requestedModules = requestedModules.toList(),
             hasUsingDeclaration = statements.any { it is UsingDeclaration },
             range = SourceRange(start, end),
+            bindings = collectModuleBindings(items),
+            hasTopLevelAwait = moduleHasTopLevelAwait,
+            sourceInfo = sourceInfo,
         )
+    }
+
+    /** 汇总模块顶层绑定，供 ModuleDeclarationInstantiation 直接使用。 */
+    private fun collectModuleBindings(items: List<ModuleItem>): List<ModuleBinding> {
+        val bindings = mutableListOf<ModuleBinding>()
+        fun add(kind: ModuleBindingKind, name: String, range: SourceRange, imported: ImportedBinding? = null) {
+            bindings.add(ModuleBinding(kind, name, imported, range))
+        }
+        fun addStatement(statement: Statement) {
+            when (statement) {
+                is VarDeclaration -> {
+                    val kind = when (statement.kind) {
+                        DeclarationKind.VAR -> ModuleBindingKind.VAR
+                        DeclarationKind.LET -> ModuleBindingKind.LET
+                        DeclarationKind.CONST -> ModuleBindingKind.CONST
+                    }
+                    val names = LinkedHashSet<String>()
+                    for (declarator in statement.declarations) {
+                        val pattern = declarator.pattern
+                        if (pattern != null) {
+                            collectPatternNames(pattern, names)
+                        } else {
+                            declarator.name?.let { names.add(it) }
+                        }
+                    }
+                    for (name in names) add(kind, name, statement.range)
+                }
+
+                is FunctionDeclaration -> add(ModuleBindingKind.FUNCTION, statement.name, statement.range)
+                is ClassDeclaration -> add(ModuleBindingKind.CLASS, statement.name, statement.range)
+                is UsingDeclaration -> {
+                    for (declarator in statement.declarations) {
+                        add(ModuleBindingKind.USING, declarator.name, declarator.range)
+                    }
+                }
+
+                else -> Unit
+            }
+        }
+
+        for (item in items) {
+            when (item) {
+                is ImportDeclaration -> {
+                    for (specifier in item.specifiers) {
+                        add(
+                            ModuleBindingKind.IMPORT,
+                            specifier.localName,
+                            specifier.range,
+                            ImportedBinding(item.moduleRequest, specifier.importedName),
+                        )
+                    }
+                    item.namespaceImport?.let { localName ->
+                        add(
+                            ModuleBindingKind.IMPORT,
+                            localName,
+                            item.range,
+                            ImportedBinding(item.moduleRequest, "*"),
+                        )
+                    }
+                }
+
+                is ExportNamedDeclaration -> item.declaration?.let(::addStatement)
+                is ExportDefaultDeclaration -> {
+                    val declaration = item.declaration
+                    if (declaration != null) {
+                        addStatement(declaration)
+                    } else {
+                        add(ModuleBindingKind.DEFAULT, "*default*", item.range)
+                    }
+                }
+
+                is StatementItem -> addStatement(item.statement)
+                is ExportAllDeclaration -> Unit
+            }
+        }
+        return bindings
     }
 
     /** 模块声明解析结果：模块项本身，以及它贡献的导入/导出表项与顶层词法名。 */
@@ -4520,6 +4662,8 @@ class Parser(
         val imports: List<ImportEntry> = emptyList(),
         val exports: List<ExportEntry> = emptyList(),
         val lexicalNames: List<String> = emptyList(),
+        /** 本声明贡献的模块请求；即使是空子句也必须保留。 */
+        val moduleRequests: List<String> = emptyList(),
     )
 
     /**
@@ -4643,6 +4787,7 @@ class Parser(
                 // 规范里副作用导入仍然产生 ImportEntry：ImportName 为 all、LocalName 为空；
                 // 这里用 "*" / "" 表示该哨兵值，模块求值器只据此触发依赖求值。
                 imports = listOf(ImportEntry(moduleRequest, "*", "")),
+                moduleRequests = listOf(moduleRequest),
             )
         }
 
@@ -4732,6 +4877,7 @@ class Parser(
                 ImportEntry(moduleRequest, importName, localName)
             },
             lexicalNames = lexicalNames,
+            moduleRequests = listOf(moduleRequest),
         )
     }
 
@@ -4869,6 +5015,7 @@ class Parser(
                 range = SourceRange(start, previous().range.end),
             ),
             exports = exports,
+            moduleRequests = source?.let { listOf(it) } ?: emptyList(),
         )
     }
 
@@ -4896,6 +5043,7 @@ class Parser(
                 range = SourceRange(start, previous().range.end),
             ),
             exports = listOf(export),
+            moduleRequests = listOf(moduleRequest),
         )
     }
 

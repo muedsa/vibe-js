@@ -95,11 +95,11 @@ Lexer ──► Parser ──► AST (Program / ModuleProgram)
    - `varDeclarations` / `functionDeclarations` / `lexicallyDeclaredNames`：模块顶层声明表；
    - `hasUsingDeclaration`：顶层是否直接包含 `using`；
 5. 模块恒为严格模式；顶层 `super` / `new.target`、Annex B 语法、重复顶层函数声明等按模块早期错误处理；
-6. 表达式层：`import.meta` 解析为 `ImportMetaExpr`，`import(specifier[, options])` 解析为 `ImportCallExpr`；模块顶层与函数体内的 `await` 解析为 `UnaryOp("await", ...)`；
+6. 表达式层：`import.meta` 解析为 `ImportMetaExpr`，`import(specifier[, options])` 解析为 `ImportCallExpr`；模块顶层 `await` 解析为 `UnaryOp("await", ...)` 并记录 `hasTopLevelAwait`，非 async 函数体中的 `await` 是语法错误；
 7. `moduleContext` 会传播到模板字符串 `${...}` 的子解析器与子词法器，保证模块语境在嵌套表达式里一致；
-8. 当前执行模型：`Engine.run` 仍只接受 `Program`；若模块表达式节点意外进入解释器，`ImportMetaExpr` 与 `ImportCallExpr` 会分别抛出“仅模块可用”/“动态 import 未支持”的 `SyntaxError`。链接、求值、加载、CLI 与 module harness **整体无计划**；当前唯一执行入口是单脚本 `Engine.run(source)`。
+8. 当前执行模型：`Engine.run` 仍只接受 `Program`；若模块表达式节点意外进入解释器，`ImportMetaExpr` 与 `ImportCallExpr` 会分别抛出“仅模块可用”/“动态 import 未支持”的 `SyntaxError`。阶段 0–1 已补 Parser 静态表/类型化声明/TLA 标记，但链接、求值、加载、CLI 与 module harness **尚未实现**；当前唯一执行入口是单脚本 `Engine.run(source)`。
 
-已知宽松点：`import()` 零参数在语法层暂允许（执行期按规范拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 尚未覆盖；随模块方向无计划。
+已知限制：import attributes、`import.meta.resolve`、`export using` 尚未覆盖；模块执行与加载仍未排期。
 
 ## 5. 作用域模型
 
@@ -511,9 +511,10 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
   与 URL/URLSearchParams 常用子集。
 - **L 系列（已完成，2026-11）**：同步/异步 Generator、`for await`、Proxy/Reflect、BigInt、
   ArrayBuffer/DataView/TypedArray（含 BigInt 视图与 detach）；对应特性已纳入 Test262 ES2015 基线。
-- **模块（解析保留，执行无计划）**：`Parser.parseModule` 支持 `import` / `export` 基础形式、
-  `import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表；链接、求值、加载、
-  CLI 与 Test262 module harness **整体无计划**，`Engine` 当前只执行 Script。
+- **模块（阶段 0–1 Parser 前置已完成，执行未实现）**：`Parser.parseModule` 支持 `import` / `export`
+  基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表、类型化绑定、
+  entry range 与 `hasTopLevelAwait`；链接、求值、加载、CLI 与 Test262 module harness **尚未实现**，
+  `Engine` 当前只执行 Script。
 - **当前无计划/按需**：WeakRef / FinalizationRegistry、WeakMap/WeakSet 的真实弱引用（M2）、Intl、DOM/fetch 等真实 Web API、SharedArrayBuffer/Atomics、
   resizable/transfer ArrayBuffer 无计划；R1 资源约束已覆盖主要路径；性能优化（B2）与 API 契约（PKG1）无计划，
   S5.2 只做性能复测观测（见[后续路线](OPTIMIZATION_ROADMAP.md)）。

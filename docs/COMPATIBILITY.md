@@ -6,8 +6,8 @@
 > Generator / async generator、`for await`、Proxy / Reflect、BigInt、
 > TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
-> `import()` 表达式与模块顶层 `await` 语法，但**链接、求值、加载无计划，不能执行模块**；
-> 当前唯一执行入口是单脚本 `Engine.run(source)`。
+> `import()` 表达式与模块顶层 `await` 语法；阶段 0–1 已补静态表/类型化声明/TLA 标记，
+> 但**链接、求值、加载尚未实现，不能执行模块**；当前唯一执行入口是单脚本 `Engine.run(source)`。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
 > SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；模块执行、
 > 顶层 await、性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
@@ -62,9 +62,9 @@
 | 私有字段/方法/访问器 | ✅ | 品牌检查、不可扩展与重复初始化报错、直接 eval 可见性 |
 | Generator（`function*` / `yield`） | ✅ | 同步/异步生成器、`yield*` 委托、`return`/`throw`/`next`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定在调用时完成 |
 | BigInt（字面量与运算） | ✅ | `123n`、算术/位运算/移位/比较/幂运算、`BigInt()` / `asIntN` / `asUintN`、与 Number 混用抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制 |
-| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry` 与模块早期错误；**不能链接、求值或加载**，`Engine` 仍只执行 Script；链接/求值/加载/CLI 整体无计划。脚本目标继续拒绝 `import` / `export` |
-| 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；执行期分别报 `import.meta is only available in module code` 与 `Dynamic import is not supported`。`import()` 零参数在语法层暂允许，执行期按规范拒绝 |
-| 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 表达式；模块求值与异步求值未实现，且随模块方向整体无计划，因此不能执行顶层 await |
+| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；**不能链接、求值或加载**，`Engine` 仍只执行 Script；链接/求值/加载/CLI 尚未实现。脚本目标继续拒绝 `import` / `export` |
+| 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；执行期分别报 `import.meta is only available in module code` 与 `Dynamic import is not supported`。`import()` 零参数在解析期报错 |
+| 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 并记录 `hasTopLevelAwait`；非 async 函数体中的 `await` 在解析期报错；模块求值与异步求值未实现，因此不能执行顶层 await |
 | Proxy / Reflect | ✅ | Proxy 13 个 trap、`Proxy.revocable`、撤销状态与完整不变量校验；Reflect 13 个方法；解释器属性/调用/构造内部方法统一分派 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
 | 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板），try/catch/finally 按待处理语义阻断 |
@@ -129,13 +129,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1001** + 宿主 38 个测试（2026-11-09 记录，`53fb71b`） |
-| JS（Node） | ✅ | 核心 **985** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **985** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1006** + 宿主 38 个测试（2026-11-09 记录，`53fb71b`） |
+| JS（Node） | ✅ | 核心 **990** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **990** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1001 包含 L4/R1/M2 新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 985。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1006 包含 L4/R1/M2/模块前置新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 990。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
@@ -159,10 +159,10 @@
 | `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
 | `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
-- 模块执行无计划：`Parser.parseModule` 已能解析 `import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表；但 `Engine` 仍只执行 Script，链接、求值、加载、CLI 与 Test262 module harness 均无计划（L4.1c–L4.6b）。Test262 的 322 个 `flags: [module]` 用例继续跳过；
-- 模块语法已知宽松点：`import()` 零参数在语法层暂允许（执行期按规范拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持；随模块方向整体无计划；
+- 模块执行未实现：`Parser.parseModule` 已能解析 `import` / `export` 声明、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表/类型化绑定/TLA 标记；但 `Engine` 仍只执行 Script，链接、求值、加载、CLI 与 Test262 module harness 尚未实现。Test262 的 322 个 `flags: [module]` 用例继续跳过；
+- 模块语法限制：import attributes、`import.meta.resolve`、`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；
-- 顶层 await 只有语法解析，没有模块异步求值；随模块方向无计划；
+- 顶层 await 只有语法解析和 `hasTopLevelAwait` 标记，没有模块异步求值；
 - 宿主生态已实现 UTF-8 子集：TextEncoder（encode/encodeInto）、TextDecoder（fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/ArrayBuffer/视图/循环）、URL/URLSearchParams 常用能力；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API；
 - WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 使用强引用存储，没有 GC 弱语义，不能用于长期缓存的自动回收（M2 无计划）；
 - Intl、SharedArrayBuffer / Atomics、Temporal / Float16Array / 装饰器 / ShadowRealm 不在当前范围或明确无计划；

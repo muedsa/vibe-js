@@ -64,8 +64,8 @@ class ImportSpecifier(
  * - `import {a, b as c} from "m"`（具名导入，允许空 `{}` 与末尾逗号）
  * - `import * as ns from "m"`（命名空间导入）
  * - `import d, {a} from "m"` / `import d, * as ns from "m"`
+ * - `import { "字符串名" as x } from "m"`（任意模块命名空间名）
  *
- * 仍未覆盖（后续 L4.1 切片）：`import { "字符串名" as x }`（任意模块命名空间名）。
  * `import.meta` 与 `import()` 属于表达式层语法，分别见 [ImportMetaExpr] 与 [ImportCallExpr]。
  *
  * @property moduleRequest 模块说明符（字符串字面量解码后的值）
@@ -145,6 +145,7 @@ class ImportEntry(
     val moduleRequest: String,
     val importName: String,
     val localName: String,
+    val range: SourceRange = SourceRange.NONE,
 )
 
 /**
@@ -161,7 +162,40 @@ class ExportEntry(
     val moduleRequest: String?,
     val importName: String?,
     val localName: String?,
+    val range: SourceRange = SourceRange.NONE,
 )
+
+/**
+ * 模块顶层绑定种类。
+ *
+ * 由 Parser 预计算，供模块声明实例化直接使用；运行时不再扫描 AST 判断
+ * `var` / `let` / `const` / `class` / `function` / `import`。
+ */
+enum class ModuleBindingKind {
+    IMPORT,
+    LET,
+    CONST,
+    CLASS,
+    FUNCTION,
+    VAR,
+    USING,
+    /** 匿名 `export default` 的 `*default*` 绑定。 */
+    DEFAULT,
+}
+
+/** 仅用于 IMPORT 绑定：本地名指向哪个模块的哪个导出名。 */
+class ImportedBinding(
+    val moduleRequest: String,
+    val importName: String,
+)
+
+/** 模块顶层绑定的类型化元数据。 */
+class ModuleBinding(
+    val kind: ModuleBindingKind,
+    val name: String,
+    val imported: ImportedBinding?,
+    override val range: SourceRange,
+) : ASTNode()
 
 /**
  * `import.meta` 元属性表达式。
@@ -212,6 +246,8 @@ class ImportCallExpr(
  * @property varDeclarations 模块 var 作用域的 var 名（含 `export var`）
  * @property functionDeclarations 模块顶层函数声明（在模块中属于**词法**声明，提升到模块环境）
  * @property lexicallyDeclaredNames 模块顶层词法声明名：import 绑定 + let/const/class/function
+ * @property bindings 模块顶层类型化绑定，供 ModuleDeclarationInstantiation 直接使用
+ * @property hasTopLevelAwait 是否包含模块顶层 await；MVP 链接期据此拒绝 TLA
  * @property hasUsingDeclaration 顶层是否直接包含 using 声明
  */
 class ModuleProgram(
@@ -226,6 +262,10 @@ class ModuleProgram(
     val requestedModules: List<String>,
     val hasUsingDeclaration: Boolean,
     override val range: SourceRange,
+    /** 模块顶层类型化绑定；用于 ModuleDeclarationInstantiation。 */
+    val bindings: List<ModuleBinding> = emptyList(),
+    /** 是否包含模块顶层 await（TLA）；MVP 在链接期拒绝。 */
+    val hasTopLevelAwait: Boolean = false,
     /** 引擎预解析时绑定的模块来源（路径/URL）；Parser 直接调用使用匿名来源。 */
     val sourceInfo: SourceInfo = SourceInfo(),
 ) : ASTNode() {

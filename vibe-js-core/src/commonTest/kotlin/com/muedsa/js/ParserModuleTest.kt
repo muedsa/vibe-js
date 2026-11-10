@@ -1,6 +1,5 @@
 package com.muedsa.js
 
-import com.muedsa.js.ast.ArrowFunction
 import com.muedsa.js.ast.CallExpr
 import com.muedsa.js.ast.ClassExpression
 import com.muedsa.js.ast.ConditionalExpr
@@ -15,6 +14,7 @@ import com.muedsa.js.ast.ImportCallExpr
 import com.muedsa.js.ast.ImportDeclaration
 import com.muedsa.js.ast.ImportMetaExpr
 import com.muedsa.js.ast.MemberExpr
+import com.muedsa.js.ast.ModuleBindingKind
 import com.muedsa.js.ast.ModuleProgram
 import com.muedsa.js.ast.NumberLiteral
 import com.muedsa.js.ast.ObjectLiteral
@@ -26,6 +26,7 @@ import com.muedsa.js.ast.UnaryOp
 import com.muedsa.js.ast.VarDeclaration
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.lexer.LexerException
+import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import kotlin.test.Test
@@ -424,11 +425,8 @@ class ParserModuleTest {
     }
 
     @Test
-    fun `动态导入允许零个一个两个参数与尾逗号`() {
-        val zero = assertIs<ImportCallExpr>(firstExpression(parseModule("import();")))
-        assertTrue(zero.arguments.isEmpty())
-        assertNull(zero.specifier)
-        assertNull(zero.options)
+    fun `动态导入要求至少一个参数且允许一个两个参数与尾逗号`() {
+        assertFailsWith<ParseException> { parseModule("import();") }
 
         val one = assertIs<ImportCallExpr>(firstExpression(parseModule("import(\"./m.js\");")))
         assertEquals(1, one.arguments.size)
@@ -491,16 +489,17 @@ class ParserModuleTest {
     }
 
     @Test
-    fun `模块顶层与函数体内的await均可解析`() {
-        // 语法层允许模块函数体（含箭头函数）中的 await；运行期语义由 L4.3 处理
-        parseModule("function f() { return await 1; }")
+    fun `模块顶层与 async 函数体内的 await 可解析而非 async 函数体拒绝`() {
+        val top = assertIs<UnaryOp>(firstExpression(parseModule("await 1;")))
+        assertEquals("await", top.operator)
+
         parseModule("async function g() { return await 2; }")
-        val arrow = parseModule("const f = () => await 1;")
-        val initializer = assertIs<VarDeclaration>(firstStatement(arrow))
-            .declarations.single().initializer
-        val function = assertIs<ArrowFunction>(initializer)
-        assertIs<UnaryOp>(function.expressionBody)
         parseModule("const g = async () => await 2;")
+        assertFailsWith<ParseException> { parseModule("function f() { return await 1; }") }
+        assertFailsWith<ParseException> { parseModule("const f = () => await 1;") }
+        assertFailsWith<ParseException> {
+            parseModule("function f() { return `\${await 1}`; }")
+        }
     }
 
     @Test
@@ -649,5 +648,74 @@ class ParserModuleTest {
         val parameter = assertFailsWith<ParseException> { parseModule("function f(await) {}") }
         assertEquals(1, parameter.range.start.line)
         assertEquals(12, parameter.range.start.column)
+    }
+
+    @Test
+    fun `空子句导入导出仍进入模块请求`() {
+        val module = parseModule(
+            """
+            import {} from "./a.js";
+            export {} from "./b.js";
+            """.trimIndent(),
+        )
+        assertEquals(listOf("./a.js", "./b.js"), module.requestedModules)
+        assertTrue(module.importEntries.isEmpty())
+        assertTrue(module.exportEntries.isEmpty())
+    }
+
+    @Test
+    fun `parseModule 接受并保存 SourceInfo`() {
+        val sourceInfo = SourceInfo(name = "mod.mjs", lineOffset = 3)
+        val module = Parser(
+            Lexer("export const x = 1;", moduleContext = true).tokenize(),
+        ).parseModule(sourceInfo)
+        assertEquals(sourceInfo, module.sourceInfo)
+    }
+
+    @Test
+    fun `ImportEntry 与 ExportEntry 携带声明范围`() {
+        val module = parseModule(
+            """
+            import { a } from "./a.js";
+            export { a } from "./b.js";
+            """.trimIndent(),
+        )
+        assertEquals(1, module.importEntries.single().range.start.line)
+        assertEquals(2, module.exportEntries.single().range.start.line)
+    }
+
+    @Test
+    fun `模块顶层绑定预计算为类型化元数据`() {
+        val module = parseModule(
+            """
+            import { a as b } from "./m.js";
+            export const c = 1;
+            let d;
+            var e;
+            function f() {}
+            class G {}
+            export default 1;
+            """.trimIndent(),
+        )
+        val kinds = module.bindings.associate { it.name to it.kind }
+        assertEquals(ModuleBindingKind.IMPORT, kinds["b"])
+        assertEquals(ModuleBindingKind.CONST, kinds["c"])
+        assertEquals(ModuleBindingKind.LET, kinds["d"])
+        assertEquals(ModuleBindingKind.VAR, kinds["e"])
+        assertEquals(ModuleBindingKind.FUNCTION, kinds["f"])
+        assertEquals(ModuleBindingKind.CLASS, kinds["G"])
+        assertEquals(ModuleBindingKind.DEFAULT, kinds["*default*"])
+        assertEquals("./m.js", module.bindings.single { it.name == "b" }.imported?.moduleRequest)
+    }
+
+    @Test
+    fun `hasTopLevelAwait 只标记模块顶层 await`() {
+        assertTrue(parseModule("await 1;").hasTopLevelAwait)
+        assertTrue(parseModule("export default await 1;").hasTopLevelAwait)
+        assertTrue(parseModule("if (x) { await y; }").hasTopLevelAwait)
+        assertTrue(parseModule("for await (const x of xs) {}").hasTopLevelAwait)
+        assertTrue(parseModule("const t = `\${await 1}`;").hasTopLevelAwait)
+        assertTrue(!parseModule("async function f() { await 1; }").hasTopLevelAwait)
+        assertTrue(!parseModule("function f() { return 1; }").hasTopLevelAwait)
     }
 }

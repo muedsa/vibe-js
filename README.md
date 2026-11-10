@@ -156,8 +156,8 @@ module.strict // true
 ```
 
 模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝
-`import` / `export`。模块执行入口、模块加载器与 CLI 不在当前实现内，且已降级为无计划；
-当前唯一执行入口是单脚本 `Engine.run(source)`。详见
+`import` / `export`。模块执行入口、模块加载器与 CLI 尚未实现；阶段 0–1 已完成 Parser 静态表和语法收紧，
+但模块执行仍未排期；当前唯一执行入口是单脚本 `Engine.run(source)`。详见
 [兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
 
 ### 取消与超时
@@ -343,11 +343,11 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 
 当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
-- **模块仅解析**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法；链接、求值、加载、CLI 与 Test262 module harness **无计划**，`Engine.run` 仍只执行 Script，不能运行模块；
+- **模块仅解析**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；链接、求值、加载、CLI 与 Test262 module harness **未实现**，`Engine.run` 仍只执行 Script，不能运行模块；
 - **无计划**：顶层 await 的执行（L4.7）、WeakRef / FinalizationRegistry；
 - **宿主生态（已实现子集）**：`TextEncoder` / `TextDecoder`（UTF-8、fatal/ignoreBOM/stream）、`structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）、`URL` / `URLSearchParams` 常用能力，均位于 `:vibe-js-host`；
 - **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供通用宿主能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
-- **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2 无计划）；BigInt 结果受 `MAX_RESULT_BITS` 限制；`import()` 零参数在语法层暂允许（执行期拒绝）；任意函数体 `await` 暂宽松；import attributes、`import.meta.resolve`、`export using` 未支持（随模块方向无计划）；
+- **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2 无计划）；BigInt 结果受 `MAX_RESULT_BITS` 限制；import attributes、`import.meta.resolve`、`export using` 未支持（随模块执行无计划）；
 - **无计划/按需**：性能优化（B2）与 API 契约（PKG1）无计划；R1 资源约束已覆盖源码/AST/对象/JSON/正则/事件循环队列等主要路径；
 - **已知不完整**：完整 ASI 边界规则。
 
@@ -428,8 +428,8 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1001 / 1001** |
-| core JS（Node）/ Wasm（Node） | 各 **985 / 985** |
+| core JVM | **1006 / 1006** |
+| core JS（Node）/ Wasm（Node） | 各 **990 / 990** |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** |
 | conformance 单元测试 | **39 / 39** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
@@ -462,7 +462,7 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 ## 阶段状态
 
 - **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 基线。
-- **模块**：`Parser.parseModule` 语法解析与模块语料门禁已完成；链接、求值、加载、CLI 与 Test262 module harness **无计划**，保留现有解析回归。
+- **模块**：`Parser.parseModule` 语法解析、阶段 0–1 静态前置（类型化绑定/TLA 标记/range）与 262 模块语料门禁已完成；链接、求值、加载、CLI 与 Test262 module harness **未实现**，执行侧仍无计划。
 - **未完成/无计划**：WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划；宿主生态已提供 TextEncoder/TextDecoder、structuredClone 与 URL 子集。
 
 ## 说明
