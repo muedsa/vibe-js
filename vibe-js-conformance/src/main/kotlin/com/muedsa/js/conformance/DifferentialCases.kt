@@ -4209,6 +4209,23 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   }
 })()""",
     ),
+    // Object.hasOwn 对不可扩展目标不能凭空报告自有属性。
+    DifferentialCase(
+        "object-has-own-proxy-nonextensible",
+        """(function () {
+  var target = Object.preventExtensions({});
+  var proxy = new Proxy(target, {
+    getOwnPropertyDescriptor: function () {
+      return { value: 1, configurable: true };
+    }
+  });
+  try {
+    return String(Object.hasOwn(proxy, 'x'));
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
     // Map.groupBy 的 NaN 键按 SameValueZero 归入同一组。
     DifferentialCase(
         "map-group-by-nan-key",
