@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **606 / 606** | 含 L 系列同步与异步用例 |
+| Node 差分 | **610 / 610** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -572,6 +572,8 @@ data class EngineLimits(
 | 2026-11-10 | **S2.2-B6 完成语义/异步资源**：新增 await using 顺序/异常、AsyncDisposableStack 3 条异步用例，以及 for-let/for-of/for-in 每迭代闭包、嵌套 finally、finally 中 continue、switch let TDZ、catch 参数作用域 8 条同步用例；差分 580→591/591 |
 | 2026-11-10 | **S2.2-B7 错误与完成语义**：新增 SuppressedError 字段、DisposableStack 多重释放错误、for/while/do-while 每迭代绑定、break 穿过 finally、finally return 覆盖 throw、switch 重复 let 共 8 条；差分 591→599/599 |
 | 2026-11-10 | **S2.2-B8 Proxy/toString 边界**：新增撤销 Proxy 的 `Array.isArray`/JSON/`Object.prototype.toString`/`instanceof`、`Symbol.toStringTag` getter 异常、`Error.toString` name getter 异常、bound function `toString` 共 7 条；差分 599→606/606；修复 bound function 误带目标函数名的问题 |
+| 2026-11-10 | **S2.2-B9 Promise/Thenable 边界**：新增 thenable getter 抛错、executor resolve 后再抛错、Promise 子类与 species 共 4 条异步用例；差分 606→610/610 |
+| 2026-11-10 | **S6.2 门禁复跑（B8 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 606/606、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B7 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 599/599、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B6 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 591/591、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B5 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 580/580、真实库 375/375，strict 全绿 |

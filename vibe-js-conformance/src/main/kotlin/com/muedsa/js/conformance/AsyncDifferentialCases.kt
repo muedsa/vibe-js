@@ -542,4 +542,53 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         globalThis.__diffResult = log;
         """.trimIndent(),
     ),
+    AsyncDifferentialCase(
+        "async-thenable-getter-throws",
+        """
+        var thenable = {
+          get then() {
+            throw new Error('getter');
+          }
+        };
+        Promise.resolve(thenable).catch(function (error) {
+          globalThis.__diffResult = error.message;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-executor-throw-after-resolve",
+        """
+        var log = [];
+        new Promise(function (resolve) {
+          resolve(1);
+          throw new Error('ignored');
+        }).then(function (value) { log.push('then:' + value); });
+        globalThis.__diffResult = log;
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-promise-subclass",
+        """
+        class P extends Promise {}
+        var value = P.resolve(1);
+        globalThis.__diffResult = [
+          value instanceof P,
+          value instanceof Promise
+        ];
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-promise-species",
+        """
+        class P extends Promise {
+          static get [Symbol.species]() { return Promise; }
+        }
+        var value = new P(function (resolve) { resolve(1); });
+        var chained = value.then(function (result) { return result + 1; });
+        globalThis.__diffResult = [
+          chained instanceof P,
+          chained instanceof Promise
+        ];
+        """.trimIndent(),
+    ),
 )
