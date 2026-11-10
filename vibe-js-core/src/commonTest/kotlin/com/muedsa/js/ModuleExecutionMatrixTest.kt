@@ -203,6 +203,28 @@ class ModuleExecutionMatrixTest {
     }
 
     @Test
+    fun `显式导出即使位于星号导出之后仍优先`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "entry",
+                "export * from './b.js'; export { x } from './a.js';",
+            ),
+            Provider(
+                mapOf(
+                    "./a.js" to source("a", "export const x = 1;"),
+                    "./b.js" to source("b", "export const x = 2;"),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf("x"),
+            namespace.ownPropertyKeys().filterIsInstance<PropertyKey.Str>().map { it.value },
+        )
+        assertEquals(1.0, (engine.interpreter.getProperty(namespace, PropertyKey.Str("x")) as JSNumber).value)
+    }
+
+    @Test
     fun `显式导出的实时绑定覆盖同名星号导出`() = runTest {
         val engine = Engine()
         val namespace = engine.runModule(
