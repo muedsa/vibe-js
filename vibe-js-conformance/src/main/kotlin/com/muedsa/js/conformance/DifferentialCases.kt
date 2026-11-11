@@ -5124,6 +5124,30 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object['0'];
 })()""",
     ),
+    DifferentialCase(
+        "object-from-entries-key-to-primitive-nan",
+        """(function () {
+  var key = {
+    [Symbol.toPrimitive]: function () {
+      return NaN;
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return Object.keys(object).join(',') + ':' + object.NaN;
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-key-to-primitive-infinity",
+        """(function () {
+  var key = {
+    [Symbol.toPrimitive]: function () {
+      return Infinity;
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return Object.keys(object).join(',') + ':' + object.Infinity;
+})()""",
+    ),
     // Object.fromEntries 重复符号键由后者覆盖并保留首次顺序。
     DifferentialCase(
         "object-from-entries-duplicate-symbol",
