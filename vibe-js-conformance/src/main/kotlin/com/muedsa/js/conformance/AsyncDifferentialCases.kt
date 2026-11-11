@@ -2855,6 +2855,44 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-index-promise-array",
+        """
+        var log = [];
+        var source = {
+          length: 1,
+          get 0() {
+            return Promise.resolve([8, 9]);
+          }
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(Array.isArray(values[0]));
+          log.push(values[0].join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-value-promise-array-not-awaited",
+        """
+        var log = [];
+        var index = 0;
+        var promise = Promise.resolve([10]);
+        var iterator = {
+          next: function () {
+            return Promise.resolve(
+              index++ === 0 ? { value: promise, done: false } : { done: true }
+            );
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === promise);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-sync-iterator-method-promise",
         """
         var log = [];
