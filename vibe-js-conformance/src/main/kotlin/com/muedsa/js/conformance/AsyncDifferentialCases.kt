@@ -1973,6 +1973,52 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-to-string-fallback",
+        """
+        var log = [];
+        var source = {
+          length: {
+            valueOf: function () {
+              return {};
+            },
+            toString: function () {
+              return '2';
+            }
+          },
+          0: 'a',
+          1: 'b'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-non-primitive",
+        """
+        var log = [];
+        var source = {
+          length: {
+            valueOf: function () {
+              return {};
+            },
+            toString: function () {
+              return {};
+            }
+          }
+        };
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-array-like-index-getter-throw",
         """
         var log = [];
