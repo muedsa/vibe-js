@@ -2304,6 +2304,42 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-to-primitive-null",
+        """
+        var log = [];
+        var source = {
+          length: {
+            [Symbol.toPrimitive]: function () {
+              return null;
+            }
+          },
+          0: 'a'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-to-primitive-undefined",
+        """
+        var log = [];
+        var source = {
+          length: {
+            [Symbol.toPrimitive]: function () {
+              return undefined;
+            }
+          },
+          0: 'a'
+        };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-array-like-length-value-of",
         """
         var log = [];

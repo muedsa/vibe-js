@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1255 / 1255** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1257 / 1257** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -993,6 +993,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B717~B718 Array.fromAsync array-like length Symbol.toPrimitive Symbol 与布尔**：新增 Symbol 抛 TypeError、true 转 1 2 条异步用例；差分 1251→1253/1253 |
 | 2026-11-11 | **S6.2 门禁复跑（1253 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 1253/1253、真实库 375/375，strict 全绿 |
 | 2026-11-11 | **S2.2-B720~B721 Array.fromAsync array-like length Symbol.toPrimitive 字符串与 false**：新增 '2' 转 2、false 归零 2 条异步用例；差分 1253→1255/1255，扩展用例达到 700 条 |
+| 2026-11-11 | **S2.2-B722~B723 Array.fromAsync array-like length Symbol.toPrimitive null 与 undefined**：新增两者均归零 2 条异步用例；差分 1255→1257/1257 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
