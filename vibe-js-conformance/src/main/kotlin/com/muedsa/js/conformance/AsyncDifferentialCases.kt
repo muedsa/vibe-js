@@ -8886,6 +8886,70 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-three-level-boxed-number",
+        """
+        var log = [];
+        var index = 0;
+        var innermost = {
+          then: function (resolve) {
+            resolve(new Number(1));
+          }
+        };
+        var inner = {
+          then: function (resolve) {
+            resolve(innermost);
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(inner);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? result : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-three-level-array-buffer",
+        """
+        var log = [];
+        var index = 0;
+        var innermost = {
+          then: function (resolve) {
+            resolve(new ArrayBuffer(2));
+          }
+        };
+        var inner = {
+          then: function (resolve) {
+            resolve(innermost);
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(inner);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? result : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-string",
         """
         var log = [];
