@@ -1684,6 +1684,31 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Array fromAsync 写入继承的不可写 length 失败`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var out = '';
+                var proto = {};
+                Object.defineProperty(proto, 'length', {
+                    value: 0,
+                    writable: false
+                });
+                var result = Object.create(proto);
+                function Result() {
+                    return result;
+                }
+                Array.fromAsync.call(Result, [1]).then(function () {
+                    out = 'fulfilled';
+                }, function (error) {
+                    out = error.name;
+                });
+            """.trimIndent()
+        )
+        assertEquals("TypeError", runtime.evalString("out"))
+    }
+
+    @Test
     fun `Array fromAsync 写入 Uint8Array length 失败`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(

@@ -1345,6 +1345,24 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-construct-trap-inherited-writable-length",
+        """
+        var log = [];
+        function Result() {}
+        var wrapped = new Proxy(Result, {
+          construct: function () {
+            return Object.create({ length: 0 });
+          }
+        });
+        Array.fromAsync.call(wrapped, [1]).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          log.push(Object.hasOwn(values, 'length'));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-existing-index-conflict",
         """
         var log = [];
