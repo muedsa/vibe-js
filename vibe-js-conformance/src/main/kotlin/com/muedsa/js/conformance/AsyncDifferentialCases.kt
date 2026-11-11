@@ -7104,6 +7104,53 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-thenable-undefined",
+        """
+        var log = [];
+        var thenable = {
+          then: function (resolve) {
+            resolve(undefined);
+          }
+        };
+        var iterator = {
+          next: function () {
+            return thenable;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-thenable-function",
+        """
+        var log = [];
+        var index = 0;
+        var iterator = {
+          next: function () {
+            if (index++ === 0) {
+              return {
+                then: function (resolve) {
+                  resolve(function () {});
+                }
+              };
+            }
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-then-non-callable",
         """
         var log = [];
