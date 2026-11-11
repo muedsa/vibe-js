@@ -4807,6 +4807,36 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-symbol-key-getter",
+        """(function () {
+  var symbol = Symbol('k');
+  var entry = {
+    length: 2,
+    get 0() {
+      return symbol;
+    },
+    1: 'v'
+  };
+  var object = Object.fromEntries([entry]);
+  return object[symbol] + ':' + Object.getOwnPropertySymbols(object).length;
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-promise-value-getter",
+        """(function () {
+  var promise = Promise.resolve(1);
+  var entry = {
+    length: 2,
+    0: 'k',
+    get 1() {
+      return promise;
+    }
+  };
+  var object = Object.fromEntries([entry]);
+  return Object.keys(object).join(',') + ':' + (object.k === promise);
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-proto-key",
         """(function () {
   var object = Object.fromEntries([['__proto__', 1]]);
