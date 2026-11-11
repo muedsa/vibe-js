@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1130 / 1130** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1132 / 1132** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -928,6 +928,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B589~B590 Array.fromAsync 异步 value getter 次数与 thenable**：新增 getter 只读一次、thenable 不展开 2 条异步用例；差分 1126→1128/1128 |
 | 2026-11-11 | **S6.2 门禁复跑（1128 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 1128/1128、真实库 375/375，strict 全绿 |
 | 2026-11-11 | **S2.2-B592~B593 Array.fromAsync 异步 next 返回 thenable 与字符串**：新增 thenable 正常展开、字符串结果拒绝 TypeError 2 条异步用例；差分 1128→1130/1130 |
+| 2026-11-11 | **S2.2-B594~B595 Array.fromAsync 异步 next 的 then 非函数与 getter 抛错**：新增非函数 then 按普通对象处理、getter 抛错拒绝 2 条异步用例；差分 1130→1132/1132 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
