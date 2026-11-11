@@ -4857,6 +4857,62 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return object.k + ':' + calls + ':' + Object.keys(object).join(',');
 })()""",
     ),
+    DifferentialCase(
+        "object-from-entries-key-to-string-throws",
+        """(function () {
+  var log = [];
+  var index = 0;
+  var key = {
+    toString: function () {
+      throw new Error('key-to-string');
+    }
+  };
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: { 0: key, 1: 1, length: 2 }, done: false } : { done: true };
+    },
+    return: function () {
+      log.push('return');
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    log.push('ok');
+  } catch (error) {
+    log.push('reject:' + error.message);
+  }
+  return log.join(',');
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-key-to-primitive-throws",
+        """(function () {
+  var log = [];
+  var index = 0;
+  var key = {
+    [Symbol.toPrimitive]: function () {
+      throw new Error('key-to-primitive');
+    }
+  };
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: { 0: key, 1: 1, length: 2 }, done: false } : { done: true };
+    },
+    return: function () {
+      log.push('return');
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    log.push('ok');
+  } catch (error) {
+    log.push('reject:' + error.message);
+  }
+  return log.join(',');
+})()""",
+    ),
     // Object.fromEntries 重复符号键由后者覆盖并保留首次顺序。
     DifferentialCase(
         "object-from-entries-duplicate-symbol",
