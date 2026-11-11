@@ -4894,6 +4894,32 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).length + ':' + object.a;
 })()""",
     ),
+    // Object.fromEntries 的 done 为 Symbol 时按 truthy 停止。
+    DifferentialCase(
+        "object-from-entries-done-symbol",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: ['a', 1], done: Symbol('done') };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
+    // Object.fromEntries 的 done 为 1n 时按 truthy 停止。
+    DifferentialCase(
+        "object-from-entries-done-bigint-one",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: ['a', 1], done: 1n };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
     // Object.fromEntries 的 next 结果缺少 done 时按 false 处理；无效条目抛 TypeError。
     DifferentialCase(
         "object-from-entries-missing-done",
