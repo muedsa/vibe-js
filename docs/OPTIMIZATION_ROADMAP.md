@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1040 / 1040** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1042 / 1042** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -880,6 +880,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B494~B495 Object.fromEntries 字符串长度与 Symbol 长度**：新增字符串长度转数字、Symbol 长度抛 TypeError 并关闭 2 条同步用例；差分 1034→1036/1036 |
 | 2026-11-11 | **S2.2-B496~B497 Object.fromEntries 布尔长度与 BigInt 长度**：新增 `true` 按 1、`1n` 抛 TypeError 并关闭 2 条同步用例；差分 1036→1038/1038 |
 | 2026-11-11 | **S2.2-B498~B499 Object.fromEntries 长度与索引 getter 次数**：新增 length getter 一次、索引 getter 各一次 2 条同步用例；差分 1038→1040/1040 |
+| 2026-11-11 | **S2.2-B500~B501 Object.fromEntries array-like 符号键与 __proto__ 键**：新增符号属性与 CreateDataProperty `__proto__` 2 条同步用例；差分 1040→1042/1042 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

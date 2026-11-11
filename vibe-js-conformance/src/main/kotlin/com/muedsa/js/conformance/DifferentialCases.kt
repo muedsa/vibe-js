@@ -4711,6 +4711,24 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-array-like-symbol-key",
+        """(function () {
+  var symbol = Symbol('k');
+  var entry = { length: 2, 0: symbol, 1: 'v' };
+  var object = Object.fromEntries([entry]);
+  return object[symbol] + ':' + Object.getOwnPropertySymbols(object).length;
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-array-like-proto-key",
+        """(function () {
+  var entry = { length: 2, 0: '__proto__', 1: 1 };
+  var object = Object.fromEntries([entry]);
+  return (Object.getPrototypeOf(object) === Object.prototype) + ':' +
+    Object.hasOwn(object, '__proto__') + ':' + object.__proto__;
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-proto-key",
         """(function () {
   var object = Object.fromEntries([['__proto__', 1]]);
