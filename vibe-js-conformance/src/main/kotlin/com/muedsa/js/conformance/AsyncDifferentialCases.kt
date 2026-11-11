@@ -8236,6 +8236,60 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-sync-next-result-proxy-value-throw",
+        """
+        var log = [];
+        var index = 0;
+        var result = new Proxy({ value: 'a', done: false }, {
+          get: function (target, key) {
+            if (key === 'value') {
+              throw new Error('proxy-value');
+            }
+            return target[key];
+          }
+        });
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? result : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-sync-next-result-proxy-done-count",
+        """
+        var log = [];
+        var reads = 0;
+        var result = new Proxy({ value: 'a' }, {
+          get: function (target, key) {
+            if (key === 'done') {
+              reads += 1;
+              return false;
+            }
+            return target[key];
+          }
+        });
+        var index = 0;
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? result : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values[0]);
+          log.push(reads);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-sync-next-getter-throw",
         """
         var log = [];
