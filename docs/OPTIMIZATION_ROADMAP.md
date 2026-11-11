@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1211 / 1211** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1213 / 1213** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -970,6 +970,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B670~B672 Object.fromEntries 条目 length 回退与非原始值、toString 抛错**：新增 toString 回退、两者均非原始值抛 TypeError、toString 抛错 3 条同步用例；差分 1204→1207/1207 |
 | 2026-11-11 | **S2.2-B673~B674 Object.fromEntries 条目 length 的 Symbol.toPrimitive getter 抛错与 Symbol 值**：新增 getter 抛错、valueOf 返回 Symbol 抛 TypeError 2 条同步用例；差分 1207→1209/1209 |
 | 2026-11-11 | **S2.2-B675~B676 Object.fromEntries 条目 length 的 toString Symbol 与 BigInt**：新增 toString 返回 Symbol、valueOf 返回 BigInt 均抛 TypeError 2 条同步用例；差分 1209→1211/1211 |
+| 2026-11-11 | **S2.2-B677~B678 Object.fromEntries 条目 length 的 Symbol.toPrimitive BigInt 与 0**：新增 BigInt 抛 TypeError、0 不读取索引 2 条同步用例；差分 1211→1213/1213 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
