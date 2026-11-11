@@ -7729,6 +7729,58 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-value-throw-done-true",
+        """
+        var log = [];
+        var result = new Proxy({ done: true }, {
+          get: function (target, key) {
+            if (key === 'value') {
+              throw new Error('async-value-done-true');
+            }
+            return target[key];
+          }
+        });
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        }, function (error) {
+          log.push('reject:' + error.message);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-getter-throw",
+        """
+        var log = [];
+        var result = new Proxy({ done: true }, {
+          get: function (target, key) {
+            if (key === 'then') {
+              throw new Error('async-then-getter');
+            }
+            return target[key];
+          }
+        });
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-string",
         """
         var log = [];
