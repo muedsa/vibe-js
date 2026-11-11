@@ -928,6 +928,42 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-construct-trap-array",
+        """
+        var log = [];
+        function Result() {}
+        var wrapped = new Proxy(Result, {
+          construct: function () {
+            return [];
+          }
+        });
+        Array.fromAsync.call(wrapped, [1]).then(function (values) {
+          log.push(Array.isArray(values));
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-construct-trap-date",
+        """
+        var log = [];
+        function Result() {}
+        var wrapped = new Proxy(Result, {
+          construct: function () {
+            return new Date(0);
+          }
+        });
+        Array.fromAsync.call(wrapped, [1]).then(function (values) {
+          log.push(values instanceof Date);
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-existing-index-conflict",
         """
         var log = [];
