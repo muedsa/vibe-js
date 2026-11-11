@@ -4775,6 +4775,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-promise-value",
+        """(function () {
+  var promise = Promise.resolve(1);
+  var object = Object.fromEntries([['k', promise]]);
+  return Object.keys(object).join(',') + ':' + (object.k === promise);
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-function-value",
+        """(function () {
+  var fn = function () {};
+  var object = Object.fromEntries([['k', fn]]);
+  return Object.keys(object).join(',') + ':' + (object.k === fn);
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-proto-key",
         """(function () {
   var object = Object.fromEntries([['__proto__', 1]]);
