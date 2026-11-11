@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1406 / 1406** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1408 / 1408** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -1070,6 +1070,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B868~B869 Array.fromAsync 异步 Proxy 的四层 thenable DataView 与 Proxy**：新增两者均按对象处理 2 条异步用例；差分 1400→1402/1402 |
 | 2026-11-11 | **S2.2-B870~B871 Array.fromAsync 异步 Proxy 的四层 Promise 对象与原始值**：新增对象正常结束、原始值拒绝 TypeError 2 条异步用例；差分 1402→1404/1404 |
 | 2026-11-11 | **S2.2-B872~B873 Array.fromAsync 异步 Proxy 的四层已拒绝 Promise 与 null**：新增拒绝传播、null 拒绝 TypeError 2 条异步用例；差分 1404→1406/1406 |
+| 2026-11-11 | **S2.2-B874~B875 Array.fromAsync 异步 Proxy 的四层 Promise 函数与数组**：新增两者均按对象处理 2 条异步用例；差分 1406→1408/1408 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
