@@ -6,8 +6,10 @@ import com.muedsa.js.ast.ModuleBindingKind
 import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.PropertyKey
 
 /**
@@ -47,6 +49,9 @@ internal class ModuleDeclarationInstantiator(
                 sourceText = declaration.sourceText,
                 sourceInfo = SourceInfo(record.source.sourceName),
             )
+            // 声明实例化发生在模块体求值之前，currentModuleRecord 尚未设置，
+            // 因此显式把所属模块写到函数上，供延迟回调使用 import.meta / import()。
+            function.sourceModule = record
             environment.createLetBinding(declaration.name, function)
         }
 
@@ -77,6 +82,26 @@ internal class ModuleDeclarationInstantiator(
             importMeta.defineDataProperty(
                 key = PropertyKey.Str("url"),
                 value = JSString(record.source.url ?: "module:${record.id}"),
+                writable = true,
+                enumerable = true,
+                configurable = true,
+            )
+            importMeta.defineDataProperty(
+                key = PropertyKey.Str("resolve"),
+                value = JSNativeFunction(
+                    name = "resolve",
+                    length = 1,
+                    prototype = interpreter.intrinsics.functionPrototype,
+                ) { inner, _, args ->
+                    val current = inner.resolveModuleRecord()
+                        ?: inner.typeError("import.meta.resolve is only available during module evaluation")
+                    val runtime = current.runtime ?: inner.moduleRuntime
+                        ?: inner.typeError("import.meta.resolve is only available during module evaluation")
+                    val specifier = inner.toStringValue(args.getOrElse(0) { JSUndefined })
+                    val resolved = runtime.resolve(specifier, current)
+                        ?: inner.typeError("Cannot resolve module specifier '$specifier'")
+                    JSString(resolved)
+                },
                 writable = true,
                 enumerable = true,
                 configurable = true,

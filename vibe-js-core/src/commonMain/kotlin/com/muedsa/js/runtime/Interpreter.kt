@@ -83,11 +83,14 @@ import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.exception.ExecutionLimitException
+import com.muedsa.js.runtime.exception.ResourceLimitException
 import com.muedsa.js.runtime.exception.GeneratorReturn
 import com.muedsa.js.runtime.exception.StackFrame
 import com.muedsa.js.runtime.exception.StackFrameLink
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.module.ModuleLinkException
 import com.muedsa.js.runtime.module.internal.ModuleRecord
+import com.muedsa.js.runtime.module.internal.ModuleRuntime
 import com.muedsa.js.runtime.regex.JsRegex
 import com.muedsa.js.runtime.regex.JsRegexSyntax
 import com.muedsa.js.runtime.regex.JsRegexEngine
@@ -205,8 +208,18 @@ class Interpreter(
     /** 当前执行上下文；运行脚本前为 null。 */
     private var frame: ExecutionContext? = null
 
-    /** 当前模块求值记录；脚本/null 时 import.meta 不可用。 */
-    private var currentModuleRecord: ModuleRecord? = null
+    /** 当前模块求值记录；脚本/null 时 import.meta 与 import() 不可用。 */
+    internal var currentModuleRecord: ModuleRecord? = null
+
+    /** 本次模块运行的 Provider/加载缓存；脚本运行为 null。 */
+    internal var moduleRuntime: ModuleRuntime? = null
+
+    /**
+     * 当前生效的模块记录：模块体求值期间由 [currentModuleRecord] 提供，
+     * 模块内函数延迟调用时回退到函数所属的 [ExecutionContext.sourceModule]。
+     */
+    internal fun resolveModuleRecord(): ModuleRecord? =
+        currentModuleRecord ?: frame?.sourceModule
 
     /**
      * 生成器函数体执行期间绑定的暂停/恢复通道。
@@ -516,7 +529,7 @@ class Interpreter(
             variableEnv = varEnvironment,
             // 嵌套 eval 仍处于外层函数的参数初始化阶段
             inParameterInitialization = caller.inParameterInitialization,
-        )
+        ).also { it.sourceModule = caller.sourceModule }
         // 直接 eval 不经过 callFunction，也必须计入深度。先检查再切换执行帧，
         // 避免超限抛错发生在 try/finally 之外时破坏调用方的词法环境。
         pushStackFrame("<eval>", program.range, sourceInfo = SourceInfo("<eval>"))
@@ -2509,7 +2522,7 @@ class Interpreter(
         thisInitialized = function.lexicalThisSource?.thisBound ?: true,
         variableEnv = variableEnvironment,
         inParameterInitialization = scope.hasParameterExpressions,
-    )
+    ).also { it.sourceModule = function.sourceModule }
 
     /**
      * 创建 arguments 对象并绑定形参（默认值/解构/rest 在参数环境中求值）。
@@ -2779,7 +2792,7 @@ class Interpreter(
             isConstructor = true,
             variableEnv = calleeEnv,
             inParameterInitialization = hasParameterExpressions,
-        )
+        ).also { it.sourceModule = function.sourceModule }
         pushStackFrame(function.name.ifEmpty { "anonymous" }, function.body?.range, sourceInfo = function.sourceInfo)
         frame = functionFrame
         val activeFrame = functionFrame
@@ -2937,6 +2950,9 @@ class Interpreter(
             sourceInfo = sourceInfo,
         )
         function.sourceText = sourceText
+        // 模块内嵌套函数在延迟回调中创建时 currentModuleRecord 可能已清空，
+        // 回退到当前执行帧所属模块，保证后续 import.meta / import() 仍可定位。
+        function.sourceModule = currentModuleRecord ?: frame?.sourceModule
         // ES5 15.3.5.4：非严格普通函数的 caller/arguments 是值为 null 的自有数据属性；
         // 严格函数、箭头、方法、async 与生成器函数不定义（读取落到 Function.prototype 拒绝访问器）
         if (!strict && !isArrow && !isMethod && !isAsync && !isGenerator) {
@@ -4498,10 +4514,10 @@ class Interpreter(
             is ClassExpression -> evaluateClass(expression.name, expression.superClass, expression.members, expression.sourceText)
             is SuperExpr -> throw syntaxError("'super' keyword unexpected here")
             is NewTargetExpr -> currentFrame.newTarget ?: JSUndefined
-            // 模块表达式节点只由 parseModule 产生；模块求值属于 L4.3，脚本执行不会到达这里。
-            is ImportMetaExpr -> currentModuleRecord?.importMeta
+            // 模块表达式节点只由 parseModule 产生；脚本目标访问 import.meta 或 import() 时报 SyntaxError。
+            is ImportMetaExpr -> resolveModuleRecord()?.importMeta
                 ?: throw syntaxError("import.meta is only available in module code")
-            is ImportCallExpr -> throw syntaxError("Dynamic import is not supported")
+            is ImportCallExpr -> evaluateDynamicImport(expression)
 
             is YieldExpression -> evaluateYield(expression)
 
@@ -4649,6 +4665,90 @@ class Interpreter(
 
             is SpreadElement -> throw syntaxError("Unexpected spread element")
         }
+    }
+
+    /**
+     * 动态 `import()`：同步求值说明符与选项，加载/链接/求值在微任务中完成。
+     *
+     * 说明符/选项求值错误同步抛出；模块加载、链接与求值错误以 Promise 拒绝上报。
+     */
+    @OptIn(ExperimentalModuleApi::class)
+    private suspend fun evaluateDynamicImport(expression: ImportCallExpr): JSValue {
+        val record = resolveModuleRecord()
+            ?: throw syntaxError("import() is only available in module code")
+        val runtime = record.runtime ?: moduleRuntime
+            ?: throw syntaxError("import() is only available in module code")
+        val specifierExpression = expression.specifier
+            ?: throw typeError("import() requires a module specifier")
+        val specifier = toStringValue(evaluate(specifierExpression))
+        val attributes = expression.options?.let { readImportAttributes(evaluate(it)) } ?: emptyMap()
+
+        val promise = JSPromise(intrinsics.promisePrototype)
+        context.eventLoop.enqueueMicrotask {
+            val job = forkForCallback()
+            job.currentModuleRecord = record
+            job.moduleRuntime = runtime
+            try {
+                val namespace = runtime.importModule(job, specifier, record, attributes)
+                PromiseSupport.resolve(job, promise, namespace)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: ExecutionLimitException) {
+                throw error
+            } catch (error: ResourceLimitException) {
+                throw error
+            } catch (error: JSException) {
+                PromiseSupport.reject(job, promise, error.value, error.stack)
+            } catch (error: ModuleLinkException) {
+                PromiseSupport.reject(
+                    job,
+                    promise,
+                    JSError(
+                        errorName = "Error",
+                        messageText = error.message ?: "Module loading failed",
+                        prototype = job.intrinsics.errorPrototype,
+                    ),
+                    job.captureStack(),
+                )
+            } catch (error: Throwable) {
+                PromiseSupport.reject(
+                    job,
+                    promise,
+                    JSError(
+                        errorName = "InternalError",
+                        messageText = error.message ?: error::class.simpleName ?: "Module loading failed",
+                        prototype = job.intrinsics.errorPrototype,
+                    ),
+                    job.captureStack(),
+                )
+            }
+        }
+        return promise
+    }
+
+    /** 读取 `import(..., options)` 的 `with` 属性表；只接受字符串值。 */
+    private suspend fun readImportAttributes(options: JSValue): Map<String, String> {
+        if (options is JSUndefined) return emptyMap()
+        if (options !is JSObject) {
+            throw typeError("import() options must be an object")
+        }
+        val withValue = getV(options, PropertyKey.Str("with"))
+        if (withValue is JSUndefined) return emptyMap()
+        if (withValue !is JSObject) {
+            throw typeError("Import attributes must be an object")
+        }
+        val attributes = LinkedHashMap<String, String>()
+        for (key in internalOwnPropertyKeys(withValue)) {
+            if (key !is PropertyKey.Str) continue
+            val descriptor = internalGetOwnProperty(withValue, key) ?: continue
+            if (!descriptor.enumerable) continue
+            val value = getV(withValue, key)
+            if (value !is JSString) {
+                throw typeError("Import attribute value must be a string")
+            }
+            attributes[key.value] = value.value
+        }
+        return attributes
     }
 
     private suspend fun evaluateArrayLiteral(expression: ArrayLiteral): JSValue {
@@ -5540,7 +5640,7 @@ class Interpreter(
                     thisInitialized = !derived,
                     variableEnv = calleeEnv,
                     inParameterInitialization = hasParameterExpressions,
-                )
+                ).also { it.sourceModule = superConstructor.sourceModule }
                 pushStackFrame(
                     superConstructor.name.ifEmpty { "anonymous" }, superConstructor.body?.range,
                     sourceInfo = superConstructor.sourceInfo,

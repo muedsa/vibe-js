@@ -40,6 +40,8 @@ internal sealed interface ModuleImportBinding {
 internal class ModuleRecord(
     val source: ModuleSource,
     val program: ModuleProgram,
+    /** 产生该记录的一次运行宿主状态；直接构造 resolver 的测试为 null。 */
+    val runtime: ModuleRuntime? = null,
 ) {
     val id: String get() = source.id
     val sourceName: String get() = source.sourceName

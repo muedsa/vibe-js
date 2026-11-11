@@ -25,12 +25,17 @@ public annotation class ExperimentalModuleApi
  * 一次模块请求。
  *
  * [specifier] 是源码中写的原始说明符；核心不解释路径、URL 或平台语义，
- * 只把它连同 [referrer] 原样交给 [ModuleProvider]。入口请求的 referrer 为 null。
+ * 只把它连同 [referrer] 与 [attributes] 原样交给 [ModuleProvider]。入口请求的
+ * referrer 为 null 且 attributes 为空。
+ *
+ * [attributes] 来自静态 `with { ... }` 或动态 `import(..., { with: ... })`，
+ * 键与值都是已转换的字符串；同一说明符带不同属性在 MVP 中会被解析器拒绝。
  */
 @ExperimentalModuleApi
 public data class ModuleRequest(
     public val specifier: String,
     public val referrer: String? = null,
+    public val attributes: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -57,6 +62,17 @@ public data class ModuleSource(
 @ExperimentalModuleApi
 public fun interface ModuleProvider {
     public suspend fun load(request: ModuleRequest): ModuleSource?
+
+    /**
+     * 解析说明符但不执行模块，供 `import.meta.resolve` 使用。
+     *
+     * 默认实现退化为 [load] 并返回 `url ?: id`；需要避免加载副作用的宿主应覆盖。
+     * 返回 null 表示无法解析。
+     */
+    public suspend fun resolve(request: ModuleRequest): String? {
+        val source = load(request) ?: return null
+        return source.url ?: source.id
+    }
 }
 
 /** 没有依赖的入口可使用的空 Provider。 */

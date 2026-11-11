@@ -6,6 +6,7 @@ import com.muedsa.js.ast.FunctionDeclaration
 import com.muedsa.js.ast.Parameter
 import com.muedsa.js.runtime.Environment
 import com.muedsa.js.lexer.SourceInfo
+import com.muedsa.js.runtime.module.internal.ModuleRecord
 
 /**
  * 用户定义的 JavaScript 函数（包括普通函数、箭头函数、类构造器）。
@@ -65,6 +66,9 @@ class JSFunction(
     /** 函数定义所在的脚本；跨多次 run 调用时不能使用调用方脚本替代。 */
     val sourceInfo: SourceInfo = SourceInfo(),
 ) : JSObject(prototype) {
+
+    /** 函数定义所在的模块记录；用于延迟回调中的 import.meta / import()。 */
+    internal var sourceModule: ModuleRecord? = null
 
     /** 方法所属对象（super 查找基准）；对象字面量方法在构造后补充。 */
     var homeObject: JSObject? = homeObject

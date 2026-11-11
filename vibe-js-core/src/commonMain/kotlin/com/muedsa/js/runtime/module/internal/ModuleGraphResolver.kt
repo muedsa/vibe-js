@@ -25,10 +25,12 @@ import kotlinx.coroutines.ensureActive
  */
 internal class ModuleGraphResolver(
     private val limits: EngineLimits,
+    private val runtime: ModuleRuntime? = null,
 ) {
     private data class RequestKey(
         val specifier: String,
         val referrer: String?,
+        val attributes: Map<String, String>,
     )
 
     private val records = LinkedHashMap<String, ModuleRecord>()
@@ -44,20 +46,41 @@ internal class ModuleGraphResolver(
             referrer = null,
             provider = provider,
         )
-        return ModuleGraph(entryRecord, records.toMap())
+        return graphFor(entryRecord)
     }
 
     suspend fun load(entrySpecifier: String, provider: ModuleProvider): ModuleGraph {
         currentCoroutineContext().ensureActive()
         reset()
-        val source = provider.load(ModuleRequest(entrySpecifier, referrer = null))
-            ?: throw ModuleLinkException(
-                kind = ModuleLinkErrorKind.NOT_FOUND,
-                specifier = entrySpecifier,
-                referrer = null,
-                message = "Module not found: $entrySpecifier",
-            )
-        return load(source, provider)
+        val entryRecord = loadRequest(
+            specifier = entrySpecifier,
+            referrer = null,
+            attributes = emptyMap(),
+            provider = provider,
+        )
+        return graphFor(entryRecord)
+    }
+
+    /**
+     * 动态 `import()`：加载说明符对应的模块及其静态依赖，返回只包含可达模块的图。
+     *
+     * 不重置记录缓存，因此同一次运行内重复动态导入会复用已加载模块；也不执行链接/
+     * 求值，由调用方在合适的执行上下文中完成。
+     */
+    suspend fun loadDynamic(
+        specifier: String,
+        referrer: String,
+        attributes: Map<String, String>,
+        provider: ModuleProvider,
+    ): ModuleGraph {
+        currentCoroutineContext().ensureActive()
+        val record = loadRequest(
+            specifier = specifier,
+            referrer = referrer,
+            attributes = attributes,
+            provider = provider,
+        )
+        return graphFor(record)
     }
 
     /** 同一 loader 可重复使用；每次公开 load 都从空图开始。 */
@@ -113,32 +136,59 @@ internal class ModuleGraphResolver(
         val record = ModuleRecord(
             source = source,
             program = program,
+            runtime = runtime,
         )
         records[source.id] = record
         totalSourceLength = nextTotal
 
         for (dependencySpecifier in program.requestedModules) {
             currentCoroutineContext().ensureActive()
-            val key = RequestKey(dependencySpecifier, source.id)
-            val dependency = requestCache[key] ?: run {
-                val loaded = provider.load(
-                    ModuleRequest(dependencySpecifier, referrer = source.id),
-                ) ?: throw ModuleLinkException(
-                    kind = ModuleLinkErrorKind.NOT_FOUND,
-                    specifier = dependencySpecifier,
-                    referrer = source.id,
-                    message = "Module not found: $dependencySpecifier (referrer=${source.id})",
-                )
-                loadSource(
-                    source = loaded,
-                    specifier = dependencySpecifier,
-                    referrer = source.id,
-                    provider = provider,
-                ).also { requestCache[key] = it }
-            }
+            val attributes = program.requestedAttributes[dependencySpecifier] ?: emptyMap()
+            val dependency = loadRequest(
+                specifier = dependencySpecifier,
+                referrer = source.id,
+                attributes = attributes,
+                provider = provider,
+            )
             record.dependencies.add(dependency)
         }
         return record
+    }
+
+    private suspend fun loadRequest(
+        specifier: String,
+        referrer: String?,
+        attributes: Map<String, String>,
+        provider: ModuleProvider,
+    ): ModuleRecord {
+        val key = RequestKey(specifier, referrer, attributes)
+        requestCache[key]?.let { return it }
+        val loaded = provider.load(
+            ModuleRequest(specifier, referrer = referrer, attributes = attributes),
+        ) ?: throw ModuleLinkException(
+            kind = ModuleLinkErrorKind.NOT_FOUND,
+            specifier = specifier,
+            referrer = referrer,
+            message = "Module not found: $specifier" +
+                (referrer?.let { " (referrer=$it)" } ?: ""),
+        )
+        return loadSource(
+            source = loaded,
+            specifier = specifier,
+            referrer = referrer,
+            provider = provider,
+        ).also { requestCache[key] = it }
+    }
+
+    /** 从入口按依赖闭包收集记录，避免把此前动态导入的无关模块纳入同一图。 */
+    private fun graphFor(entry: ModuleRecord): ModuleGraph {
+        val reachable = LinkedHashMap<String, ModuleRecord>()
+        fun visit(record: ModuleRecord) {
+            if (reachable.put(record.id, record) != null) return
+            record.dependencies.forEach(::visit)
+        }
+        visit(entry)
+        return ModuleGraph(entry, reachable)
     }
 
     private fun parse(source: ModuleSource): com.muedsa.js.ast.ModuleProgram {

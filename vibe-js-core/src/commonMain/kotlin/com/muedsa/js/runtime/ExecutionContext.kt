@@ -1,5 +1,6 @@
 package com.muedsa.js.runtime
 
+import com.muedsa.js.runtime.module.internal.ModuleRecord
 import com.muedsa.js.runtime.value.JSFunction
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.ThisBindingSource
@@ -32,6 +33,9 @@ class ExecutionContext(
     /** 是否正处于参数初始化阶段（参数默认值/解构求值期间） */
     var inParameterInitialization: Boolean = false,
 ) : ThisBindingSource {
+
+    /** 函数定义所在的模块；脚本或宿主函数为 null，供 import.meta / import() 使用。 */
+    internal var sourceModule: ModuleRecord? = null
 
     override var boundThis: JSValue
         get() = thisValue

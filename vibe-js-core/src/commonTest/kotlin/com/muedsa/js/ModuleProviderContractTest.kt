@@ -26,6 +26,42 @@ import kotlin.test.assertTrue
 class ModuleProviderContractTest {
 
     @Test
+    fun `Provider resolve 默认复用 load 并优先 url`() = runTest {
+        val requests = mutableListOf<ModuleRequest>()
+        val provider = ModuleProvider { request ->
+            requests += request
+            ModuleSource(id = "dep", source = "", url = "https://example.test/dep.mjs")
+        }
+        assertEquals(
+            "https://example.test/dep.mjs",
+            provider.resolve(ModuleRequest("./dep.js", referrer = "entry")),
+        )
+        assertEquals(
+            ModuleRequest("./dep.js", referrer = "entry"),
+            requests.single(),
+        )
+
+        val withoutUrl = ModuleProvider { ModuleSource(id = "fallback", source = "") }
+        assertEquals("fallback", withoutUrl.resolve(ModuleRequest("fallback")))
+    }
+
+    @Test
+    fun `Provider 可覆盖 resolve 而不触发 load`() = runTest {
+        var loads = 0
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? {
+                loads += 1
+                return null
+            }
+
+            override suspend fun resolve(request: ModuleRequest): String =
+                "custom:${request.specifier}"
+        }
+        assertEquals("custom:./dep.js", provider.resolve(ModuleRequest("./dep.js")))
+        assertEquals(0, loads)
+    }
+
+    @Test
     fun `入口与依赖请求的 referrer 契约`() = runTest {
         val requests = mutableListOf<ModuleRequest>()
         val provider = ModuleProvider { request ->

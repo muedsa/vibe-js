@@ -12,8 +12,11 @@ import com.muedsa.js.runtime.module.ModuleLinkException
 import com.muedsa.js.runtime.module.ModuleProvider
 import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
+import com.muedsa.js.runtime.value.JSError
+import com.muedsa.js.runtime.value.JSFunction
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSPromise
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.PropertyKey
@@ -146,6 +149,146 @@ class ModuleExecutionTest {
     }
 
     @Test
+    fun `静态 import 的 with 属性传给 Provider`() = runTest {
+        val requests = mutableListOf<ModuleRequest>()
+        val engine = Engine()
+        val provider = ModuleProvider { request ->
+            requests.add(request)
+            when (request.specifier) {
+                "./b.js" -> source("b", "export const x = 1;")
+                else -> null
+            }
+        }
+        val namespace = engine.runModule(
+            source("a", """import { x } from "./b.js" with { type: "json" }; export { x };"""),
+            provider,
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("x"))
+        assertEquals(1.0, (result as JSNumber).value)
+        assertEquals(mapOf("type" to "json"), requests.single().attributes)
+    }
+
+    @Test
+    fun `动态 import 的 with 值非字符串时同步抛 TypeError`() = runTest {
+        val engine = Engine()
+        val error = assertFailsWith<JSException> {
+            engine.runModule(
+                source("a", """import("./b.js", { with: { type: 1 } });"""),
+                Provider(mapOf("./b.js" to source("b", "export const x = 1;"))),
+            )
+        }
+        assertEquals("TypeError", (error.value as JSError).errorName)
+    }
+
+    @Test
+    fun `动态 import 求值失败时拒绝 Promise`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export var message = "pending";
+                import("./bad.js").then(function () {
+                    message = "resolved";
+                }, function (error) {
+                    message = error.message;
+                });
+                """.trimIndent(),
+            ),
+            Provider(mapOf("./bad.js" to source("bad", "throw new Error(\"boom\");"))),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("message"))
+        assertEquals("boom", (result as JSString).value)
+    }
+
+    @Test
+    fun `同一模块的重复动态 import 只求值一次`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export var result = 0;
+                Promise.all([import("./b.js"), import("./b.js")]).then(function (values) {
+                    result = values[0] === values[1] ? values[1].count : -1;
+                });
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./b.js" to source(
+                        "b",
+                        """
+                        globalThis.__dynamicCount = (globalThis.__dynamicCount || 0) + 1;
+                        export const count = globalThis.__dynamicCount;
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("result"))
+        assertEquals(1.0, (result as JSNumber).value)
+        assertEquals(1.0, (engine.run("globalThis.__dynamicCount") as JSNumber).value)
+    }
+
+    @Test
+    fun `模块函数延迟回调仍可访问 import 元数据与动态导入`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export function resolveB() {
+                    return import.meta.resolve("./b.js");
+                }
+                export function loadB() {
+                    return import("./b.js").then(function (ns) {
+                        return ns.x;
+                    });
+                }
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf("./b.js" to source("b", "export const x = 1;", url = "https://example.test/b.js")),
+            ),
+        )
+        val resolveB = engine.interpreter.getProperty(namespace, PropertyKey.Str("resolveB")) as JSFunction
+        val resolved = engine.interpreter.callFunction(resolveB, JSUndefined, emptyList()) as JSString
+        assertEquals("https://example.test/b.js", resolved.value)
+
+        val loadB = engine.interpreter.getProperty(namespace, PropertyKey.Str("loadB")) as JSFunction
+        val promise = engine.interpreter.callFunction(loadB, JSUndefined, emptyList()) as JSPromise
+        engine.eventLoop.drainMicrotasks()
+        assertEquals(1.0, (promise.awaitResult() as JSNumber).value)
+    }
+
+    @Test
+    fun `模块 async 函数在 await 后仍可解析 import 元数据`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export async function resolveAfterAwait() {
+                    await 0;
+                    return import.meta.resolve("./b.js");
+                }
+                """.trimIndent(),
+            ),
+            Provider(mapOf("./b.js" to source("b", "export const x = 1;", url = "https://example.test/b.js"))),
+        )
+        val function = engine.interpreter.getProperty(
+            namespace, PropertyKey.Str("resolveAfterAwait"),
+        ) as JSFunction
+        val promise = engine.interpreter.callFunction(function, JSUndefined, emptyList()) as JSPromise
+        engine.eventLoop.drainMicrotasks()
+        assertEquals("https://example.test/b.js", (promise.awaitResult() as JSString).value)
+    }
+
+    @Test
     fun `TLA 在链接期被拒绝`() = runTest {
         val engine = Engine()
         val error = assertFailsWith<ModuleLinkException> {
@@ -155,12 +298,82 @@ class ModuleExecutionTest {
     }
 
     @Test
-    fun `动态 import 在执行到表达式时抛出 SyntaxError`() = runTest {
+    fun `动态 import 解析 namespace 并执行依赖`() = runTest {
         val engine = Engine()
-        val error = assertFailsWith<JSException> {
-            engine.runModule(source("a", "import(\"./b.js\");"))
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export var result = "pending";
+                import("./b.js").then(function (ns) {
+                    result = ns.x;
+                });
+                """.trimIndent(),
+            ),
+            Provider(mapOf("./b.js" to source("b", "export const x = 1;"))),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("result"))
+        assertEquals(1.0, (result as JSNumber).value)
+    }
+
+    @Test
+    fun `动态 import 找不到模块时拒绝 Promise`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export var name = "pending";
+                import("./missing.js").then(function () {
+                    name = "resolved";
+                }, function (error) {
+                    name = error.name;
+                });
+                """.trimIndent(),
+            ),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("name"))
+        assertEquals("Error", (result as JSString).value)
+    }
+
+    @Test
+    fun `动态 import 将 with 属性传给 Provider`() = runTest {
+        val requests = mutableListOf<ModuleRequest>()
+        val engine = Engine()
+        val provider = ModuleProvider { request ->
+            requests.add(request)
+            if (request.specifier == "./b.js") source("b", "export const x = 1;") else null
         }
-        assertTrue(error.message?.contains("Dynamic import") == true)
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export var result = 0;
+                import("./b.js", { with: { type: "json" } }).then(function (ns) {
+                    result = ns.x;
+                });
+                """.trimIndent(),
+            ),
+            provider,
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("result"))
+        assertEquals(1.0, (result as JSNumber).value)
+        assertEquals(mapOf("type" to "json"), requests.single().attributes)
+    }
+
+    @Test
+    fun `import 元属性 resolve 使用 Provider 解析结果`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("a", "export const resolved = import.meta.resolve(\"./b.js\");"),
+            Provider(mapOf("./b.js" to source("b", "export const x = 1;", url = "https://example.test/b.js"))),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("resolved"))
+        assertEquals("https://example.test/b.js", (result as JSString).value)
     }
 
     @Test

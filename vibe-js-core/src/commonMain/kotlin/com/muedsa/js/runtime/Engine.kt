@@ -15,8 +15,8 @@ import com.muedsa.js.runtime.module.ModuleProvider
 import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.module.internal.ModuleEvaluator
 import com.muedsa.js.runtime.module.internal.ModuleGraph
-import com.muedsa.js.runtime.module.internal.ModuleGraphResolver
 import com.muedsa.js.runtime.module.internal.ModuleLinker
+import com.muedsa.js.runtime.module.internal.ModuleRuntime
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSValue
@@ -244,8 +244,9 @@ class Engine(
     ): JSObject {
         currentCoroutineContext().ensureActive()
         eventLoop.ensureOpen()
-        val graph = ModuleGraphResolver(limits).load(entry, provider)
-        return executeModuleGraph(graph)
+        val runtime = ModuleRuntime(provider, limits)
+        val graph = runtime.loadEntry(entry)
+        return executeModuleGraph(graph, runtime)
     }
 
     /** 从入口说明符加载并执行模块图。 */
@@ -256,13 +257,15 @@ class Engine(
     ): JSObject {
         currentCoroutineContext().ensureActive()
         eventLoop.ensureOpen()
-        val graph = ModuleGraphResolver(limits).load(entrySpecifier, provider)
-        return executeModuleGraph(graph)
+        val runtime = ModuleRuntime(provider, limits)
+        val graph = runtime.loadEntry(entrySpecifier)
+        return executeModuleGraph(graph, runtime)
     }
 
     @OptIn(ExperimentalModuleApi::class)
-    private suspend fun executeModuleGraph(graph: ModuleGraph): JSObject {
+    private suspend fun executeModuleGraph(graph: ModuleGraph, runtime: ModuleRuntime): JSObject {
         ModuleLinker.link(graph)
+        interpreter.moduleRuntime = runtime
         return eventLoop.runTask {
             val previousBudget = eventLoop.executionBudget
             val budget = ExecutionBudget(limits.maxSteps)
