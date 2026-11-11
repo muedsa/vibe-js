@@ -4913,6 +4913,34 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    DifferentialCase(
+        "object-from-entries-key-to-primitive-symbol",
+        """(function () {
+  var symbol = Symbol('k');
+  var key = {
+    [Symbol.toPrimitive]: function () {
+      return symbol;
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return object[symbol] + ':' + Object.getOwnPropertySymbols(object).length;
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-key-value-of-bigint",
+        """(function () {
+  var key = {
+    valueOf: function () {
+      return 1n;
+    },
+    toString: function () {
+      return 'x';
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return Object.keys(object).join(',') + ':' + object['1'];
+})()""",
+    ),
     // Object.fromEntries 重复符号键由后者覆盖并保留首次顺序。
     DifferentialCase(
         "object-from-entries-duplicate-symbol",
