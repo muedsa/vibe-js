@@ -4813,6 +4813,34 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object.a;
 })()""",
     ),
+    // Object.fromEntries 的 done 为 NaN 时按 false 继续。
+    DifferentialCase(
+        "object-from-entries-done-nan",
+        """(function () {
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: ['a', 1], done: NaN } : { done: true };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).join(',') + ':' + object.a;
+})()""",
+    ),
+    // Object.fromEntries 的 done 为 -0 时按 false 继续。
+    DifferentialCase(
+        "object-from-entries-done-negative-zero",
+        """(function () {
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: ['a', 1], done: -0 } : { done: true };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).join(',') + ':' + object.a;
+})()""",
+    ),
     // Object.fromEntries 的 next 结果缺少 done 时按 false 处理；无效条目抛 TypeError。
     DifferentialCase(
         "object-from-entries-missing-done",
