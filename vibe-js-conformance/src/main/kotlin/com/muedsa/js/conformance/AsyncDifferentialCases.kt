@@ -3755,6 +3755,60 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-thenable-first-wins",
+        """
+        var log = [];
+        Array.fromAsync([1], function () {
+          return {
+            then: function (resolve) {
+              resolve('first');
+              resolve('second');
+            }
+          };
+        }).then(function (values) {
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-then-getter-throw",
+        """
+        var log = [];
+        var source = {
+          [Symbol.iterator]: function () {
+            var index = 0;
+            return {
+              next: function () {
+                log.push('next');
+                return index < 2 ? { value: ++index, done: false } : { done: true };
+              },
+              return: function () {
+                log.push('return');
+                return { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          if (value === 2) {
+            return {
+              get then() {
+                throw new Error('sync-then-getter');
+              }
+            };
+          }
+          return value;
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-sync-mapper-thenable-reject-closes",
         """
         var log = [];
