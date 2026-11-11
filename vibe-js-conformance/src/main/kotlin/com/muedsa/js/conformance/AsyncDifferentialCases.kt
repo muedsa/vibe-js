@@ -2698,6 +2698,40 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-mapper-shrinks-length",
+        """
+        var log = [];
+        var source = { length: 2, 0: 'a', 1: 'b' };
+        Array.fromAsync(source, function (value, index) {
+          if (index === 0) {
+            source.length = 1;
+          }
+          return value;
+        }).then(function (values) {
+          log.push(values.length);
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-mapper-grows-length",
+        """
+        var log = [];
+        var source = { length: 2, 0: 'a', 1: 'b', 2: 'c' };
+        Array.fromAsync(source, function (value, index) {
+          if (index === 0) {
+            source.length = 3;
+          }
+          return value;
+        }).then(function (values) {
+          log.push(values.length);
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-array-like-index-getter-throw",
         """
         var log = [];
