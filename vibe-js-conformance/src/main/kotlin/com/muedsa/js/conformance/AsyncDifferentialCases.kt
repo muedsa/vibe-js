@@ -10152,6 +10152,82 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-four-level-rejected-promise",
+        """
+        var log = [];
+        var fourth = {
+          then: function (resolve) {
+            resolve(Promise.reject(new Error('four-level-rejected')));
+          }
+        };
+        var third = {
+          then: function (resolve) {
+            resolve(fourth);
+          }
+        };
+        var second = {
+          then: function (resolve) {
+            resolve(third);
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(second);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-four-level-promise-null",
+        """
+        var log = [];
+        var fourth = {
+          then: function (resolve) {
+            resolve(Promise.resolve(null));
+          }
+        };
+        var third = {
+          then: function (resolve) {
+            resolve(fourth);
+          }
+        };
+        var second = {
+          then: function (resolve) {
+            resolve(third);
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(second);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-string",
         """
         var log = [];
