@@ -2019,6 +2019,49 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-value-of-throw",
+        """
+        var log = [];
+        var source = {
+          length: {
+            valueOf: function () {
+              throw new Error('length-value-of');
+            }
+          }
+        };
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-to-string-throw",
+        """
+        var log = [];
+        var source = {
+          length: {
+            valueOf: function () {
+              return {};
+            },
+            toString: function () {
+              throw new Error('length-to-string');
+            }
+          }
+        };
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-array-like-index-getter-throw",
         """
         var log = [];
