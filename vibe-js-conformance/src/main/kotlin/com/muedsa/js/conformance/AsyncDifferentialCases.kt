@@ -7151,6 +7151,54 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-thenable-array",
+        """
+        var log = [];
+        var index = 0;
+        var iterator = {
+          next: function () {
+            if (index++ === 0) {
+              return {
+                then: function (resolve) {
+                  resolve([]);
+                }
+              };
+            }
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-thenable-boxed-boolean",
+        """
+        var log = [];
+        var index = 0;
+        var iterator = {
+          next: function () {
+            if (index++ === 0) {
+              return {
+                then: function (resolve) {
+                  resolve(new Boolean(false));
+                }
+              };
+            }
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-then-non-callable",
         """
         var log = [];
