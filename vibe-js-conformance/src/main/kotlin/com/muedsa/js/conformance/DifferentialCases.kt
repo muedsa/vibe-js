@@ -4971,6 +4971,55 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object.null;
 })()""",
     ),
+    DifferentialCase(
+        "object-from-entries-key-to-string-fallback",
+        """(function () {
+  var log = [];
+  var key = {
+    toString: function () {
+      log.push('toString');
+      return {};
+    },
+    valueOf: function () {
+      log.push('valueOf');
+      return 'k';
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  log.push(object.k);
+  return log.join(',');
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-key-non-primitive",
+        """(function () {
+  var log = [];
+  var key = {
+    toString: function () {
+      return {};
+    },
+    valueOf: function () {
+      return {};
+    }
+  };
+  var iterator = {
+    next: function () {
+      return { value: { 0: key, 1: 1, length: 2 }, done: false };
+    },
+    return: function () {
+      log.push('return');
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    log.push('ok');
+  } catch (error) {
+    log.push('reject:' + error.name);
+  }
+  return log.join(',');
+})()""",
+    ),
     // Object.fromEntries 重复符号键由后者覆盖并保留首次顺序。
     DifferentialCase(
         "object-from-entries-duplicate-symbol",
