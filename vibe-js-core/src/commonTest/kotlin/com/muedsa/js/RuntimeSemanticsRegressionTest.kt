@@ -1876,6 +1876,72 @@ class RuntimeSemanticsRegressionTest {
         )
         assertEquals("reject:map", runtime.evalString("log.join(',')"))
     }
+
+    @Test
+    fun `Array fromAsync 异步 return 拒绝时保留原错误`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var log = [];
+                var index = 0;
+                var iterator = {
+                    next: function () {
+                        return Promise.resolve(
+                            index++ === 0 ? { value: 1, done: false } : { done: true }
+                        );
+                    },
+                    return: function () {
+                        return Promise.reject(new Error('return-reject'));
+                    }
+                };
+                Array.fromAsync(
+                    { [Symbol.asyncIterator]: function () { return iterator; } },
+                    function () { throw new Error('map'); }
+                ).then(
+                    function () {
+                        log.push('fulfilled');
+                    },
+                    function (error) {
+                        log.push('reject:' + error.message);
+                    }
+                );
+            """.trimIndent()
+        )
+        assertEquals("reject:map", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
+    fun `Array fromAsync 异步 return 抛错时保留原错误`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var log = [];
+                var index = 0;
+                var iterator = {
+                    next: function () {
+                        return Promise.resolve(
+                            index++ === 0 ? { value: 1, done: false } : { done: true }
+                        );
+                    },
+                    return: function () {
+                        throw new Error('return-throw');
+                    }
+                };
+                Array.fromAsync(
+                    { [Symbol.asyncIterator]: function () { return iterator; } },
+                    function () { throw new Error('map'); }
+                ).then(
+                    function () {
+                        log.push('fulfilled');
+                    },
+                    function (error) {
+                        log.push('reject:' + error.message);
+                    }
+                );
+            """.trimIndent()
+        )
+        assertEquals("reject:map", runtime.evalString("log.join(',')"))
+    }
     @Test
     fun `Array fromAsync 同步迭代器 done 为 true 时不读取 value`() = runTest {
         val runtime = TestRuntime()

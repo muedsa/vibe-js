@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1163 / 1163** | 2026-11-11 本地运行 |
-| core JS / Wasm（Node） | 各 **1147 / 1147** | 2026-11-11 复跑 |
+| core JVM 单元测试 | **1165 / 1165** | 2026-11-11 本地运行 |
+| core JS / Wasm（Node） | 各 **1149 / 1149** | 2026-11-11 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -851,6 +851,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B437~B438 Array.fromAsync 异步 next getter 空值**：新增 getter 返回 undefined 与布尔均拒绝 TypeError 2 条异步用例；差分 988→990/990 |
 | 2026-11-11 | **S2.2-B439~B440 Array.fromAsync return 非函数与 getter 抛错**：新增核心单测固定 Vibe 保留原错误；Node 24 的 Promise 不 settle，记录为已知差异；核心 1161/1145 |
 | 2026-11-11 | **S2.2-B441~B442 Array.fromAsync 异步迭代器 return 非函数与 getter 抛错**：新增 2 条核心单测固定异步关闭路径保留原错误；核心 1163/1147 |
+| 2026-11-11 | **S2.2-B443~B444 Array.fromAsync 异步 return 拒绝与调用抛错**：新增 2 条核心单测固定 throw 完成下保留原错误；核心 1165/1149 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
