@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1159 / 1159** | 2026-11-11 本地运行 |
-| core JS / Wasm（Node） | 各 **1143 / 1143** | 2026-11-11 复跑 |
+| core JVM 单元测试 | **1161 / 1161** | 2026-11-11 本地运行 |
+| core JS / Wasm（Node） | 各 **1145 / 1145** | 2026-11-11 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -849,6 +849,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B433~B434 Array.fromAsync 同步 next getter**：新增 getter 抛错传播原错误、getter 返回数字拒绝 TypeError 2 条异步用例；差分 984→986/986 |
 | 2026-11-11 | **S2.2-B435~B436 Array.fromAsync 异步 next getter**：新增 getter 返回数字与 null 均拒绝 TypeError 2 条异步用例；差分 986→988/988 |
 | 2026-11-11 | **S2.2-B437~B438 Array.fromAsync 异步 next getter 空值**：新增 getter 返回 undefined 与布尔均拒绝 TypeError 2 条异步用例；差分 988→990/990 |
+| 2026-11-11 | **S2.2-B439~B440 Array.fromAsync return 非函数与 getter 抛错**：新增核心单测固定 Vibe 保留原错误；Node 24 的 Promise 不 settle，记录为已知差异；核心 1161/1145 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
