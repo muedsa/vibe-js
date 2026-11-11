@@ -449,6 +449,34 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-sparse-mapper-index",
+        """
+        var log = [];
+        var source = { length: 3, 0: 'a' };
+        Array.fromAsync(source, function (value, index) {
+          log.push(index + ':' + String(value));
+          return value;
+        }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-mapper-this-string-sloppy",
+        """
+        var log = [];
+        Array.fromAsync([1], function () {
+          log.push(typeof this);
+          log.push(this instanceof String);
+          log.push(this.valueOf());
+          return 1;
+        }, 'abc').then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-constructor-returns-object",
         """
         var log = [];
