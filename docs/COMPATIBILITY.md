@@ -188,7 +188,7 @@
 - `Object.fromEntries` 在迭代器 `next` 抛错、`next` 结果非对象或 `done` getter 抛错时不调用 `iterator.return`（规范与 Test262 期望）；Node 24 会调用 `return`，这些分支不纳入差分，由核心单测固定规范行为；
 - `Array.fromAsync` 以 `String` 作为 `this` 时，写入 `length` 于 String 包装对象会按 `Set` 语义失败并拒绝 `TypeError`；Node 24 会静默保留 `length = 0` 并完成，该分支不纳入差分，由核心单测固定；
 - `Array.fromAsync` 同步迭代器的值拒绝（Promise 或 thenable）时只调用一次 `iterator.return`；Node 24 会调用两次，该分支不纳入差分，由核心单测固定；
-- `Array.fromAsync` 同步迭代器在 mapper 抛错且 `return` 非函数、getter 抛错或返回非对象时，Vibe 按规范保留原错误并拒绝；Node 24 的 Promise 不会 settle（既不 resolve 也不 reject），该分支不纳入差分，由核心单测固定；
+- `Array.fromAsync` 同步迭代器在 mapper 抛错且 `return` 非函数、getter 抛错或返回非对象时，Vibe 按规范保留原错误并拒绝；Node 24 的 Promise 不会 settle（既不 resolve 也不 reject），该分支不纳入差分，由核心单测固定；`return` 返回对象的 `done` getter 抛错时 Node 同样不 settle，差分不覆盖；
 - `Array.fromAsync` 以 `Uint8Array` 等 TypedArray 作为 `this` 时，写入 `length` 按 `Set` 语义失败并拒绝 `TypeError`；Node 24 仍完成写入并 resolve，该分支不纳入差分，由核心单测固定；
 - `Array.fromAsync` 的构造结果继承不可写 `length` 时，Vibe 按 `Set` 语义拒绝 `TypeError`；Node 24 仍完成写入，该分支不纳入差分，由核心单测固定；
 - `Number.prototype.toString(radix)` 在非 2 的幂进制下按规范生成最短往返表示（有效数字最短且能解析回同一 double）；Node/V8 的实现会截断/近似，部分输出无法解析回原 double（如 `(0.1).toString(5)`），因此差分仅对 2 的幂进制比较完整文本，其余进制由自校验与用例覆盖。
