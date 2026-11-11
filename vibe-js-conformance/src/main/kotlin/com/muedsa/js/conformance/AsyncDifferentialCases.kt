@@ -7682,6 +7682,53 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-done-throw",
+        """
+        var log = [];
+        var result = new Proxy({ value: 'a' }, {
+          get: function (target, key) {
+            if (key === 'done') {
+              throw new Error('async-proxy-done');
+            }
+            return target[key];
+          }
+        });
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-value-not-read",
+        """
+        var log = [];
+        var result = new Proxy({ done: true }, {
+          get: function (target, key) {
+            log.push(String(key));
+            return target[key];
+          }
+        });
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-string",
         """
         var log = [];
