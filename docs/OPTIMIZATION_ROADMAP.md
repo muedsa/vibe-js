@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1166 / 1166** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1168 / 1168** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -946,6 +946,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B624~B625 Array.fromAsync 同步 mapper 抛错/拒绝关闭迭代器**：新增抛错与 Promise 拒绝均只关闭一次 2 条异步用例；差分 1160→1162/1162 |
 | 2026-11-11 | **S2.2-B626~B627 Array.fromAsync 同步 mapper thenable**：新增 thenable 正常展开、拒绝时关闭迭代器 2 条异步用例；差分 1162→1164/1164 |
 | 2026-11-11 | **S2.2-B628~B629 Array.fromAsync mapper thenable 先到先得与 then getter 抛错**：新增重复 resolve 只取首次、getter 抛错关闭迭代器 2 条异步用例；差分 1164→1166/1166 |
+| 2026-11-11 | **S2.2-B630~B631 Array.fromAsync mapper then 非函数与嵌套 thenable**：新增非函数 then 保留对象、嵌套 thenable 递归展开 2 条异步用例；差分 1166→1168/1168 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
