@@ -2062,6 +2062,41 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-inherited-index-getter",
+        """
+        var log = [];
+        var proto = {
+          get 0() {
+            return 'inherited';
+          }
+        };
+        var source = Object.create(proto);
+        source.length = 1;
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-proxy-get-order",
+        """
+        var log = [];
+        var target = { length: 2, 0: 'a', 1: 'b' };
+        var source = new Proxy(target, {
+          get: function (object, key) {
+            log.push(String(key));
+            return object[key];
+          }
+        });
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.join(','));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-array-like-index-getter-throw",
         """
         var log = [];
