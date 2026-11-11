@@ -5100,6 +5100,30 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).join(',') + ':' + object['false'];
 })()""",
     ),
+    DifferentialCase(
+        "object-from-entries-key-to-primitive-zero",
+        """(function () {
+  var key = {
+    [Symbol.toPrimitive]: function () {
+      return 0;
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return Object.keys(object).join(',') + ':' + object['0'];
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-key-to-primitive-negative-zero",
+        """(function () {
+  var key = {
+    [Symbol.toPrimitive]: function () {
+      return -0;
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return Object.keys(object).join(',') + ':' + object['0'];
+})()""",
+    ),
     // Object.fromEntries 重复符号键由后者覆盖并保留首次顺序。
     DifferentialCase(
         "object-from-entries-duplicate-symbol",
