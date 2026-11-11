@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1348 / 1348** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1350 / 1350** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -1041,6 +1041,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B810~B811 Array.fromAsync 异步 Proxy 的 then 解析已拒绝 Promise 与嵌套 thenable**：新增拒绝传播、嵌套 thenable 正常展开 2 条异步用例；差分 1342→1344/1344 |
 | 2026-11-11 | **S2.2-B812~B813 Array.fromAsync 异步 Proxy 的 then 解析嵌套 thenable 原始值与抛错**：新增原始值拒绝 TypeError、内层 then 抛错传播 2 条异步用例；差分 1344→1346/1346 |
 | 2026-11-11 | **S2.2-B814~B815 Array.fromAsync 异步 Proxy 的 then 解析嵌套 thenable null 与函数**：新增 null 拒绝 TypeError、函数按对象处理 2 条异步用例；差分 1346→1348/1348 |
+| 2026-11-11 | **S2.2-B816~B817 Array.fromAsync 异步 Proxy 的 then 解析嵌套 thenable 包装布尔与 Date**：新增两者均按对象处理 2 条异步用例；差分 1348→1350/1350 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
