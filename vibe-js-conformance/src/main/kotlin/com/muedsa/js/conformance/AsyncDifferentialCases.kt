@@ -5545,6 +5545,30 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-symbol-length",
+        """
+        var log = [];
+        Array.fromAsync({ length: Symbol('length') }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          log.push('after');
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-null-length",
+        """
+        var log = [];
+        Array.fromAsync({ length: null, 0: 'a' }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-promise-all-proxy-iterable",
         """
         var log = [];
