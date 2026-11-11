@@ -4729,6 +4729,52 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-bigint-value",
+        """(function () {
+  var log = [];
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: { 0: 'k', 1: 1n, length: 2 }, done: false } : { done: true };
+    },
+    return: function () {
+      log.push('return');
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    log.push('ok');
+  } catch (error) {
+    log.push('reject:' + error.name);
+  }
+  return log.join(',');
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-symbol-value",
+        """(function () {
+  var log = [];
+  var index = 0;
+  var iterator = {
+    next: function () {
+      return index++ === 0 ? { value: { 0: 'k', 1: Symbol('v'), length: 2 }, done: false } : { done: true };
+    },
+    return: function () {
+      log.push('return');
+      return { done: true };
+    }
+  };
+  try {
+    Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+    log.push('ok');
+  } catch (error) {
+    log.push('reject:' + error.name);
+  }
+  return log.join(',');
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-proto-key",
         """(function () {
   var object = Object.fromEntries([['__proto__', 1]]);
