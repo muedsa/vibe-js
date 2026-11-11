@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1154 / 1154** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1156 / 1156** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -940,6 +940,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B612~B613 Array.fromAsync array-like Proxy has 顺序与 false**：新增 has/get 交替顺序、has 为 false 时值为 undefined 2 条异步用例；差分 1148→1150/1150，差分总量达到 1150 |
 | 2026-11-11 | **S2.2-B614~B615 Array.fromAsync array-like Proxy has/get 抛错**：新增两个陷阱抛错均保留原错误 2 条异步用例；差分 1150→1152/1152 |
 | 2026-11-11 | **S2.2-B616~B617 Object.fromEntries length 为 undefined 与 null**：新增两者均按 0 处理 2 条同步用例；差分 1152→1154/1154 |
+| 2026-11-11 | **S2.2-B618~B619 Object.fromEntries 条目 length/索引 getter 抛错**：新增两条读取路径抛错均保留原错误 2 条同步用例；差分 1154→1156/1156 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
