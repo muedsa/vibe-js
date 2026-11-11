@@ -5103,6 +5103,43 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).length + ':' + object.a;
 })()""",
     ),
+    // Object.fromEntries 的 done getter 先返回 false 再返回 true。
+    DifferentialCase(
+        "object-from-entries-done-getter-sequence",
+        """(function () {
+  var reads = 0;
+  var iterator = {
+    next: function () {
+      return {
+        value: ['a', 1],
+        get done() {
+          return reads++ > 0;
+        }
+      };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).join(',') + ':' + object.a;
+})()""",
+    ),
+    // Object.fromEntries 的 done getter 返回 true 时立即停止。
+    DifferentialCase(
+        "object-from-entries-done-getter-true",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return {
+        value: ['a', 1],
+        get done() {
+          return true;
+        }
+      };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
     // Object.fromEntries 的 next 结果缺少 done 时按 false 处理；无效条目抛 TypeError。
     DifferentialCase(
         "object-from-entries-missing-done",
