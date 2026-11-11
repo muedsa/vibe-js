@@ -3674,6 +3674,69 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-throw-closes",
+        """
+        var log = [];
+        var source = {
+          [Symbol.iterator]: function () {
+            var index = 0;
+            return {
+              next: function () {
+                log.push('next');
+                return index < 2 ? { value: ++index, done: false } : { done: true };
+              },
+              return: function () {
+                log.push('return');
+                return { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          if (value === 2) {
+            throw new Error('sync-map');
+          }
+          return value;
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-reject-closes",
+        """
+        var log = [];
+        var source = {
+          [Symbol.iterator]: function () {
+            var index = 0;
+            return {
+              next: function () {
+                log.push('next');
+                return index < 2 ? { value: ++index, done: false } : { done: true };
+              },
+              return: function () {
+                log.push('return');
+                return { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          return value === 2 ? Promise.reject(new Error('sync-map-promise')) : value;
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-generator-mapper",
         """
         var log = [];
