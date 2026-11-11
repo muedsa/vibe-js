@@ -130,18 +130,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1171** + 宿主 38 个测试（2026-11-11 记录） |
-| JS（Node） | ✅ | 核心 **1155** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1155** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1172** + 宿主 38 个测试（2026-11-11 记录） |
+| JS（Node） | ✅ | 核心 **1156** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1156** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1171 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1155。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1172 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1156。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-10）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **1323/1323**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-10）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **1324/1324**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -189,6 +189,7 @@
 - `Array.fromAsync` 以 `String` 作为 `this` 时，写入 `length` 于 String 包装对象会按 `Set` 语义失败并拒绝 `TypeError`；Node 24 会静默保留 `length = 0` 并完成，该分支不纳入差分，由核心单测固定；
 - `Array.fromAsync` 同步迭代器的值拒绝（Promise 或 thenable）时只调用一次 `iterator.return`；Node 24 会调用两次，该分支不纳入差分，由核心单测固定；
 - `Array.fromAsync` 同步迭代器在 mapper 抛错且 `return` 非函数、getter 抛错或返回非对象时，Vibe 按规范保留原错误并拒绝；Node 24 的 Promise 不会 settle（既不 resolve 也不 reject），该分支不纳入差分，由核心单测固定；`return` 返回对象的 `done` getter 抛错时 Node 同样不 settle，差分不覆盖；
+- `Array.fromAsync` 同步迭代器在 `next` 结果为 Proxy 且 `done` 为 `true` 时，Vibe 按规范不读取 `value`；Node 24 仍读取 `value`，该分支不纳入差分，由核心单测固定；
 - `Array.fromAsync` 以 `Uint8Array` 等 TypedArray 作为 `this` 时，写入 `length` 按 `Set` 语义失败并拒绝 `TypeError`；Node 24 仍完成写入并 resolve，该分支不纳入差分，由核心单测固定；
 - `Array.fromAsync` 的构造结果继承不可写 `length` 时，Vibe 按 `Set` 语义拒绝 `TypeError`；Node 24 仍完成写入，该分支不纳入差分，由核心单测固定；
 - `Number.prototype.toString(radix)` 在非 2 的幂进制下按规范生成最短往返表示（有效数字最短且能解析回同一 double）；Node/V8 的实现会截断/近似，部分输出无法解析回原 double（如 `(0.1).toString(5)`），因此差分仅对 2 的幂进制比较完整文本，其余进制由自校验与用例覆盖。
