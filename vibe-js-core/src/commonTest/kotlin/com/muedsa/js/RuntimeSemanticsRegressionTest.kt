@@ -1684,6 +1684,22 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Array fromAsync 写入 Uint8Array length 失败`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var out = '';
+                Array.fromAsync.call(Uint8Array, [1]).then(function () {
+                    out = 'fulfilled';
+                }, function (error) {
+                    out = error.name;
+                });
+            """.trimIndent()
+        )
+        assertEquals("TypeError", runtime.evalString("out"))
+    }
+
+    @Test
     fun `Array fromAsync 同步值拒绝只关闭一次迭代器`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(

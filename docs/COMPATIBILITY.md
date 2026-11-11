@@ -130,18 +130,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1169** + 宿主 38 个测试（2026-11-11 记录） |
-| JS（Node） | ✅ | 核心 **1153** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1153** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1170** + 宿主 38 个测试（2026-11-11 记录） |
+| JS（Node） | ✅ | 核心 **1154** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1154** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1169 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1153。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1170 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1154。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-10）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **1108/1108**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-10）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **1109/1109**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -189,6 +189,7 @@
 - `Array.fromAsync` 以 `String` 作为 `this` 时，写入 `length` 于 String 包装对象会按 `Set` 语义失败并拒绝 `TypeError`；Node 24 会静默保留 `length = 0` 并完成，该分支不纳入差分，由核心单测固定；
 - `Array.fromAsync` 同步迭代器的值拒绝（Promise 或 thenable）时只调用一次 `iterator.return`；Node 24 会调用两次，该分支不纳入差分，由核心单测固定；
 - `Array.fromAsync` 同步迭代器在 mapper 抛错且 `return` 非函数或 getter 抛错时，Vibe 按规范保留原错误并拒绝；Node 24 的 Promise 不会 settle（既不 resolve 也不 reject），该分支不纳入差分，由核心单测固定；
+- `Array.fromAsync` 以 `Uint8Array` 等 TypedArray 作为 `this` 时，写入 `length` 按 `Set` 语义失败并拒绝 `TypeError`；Node 24 仍完成写入并 resolve，该分支不纳入差分，由核心单测固定；
 - `Number.prototype.toString(radix)` 在非 2 的幂进制下按规范生成最短往返表示（有效数字最短且能解析回同一 double）；Node/V8 的实现会截断/近似，部分输出无法解析回原 double（如 `(0.1).toString(5)`），因此差分仅对 2 的幂进制比较完整文本，其余进制由自校验与用例覆盖。
 
 ## 7. 测试对应
@@ -248,7 +249,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `RuntimeSemanticsTest` | TDZ、let 迭代绑定、this/arguments、枚举顺序、位运算、try/finally、JSON 边界 |
 | `EventLoopLifecycleTest` / `EventLoopConcurrencyTest` / `HostEventLoopLifecycleTest` | 关闭、任务快照、空闲等待、在途取消、跨线程串行化、宿主定时器生命周期 |
 | `RuntimeErrorStackTest` | 错误创建与重抛位置、脚本来源和偏移、跨脚本调用、async/Promise 拒绝转发、资源释放、万层栈快照 |
-| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、可选 catch 绑定、稳定排序、JSON 超集与 rawJSON/reviver source、属性枚举顺序、Annex B RegExp compile/escape/unescape、RegExp dotAll、Error.prototype.stack、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径与 done=true 不读取 value、String 包装对象 length 写入失败、同步值 Promise/thenable 拒绝只关闭一次、同步与异步 return 非函数/getter 抛错/拒绝/调用抛错/结果形态均保留原错误、Object.fromEntries 在 next getter/next 抛错/结果非对象/done getter 抛错时不关闭迭代器及键错误保留原错误、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
+| `RuntimeSemanticsRegressionTest` | 数组异质 length/稀疏索引、array-like 迭代、2^53-1 长度边界、参数映射、eval 作用域、严格 JSON、正则回退、字符串边界、模板内正则扫描、hashbang、可选 catch 绑定、稳定排序、JSON 超集与 rawJSON/reviver source、属性枚举顺序、Annex B RegExp compile/escape/unescape、RegExp dotAll、Error.prototype.stack、Iterator helpers/concat/zip/chunks/windows/includes/join 顺序与关闭、内建迭代器共享原型与实时读取、Array.fromAsync 多输入路径与 done=true 不读取 value、String 包装对象与 Uint8Array 的 length 写入失败、同步值 Promise/thenable 拒绝只关闭一次、同步与异步 return 非函数/getter 抛错/拒绝/调用抛错/结果形态均保留原错误、Object.fromEntries 在 next getter/next 抛错/结果非对象/done getter 抛错时不关闭迭代器及键错误保留原错误、Math.sumPrecise 精确求和、WeakMap/WeakSet 符号键、DisposableStack/AsyncDisposableStack/SuppressedError、Annex B 访问器方法、Promise Keyed 组合、Error.isError |
 | `Es2015SemanticsTest` | 可迭代解构、对象剩余/展开 Symbol、类计算属性/async 方法、super、标签模板 raw、替换回调 |
 | `ConversionAndAccessorTest` | Boolean/String/Number 构造器、valueOf/toString 优先级、访问器赋值、new 展开 |
 | `DiagnosticTest` | 词法/语法异常转换为结构化诊断（类别、纯描述、源码范围、来源文件名与行偏移），其他异常不产生诊断，原异常类型与 message 格式保持不变 |
