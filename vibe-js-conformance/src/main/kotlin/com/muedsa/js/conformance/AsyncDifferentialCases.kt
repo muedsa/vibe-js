@@ -4185,6 +4185,42 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-thenable-resolve-boxed-string",
+        """
+        var log = [];
+        var value = new String('s');
+        Array.fromAsync([1], function () {
+          return {
+            then: function (resolve) {
+              resolve(value);
+            }
+          };
+        }).then(function (values) {
+          log.push(values[0] === value);
+          log.push(values[0].valueOf());
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-thenable-resolve-boxed-number",
+        """
+        var log = [];
+        var value = new Number(3);
+        Array.fromAsync([1], function () {
+          return {
+            then: function (resolve) {
+              resolve(value);
+            }
+          };
+        }).then(function (values) {
+          log.push(values[0] === value);
+          log.push(values[0].valueOf());
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-sync-mapper-thenable-reject-closes",
         """
         var log = [];
