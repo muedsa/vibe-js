@@ -112,6 +112,65 @@ class ParserModuleTest {
     }
 
     @Test
+    fun `静态导入解析 with 属性并传递到请求`() {
+        val module = parseModule(
+            """import data from "./data.json" with { type: "json", mode: "strict" };"""
+        )
+        val declaration = assertIs<ImportDeclaration>(module.items.single())
+        assertEquals(mapOf("type" to "json", "mode" to "strict"), declaration.attributes)
+        assertEquals(declaration.attributes, module.importEntries.single().attributes)
+        assertEquals(declaration.attributes, module.requestedAttributes["./data.json"])
+    }
+
+    @Test
+    fun `间接导出解析 with 属性而本地导出不接受属性`() {
+        val module = parseModule(
+            """export { default } from "./data.json" with { type: "json" };"""
+        )
+        val declaration = assertIs<ExportNamedDeclaration>(module.items.single())
+        assertEquals(mapOf("type" to "json"), declaration.attributes)
+        assertEquals(mapOf("type" to "json"), module.exportEntries.single().attributes)
+        assertEquals(mapOf("type" to "json"), module.requestedAttributes["./data.json"])
+
+        assertFailsWith<ParseException> {
+            parseModule("""var a = 1; export { a } with { type: "json" };""")
+        }
+    }
+
+    @Test
+    fun `导入属性拒绝重复键与非字符串值`() {
+        assertFailsWith<ParseException> {
+            parseModule("""import "./a.js" with { type: "json", type: "css" };""")
+        }
+        assertFailsWith<ParseException> {
+            parseModule("""import "./a.js" with { type: json };""")
+        }
+        // 末尾逗号合法
+        parseModule("""import "./a.js" with { type: "json", };""")
+    }
+
+    @Test
+    fun `export 星号解析 with 属性`() {
+        val module = parseModule("""export * from "./data.json" with { type: "json" };""")
+        val declaration = assertIs<ExportAllDeclaration>(module.items.single())
+        assertEquals(mapOf("type" to "json"), declaration.attributes)
+        assertEquals(mapOf("type" to "json"), module.exportEntries.single().attributes)
+        assertEquals(mapOf("type" to "json"), module.requestedAttributes["./data.json"])
+    }
+
+    @Test
+    fun `同一说明符的冲突导入属性是早期错误`() {
+        assertFailsWith<ParseException> {
+            parseModule(
+                """
+                import "./a.js" with { type: "json" };
+                import "./a.js" with { type: "css" };
+                """.trimIndent()
+            )
+        }
+    }
+
+    @Test
     fun `副作用导入只产生模块请求`() {
         val module = parseModule("""import "./side-effect.js";""")
         val declaration = assertIs<ImportDeclaration>(module.items.single())

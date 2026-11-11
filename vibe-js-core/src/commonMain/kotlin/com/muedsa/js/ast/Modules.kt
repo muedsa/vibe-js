@@ -79,6 +79,8 @@ class ImportDeclaration(
     /** 是否为纯副作用导入 `import "m"`（`import {} from "m"` 不算，它没有导入表项） */
     val isSideEffectOnly: Boolean,
     override val range: SourceRange,
+    /** `with { ... }` 导入属性；键与值都是已解码字符串。 */
+    val attributes: Map<String, String> = emptyMap(),
 ) : ModuleItem()
 
 /**
@@ -106,6 +108,8 @@ class ExportNamedDeclaration(
     val specifiers: List<ExportSpecifier>,
     val source: String?,
     override val range: SourceRange,
+    /** `export ... from "m" with { ... }` 的导入属性；本地导出为空。 */
+    val attributes: Map<String, String> = emptyMap(),
 ) : ModuleItem()
 
 /**
@@ -132,6 +136,8 @@ class ExportAllDeclaration(
     val source: String,
     val namespaceName: String?,
     override val range: SourceRange,
+    /** `export * from "m" with { ... }` 的导入属性。 */
+    val attributes: Map<String, String> = emptyMap(),
 ) : ModuleItem()
 
 /**
@@ -146,6 +152,8 @@ class ImportEntry(
     val importName: String,
     val localName: String,
     val range: SourceRange = SourceRange.NONE,
+    /** 该导入请求的 `with { ... }` 属性。 */
+    val attributes: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -163,6 +171,8 @@ class ExportEntry(
     val importName: String?,
     val localName: String?,
     val range: SourceRange = SourceRange.NONE,
+    /** 间接导出的 `with { ... }` 属性；本地导出为空。 */
+    val attributes: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -268,6 +278,8 @@ class ModuleProgram(
     val hasTopLevelAwait: Boolean = false,
     /** 引擎预解析时绑定的模块来源（路径/URL）；Parser 直接调用使用匿名来源。 */
     val sourceInfo: SourceInfo = SourceInfo(),
+    /** 每个模块请求的导入属性；键为说明符，值按 `with` 子句的源码顺序。 */
+    val requestedAttributes: Map<String, Map<String, String>> = emptyMap(),
 ) : ASTNode() {
 
     /** 模块代码恒为严格模式（ECMAScript 16.2.1.6：Module code is always strict mode code）。 */

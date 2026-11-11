@@ -4454,6 +4454,19 @@ class Parser(
         val lexicalNames = LinkedHashSet<String>()
         // 模块请求去重（源码顺序）；链接阶段按此顺序加载依赖
         val requestedModules = LinkedHashSet<String>()
+        // 每个请求的导入属性；同一说明符带不同属性视为冲突（MVP 限制）
+        val requestedAttributes = LinkedHashMap<String, Map<String, String>>()
+        fun recordRequest(specifier: String, attributes: Map<String, String>) {
+            val existing = requestedAttributes[specifier]
+            if (existing != null && existing != attributes) {
+                throw ParseException(
+                    "Conflicting import attributes for module '$specifier'",
+                    peek().range,
+                )
+            }
+            requestedAttributes[specifier] = attributes
+            requestedModules.add(specifier)
+        }
         // 导出名去重：同一个导出名只能出现一次（含 default）
         val exportedNames = mutableSetOf<String>()
 
@@ -4487,7 +4500,13 @@ class Parser(
                 }
                 importEntries.addAll(
                     result.imports.map {
-                        ImportEntry(it.moduleRequest, it.importName, it.localName, result.item.range)
+                        ImportEntry(
+                            it.moduleRequest,
+                            it.importName,
+                            it.localName,
+                            result.item.range,
+                            it.attributes,
+                        )
                     }
                 )
                 for (entry in result.exports) {
@@ -4507,13 +4526,20 @@ class Parser(
                             entry.importName,
                             entry.localName,
                             result.item.range,
+                            entry.attributes,
                         )
                     )
                 }
                 lexicalNames.addAll(result.lexicalNames)
-                for (entry in result.imports) requestedModules.add(entry.moduleRequest)
-                for (entry in result.exports) entry.moduleRequest?.let { requestedModules.add(it) }
-                requestedModules.addAll(result.moduleRequests)
+                for (entry in result.imports) {
+                    recordRequest(entry.moduleRequest, result.attributes)
+                }
+                for (entry in result.exports) {
+                    entry.moduleRequest?.let { recordRequest(it, result.attributes) }
+                }
+                for (specifier in result.moduleRequests) {
+                    recordRequest(specifier, result.attributes)
+                }
             }
         } finally {
             asyncContext = outerAsyncContext
@@ -4577,6 +4603,7 @@ class Parser(
             bindings = collectModuleBindings(items),
             hasTopLevelAwait = moduleHasTopLevelAwait,
             sourceInfo = sourceInfo,
+            requestedAttributes = requestedAttributes.toMap(),
         )
     }
 
@@ -4664,6 +4691,8 @@ class Parser(
         val lexicalNames: List<String> = emptyList(),
         /** 本声明贡献的模块请求；即使是空子句也必须保留。 */
         val moduleRequests: List<String> = emptyList(),
+        /** 本声明的 `with { ... }` 属性；仅静态 import/export 声明非空。 */
+        val attributes: Map<String, String> = emptyMap(),
     )
 
     /**
@@ -4723,6 +4752,62 @@ class Parser(
     }
 
     /**
+     * `with { key: "value", ... }` 导入属性子句。
+     *
+     * 没有 `with` 时返回空表。键是 IdentifierName 或字符串字面量，值必须是字符串字面量；
+     * 重复键是早期错误。属性不参与模块身份，由 Provider 决定如何解释。
+     */
+    private fun parseImportAttributes(): Map<String, String> {
+        if (!check(TokenType.WITH)) return emptyMap()
+        advance()
+        consume(TokenType.LBRACE, "Expected '{' after 'with'")
+        val attributes = LinkedHashMap<String, String>()
+        while (!check(TokenType.RBRACE) && !isAtEnd()) {
+            val keyToken = peek()
+            val key = when {
+                keyToken.type == TokenType.STRING -> {
+                    if (keyToken.legacyOctal) {
+                        throw error("Octal escape sequences are not allowed in import attribute keys")
+                    }
+                    if (!isWellFormedUnicode(keyToken.value)) {
+                        throw ParseException(
+                            "Import attribute key must be well-formed Unicode",
+                            keyToken.range,
+                        )
+                    }
+                    advance()
+                    keyToken.value
+                }
+
+                keyToken.type == TokenType.IDENTIFIER || keyToken.type in keywordTokenTypes -> {
+                    advance()
+                    keyToken.value
+                }
+
+                else -> throw ParseException("Expected import attribute key", keyToken.range)
+            }
+            consume(TokenType.COLON, "Expected ':' after import attribute key")
+            val valueToken = consume(TokenType.STRING, "Expected string value for import attribute '$key'")
+            if (valueToken.legacyOctal) {
+                throw error("Octal escape sequences are not allowed in import attribute values")
+            }
+            if (!isWellFormedUnicode(valueToken.value)) {
+                throw ParseException(
+                    "Import attribute value must be well-formed Unicode",
+                    valueToken.range,
+                )
+            }
+            if (attributes.containsKey(key)) {
+                throw ParseException("Duplicate import attribute '$key'", keyToken.range)
+            }
+            attributes[key] = valueToken.value
+            if (!match(TokenType.COMMA)) break
+        }
+        consume(TokenType.RBRACE, "Expected '}' after import attributes")
+        return attributes
+    }
+
+    /**
      * 导入/导出名（ModuleExportName）：IdentifierName 或字符串字面量。
      *
      * 字符串形式对应 ES2022 的任意模块命名空间名（`export { x as "a-b" }`），
@@ -4775,6 +4860,7 @@ class Parser(
         // 纯副作用导入：import "m";
         if (check(TokenType.STRING)) {
             val moduleRequest = parseModuleSpecifier()
+            val attributes = parseImportAttributes()
             consumeSemicolon()
             return ModuleParseResult(
                 item = ImportDeclaration(
@@ -4783,11 +4869,13 @@ class Parser(
                     namespaceImport = null,
                     isSideEffectOnly = true,
                     range = SourceRange(start, previous().range.end),
+                    attributes = attributes,
                 ),
                 // 规范里副作用导入仍然产生 ImportEntry：ImportName 为 all、LocalName 为空；
                 // 这里用 "*" / "" 表示该哨兵值，模块求值器只据此触发依赖求值。
-                imports = listOf(ImportEntry(moduleRequest, "*", "")),
+                imports = listOf(ImportEntry(moduleRequest, "*", "", attributes = attributes)),
                 moduleRequests = listOf(moduleRequest),
+                attributes = attributes,
             )
         }
 
@@ -4864,6 +4952,7 @@ class Parser(
     ): ModuleParseResult {
         consumeFrom()
         val moduleRequest = parseModuleSpecifier()
+        val attributes = parseImportAttributes()
         consumeSemicolon()
         return ModuleParseResult(
             item = ImportDeclaration(
@@ -4872,12 +4961,14 @@ class Parser(
                 namespaceImport = namespaceImport,
                 isSideEffectOnly = false,
                 range = SourceRange(start, previous().range.end),
+                attributes = attributes,
             ),
             imports = names.map { (importName, localName) ->
-                ImportEntry(moduleRequest, importName, localName)
+                ImportEntry(moduleRequest, importName, localName, attributes = attributes)
             },
             lexicalNames = lexicalNames,
             moduleRequests = listOf(moduleRequest),
+            attributes = attributes,
         )
     }
 
@@ -4996,13 +5087,23 @@ class Parser(
                     it,
                 )
             }
+            if (check(TokenType.WITH)) {
+                throw error("Import attributes require a 'from' clause")
+            }
         }
+        val attributes = if (source != null) parseImportAttributes() else emptyMap()
         consumeSemicolon()
         val moduleRequest = source
         val exports = specifiers.map { specifier ->
             if (moduleRequest != null) {
                 // 间接导出：左侧是导入名，没有本地绑定
-                ExportEntry(specifier.exportName, moduleRequest, specifier.localName, null)
+                ExportEntry(
+                    specifier.exportName,
+                    moduleRequest,
+                    specifier.localName,
+                    null,
+                    attributes = attributes,
+                )
             } else {
                 ExportEntry(specifier.exportName, null, null, specifier.localName)
             }
@@ -5013,9 +5114,11 @@ class Parser(
                 specifiers = specifiers,
                 source = source,
                 range = SourceRange(start, previous().range.end),
+                attributes = attributes,
             ),
             exports = exports,
             moduleRequests = source?.let { listOf(it) } ?: emptyList(),
+            attributes = attributes,
         )
     }
 
@@ -5029,21 +5132,24 @@ class Parser(
         }
         consumeFrom()
         val moduleRequest = parseModuleSpecifier()
+        val attributes = parseImportAttributes()
         consumeSemicolon()
         // 普通 export * 不产生具名导出（ExportName 为 null），由链接阶段做星号解析
         val export = if (namespaceName != null) {
-            ExportEntry(namespaceName, moduleRequest, "*", null)
+            ExportEntry(namespaceName, moduleRequest, "*", null, attributes = attributes)
         } else {
-            ExportEntry(null, moduleRequest, "*", null)
+            ExportEntry(null, moduleRequest, "*", null, attributes = attributes)
         }
         return ModuleParseResult(
             item = ExportAllDeclaration(
                 source = moduleRequest,
                 namespaceName = namespaceName,
                 range = SourceRange(start, previous().range.end),
+                attributes = attributes,
             ),
             exports = listOf(export),
             moduleRequests = listOf(moduleRequest),
+            attributes = attributes,
         )
     }
 
