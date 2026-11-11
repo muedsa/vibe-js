@@ -3644,6 +3644,50 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-return-this",
+        """
+        var log = [];
+        var iterator = {
+          next: function () {
+            return Promise.resolve({ value: 1, done: false });
+          },
+          return: function () {
+            log.push(this === iterator);
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }, function () {
+          throw new Error('stop');
+        }).then(function () {
+          log.push('ok');
+        }, function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-return-argument-count",
+        """
+        var log = [];
+        var iterator = {
+          next: function () {
+            return Promise.resolve({ value: 1, done: false });
+          },
+          return: function () {
+            log.push(arguments.length);
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }, function () {
+          throw new Error('stop');
+        }).then(function () {
+          log.push('ok');
+        }, function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-mapper-this-arg",
         """
         var log = [];
