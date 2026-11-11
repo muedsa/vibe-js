@@ -1207,6 +1207,48 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-construct-trap-fixed-index",
+        """
+        var log = [];
+        function Result() {}
+        var wrapped = new Proxy(Result, {
+          construct: function () {
+            var result = { length: 0 };
+            Object.defineProperty(result, '0', {
+              value: 'old',
+              writable: false,
+              configurable: false
+            });
+            return result;
+          }
+        });
+        Array.fromAsync.call(wrapped, [1]).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-construct-trap-existing-index",
+        """
+        var log = [];
+        function Result() {}
+        var wrapped = new Proxy(Result, {
+          construct: function () {
+            return { length: 0, 0: 'old' };
+          }
+        });
+        Array.fromAsync.call(wrapped, [1]).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-existing-index-conflict",
         """
         var log = [];
