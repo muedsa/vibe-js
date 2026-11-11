@@ -8174,6 +8174,62 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-thenable-primitive",
+        """
+        var log = [];
+        var inner = {
+          then: function (resolve) {
+            resolve(1);
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(inner);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-thenable-throw",
+        """
+        var log = [];
+        var inner = {
+          then: function () {
+            throw new Error('inner-then');
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(inner);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-string",
         """
         var log = [];
