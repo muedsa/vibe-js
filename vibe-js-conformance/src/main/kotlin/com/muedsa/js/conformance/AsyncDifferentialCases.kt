@@ -1299,6 +1299,52 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-construct-trap-inherited-fixed-index",
+        """
+        var log = [];
+        function Result() {}
+        var wrapped = new Proxy(Result, {
+          construct: function () {
+            var proto = {};
+            Object.defineProperty(proto, '0', {
+              value: 'old',
+              writable: false
+            });
+            var result = Object.create(proto);
+            result.length = 0;
+            return result;
+          }
+        });
+        Array.fromAsync.call(wrapped, [1]).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-construct-trap-inherited-writable-index",
+        """
+        var log = [];
+        function Result() {}
+        var wrapped = new Proxy(Result, {
+          construct: function () {
+            var result = Object.create({ 0: 'old' });
+            result.length = 0;
+            return result;
+          }
+        });
+        Array.fromAsync.call(wrapped, [1]).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          log.push(Object.hasOwn(values, '0'));
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-existing-index-conflict",
         """
         var log = [];
