@@ -3059,6 +3059,36 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-done-symbol",
+        """
+        var log = [];
+        var iterator = {
+          next: function () {
+            return Promise.resolve({ value: 'a', done: Symbol('done') });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-done-function",
+        """
+        var log = [];
+        var iterator = {
+          next: function () {
+            return Promise.resolve({ value: 'a', done: function () {} });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-sync-iterator-method-promise",
         """
         var log = [];
