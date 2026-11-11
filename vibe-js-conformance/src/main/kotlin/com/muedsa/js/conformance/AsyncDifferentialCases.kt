@@ -7261,6 +7261,66 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-thenable-done-getter-sequence",
+        """
+        var log = [];
+        var reads = 0;
+        var index = 0;
+        var iterator = {
+          next: function () {
+            return {
+              then: function (resolve) {
+                resolve({
+                  value: index,
+                  get done() {
+                    reads += 1;
+                    return index++ > 0;
+                  }
+                });
+              }
+            };
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          log.push(reads);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-thenable-value-getter-throw",
+        """
+        var log = [];
+        var index = 0;
+        var iterator = {
+          next: function () {
+            if (index++ === 0) {
+              return {
+                then: function (resolve) {
+                  resolve({
+                    done: false,
+                    get value() {
+                      throw new Error('thenable-value');
+                    }
+                  });
+                }
+              };
+            }
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-then-non-callable",
         """
         var log = [];
