@@ -2009,6 +2009,68 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Array fromAsync 同步 return 解析为原始值时保留原错误`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var log = [];
+                var index = 0;
+                var iterator = {
+                    next: function () {
+                        return index++ === 0 ? { value: 1, done: false } : { done: true };
+                    },
+                    return: function () {
+                        return 1;
+                    }
+                };
+                Array.fromAsync(
+                    { [Symbol.iterator]: function () { return iterator; } },
+                    function () { throw new Error('map'); }
+                ).then(
+                    function () {
+                        log.push('fulfilled');
+                    },
+                    function (error) {
+                        log.push('reject:' + error.message);
+                    }
+                );
+            """.trimIndent()
+        )
+        assertEquals("reject:map", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
+    fun `Array fromAsync 同步 return 解析为非 done 对象时保留原错误`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var log = [];
+                var index = 0;
+                var iterator = {
+                    next: function () {
+                        return index++ === 0 ? { value: 1, done: false } : { done: true };
+                    },
+                    return: function () {
+                        return { done: false };
+                    }
+                };
+                Array.fromAsync(
+                    { [Symbol.iterator]: function () { return iterator; } },
+                    function () { throw new Error('map'); }
+                ).then(
+                    function () {
+                        log.push('fulfilled');
+                    },
+                    function (error) {
+                        log.push('reject:' + error.message);
+                    }
+                );
+            """.trimIndent()
+        )
+        assertEquals("reject:map", runtime.evalString("log.join(',')"))
+    }
+
+    @Test
     fun `Array fromAsync 同步迭代器 done 为 true 时不读取 value`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(
