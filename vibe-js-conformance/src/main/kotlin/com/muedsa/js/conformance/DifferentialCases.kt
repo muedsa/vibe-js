@@ -4691,6 +4691,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-undefined-length",
+        """(function () {
+  var entry = { length: undefined, 0: 'a', 1: 'b' };
+  var object = Object.fromEntries([entry]);
+  return Object.keys(object).length;
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-null-length",
+        """(function () {
+  var entry = { length: null, 0: 'a', 1: 'b' };
+  var object = Object.fromEntries([entry]);
+  return Object.keys(object).length;
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-index-getters-once",
         """(function () {
   var keyReads = 0;
