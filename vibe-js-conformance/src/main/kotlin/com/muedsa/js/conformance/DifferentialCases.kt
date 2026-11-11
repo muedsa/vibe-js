@@ -4973,6 +4973,32 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).length + ':' + object.a;
 })()""",
     ),
+    // Object.fromEntries 的 done 为包装 Symbol 时按 truthy 停止。
+    DifferentialCase(
+        "object-from-entries-done-boxed-symbol",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: ['a', 1], done: Object(Symbol('done')) };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
+    // Object.fromEntries 的 done 为 Date 时按 truthy 停止。
+    DifferentialCase(
+        "object-from-entries-done-date",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: ['a', 1], done: new Date(0) };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
     // Object.fromEntries 的 next 结果缺少 done 时按 false 处理；无效条目抛 TypeError。
     DifferentialCase(
         "object-from-entries-missing-done",
