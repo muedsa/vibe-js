@@ -4880,6 +4880,42 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-entry-length-to-primitive-getter-throw",
+        """(function () {
+  var entry = {
+    length: {
+      get [Symbol.toPrimitive]() {
+        throw new Error('entry-length-to-primitive');
+      }
+    }
+  };
+  try {
+    Object.fromEntries([entry]);
+    return 'ok';
+  } catch (error) {
+    return error.message;
+  }
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-entry-length-symbol-value",
+        """(function () {
+  var entry = {
+    length: {
+      valueOf() {
+        return Symbol('length');
+      }
+    }
+  };
+  try {
+    Object.fromEntries([entry]);
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-array-like-symbol-key",
         """(function () {
   var symbol = Symbol('k');
