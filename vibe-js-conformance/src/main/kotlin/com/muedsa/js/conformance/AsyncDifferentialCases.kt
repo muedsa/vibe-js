@@ -5618,6 +5618,62 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-value-getter-once",
+        """
+        var log = [];
+        var reads = 0;
+        var index = 0;
+        var iterator = {
+          next: function () {
+            if (index++ === 0) {
+              return Promise.resolve({
+                done: false,
+                get value() {
+                  reads += 1;
+                  return 'a';
+                }
+              });
+            }
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values[0]);
+          log.push(reads);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-value-getter-thenable",
+        """
+        var log = [];
+        var thenable = {
+          then: function (resolve) {
+            resolve('resolved');
+          }
+        };
+        var index = 0;
+        var iterator = {
+          next: function () {
+            if (index++ === 0) {
+              return Promise.resolve({
+                done: false,
+                get value() {
+                  return thenable;
+                }
+              });
+            }
+            return Promise.resolve({ done: true });
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values[0] === thenable);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-value-not-awaited",
         """
         var log = [];
