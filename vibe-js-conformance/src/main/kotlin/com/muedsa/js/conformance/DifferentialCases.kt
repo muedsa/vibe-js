@@ -4791,6 +4791,22 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-boxed-symbol-value",
+        """(function () {
+  var value = Object(Symbol('v'));
+  var object = Object.fromEntries([['k', value]]);
+  return Object.keys(object).join(',') + ':' + (object.k === value);
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-boxed-false-value",
+        """(function () {
+  var value = new Boolean(false);
+  var object = Object.fromEntries([['k', value]]);
+  return Object.keys(object).join(',') + ':' + (object.k === value);
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-proto-key",
         """(function () {
   var object = Object.fromEntries([['__proto__', 1]]);
