@@ -5115,6 +5115,35 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-entry-length-to-primitive-hex-string",
+        """(function () {
+  var entry = {
+    length: {
+      [Symbol.toPrimitive]() {
+        return '0x10';
+      }
+    }
+  };
+  var object = Object.fromEntries([entry]);
+  return Object.keys(object).length;
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-entry-length-to-primitive-space-string",
+        """(function () {
+  var entry = {
+    length: {
+      [Symbol.toPrimitive]() {
+        return ' ';
+      }
+    },
+    0: 'a'
+  };
+  var object = Object.fromEntries([entry]);
+  return Object.keys(object).length;
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-entry-length-to-primitive-false",
         """(function () {
   var entry = {
