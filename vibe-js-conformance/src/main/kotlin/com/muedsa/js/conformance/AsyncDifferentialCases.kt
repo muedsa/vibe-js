@@ -3902,6 +3902,49 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-thenable-then-contract",
+        """
+        var log = [];
+        var calls = 0;
+        var thenable = {
+          then: function () {
+            calls += 1;
+            log.push(this === thenable);
+            log.push(arguments.length);
+            log.push(typeof arguments[0]);
+            log.push(typeof arguments[1]);
+            arguments[0]('ok');
+          }
+        };
+        Array.fromAsync([1], function () {
+          return thenable;
+        }).then(function (values) {
+          log.push(calls);
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-thenable-resolve-then-reject",
+        """
+        var log = [];
+        Array.fromAsync([1], function () {
+          return {
+            then: function (resolve, reject) {
+              resolve('fulfilled');
+              reject(new Error('ignored'));
+            }
+          };
+        }).then(function (values) {
+          log.push(values[0]);
+          globalThis.__diffResult = log;
+        }, function (error) {
+          log.push('reject:' + error.message);
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-sync-mapper-thenable-reject-closes",
         """
         var log = [];
