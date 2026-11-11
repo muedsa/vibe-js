@@ -8028,6 +8028,40 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-sync-next-result-boxed-number",
+        """
+        var log = [];
+        var index = 0;
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? new Number(1) : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-sync-next-result-array-buffer",
+        """
+        var log = [];
+        var index = 0;
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? new ArrayBuffer(2) : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-sync-next-getter-throw",
         """
         var log = [];
