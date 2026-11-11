@@ -8126,6 +8126,54 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-rejected-promise",
+        """
+        var log = [];
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(Promise.reject(new Error('nested-rejected')));
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-thenable",
+        """
+        var log = [];
+        var inner = {
+          then: function (resolve) {
+            resolve({ done: true });
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(inner);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-string",
         """
         var log = [];
