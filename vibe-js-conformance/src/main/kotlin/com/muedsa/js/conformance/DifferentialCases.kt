@@ -5127,6 +5127,26 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-entry-length-string-object",
+        """(function () {
+  var entry = { length: new String('2'), 0: 'a', 1: 'b', 2: 'c' };
+  var object = Object.fromEntries([entry]);
+  return Object.keys(object).join(',');
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-entry-length-bigint-object",
+        """(function () {
+  var entry = { length: Object(1n), 0: 'a' };
+  try {
+    Object.fromEntries([entry]);
+    return 'ok';
+  } catch (error) {
+    return error.name;
+  }
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-array-like-symbol-key",
         """(function () {
   var symbol = Symbol('k');
