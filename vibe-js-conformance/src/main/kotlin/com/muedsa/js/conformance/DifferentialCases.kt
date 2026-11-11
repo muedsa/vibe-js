@@ -5076,6 +5076,30 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return log.join(',');
 })()""",
     ),
+    DifferentialCase(
+        "object-from-entries-key-to-primitive-empty-string",
+        """(function () {
+  var key = {
+    [Symbol.toPrimitive]: function () {
+      return '';
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return Object.keys(object).length + ':' + object[''];
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-key-to-primitive-boolean",
+        """(function () {
+  var key = {
+    [Symbol.toPrimitive]: function () {
+      return false;
+    }
+  };
+  var object = Object.fromEntries([[key, 1]]);
+  return Object.keys(object).join(',') + ':' + object['false'];
+})()""",
+    ),
     // Object.fromEntries 重复符号键由后者覆盖并保留首次顺序。
     DifferentialCase(
         "object-from-entries-duplicate-symbol",
