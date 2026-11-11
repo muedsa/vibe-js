@@ -2,7 +2,7 @@
 
 Vibe JS 是一个使用 Kotlin 多平台从零实现的轻量级 JavaScript 运行时。
 
-- 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 `async/await`、Generator / async generator），并已实现 Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView；模块侧已支持 `Parser.parseModule` 语法解析（含 `import.meta` / `import()` / 顶层 `await` 语法），但尚不能链接或执行；
+- 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 `async/await`、Generator / async generator），并已实现 Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView；模块侧已支持 `Parser.parseModule` 语法解析（含 `import.meta`、动态 `import()`、导入属性与顶层 `await` 语法）以及实验性 `Engine.runModule` 的 Provider/链接/同步求值、动态 `import()`、导入属性与 `import.meta.resolve`；TLA 执行仍未实现；
 - 定位：通用 Kotlin 库，核心不绑定任何浏览器/平台原生 API；
 - 构建目标：JVM、Android、JS、Wasm、Linux、Windows、macOS、iOS、tvOS、watchOS；
 - 宿主能力（console、定时器、window、performance、TextEncoder/TextDecoder、structuredClone、URL 等）位于独立的 `:vibe-js-host` 模块。
@@ -183,10 +183,15 @@ suspend fun runModuleExample() {
 ```
 
 模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝
-`import` / `export`。阶段 0–8 已接通实验性 `Engine.runModule`（Provider、图加载/链接、环境、namespace、
-`import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in）；模块加载器、TLA 执行与动态
-`import()` 执行尚未实现。详见
-[兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
+`import` / `export`。阶段 0–9 已接通实验性 `Engine.runModule`（Provider、图加载/链接、环境、namespace、
+`import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in）。模块内支持：
+
+- 动态 `import(specifier[, options])`，返回 Promise；加载/链接/求值失败以拒绝上报；
+- 静态 `import ... with { ... }`、`export ... from ... with { ... }` 与动态 `import(..., { with: ... })` 导入属性，原样传给 Provider；
+- `import.meta.url` 与 `import.meta.resolve(specifier)`（后者委托 `ModuleProvider.resolve`）。
+
+TLA 仍只在链接期拒绝，模块图加载器、Test262 module harness 与脚本目标中的 `import()` 仍未实现。
+详见 [兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
 
 ### 取消与超时
 
@@ -334,7 +339,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - 异步：`async` 函数/箭头函数、`await`、Promise 微任务、async generator
 - 异步迭代：`for await...of`、`Symbol.asyncIterator`、`%AsyncIteratorPrototype%` / `%AsyncGeneratorPrototype%`
 - BigInt：`123n` 字面量（含 `0x`/`0o`/`0b` 前缀与 `n` 后缀）、算术/位运算/比较/幂运算与 BigInt 转换
-- 模块语法（仅解析）：`import` / `export` 基础形式、`import.meta`、`import()` 表达式、模块顶层 `await` 语法；`Parser.parseModule()` 解析并预计算静态表，链接/求值/加载未实现
+- 模块语法（仅解析）：`import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法；`Parser.parseModule()` 解析并预计算静态表，`Engine.runModule` 负责实验性链接/同步求值，动态 `import()` 在模块内可用
 - 资源管理：`using` / `await using`、DisposableStack / AsyncDisposableStack
 - 严格模式尾调用优化（含 try/catch/finally 的待处理语义阻断）
 
@@ -371,11 +376,11 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 
 当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
-- **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in；模块加载器、TLA 执行、动态 `import()` 执行与 Test262 module harness **未实现/无计划**；
+- **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta`、`import.meta.resolve`、动态 `import()` 与静态/动态导入属性，需 `@ExperimentalModuleApi` opt-in；TLA 执行、脚本目标中的 `import()`、模块加载器与 Test262 module harness **未实现/无计划**；
 - **无计划**：顶层 await 的执行（L4.7）、WeakRef / FinalizationRegistry；
 - **宿主生态（已实现子集）**：`TextEncoder` / `TextDecoder`（UTF-8、fatal/ignoreBOM/stream）、`structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）、`URL` / `URLSearchParams` 常用能力，均位于 `:vibe-js-host`；
 - **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供通用宿主能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
-- **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2 无计划）；BigInt 结果受 `MAX_RESULT_BITS` 限制；import attributes、`import.meta.resolve`、`export using` 未支持（随模块执行无计划）；
+- **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2 无计划）；BigInt 结果受 `MAX_RESULT_BITS` 限制；`export using` 未支持；导入属性按说明符去重（同一说明符带不同属性会被解析器拒绝）；动态 `import()` 与 `import.meta.resolve` 只在模块代码及其延迟回调中可用；
 - **无计划/按需**：性能优化（B2）与 API 契约（PKG1）无计划；R1 资源约束已覆盖源码/AST/对象/JSON/正则/事件循环队列等主要路径；
 - **已知不完整**：完整 ASI 边界规则。
 
@@ -457,8 +462,8 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1173 / 1173** |
-| core JS（Node）/ Wasm（Node） | 各 **1157 / 1157** |
+| core JVM | **1190 / 1190** |
+| core JS（Node）/ Wasm（Node） | 各 **1174 / 1174** |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** |
 | conformance 单元测试 | **39 / 39** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
@@ -491,7 +496,7 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 ## 阶段状态
 
 - **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 基线。
-- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–8 前置（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`、`Engine.runModule` 同步求值与错误定位/预算/取消加固）已完成；模块加载器、TLA 执行、动态 `import()` 执行与 Test262 module harness **未实现/无计划**，API 需 opt-in。
+- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–9（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、`Engine.runModule` 同步求值与错误定位/预算/取消加固）已完成；模块加载器、TLA 执行与 Test262 module harness **未实现/无计划**，脚本目标中的 `import()` 仍不支持；API 需 opt-in。
 - **未完成/无计划**：WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划；宿主生态已提供 TextEncoder/TextDecoder、structuredClone 与 URL 子集。
 
 ## 说明

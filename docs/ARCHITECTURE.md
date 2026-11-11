@@ -5,7 +5,7 @@
 ## 1. 目标与约束
 
 - **通用 Kotlin 多平台库**：核心代码全部位于 `commonMain`，不引用任何平台原生 API。
-- **单脚本执行起步**：`Engine.run(source)` 执行一段脚本，可重复调用共享全局环境；模块目前只提供 `Parser.parseModule()` 语法解析，尚未接入 `Engine` 的执行链路。
+- **单脚本执行起步**：`Engine.run(source)` 执行一段脚本，可重复调用共享全局环境；模块通过 `Parser.parseModule()` 与实验性 `Engine.runModule` 解析、链接与同步求值。
 - **语义优先**：遵循 ECMAScript 规范（覆盖 ES5 与 ES2015 常用语法，并扩展到部分后续年份特性）。
 - **可演进**：性能优化只替换内部实现（执行器、作用域查找、内建实现），不改变语义与公共 API。
 - **异步**：所有执行方法均为 `suspend`，`async/await` 与 Promise 由 EventLoop 的微任务队列与协程调度驱动。
@@ -42,7 +42,7 @@ Lexer ──► Parser ──► AST (Program / ModuleProgram)
 | 类型 | 职责 |
 |---|---|
 | `Engine` | 门面：创建全局对象、内建注册表、事件循环、解释器；执行脚本；安装宿主模块 |
-| `Parser.parseModule` / `ModuleProgram` | 模块目标解析入口与独立 AST 层次；`ModuleItem` 不继承 `Statement`，预计算 `requestedModules` / `ImportEntry` / `ExportEntry`；当前只解析，不参与求值 |
+| `Parser.parseModule` / `ModuleProgram` | 模块目标解析入口与独立 AST 层次；`ModuleItem` 不继承 `Statement`，预计算 `requestedModules` / `requestedAttributes` / `ImportEntry` / `ExportEntry`；供链接阶段直接使用 |
 | `ModuleItem` / `ImportEntry` / `ExportEntry` | 模块项（`StatementItem` / `ImportDeclaration` / `Export*Declaration`）与规范静态表；供后续链接阶段直接使用 |
 | `EngineContext` | 运行时共享组件容器，避免全局单例，支持多引擎隔离 |
 | `Executor` | 执行器接口：`suspend run(program, environment)`；后续可替换为编译执行器 |
@@ -82,24 +82,25 @@ Lexer ──► Parser ──► AST (Program / ModuleProgram)
    - 绑定参数与 this（严格/非严格规则在调用点处理）；
    - 执行提升与函数体；Return 转换为返回值。
 
-### 4.1 模块解析（仅解析）
+### 4.1 模块解析与执行
 
-模块走独立于 Script 的解析路径，`Engine` 当前不参与：
+模块走独立于 Script 的解析路径，执行由实验性 `Engine.runModule` 承载：
 
 1. `Lexer(source, moduleContext = true)`：模块目标禁用 Annex B 的 `<!--` / `-->` HTML 注释；
 2. `Parser.parseModule()`：返回 `ModuleProgram`，而不是 `Program`；
 3. `ModuleProgram.items` 是源码顺序的 `ModuleItem` 列表；`import` / `export` 声明作为模块项建模，**不继承** `Statement`，因此解释器对 `Statement` 的穷尽 `when` 不需要为模块项增加分支；
 4. Parser 在解析期预计算：
    - `requestedModules`：去重后的模块说明符，链接阶段按此顺序加载依赖；
-   - `importEntries` / `exportEntries`：规范 Module Record 的静态表；
+   - `requestedAttributes`：每个模块请求的 `with { ... }` 属性；
+   - `importEntries` / `exportEntries`：规范 Module Record 的静态表（条目携带属性）；
    - `varDeclarations` / `functionDeclarations` / `lexicallyDeclaredNames`：模块顶层声明表；
    - `hasUsingDeclaration`：顶层是否直接包含 `using`；
 5. 模块恒为严格模式；顶层 `super` / `new.target`、Annex B 语法、重复顶层函数声明等按模块早期错误处理；
 6. 表达式层：`import.meta` 解析为 `ImportMetaExpr`，`import(specifier[, options])` 解析为 `ImportCallExpr`；模块顶层 `await` 解析为 `UnaryOp("await", ...)` 并记录 `hasTopLevelAwait`，非 async 函数体中的 `await` 是语法错误；
 7. `moduleContext` 会传播到模板字符串 `${...}` 的子解析器与子词法器，保证模块语境在嵌套表达式里一致；
-8. 当前执行模型：`Engine.run` 接受 Script；`Engine.runModule`（实验性，需 opt-in）加载 Provider 模块图、链接、建模块环境/namespace 并同步求值，返回入口 namespace。模块求值帧 `this = undefined`、严格模式；TLA、动态 `import()` 执行、宿主文件/URL 加载器、module harness **尚未实现**。
+8. 当前执行模型：`Engine.runModule`（实验性，需 opt-in）加载 Provider 模块图、链接、建模块环境/namespace 并同步求值，返回入口 namespace。模块求值帧 `this = undefined`、严格模式；动态 `import()` 在模块内通过微任务加载/链接/求值并返回 Promise，`import.meta.resolve` 委托 Provider；TLA、宿主文件/URL 加载器、module harness **尚未实现**。
 
-已知限制：import attributes、`import.meta.resolve`、`export using` 尚未覆盖；模块执行与加载仍未排期。
+已知限制：`export using` 尚未覆盖；脚本目标仍不支持 `import()`；同一说明符带不同导入属性会被解析器拒绝；TLA 仍只在链接期拒绝。
 
 ## 5. 作用域模型
 
@@ -527,12 +528,14 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
   与 URL/URLSearchParams 常用子集。
 - **L 系列（已完成，2026-11）**：同步/异步 Generator、`for await`、Proxy/Reflect、BigInt、
   ArrayBuffer/DataView/TypedArray（含 BigInt 视图与 detach）；对应特性已纳入 Test262 ES2015 基线。
-- **模块（阶段 0–8 实验性实现）**：`Parser.parseModule` 支持 `import` / `export`
-  基础形式、`import.meta`、`import()` 表达式与模块顶层 `await` 语法，并预计算静态表、类型化绑定、
-  entry range 与 `hasTopLevelAwait`；公共 `ModuleProvider` / `InMemoryModuleProvider`、内部
-  `ModuleGraphResolver`、`ModuleExportResolver` / `ModuleLinker`、`ModuleEnvironment` /
-  `ModuleDeclarationInstantiator`、`JSModuleNamespace` 与 `Engine.runModule` 已提供；
-  TLA、动态 `import()` 执行、宿主加载器与 Test262 module harness **尚未实现**，API 需 opt-in。
+- **模块（阶段 0–9 实验性实现）**：`Parser.parseModule` 支持 `import` / `export`
+  基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }` 与模块顶层 `await` 语法，
+  并预计算静态表、请求属性、类型化绑定、entry range 与 `hasTopLevelAwait`；公共
+  `ModuleProvider` / `InMemoryModuleProvider`、内部 `ModuleGraphResolver`、`ModuleExportResolver` /
+  `ModuleLinker`、`ModuleEnvironment` / `ModuleDeclarationInstantiator`、`JSModuleNamespace`、
+  `ModuleRuntime` 与 `Engine.runModule` 已提供；模块内动态 `import()`、`import.meta.resolve`
+  与静态/动态导入属性已接通。TLA、脚本目标中的 `import()`、宿主加载器与 Test262 module
+  harness **尚未实现**，API 需 opt-in。
 - **当前无计划/按需**：WeakRef / FinalizationRegistry、WeakMap/WeakSet 的真实弱引用（M2）、Intl、DOM/fetch 等真实 Web API、SharedArrayBuffer/Atomics、
   resizable/transfer ArrayBuffer 无计划；R1 资源约束已覆盖主要路径；性能优化（B2）与 API 契约（PKG1）无计划，
   S5.2 只做性能复测观测（见[后续路线](OPTIMIZATION_ROADMAP.md)）。

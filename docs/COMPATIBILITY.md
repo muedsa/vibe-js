@@ -6,12 +6,11 @@
 > Generator / async generator、`for await`、Proxy / Reflect、BigInt、
 > TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
-> `import()` 表达式与模块顶层 `await` 语法；阶段 0–8 已实现实验性 `Engine.runModule`（Provider、链接、
-> 环境、namespace、`import.meta` 与同步求值），但 **TLA、动态 `import()` 执行与宿主加载器尚未实现**，
+> `import()` 表达式、导入属性 `with { ... }` 与模块顶层 `await` 语法；阶段 0–9 已实现实验性 `Engine.runModule`（Provider、链接、
+> 环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与同步求值），但 **TLA 执行与宿主加载器尚未实现**，
 > 且 API 需 `@ExperimentalModuleApi` opt-in。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
-> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；模块执行、
-> 顶层 await、性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
+> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；TLA 执行、性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
 > 宿主生态已提供 TextEncoder/TextDecoder（UTF-8）、
 > structuredClone 与 URL/URLSearchParams 常用子集（`:vibe-js-host`）。
 
@@ -130,13 +129,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1173** + 宿主 38 个测试（2026-11-11 记录） |
-| JS（Node） | ✅ | 核心 **1157** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1157** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1190** + 宿主 38 个测试（2026-11-11 记录） |
+| JS（Node） | ✅ | 核心 **1174** + 宿主 38 个测试 |
+| Wasm（Node） | ✅ | 核心 **1174** + 宿主 38 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1173 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1157。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1190 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1174。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
@@ -160,8 +159,9 @@
 | `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
 | `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
-- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta` 与同步求值；TLA 在链接期拒绝，动态 `import()` 执行到表达式时抛 `SyntaxError`。模块加载器、Test262 module harness 仍无计划；API 需 opt-in；
-- 模块语法限制：import attributes、`import.meta.resolve`、`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；
+- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、同步求值、动态 `import()` 与静态/动态导入属性；TLA 仍在链接期拒绝。动态 `import()` 只在模块代码及其延迟回调中可用，脚本目标仍不支持；模块加载器、Test262 module harness 仍无计划；API 需 opt-in；
+- 模块语法限制：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；导入属性按说明符去重，同一说明符带不同属性会被解析器拒绝；
+- 模块导入属性与解析：`ModuleRequest.attributes` 原样传给 Provider；`import.meta.resolve` 委托 `ModuleProvider.resolve`（默认实现退化为 `load` 并返回 `url ?: id`）；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；
 - 顶层 await 只有语法解析和 `hasTopLevelAwait` 标记，没有模块异步求值；
 - 宿主生态已实现 UTF-8 子集：TextEncoder（encode/encodeInto）、TextDecoder（fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/ArrayBuffer/视图/循环）、URL/URLSearchParams 常用能力；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API；
@@ -223,7 +223,7 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `RuntimeCancellationTest` / `RuntimeTimeoutTest`（JVM） | 协作式取消、异常透传、清理与复用；JVM 真实死循环超时 |
 | `RuntimeLimitsTest` / `ResourceLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用；源码长度/嵌套深度/AST 节点/对象数量/JSON.parse 与 JSON.stringify 深度/正则步数（含显式降低预算时的嵌套量词路由）/排队任务/单轮微任务预算与异常分类 |
 | `ParserModuleTest` | `Parser.parseModule` 的 import/export 基础形式、import.meta/import()、模块顶层 await、模块早期错误、脚本目标零影响 |
-| `ModuleExecutionTest` 等模块测试 | Provider 图加载/链接、ModuleEnvironment、namespace、`import.meta`、顶层 `this`、TLA 拒绝、动态 import 运行期错误、执行/对象/微任务/待处理任务/源码长度（含边界成功）/AST 节点/嵌套深度预算与失败恢复 |
+| `ModuleExecutionTest` 等模块测试 | Provider 图加载/链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、顶层 `this`、TLA 拒绝、执行/对象/微任务/待处理任务/源码长度（含边界成功）/AST 节点/嵌套深度预算与失败恢复 |
 | `ModuleProviderContractTest` | 入口/依赖 referrer、null/异常、sourceName/url、精确 id、空与空白 id 校验、重复 specifier 去重、同 id 多 specifier 去重与首次源码/URL/sourceName 优先、URL 空值回退及空字符串保留、空 sourceName 错误栈、maxModules 与源码预算唯一计数 |
 | `ModuleExecutionMatrixTest` | 循环依赖求值/执行顺序、菱形依赖去重、依赖失败隔离（含入口体）、namespace 描述符（含嵌套/空/无导出入口 exotic 不变量、`__proto__` 数据属性、toStringTag 自有性/唯一符号/ownKeys 与 getOwnPropertyNames 反射面、Object.assign/Array.from 互操作、跨 specifier 身份）、显式导出、`export * as default`/`export * as ns`、default 排除/重导出/live binding、import.meta 缓存 |
 | `IteratorCombinatorsTest` | `Iterator.concat`/`zip`/`zipKeyed` 的顺序、长度模式、padding 与错误传播 |
