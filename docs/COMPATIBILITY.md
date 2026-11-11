@@ -169,7 +169,7 @@
 - Intl、SharedArrayBuffer / Atomics、Temporal / Float16Array / 装饰器 / ShadowRealm 不在当前范围或明确无计划；
 - ArrayBuffer 不支持 resizable / transfer：`ArrayBuffer.prototype.resize` / `transfer` 不存在；分离（detach）状态只能由宿主调用 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 触发，JS 语言本身没有公开 detach API；
 - BigInt 是任意精度实现，但 `MAX_RESULT_BITS = 2^24`（16,777,216 位）；超过上限的 `pow` / 左移 / `asIntN` / `asUintN` 抛 RangeError，这是规范允许的实现定义上限；
-- 其他已知行为/差异：TypedArray 固定小端序；`BigInt("")` 返回 `0n`；`toLocaleString` 使用十进制兜底；`Object.freeze` / `Object.seal` 对非空 TypedArray 不抛 TypeError（已知）；
+- 其他已知行为/差异：TypedArray 固定小端序；`BigInt("")` 返回 `0n`；`toLocaleString` 使用十进制兜底；`Object.freeze` / `Object.seal` 对非空 TypedArray 抛 `TypeError`，空 TypedArray 成功（与规范及 Node 一致）；
 - R1 资源约束已覆盖源码/嵌套/AST/对象/JSON/正则/排队任务/微任务；第三批补充 `JSON.stringify` 的 `maxJsonDepth` 检查，并在 `maxRegexSteps` 显式降到默认值以下时把常见嵌套量词正则路由到受该预算约束的回退引擎。Kotlin Regex 快路径仍由平台实现，不消耗该预算，这是文档化的边界；`EngineLimits` 不是进程级隔离；
 - B2 性能优化与 PKG1 API 契约无计划；S5 已记录属性读写、数组循环与引擎创建的回归，S5.2 只做复测观测，不恢复 B2 排期；
 - `Date` 默认 `HostEnvironment.utcOffsetMillis` 返回 0（UTC）；宿主可按时刻返回毫秒偏移以启用本地时间，内核不内置 DST 规则；`toString` 的时区后缀显示为 `UTC±HH:MM`；
