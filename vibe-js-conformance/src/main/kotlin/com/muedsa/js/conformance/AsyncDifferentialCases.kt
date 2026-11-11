@@ -10672,6 +10672,80 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-four-level-promise-boxed-symbol",
+        """
+        var log = [];
+        var index = 0;
+        var fourth = {
+          then: function (resolve) {
+            resolve(Promise.resolve(Object(Symbol('s'))));
+          }
+        };
+        var third = {
+          then: function (resolve) {
+            resolve(fourth);
+          }
+        };
+        var second = {
+          then: function (resolve) {
+            resolve(third);
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(second);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? result : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-resolve-four-level-promise-error",
+        """
+        var log = [];
+        var index = 0;
+        var fourth = {
+          then: function (resolve) {
+            resolve(Promise.resolve(new Error('e')));
+          }
+        };
+        var third = {
+          then: function (resolve) {
+            resolve(fourth);
+          }
+        };
+        var second = {
+          then: function (resolve) {
+            resolve(third);
+          }
+        };
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve(second);
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return index++ === 0 ? result : { done: true };
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0] === undefined);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-string",
         """
         var log = [];
