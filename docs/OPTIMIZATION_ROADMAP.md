@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1104 / 1104** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1106 / 1106** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -913,6 +913,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B559~B560 Array.fromAsync construct 陷阱返回数组与 Date**：新增两者均可写入并返回对象 2 条异步用例；差分 1098→1100/1100，差分总量达到 1100 |
 | 2026-11-11 | **S2.2-B561~B562 Array.fromAsync construct 陷阱返回 Map 与 RegExp**：新增两者均可写入并返回对象 2 条异步用例；差分 1100→1102/1102 |
 | 2026-11-11 | **S2.2-B563~B564 Array.fromAsync construct 陷阱返回 Set 与 WeakMap**：新增两者均可写入并返回对象 2 条异步用例；差分 1102→1104/1104 |
+| 2026-11-11 | **S2.2-B565~B566 Array.fromAsync construct 陷阱返回 Promise 与包装 Symbol**：新增两者均可写入并返回对象 2 条异步用例；差分 1104→1106/1106 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
