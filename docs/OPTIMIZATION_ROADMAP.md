@@ -12,8 +12,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1190 / 1190** | 2026-11-11 本地运行 |
-| core JS / Wasm（Node） | 各 **1174 / 1174** | 2026-11-11 复跑 |
+| core JVM 单元测试 | **1192 / 1192** | 2026-11-11 本地运行 |
+| core JS / Wasm（Node） | 各 **1176 / 1176** | 2026-11-11 复跑 |
 | host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
 | conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -1088,7 +1088,7 @@ data class EngineLimits(
 | 2026-11-11 | **MOD-3 import attributes**：Parser 支持静态 `import` / `export ... from` 的 `with { ... }`、动态 `import(..., { with })` 选项；`ModuleRequest` 携带属性并传给 Provider；重复键、非字符串值、同说明符不同属性为早期错误 |
 | 2026-11-11 | **MOD-4 动态 import 与 import.meta.resolve**：新增内部 `ModuleRuntime` 复用图缓存；模块内 `import()` 在微任务中加载/链接/求值并返回 Promise；`import.meta.resolve` 委托 `ModuleProvider.resolve`；模块函数的延迟回调通过函数所属记录恢复模块上下文 |
 | 2026-11-11 | **MOD-5 测试与文档**：新增导入属性、动态导入、失败拒绝、重复导入单次求值、延迟回调与 async 恢复、Provider 属性传递用例；README/ARCHITECTURE/COMPATIBILITY/CONFORMANCE 同步 |
-| 2026-11-11 | **S6.2 门禁复跑（模块阶段 9）**：parser 脚本 1,907/1,907 + 模块 262/262、ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、差分 1432/1432、真实库 375/375，strict 全绿；核心 1190/1174 |
+| 2026-11-11 | **S6.2 门禁复跑（模块阶段 9）**：parser 脚本 1,907/1,907 + 模块 262/262、ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、差分 1432/1432、真实库 375/375，strict 全绿；核心 1192/1176 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

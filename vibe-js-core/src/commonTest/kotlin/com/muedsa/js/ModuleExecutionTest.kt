@@ -1,5 +1,6 @@
 package com.muedsa.js
 
+import com.muedsa.js.parser.ParseException
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.EngineLimits
 import com.muedsa.js.runtime.exception.ExecutionLimitException
@@ -286,6 +287,26 @@ class ModuleExecutionTest {
         val promise = engine.interpreter.callFunction(function, JSUndefined, emptyList()) as JSPromise
         engine.eventLoop.drainMicrotasks()
         assertEquals("https://example.test/b.js", (promise.awaitResult() as JSString).value)
+    }
+
+    @Test
+    fun `脚本目标中的 import 调用仍被拒绝`() = runTest {
+        val engine = Engine()
+        val error = assertFailsWith<ParseException> {
+            engine.run("""import("./b.js");""")
+        }
+        assertTrue(error.message?.contains("import") == true)
+    }
+
+    @Test
+    fun `import 元属性 resolve 无法解析时抛 TypeError`() = runTest {
+        val engine = Engine()
+        val error = assertFailsWith<JSException> {
+            engine.runModule(
+                source("a", """export const resolved = import.meta.resolve("./missing.js");"""),
+            )
+        }
+        assertEquals("TypeError", (error.value as JSError).errorName)
     }
 
     @Test
