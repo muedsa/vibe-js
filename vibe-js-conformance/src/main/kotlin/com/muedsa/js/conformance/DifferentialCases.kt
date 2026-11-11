@@ -5081,6 +5081,40 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
 })()""",
     ),
     DifferentialCase(
+        "object-from-entries-entry-length-to-primitive-fractional",
+        """(function () {
+  var entry = {
+    length: {
+      [Symbol.toPrimitive]() {
+        return 2.9;
+      }
+    },
+    0: 'a',
+    1: 'b',
+    2: 'c'
+  };
+  var object = Object.fromEntries([entry]);
+  return Object.keys(object).join(',');
+})()""",
+    ),
+    DifferentialCase(
+        "object-from-entries-entry-length-to-primitive-fractional-string",
+        """(function () {
+  var entry = {
+    length: {
+      [Symbol.toPrimitive]() {
+        return '2.9';
+      }
+    },
+    0: 'a',
+    1: 'b',
+    2: 'c'
+  };
+  var object = Object.fromEntries([entry]);
+  return Object.keys(object).join(',');
+})()""",
+    ),
+    DifferentialCase(
         "object-from-entries-entry-length-to-primitive-false",
         """(function () {
   var entry = {
