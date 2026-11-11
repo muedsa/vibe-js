@@ -591,6 +591,32 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-mapper-this-omitted-sloppy",
+        """
+        var log = [];
+        Array.fromAsync([1], function () {
+          log.push(this === globalThis);
+          return 1;
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-mapper-this-omitted-strict",
+        """
+        var log = [];
+        Array.fromAsync([1], function () {
+          'use strict';
+          log.push(typeof this);
+          log.push(this === undefined);
+          return 1;
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-constructor-returns-object",
         """
         var log = [];
