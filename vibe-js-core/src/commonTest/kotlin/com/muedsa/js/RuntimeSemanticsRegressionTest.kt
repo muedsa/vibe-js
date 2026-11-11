@@ -1713,6 +1713,35 @@ class RuntimeSemanticsRegressionTest {
     }
 
     @Test
+    fun `Array fromAsync 同步迭代 Proxy 结果 done 为 true 时忽略 value getter 抛错`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+                var out = '';
+                var result = new Proxy({ done: true }, {
+                    get: function (target, key) {
+                        if (key === 'value') {
+                            throw new Error('unexpected-value');
+                        }
+                        return target[key];
+                    }
+                });
+                var iterator = {
+                    next: function () {
+                        return result;
+                    }
+                };
+                Array.fromAsync({ [Symbol.iterator]: function () { return iterator; } }).then(function (values) {
+                    out = values.length;
+                }, function (error) {
+                    out = error.message;
+                });
+            """.trimIndent()
+        )
+        assertEquals(0.0, runtime.evalNumber("out"))
+    }
+
+    @Test
     fun `Array fromAsync 写入继承的不可写 length 失败`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(
