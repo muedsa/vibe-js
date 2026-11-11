@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1004 / 1004** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1006 / 1006** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -862,6 +862,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B458~B459 Object.fromEntries done 的函数与对象**：新增两者均为 truthy 停止 2 条同步用例；差分 998→1000/1000，差分总量达到 1000 |
 | 2026-11-11 | **S2.2-B460~B461 Object.fromEntries done 的 Symbol 与 BigInt**：新增两者均为 truthy 停止 2 条同步用例；差分 1000→1002/1002 |
 | 2026-11-11 | **S2.2-B462~B463 Object.fromEntries done 的 0n 与包装 false**：新增 0n 继续、`new Boolean(false)` 停止 2 条同步用例；差分 1002→1004/1004 |
+| 2026-11-11 | **S2.2-B464~B465 Object.fromEntries done 的包装 0 与空串**：新增 `new Number(0)` 与 `new String('')` 均停止 2 条同步用例；差分 1004→1006/1006 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |

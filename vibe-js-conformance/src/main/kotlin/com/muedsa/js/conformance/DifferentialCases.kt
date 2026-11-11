@@ -4947,6 +4947,32 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).length + ':' + object.a;
 })()""",
     ),
+    // Object.fromEntries 的 done 为包装数字 0 时按 truthy 停止。
+    DifferentialCase(
+        "object-from-entries-done-boxed-zero",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: ['a', 1], done: new Number(0) };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
+    // Object.fromEntries 的 done 为包装空串时按 truthy 停止。
+    DifferentialCase(
+        "object-from-entries-done-boxed-empty-string",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: ['a', 1], done: new String('') };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
     // Object.fromEntries 的 next 结果缺少 done 时按 false 处理；无效条目抛 TypeError。
     DifferentialCase(
         "object-from-entries-missing-done",
