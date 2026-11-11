@@ -2135,6 +2135,47 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-proxy-has-throw",
+        """
+        var log = [];
+        var target = { length: 2, 0: 'a', 1: 'b' };
+        var source = new Proxy(target, {
+          has: function () {
+            throw new Error('has-trap');
+          }
+        });
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-proxy-get-throw",
+        """
+        var log = [];
+        var target = { length: 2, 0: 'a', 1: 'b' };
+        var source = new Proxy(target, {
+          get: function (object, key) {
+            if (key === '1') {
+              throw new Error('get-trap');
+            }
+            return object[key];
+          }
+        });
+        Array.fromAsync(source).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-array-like-index-getter-throw",
         """
         var log = [];
