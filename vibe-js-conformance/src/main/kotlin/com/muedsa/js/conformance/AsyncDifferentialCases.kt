@@ -7781,6 +7781,42 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-non-callable",
+        """
+        var log = [];
+        var result = new Proxy({ done: true, then: 1 }, {});
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-result-proxy-then-callable",
+        """
+        var log = [];
+        var result = new Proxy({
+          then: function (resolve) {
+            resolve({ done: true });
+          }
+        }, {});
+        var iterator = {
+          next: function () {
+            return result;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-string",
         """
         var log = [];
