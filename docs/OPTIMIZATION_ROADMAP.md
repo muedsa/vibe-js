@@ -20,7 +20,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Node 差分 | **1338 / 1338** | 含 L 系列同步与异步用例 |
+| Node 差分 | **1340 / 1340** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
 > 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
@@ -1036,6 +1036,7 @@ data class EngineLimits(
 | 2026-11-11 | **S2.2-B800~B801 Array.fromAsync 异步 Proxy 的 then 解析包装布尔与 Date**：新增两者均按对象处理并追加 undefined 2 条异步用例；差分 1332→1334/1334，批次达到 B800 |
 | 2026-11-11 | **S2.2-B802~B803 Array.fromAsync 异步 Proxy 的 then 解析包装字符串与 Map**：新增两者均按对象处理并追加 undefined 2 条异步用例；差分 1334→1336/1336 |
 | 2026-11-11 | **S2.2-B804~B805 Array.fromAsync 异步 Proxy 的 then 解析 Set 与 RegExp**：新增两者均按对象处理并追加 undefined 2 条异步用例；差分 1336→1338/1338 |
+| 2026-11-11 | **S2.2-B806~B807 Array.fromAsync 异步 Proxy 的 then 解析包装数字与 ArrayBuffer**：新增两者均按对象处理并追加 undefined 2 条异步用例；差分 1338→1340/1340 |
 | 2026-11-11 | **S6.2 门禁复跑（846 差分基线）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 846/846、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B22 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 640/640、真实库 375/375，strict 全绿 |
 | 2026-11-10 | **S6.2 门禁复跑（B19 后）**：ES5 15,248/15,248、ES2015 61,786/61,786（跳过 324）、parser 脚本 1,907/1,907 + 模块 262/262、差分 638/638、真实库 375/375，strict 全绿 |
