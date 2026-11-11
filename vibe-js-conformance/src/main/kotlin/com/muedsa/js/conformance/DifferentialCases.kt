@@ -5051,6 +5051,32 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
   return Object.keys(object).length + ':' + object.a;
 })()""",
     ),
+    // Object.fromEntries 的 done 为 Set 时按 truthy 停止。
+    DifferentialCase(
+        "object-from-entries-done-set",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: ['a', 1], done: new Set() };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
+    // Object.fromEntries 的 done 为 Promise 时按 truthy 停止。
+    DifferentialCase(
+        "object-from-entries-done-promise",
+        """(function () {
+  var iterator = {
+    next: function () {
+      return { value: ['a', 1], done: Promise.resolve(false) };
+    }
+  };
+  var object = Object.fromEntries({ [Symbol.iterator]: function () { return iterator; } });
+  return Object.keys(object).length + ':' + object.a;
+})()""",
+    ),
     // Object.fromEntries 的 next 结果缺少 done 时按 false 处理；无效条目抛 TypeError。
     DifferentialCase(
         "object-from-entries-missing-done",
