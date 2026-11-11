@@ -2009,6 +2009,28 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-date-zero",
+        """
+        var log = [];
+        var source = { length: new Date(0), 0: 'a' };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-regexp",
+        """
+        var log = [];
+        var source = { length: /2/, 0: 'a' };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-array-like-length-value-of",
         """
         var log = [];
