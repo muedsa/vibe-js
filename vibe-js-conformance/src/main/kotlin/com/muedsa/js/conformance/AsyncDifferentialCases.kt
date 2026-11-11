@@ -7058,6 +7058,52 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-async-next-thenable-primitive",
+        """
+        var log = [];
+        var thenable = {
+          then: function (resolve) {
+            resolve(1);
+          }
+        };
+        var iterator = {
+          next: function () {
+            return thenable;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-async-next-thenable-null",
+        """
+        var log = [];
+        var thenable = {
+          then: function (resolve) {
+            resolve(null);
+          }
+        };
+        var iterator = {
+          next: function () {
+            return thenable;
+          }
+        };
+        Array.fromAsync({ [Symbol.asyncIterator]: function () { return iterator; } }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-async-next-then-non-callable",
         """
         var log = [];
