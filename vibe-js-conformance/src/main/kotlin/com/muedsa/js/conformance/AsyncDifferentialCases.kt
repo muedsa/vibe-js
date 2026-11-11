@@ -787,6 +787,35 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-this-proxy-constructor",
+        """
+        var log = [];
+        function Result() {
+          return { tag: 'proxy' };
+        }
+        var wrapped = new Proxy(Result, {});
+        Array.fromAsync.call(wrapped, [1]).then(function (values) {
+          log.push(values.tag);
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-this-proxy-arrow",
+        """
+        var log = [];
+        var wrapped = new Proxy(() => {}, {});
+        Array.fromAsync.call(wrapped, [1]).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.name);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-existing-index-conflict",
         """
         var log = [];
