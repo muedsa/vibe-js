@@ -3737,6 +3737,56 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-thenable",
+        """
+        var log = [];
+        Array.fromAsync([1, 2], function () {
+          return {
+            then: function (resolve) {
+              resolve(10);
+            }
+          };
+        }).then(function (values) {
+          log.push(values.length);
+          log.push(values[0]);
+          log.push(values[1]);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-sync-mapper-thenable-reject-closes",
+        """
+        var log = [];
+        var source = {
+          [Symbol.iterator]: function () {
+            var index = 0;
+            return {
+              next: function () {
+                log.push('next');
+                return index < 2 ? { value: ++index, done: false } : { done: true };
+              },
+              return: function () {
+                log.push('return');
+                return { done: true };
+              }
+            };
+          }
+        };
+        Array.fromAsync(source, function (value) {
+          return value === 2
+            ? { then: function (resolve, reject) { reject(new Error('thenable-map')); } }
+            : value;
+        }).then(function () {
+          log.push('ok');
+        }, function (error) {
+          log.push('reject:' + error.message);
+        }).then(function () {
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-generator-mapper",
         """
         var log = [];
