@@ -2122,6 +2122,28 @@ internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(
         """.trimIndent(),
     ),
     AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-typed-array",
+        """
+        var log = [];
+        var source = { length: new Uint8Array([1, 2]), 0: 'a' };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
+        "async-array-from-async-array-like-length-promise",
+        """
+        var log = [];
+        var source = { length: Promise.resolve(1), 0: 'a' };
+        Array.fromAsync(source).then(function (values) {
+          log.push(values.length);
+          globalThis.__diffResult = log;
+        });
+        """.trimIndent(),
+    ),
+    AsyncDifferentialCase(
         "async-array-from-async-array-like-length-value-of",
         """
         var log = [];
