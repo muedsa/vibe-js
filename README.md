@@ -481,8 +481,8 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
 | Test262 ES5 | **15,248/15,248**（跳过 0） |
-| Test262 ES2015 | **62,044/62,044**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
-| Test262 ES2016+ | **17,432/17,432**，失败 0、崩溃 0，跳过 15（module flag） |
+| Test262 ES2015 | **62,230/62,230**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
+| Test262 ES2016+ | **17,436/17,436**，失败 0、崩溃 0，跳过 15（module flag） |
 | Test262 module TLA | **249/249**（`language/module-code/top-level-await`） |
 | Test262 module-code | **593/593**（3 条 source-phase-imports 跳过） |
 | Test262 language module | **686/686**（131 条未支持特性跳过） |
