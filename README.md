@@ -2,7 +2,7 @@
 
 Vibe JS 是一个使用 Kotlin 多平台从零实现的轻量级 JavaScript 运行时。
 
-- 目标：从单个脚本执行起步，覆盖 ES5 / ES2015 常用语法（含 `async/await`、Generator / async generator），并已实现 Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView；模块侧已支持 `Parser.parseModule` 语法解析（含 `import.meta`、动态 `import()`、导入属性与顶层 `await` 语法）以及实验性 `Engine.runModule` 的 Provider/链接/异步求值、动态 `import()`、导入属性与 `import.meta.resolve`；TLA 仅在 Module goal 支持；
+- 目标：从单个脚本执行起步，覆盖 ES5 / ES2015+ 常用语法（含 `async/await`、Generator / async generator），并已实现 Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView；模块侧已支持 `Parser.parseModule` 语法解析（含 `import.meta`、动态 `import()`、导入属性与顶层 `await` 语法）以及实验性 `Engine.runModule` 的 Provider/链接/异步求值、动态 `import()`、导入属性与 `import.meta.resolve`；TLA 仅在 Module goal 支持；
 - 定位：通用 Kotlin 库，核心不绑定任何浏览器/平台原生 API；
 - 构建目标：JVM、Android、JS、Wasm、Linux、Windows、macOS、iOS、tvOS、watchOS；
 - 宿主能力（console、定时器、window、performance、TextEncoder/TextDecoder、structuredClone、URL 等）位于独立的 `:vibe-js-host` 模块。
@@ -461,6 +461,9 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 # language 下所有受支持 module 用例
 ./gradlew :vibe-js-conformance:test262ModuleLanguageConformance
 
+# ES2016+ 特性种子子集
+./gradlew :vibe-js-conformance:test262Es2016PlusConformance
+
 # 真实库 UMD 冒烟（首次自动下载固定版本；严格门禁使用 -Pstrict）
 ./gradlew :vibe-js-conformance:librarySmoke
 # 与 Node 的差分基线（需要 Node 24；严格门禁使用 -Pstrict）
@@ -474,11 +477,12 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 | core JVM | **1206 / 1206** |
 | core JS（Node）/ Wasm（Node） | 各 **1190 / 1190** |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** |
-| conformance 单元测试 | **42 / 42** |
+| conformance 单元测试 | **44 / 44** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
 | Test262 ES5 | **15,248/15,248**（跳过 0） |
-| Test262 ES2015 | **61,786/61,786**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
+| Test262 ES2015 | **62,044/62,044**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
+| Test262 ES2016+ | **17,432/17,432**，失败 0、崩溃 0，跳过 15（module flag） |
 | Test262 module TLA | **249/249**（`language/module-code/top-level-await`） |
 | Test262 module-code | **593/593**（3 条 source-phase-imports 跳过） |
 | Test262 language module | **686/686**（131 条未支持特性跳过） |

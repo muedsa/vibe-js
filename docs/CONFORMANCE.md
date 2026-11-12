@@ -20,13 +20,14 @@
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝）；允许 0 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
-| Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 ES2015 | **62,044 / 62,044**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 ES2016+ | **17,432 / 17,432**，失败 0，崩溃 0，跳过 **15**（module flag） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0，跳过 0 |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0，跳过 3（source-phase-imports） |
 | Test262 language module | **686 / 686**，失败 0，崩溃 0，跳过 131（未支持特性） |
 | Node 差分 | **1432 / 1432** |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） |
-| conformance 单元测试 | **42 / 42**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 22 + RunMetadataTest 4） |
+| conformance 单元测试 | **44 / 44**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4） |
 | host 单元测试 | **40 / 40**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
 
 ## 3. Parser 基线
@@ -130,13 +131,13 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 范围：`test/language` + `test/built-ins` + `test/annexB` 中非 `es5id` 且满足以下条件之一的脚本：`features` 全部落在已支持集合内；或无 `features` 标注但带 `es6id` / `esid`。默认纳入 esid 用例。
 
-当前选中 **32,293** 个文件，执行 **61,786** 次（strict + sloppy）。
+当前选中 **32,422** 个文件，执行 **62,044** 次（strict + sloppy）。
 
 | 指标 | 数值 |
 |---|---:|
-| 选中测试文件 | 32,293 |
-| 执行次数（含 strict/sloppy） | 61,786 |
-| 通过 | 61,786（100%） |
+| 选中测试文件 | 32,422 |
+| 执行次数（含 strict/sloppy） | 62,044 |
+| 通过 | 62,044（100%） |
 | 失败 | 0 |
 | 崩溃 | 0 |
 | 跳过测试文件 | 324 |
@@ -172,6 +173,20 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 完整 `language/module-code` 当前 **593 / 593**（执行 593，失败 0、崩溃 0；另有 3 条 `source-phase-imports` 未支持而跳过）。已接入独立 `test262ModuleCodeConformance` strict 门禁。
 
 `language` 下所有受支持 module 用例当前 **686 / 686**（失败 0、崩溃 0；131 条 import-defer/source-phase/json/text/bytes modules 等未支持特性逐条跳过）。已接入 `test262ModuleLanguageConformance` strict 门禁。
+
+### 5.4 Test262 ES2016+ 子集
+
+```bash
+# 后 ES2015 特性种子（CI 门禁使用 -Pstrict）
+./gradlew :vibe-js-conformance:test262Es2016PlusConformance
+
+# 定向调试
+./gradlew :vibe-js-conformance:test262Es2016PlusConformance -Ptest262Filter=exponentiation
+```
+
+Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版本门禁锚点；用例仍必须全部落在已支持特性集合内。当前选中 **8,837** 个文件、执行 **17,432** 次，全部通过；15 个 module flag 用例跳过，由独立 module suite 覆盖。
+
+本轮同时把 `Reflect.set`、`Reflect.setPrototypeOf`、`DataView.prototype.setUint8`、`TypedArray.prototype.at` 纳入支持特性，ES2015 子集从 61,786 次扩展到 62,044 次。
 
 ### 5.2 筛选统计（未纳入本次口径）
 
@@ -396,7 +411,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 独立 workflow `.github/workflows/conformance.yml`：
 
 - `pull_request`：只跑 **PR 快速子集**（parser 基线 + Node 差分，均不需要 Test262 语料，约 1–2 分钟）；
-- `workflow_dispatch` 手动触发与每周一 02:00 UTC 定时：跑完整 parser / Test262 ES5 / ES2015 / module TLA / 真实库 / 差分；
+- `workflow_dispatch` 手动触发与每周一 02:00 UTC 定时：跑完整 parser / Test262 ES5 / ES2015 / ES2016+ / module / 真实库 / 差分；
 - 完整 Job 在 PR 事件下跳过，避免每个 PR 下载数万级语料；
 - 报告写入 Job Summary 并上传 artifact。
 

@@ -17,11 +17,12 @@
 | core JVM 单元测试 | **1206 / 1206** | 2026-11-12 本地运行 |
 | core JS / Wasm（Node） | 各 **1190 / 1190** | 2026-11-12 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
-| conformance 单元测试 | **42 / 42** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 22 + RunMetadataTest 4 |
+| conformance 单元测试 | **44 / 44** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-12 复跑 |
-| Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 ES2015 | **62,044 / 62,044**，失败 0，崩溃 0 | 选中 32,422；跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 ES2016+ | **17,432 / 17,432**，失败 0，崩溃 0 | 选中 8,837；跳过 15（module flag） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0 | 默认 `language/module-code/top-level-await` |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0 | 3 条 source-phase-imports 跳过 |
 | Test262 language module | **686 / 686**，失败 0，崩溃 0 | 131 条未支持 module 特性跳过 |
@@ -73,7 +74,7 @@
 | 排位 | 编号 | 任务 | 优先级 | 人日 | 触发条件 | 验收摘要 |
 |---:|---|---|---|---:|---|---|
 | 0 | `S6.2` | 门禁维护 | P0（维护） | 1–2 / 批 | 核心、语料、依赖变更后 | parser/Test262/真实库/差分 strict 全绿；allowlist 可审计 |
-| 1 | `TLA-D` | 模块 TLA 设计（仅 Module goal） | P0 | 2–4 | 已确认需要 TLA | [TLA_DESIGN.md](TLA_DESIGN.md) 定稿；事件循环异步入口/锁 spike 有结论 |
+| 1 | `ES2016+` | 后 ES2015 语言特性基线 | P0 | 2–4 / 批 | 新版本特性/覆盖批次 | `test262Es2016PlusConformance` 持续扩展；strict 全绿；缺口逐条可审计 |
 | 2 | `S2.2-B5` | 运行时边界覆盖 | P1 | 2–4 | 下一批覆盖扩展 | 新增 5–10 条无 DOM 边界用例，或 3–5 个有新增特性的 UMD 库；strict 全绿 |
 | 3 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑八组基准；报告落盘；不做优化承诺 |
 
@@ -567,6 +568,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|---|
+| 2026-11-12 | **ES2016+ 基线启动**：新增 `test262Es2016PlusConformance`，以已实现后 ES2015 特性为版本种子，17,432/17,432 通过；同时纳入 `Reflect.set`/`Reflect.setPrototypeOf`/`DataView.prototype.setUint8`/`TypedArray.prototype.at`，ES2015 扩展到 62,044/62,044 |
 | 2026-11-12 | **module language Phase B 完成**：module 顶层 `using`/`await using` 释放、动态 import 目标 SyntaxError 映射、`import.meta` 按函数所属模块隔离；`language` module 子集 686/686（131 条未支持特性跳过）；新增 `test262ModuleLanguageConformance` strict 门禁；核心 JVM 1206、JS/Wasm 1190 |
 | 2026-11-12 | **module-code 全绿**：修复间接导出循环/链接期校验、默认导出函数提升/命名、class 可变绑定、namespace define/delete/has/set 与 super TDZ；`language/module-code` 593/593（3 条 source-phase-imports 跳过）；新增 `test262ModuleCodeConformance` strict 门禁；核心 JVM 1203、JS/Wasm 1187 |
 | 2026-11-12 | **TLA 完成（Module goal）**：新增 `EventLoop.runAsyncTask`、`ModuleStatus.EVALUATING_ASYNC`、异步依赖/cycle root；`Engine.runModule` 接入异步求值；Test262 module TLA 子集 249/249；完整 module-code 560/593（既有缺口）；核心 JVM 1199、JS/Wasm 1183、host 40、conformance 42；全量 parser/ES5/ES2015/差分/真实库 strict 全绿 |
