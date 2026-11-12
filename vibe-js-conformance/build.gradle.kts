@@ -181,6 +181,43 @@ val test262Es2015Conformance = tasks.register<JavaExec>("test262Es2015Conformanc
     outputs.dir(es2015ReportDir)
 }
 
+/**
+ * 运行 Test262 module 子集（TLA / module harness 验收使用）。
+ *
+ * 第一次只接 `language/module-code`；可用 -Ptest262Filter=top-level-await 定向。
+ */
+val test262ModuleConformance = tasks.register<JavaExec>("test262ModuleConformance") {
+    group = "verification"
+    description = "运行 Test262 module 子集并生成语义报告（报告模式）"
+    dependsOn(downloadTest262Corpus)
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.muedsa.js.conformance.Test262ConformanceKt")
+    val moduleReportDir = conformanceReportDir.map { it.dir("test262-module") }
+    args(
+        test262Dir.asFile.absolutePath,
+        moduleReportDir.get().asFile.absolutePath,
+        "--suite", "module",
+    )
+    if (project.hasProperty("test262Limit")) {
+        args("--limit", project.property("test262Limit").toString())
+    }
+    if (project.hasProperty("test262Jobs")) {
+        args("--jobs", project.property("test262Jobs").toString())
+    }
+    if (project.hasProperty("test262Filter")) {
+        args("--filter", project.property("test262Filter").toString())
+    } else {
+        // 默认只跑 TLA 验收目录；完整 module-code 用 -Ptest262Filter=module-code 扩展。
+        args("--filter", "language/module-code/top-level-await")
+    }
+    applyRunnerSettings()
+    if (project.hasProperty("strict")) {
+        args("--strict")
+    }
+    inputs.dir(test262Dir)
+    outputs.dir(moduleReportDir)
+}
+
 /** 下载固定版本的真实 JS 库 UMD 构建。 */
 val downloadLibraryCorpus = tasks.register<JavaExec>("downloadLibraryCorpus") {
     group = "verification"

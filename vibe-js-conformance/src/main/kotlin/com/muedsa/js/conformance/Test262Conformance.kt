@@ -6,6 +6,11 @@ import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.Engine
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.module.ModuleLinkException
+import com.muedsa.js.runtime.module.ModuleProvider
+import com.muedsa.js.runtime.module.ModuleRequest
+import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.value.JSArrayBuffer
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSNativeFunction
@@ -30,6 +35,7 @@ import kotlin.system.exitProcess
  * 当前范围：
  * - `--suite es5`：test/language 与 test/built-ins 中带 `es5id` 的脚本；
  * - `--suite es2015`：非 ES5、特性全部受支持的用例（`--include-esid` 时纳入 esid 标注用例）；
+ * - `--suite module`：带 `flags: [module]` 的模块用例，使用文件型 Provider 与 `Engine.runModule`；
  * - 支持 includes、negative（parse/runtime）、strict/sloppy/raw 变体与 `flags: [async]`；
  * - module、未支持特性与部分 `$262` 宿主钩子由 `Test262Selection` 跳过并记录原因；
  * - 核心库已提供 Reflect/Proxy，运行器不再注入 Reflect 垫片；
@@ -39,12 +45,12 @@ fun main(args: Array<String>) {
     val corpusDir = File(args.getOrElse(0) { "corpus/test262" })
     val reportDir = File(args.getOrElse(1) { "build/reports/conformance" })
     val strict = args.contains("--strict")
-    // --suite es5（默认）或 es2015（按支持特性筛选的 ES2015 子集）
+    // --suite es5（默认）、es2015（按支持特性筛选）或 module（模块执行）
     val suite = args.indexOf("--suite").takeIf { it >= 0 }?.let { index ->
         args.getOrNull(index + 1)
     } ?: "es5"
-    if (suite !in setOf("es5", "es2015")) {
-        System.err.println("未知的 Test262 子集：$suite（可选 es5 / es2015）")
+    if (suite !in setOf("es5", "es2015", "module")) {
+        System.err.println("未知的 Test262 子集：$suite（可选 es5 / es2015 / module）")
         exitProcess(3)
     }
     val limit = args.indexOf("--limit").takeIf { it >= 0 }?.let { index ->
@@ -445,6 +451,7 @@ private class Test262Runner(
 
     private fun variants(flags: Set<String>): List<Variant> {
         return when {
+            "module" in flags -> listOf(Variant("module", injectStrict = false))
             "raw" in flags -> listOf(Variant("raw", injectStrict = false))
             "onlyStrict" in flags -> listOf(Variant("strict", injectStrict = true))
             "noStrict" in flags -> listOf(Variant("sloppy", injectStrict = false))
@@ -463,6 +470,40 @@ private class Test262Runner(
         val startedAt = System.nanoTime()
         val source = if (variant.injectStrict) "\"use strict\";\n${test.source}" else test.source
         val negativePhase = test.metadata.negativePhase
+
+        if ("module" in test.metadata.flags) {
+            if (negativePhase == "parse") {
+                return try {
+                    Parser(Lexer(source, moduleContext = true).tokenize()).parseModule()
+                    fail("期望解析失败，但模块解析器接受了该文件", startedAt)
+                } catch (_: ParseException) {
+                    pass(startedAt)
+                } catch (_: LexerException) {
+                    pass(startedAt)
+                } catch (error: Throwable) {
+                    crash("模块解析崩溃：${error.describe()}", startedAt)
+                }
+            }
+            val run = runtime.withEngine { engine ->
+                executeModuleInEngine(engine, test, source, includes, startedAt)
+            }
+            val result = when (val outcome = run.outcome) {
+                is CaseOutcome.Success -> outcome.value
+                is CaseOutcome.Failure -> crash(
+                    message = "${outcome.kind.label}：${outcome.message}",
+                    startedAt = startedAt,
+                    kind = outcome.kind,
+                )
+            }
+            return run.cleanupFailure?.let { cleanup ->
+                crash(
+                    message = "清理失败：$cleanup；原结果=${result.status}" +
+                        (result.message?.takeIf { it.isNotEmpty() }?.let { "：$it" } ?: ""),
+                    startedAt = startedAt,
+                    kind = FailureKind.CLEANUP,
+                )
+            } ?: result
+        }
 
         if (negativePhase == "parse") {
             return try {
@@ -500,6 +541,103 @@ private class Test262Runner(
                 kind = FailureKind.CLEANUP,
             )
         } ?: result
+    }
+
+    /**
+     * 模块用例：在独立 Engine/Provider 中执行入口模块。
+     *
+     * includes 仍按 Test262 语义作为经典脚本先执行；模块源码本身走 `Engine.runModule`。
+     */
+    @OptIn(ExperimentalModuleApi::class)
+    private suspend fun executeModuleInEngine(
+        engine: Engine,
+        test: TestFile,
+        source: String,
+        includes: List<String>,
+        startedAt: Long,
+    ): ExecutionResult {
+        val negativePhase = test.metadata.negativePhase
+        registerBuildString(engine)
+        registerDollar262(engine)
+        val asyncDone = if ("async" in test.metadata.flags) CompletableDeferred<JSValue>() else null
+        if (asyncDone != null) {
+            engine.globalObject.defineDataProperty(
+                key = PropertyKey.Str("\$DONE"),
+                value = JSNativeFunction(
+                    name = "\$DONE",
+                    length = 1,
+                    prototype = engine.intrinsics.functionPrototype,
+                ) { _, _, args ->
+                    if (!asyncDone.isCompleted) {
+                        asyncDone.complete(args.getOrElse(0) { JSUndefined })
+                    }
+                    JSUndefined
+                },
+                writable = true,
+                enumerable = false,
+                configurable = true,
+            )
+        }
+        return try {
+            for (include in includes) {
+                engine.run(include)
+            }
+            val entry = ModuleSource(
+                id = test.relativePath,
+                source = source,
+                sourceName = test.relativePath,
+                url = test.file.toURI().toString(),
+            )
+            val provider = Test262ModuleProvider(corpusDir, test.file)
+            try {
+                engine.runModule(entry, provider)
+                if (negativePhase == "resolution") {
+                    fail("期望模块解析/链接失败，但模块图正常链接", startedAt)
+                } else if (negativePhase == "runtime") {
+                    fail("期望抛出 ${test.metadata.negativeType ?: "Error"}，但模块正常结束", startedAt)
+                } else if (asyncDone != null) {
+                    if (!asyncDone.isCompleted) {
+                        fail("异步模块用例未调用 \$DONE", startedAt)
+                    } else {
+                        val asyncError = asyncDone.await()
+                        if (engine.interpreter.toBoolean(asyncError)) {
+                            fail("异步失败：${asyncError.describe()}", startedAt)
+                        } else {
+                            pass(startedAt)
+                        }
+                    }
+                } else {
+                    pass(startedAt)
+                }
+            } catch (error: ModuleLinkException) {
+                if (negativePhase == "resolution") {
+                    val expected = test.metadata.negativeType
+                    if (expected == null || expected == "SyntaxError") pass(startedAt)
+                    else fail("期望 $expected，实际链接错误：${error.message}", startedAt)
+                } else {
+                    fail("模块链接失败：${error.message}", startedAt)
+                }
+            }
+        } catch (error: JSException) {
+            if (negativePhase == "runtime") {
+                val expected = test.metadata.negativeType
+                val actual = errorName(error.value)
+                if (expected != null && actual != null && expected == actual) {
+                    pass(startedAt)
+                } else {
+                    fail(
+                        "期望抛出 $expected，实际抛出 ${actual ?: error.value.describe()}：${error.value.describe()}",
+                        startedAt,
+                    )
+                }
+            } else {
+                fail(if (filter != null) error.toString() else error.value.describe(), startedAt)
+            }
+        } catch (error: ParseException) {
+            fail("SyntaxError: ${error.describe()}", startedAt, FailureKind.PARSE)
+        } catch (error: LexerException) {
+            fail("SyntaxError: ${error.describe()}", startedAt, FailureKind.PARSE)
+        }
     }
 
     /**
@@ -755,6 +893,37 @@ private data class TestFile(
     val source: String,
 )
 
+/**
+ * Test262 module 用例的宿主 Provider。
+ *
+ * 只允许读取语料根目录内的相对模块；fixture 与动态 import 都走同一解析规则。
+ */
+@OptIn(ExperimentalModuleApi::class)
+private class Test262ModuleProvider(
+    private val corpusRoot: File,
+    entryFile: File,
+) : ModuleProvider {
+    private val rootPath = corpusRoot.canonicalFile.toPath()
+    private val entryDirectory = entryFile.canonicalFile.parentFile
+
+    override suspend fun load(request: ModuleRequest): ModuleSource? {
+        if (!request.specifier.startsWith(".")) return null
+        val base = request.referrer
+            ?.let { File(corpusRoot, it).canonicalFile.parentFile }
+            ?: entryDirectory
+        val resolved = File(base, request.specifier).canonicalFile
+        if (!resolved.toPath().startsWith(rootPath) || !resolved.isFile) return null
+        val relativePath = resolved.toRelativeString(corpusRoot.canonicalFile)
+            .replace(File.separatorChar, '/')
+        return ModuleSource(
+            id = relativePath,
+            source = resolved.readText(),
+            sourceName = relativePath,
+            url = resolved.toURI().toString(),
+        )
+    }
+}
+
 private data class Variant(
     val name: String,
     val injectStrict: Boolean,
@@ -834,7 +1003,11 @@ private data class Test262Report(
     val elapsedMillis: Long,
 ) {
     fun writeMarkdown(file: File) {
-        val suiteLabel = if (suite == "es2015") "ES2015" else "ES5"
+        val suiteLabel = when (suite) {
+            "es2015" -> "ES2015"
+            "module" -> "module"
+            else -> "ES5"
+        }
         file.writeText(
             buildString {
                 appendLine("# Test262 $suiteLabel 子集语义基线")
@@ -846,12 +1019,16 @@ private data class Test262Report(
                     "Gradle ${metadata.gradleVersion ?: "未知"} / ${metadata.os}")
                 appendLine("- 筛选配置：${metadata.runnerConfig.entries.joinToString { "${it.key}=${it.value}" }}")
                 appendLine("- 语料目录：`$corpus`")
-                if (suite == "es2015") {
-                    appendLine("- 范围：test/language + test/built-ins 中按已支持特性筛选的 ES2015 子集（排除 ES5 与未支持特性）")
-                } else {
-                    appendLine("- 范围：test/language + test/built-ins 中带 `es5id` 的脚本")
+                when (suite) {
+                    "es2015" -> appendLine("- 范围：test/language + test/built-ins 中按已支持特性筛选的 ES2015 子集（排除 ES5 与未支持特性）")
+                    "module" -> appendLine("- 范围：带 `flags: [module]` 的 Test262 module 语料；默认 TLA 验收目录可用 --filter 定向")
+                    else -> appendLine("- 范围：test/language + test/built-ins 中带 `es5id` 的脚本")
                 }
-                appendLine("- 跳过：module 执行无计划（仍按 unsupported flag 跳过）、其他不支持的 flag、当前不支持特性、运行器未提供的 \$262 钩子、缺失 include")
+                if (suite == "module") {
+                    appendLine("- 跳过：当前未支持的 module 特性、运行器未提供的 \$262 钩子、缺失 include")
+                } else {
+                    appendLine("- 跳过：不支持的 flag、当前不支持特性、运行器未提供的 \$262 钩子、缺失 include")
+                }
                 appendLine()
                 appendLine("| 指标 | 数值 |")
                 appendLine("|---|---:|")
@@ -1044,7 +1221,11 @@ private data class Test262Report(
     }
 
     fun printSummary() {
-        val suiteLabel = if (suite == "es2015") "ES2015" else "ES5"
+        val suiteLabel = when (suite) {
+            "es2015" -> "ES2015"
+            "module" -> "module"
+            else -> "ES5"
+        }
         println("Test262 $suiteLabel 子集语义基线")
         println("  选中: $selectedTests, 执行: $executedRuns, 通过: $passedRuns, 失败: $failedRuns, 崩溃: $crashedRuns, 跳过: $skippedTests")
         println("  耗时: ${elapsedMillis}ms")

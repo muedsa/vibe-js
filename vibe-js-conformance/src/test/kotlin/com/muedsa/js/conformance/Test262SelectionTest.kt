@@ -20,6 +20,7 @@ class Test262SelectionTest {
         features: Set<String> = emptySet(),
         flags: Set<String> = emptySet(),
         negativePhase: String? = null,
+        negativeType: String? = null,
         includes: List<String> = emptyList(),
     ) = Metadata(
         es5Id = es5Id,
@@ -29,7 +30,7 @@ class Test262SelectionTest {
         flags = flags,
         features = features,
         negativePhase = negativePhase,
-        negativeType = null,
+        negativeType = negativeType,
     )
 
     private fun reasonOf(decision: SelectionDecision): String =
@@ -147,11 +148,43 @@ class Test262SelectionTest {
     }
 
     @Test
-    fun `带 generator 或 module 标志的用例被跳过`() {
+    fun `带 generator 标志的用例被跳过`() {
         val reason = Test262Selection.skipReason(
             "var x = 1;", metadata(flags = setOf("generator")), "es5",
         )
         assertEquals("unsupported flag", reason)
+    }
+
+    @Test
+    fun `module 标志只在 module 子集放行`() {
+        val metadata = metadata(flags = setOf("module"), features = setOf("top-level-await"))
+        assertIs<SelectionDecision.Selected>(
+            Test262Selection.decide("test/language/module-code/x.js", metadata, "module", false, null)
+        )
+        assertNull(Test262Selection.skipReason("await 1;", metadata, "module"))
+        assertEquals(
+            "unsupported flag",
+            Test262Selection.skipReason("await 1;", metadata, "es2015"),
+        )
+    }
+
+    @Test
+    fun `module 子集允许 resolution 负数用例`() {
+        val metadata = metadata(
+            flags = setOf("module"),
+            negativePhase = "resolution",
+            negativeType = "SyntaxError",
+        )
+        assertNull(Test262Selection.skipReason("export { x } from './missing.js';", metadata, "module"))
+    }
+
+    @Test
+    fun `module 子集仍跳过未支持 feature`() {
+        val metadata = metadata(flags = setOf("module"), features = setOf("import-defer"))
+        assertEquals(
+            "unsupported feature: import-defer",
+            Test262Selection.skipReason("import defer * as ns from './x.js';", metadata, "module"),
+        )
     }
 
     @Test

@@ -179,6 +179,45 @@ jobs:
         path: vibe-js-conformance/build/reports/conformance/
         retention-days: 30
 
+  test262-module-tla:
+    name: Test262 Module TLA
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v6
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v6
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Run Test262 module TLA subset
+      run: ./gradlew :vibe-js-conformance:test262ModuleConformance -Pstrict --console=plain
+
+    - name: Publish summary
+      if: always()
+      run: |
+        if [ -f vibe-js-conformance/build/reports/conformance/test262-module/test262-summary.md ]; then
+          cat vibe-js-conformance/build/reports/conformance/test262-module/test262-summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload Test262 module report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: test262-module-report
+        path: vibe-js-conformance/build/reports/conformance/
+        retention-days: 30
+
   libraries-differential:
     name: Libraries & Node Differential
     if: github.event_name != 'pull_request'

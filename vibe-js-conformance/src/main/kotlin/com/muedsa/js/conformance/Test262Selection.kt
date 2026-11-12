@@ -54,6 +54,7 @@ internal object Test262Selection {
     const val EXCLUDED_NO_FEATURE_ANNOTATION = "无特性标注且缺少 es6id/esid"
     const val EXCLUDED_PATH = "路径排除"
     const val EXCLUDED_FILTER = "--filter 不匹配"
+    const val EXCLUDED_NOT_MODULE = "非 module flag 用例（module 子集排除）"
 
     /**
      * 判定一个用例是否属于当前子集。
@@ -72,6 +73,15 @@ internal object Test262Selection {
         filter: String?,
     ): SelectionDecision {
         if (metadata == null) return SelectionDecision.Excluded(EXCLUDED_NO_METADATA)
+        if (suite == "module") {
+            if ("module" !in metadata.flags) {
+                return SelectionDecision.Excluded(EXCLUDED_NOT_MODULE)
+            }
+            if (filter != null && !relativePath.contains(filter)) {
+                return SelectionDecision.Excluded(EXCLUDED_FILTER)
+            }
+            return SelectionDecision.Selected
+        }
         if (suite == "es2015") {
             // ES2015 子集排除 ES5 用例，避免与 ES5 基线重复
             if (metadata.es5Id != null) return SelectionDecision.Excluded(EXCLUDED_ES5_CASE)
@@ -126,17 +136,19 @@ internal object Test262Selection {
         suite: String,
         relativePath: String = "",
     ): SkipDecision? {
-        // module 执行无计划，仍保留 module flag 跳过；generator 为旧版语料的历史 flag
+        // module 执行由独立 module suite 覆盖；generator 为旧版语料的历史 flag
         // （现行语料已改用 features: [generators]），保留判定以兼容旧语料，
         // 不影响已纳入基线的生成器用例
-        if (metadata.flags.any { it in setOf("module", "generator") }) {
+        if (metadata.flags.any { it in setOf("module", "generator") } && suite != "module") {
             return SkipDecision("unsupported flag")
         }
         // async 负数用例的期望落定方式与普通 $DONE 不同，暂不纳入
         if ("async" in metadata.flags && metadata.negativePhase != null) {
             return SkipDecision("unsupported async negative")
         }
-        val unsupportedFeature = metadata.features.firstOrNull { it in unsupportedFeatures }
+        val unsupportedFeature = metadata.features.firstOrNull {
+            it in unsupportedFeatures && !(suite == "module" && it in moduleSupportedFeatures)
+        }
         if (unsupportedFeature != null) {
             return SkipDecision("unsupported feature: $unsupportedFeature")
         }
@@ -158,7 +170,10 @@ internal object Test262Selection {
         if (suite == "es2015" && source.contains("new SharedArrayBuffer")) {
             return SkipDecision("unsupported feature: SharedArrayBuffer", textMatchOnly = true)
         }
-        if (metadata.negativePhase != null && metadata.negativePhase !in setOf("parse", "runtime")) {
+        if (metadata.negativePhase != null &&
+            metadata.negativePhase !in setOf("parse", "runtime") &&
+            !(suite == "module" && metadata.negativePhase == "resolution")
+        ) {
             return SkipDecision("unsupported negative phase: ${metadata.negativePhase}")
         }
         return null
@@ -267,7 +282,16 @@ internal object Test262Selection {
         "Intl", "WeakRef", "FinalizationRegistry",
         "decorators",
         "dynamic-import", "import-attributes", "top-level-await",
+        "import-defer", "import-bytes", "import-text", "json-modules",
+        "source-phase-imports", "source-phase-imports-module-source",
         "resizable-arraybuffer", "arraybuffer-transfer", "Float16Array",
-        "Temporal",
+        "Temporal", "ShadowRealm",
+    )
+
+    /** module suite 已支持、但在通用 unsupportedFeatures 中仍需放行的特性。 */
+    private val moduleSupportedFeatures = setOf(
+        "top-level-await",
+        "dynamic-import",
+        "import-attributes",
     )
 }
