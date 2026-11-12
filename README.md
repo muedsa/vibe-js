@@ -190,7 +190,7 @@ suspend fun runModuleExample() {
 - 静态 `import ... with { ... }`、`export ... from ... with { ... }` 与动态 `import(..., { with: ... })` 导入属性，原样传给 Provider；
 - `import.meta.url` 与 `import.meta.resolve(specifier)`（后者委托 `ModuleProvider.resolve`）。
 
-TLA 仍只在链接期拒绝，模块图加载器、Test262 module harness 与脚本目标中的 `import()` 仍未实现。
+TLA 仍只在链接期拒绝，模块图加载器与脚本目标中的 `import()` 仍未实现；Test262 module harness 已纳入 TLA 验收范围但尚未实现。
 TLA 设计见 [TLA_DESIGN.md](docs/TLA_DESIGN.md)；详见 [兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
 
 ### 取消与超时
@@ -376,7 +376,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 
 当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
-- **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta`、`import.meta.resolve`、动态 `import()` 与静态/动态导入属性，需 `@ExperimentalModuleApi` opt-in；TLA 执行尚未实现（设计见 [TLA_DESIGN.md](docs/TLA_DESIGN.md)），脚本目标中的 `import()`、模块加载器与 Test262 module harness **未实现/无计划**；
+- **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta`、`import.meta.resolve`、动态 `import()` 与静态/动态导入属性，需 `@ExperimentalModuleApi` opt-in；TLA 执行与 Test262 module harness 已纳入设计（见 [TLA_DESIGN.md](docs/TLA_DESIGN.md)），尚未实现；脚本目标中的 `import()` 与模块加载器 **未实现/无计划**；
 - **无计划**：顶层 await 的执行（L4.7）、WeakRef / FinalizationRegistry；
 - **宿主生态（已实现子集）**：`TextEncoder` / `TextDecoder`（UTF-8、fatal/ignoreBOM/stream）、`structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）、`URL` / `URLSearchParams` 常用能力，均位于 `:vibe-js-host`；
 - **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供通用宿主能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、`Float16Array`、装饰器、resizable / transfer ArrayBuffer；
@@ -496,7 +496,7 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 ## 阶段状态
 
 - **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach）；对应特性已纳入 Test262 基线。
-- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–9（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、`Engine.runModule` 同步求值与错误定位/预算/取消加固）已完成；模块加载器与 Test262 module harness **未实现/无计划**，TLA 执行尚未实现（设计进行中），脚本目标中的 `import()` 仍不支持；API 需 opt-in。
+- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–9（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、`Engine.runModule` 同步求值与错误定位/预算/取消加固）已完成；模块加载器 **未实现/无计划**；TLA 执行与 Test262 module harness 已纳入设计、尚未实现；脚本目标中的 `import()` 仍不支持；API 需 opt-in。
 - **未完成/无计划**：WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划；宿主生态已提供 TextEncoder/TextDecoder、structuredClone 与 URL 子集。
 
 ## 说明

@@ -78,7 +78,7 @@
 
 模块早期错误（early-module）共 63 条，解析成功 0、被拒绝 63、意外接受 0。模块允许列表 `parser-module-allowlist.txt` 当前为空；新增条目必须逐条写“相对语料根目录的 POSIX 路径 + 原因”，且只允许 `.module.js`，禁止目录/后缀/通配符。
 
-> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/同步求值/错误定位），但 Test262 module harness、宿主加载器与 TLA 执行仍未实现，模块能力仍需 opt-in。
+> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/同步求值/错误定位），但 Test262 module harness、宿主加载器与 TLA 执行仍未实现；TLA 与 module harness 已纳入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)），模块能力仍需 opt-in。
 
 ### 3.4 早期错误（脚本）
 
@@ -146,7 +146,7 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 | unsupported harness: `$262` | 1 |
 | unsupported harness: print | 1 |
 
-`module` 仍跳过是因为 Test262 module harness 未实现（解析与同步模块执行已支持）；旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
+`module` 仍跳过是因为 Test262 module harness 尚未实现（解析与同步模块执行已支持，harness 已纳入 TLA 验收设计）；旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
 
 ### 5.2 筛选统计（未纳入本次口径）
 
@@ -346,7 +346,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 9. 已知范围与缺口
 
-- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、同步链接/求值、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()` 与导入属性；TLA 在链接期拒绝。Test262 module harness、宿主加载器与 TLA 执行仍未实现，322 个 `flags: [module]` 用例继续跳过；parser 的 262 个模块用例保留为现状回归门禁。
+- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、同步链接/求值、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()` 与导入属性；TLA 在链接期拒绝。Test262 module harness、宿主加载器与 TLA 执行仍未实现，322 个 `flags: [module]` 用例继续跳过；TLA 与 module harness 已纳入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)）；parser 的 262 个模块用例保留为现状回归门禁。
 - **顶层 await**：只有语法解析和 `hasTopLevelAwait` 标记，没有异步模块求值；模块执行未排期。
 - **模块扩展语法**：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；同一说明符带不同导入属性会被解析器拒绝。
 - **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。
@@ -359,12 +359,12 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 10. 推进顺序
 
-1. **文档与门禁收口（已完成）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–9 标为 experimental，动态 import/导入属性/import.meta.resolve 已落地，TLA 设计进行中，加载器/harness 仍无计划。
+1. **文档与门禁收口（已完成）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–9 标为 experimental，动态 import/导入属性/import.meta.resolve 已落地，TLA 与 module harness 进入设计，加载器仍无计划。
 2. **覆盖扩展（P1，下一批）**：优先补运行时边界（Proxy/Reflect、Generator/async generator、TypedArray/AB detach、Iterator helpers、Set 方法等），其次才是有新增特性的 UMD 库；保持“无 DOM/浏览器全局”的加载条件。
 3. **门禁维护（P0）**：每批覆盖或核心改动后重跑 parser、ES5、ES2015、差分与真实库 strict。
 4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
 
-**模块阶段 0–9（实验性）已完成，模块后续能力（L4.4、L4.6a+、L4.6b、L4.7）仍未实现**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–9 已补静态表、导入属性、类型化声明、range、TLA 标记、语法收紧、公共 Provider/预算、内部图加载、ResolveExport/import 链接、声明实例化、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、同步 `runModule` 与错误定位；不投入宿主加载器/module harness/TLA 执行。
+**模块阶段 0–9（实验性）已完成，TLA 与 module harness 进入设计**：保留 `Parser.parseModule` 与现有 262 个模块语料回归；阶段 0–9 已补静态表、导入属性、类型化声明、range、TLA 标记、语法收紧、公共 Provider/预算、内部图加载、ResolveExport/import 链接、声明实例化、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、同步 `runModule` 与错误定位；TLA、module harness 见 [TLA_DESIGN.md](TLA_DESIGN.md)，宿主加载器仍不投入。
 
 ## 11. CI
 

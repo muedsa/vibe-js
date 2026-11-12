@@ -3,7 +3,7 @@
 > 状态：**阶段 0–9 已作为实验性模块实现落地；不承诺正式版兼容性**。Parser、
 > 公共 Provider API、内部图加载/链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、
 > 动态 `import()`、导入属性、`Engine.runModule`、同步求值以及错误定位/预算/取消/恢复加固已接通。
-> 模块加载器、Test262 module harness 仍无计划；TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+> 模块加载器仍无计划；TLA 与 Test262 module harness 已纳入设计，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 > 该 API 需要 `@ExperimentalModuleApi` opt-in。
 >
 > 注：本文主体记录阶段 0–8 的同步静态模块 MVP 设计；阶段 9 补充的动态 `import()`、
@@ -809,4 +809,4 @@ M7 -> L1/L2/L3/L4/L5
 - 阶段 0–8 的 Parser、Provider API、内部图加载、静态链接、模块环境/声明实例化、namespace、求值与加固已按本文落地；后续能力（加载器/TLA/harness）仍无计划。
 - `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器与 harness 仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
-- 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、TLA、import attributes、宿主文件加载器和 Test262 module harness 是后续能力。
+- 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、import attributes、模块加载器和 Test262 module harness 是后续能力；TLA 与 module harness 已进入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)）。

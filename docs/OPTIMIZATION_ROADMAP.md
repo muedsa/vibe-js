@@ -4,7 +4,7 @@
 >
 > 本文只列**尚未完成**的工作。已实现能力只作为后续工作的依赖与不可破坏契约出现，不逐项重复。
 >
-> **2026-11-11 调整：模块阶段 0–9 已作为实验性实现完成**（Parser 静态表与导入属性、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器、Test262 module harness 仍无计划；核心继续不引入平台文件/URL IO。
+> **2026-11-11 调整：模块阶段 0–9 已作为实验性实现完成**（Parser 静态表与导入属性、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器仍无计划；核心继续不引入平台文件/URL IO。TLA 与 Test262 module harness 已进入设计，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 >
 > **2026-11-12 调整：TLA 已确认仅需支持 Module goal**（Script goal 不支持）。TLA 设计提案见 [TLA_DESIGN.md](TLA_DESIGN.md)；执行实现尚未开始，当前仍在链接期拒绝。
 
@@ -35,12 +35,12 @@
 - **二进制与数值**：BigInt、11 种 TypedArray、ArrayBuffer、DataView、detach 语义。
 - **集合与内建**：Iterator helpers、DisposableStack / AsyncDisposableStack、Promise 组合、`RegExp.escape`、ES2025 Set 方法等。
 - **宿主生态**：`:vibe-js-host` 提供 TextEncoder/TextDecoder（UTF-8、fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/二进制/循环）、URL/URLSearchParams 常用子集。
-- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性，但 API 需 opt-in；TLA 执行尚未实现（设计进行中），宿主加载器、module harness 仍无计划。
+- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性，但 API 需 opt-in；TLA 执行与 Test262 module harness 已进入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)），尚未实现；宿主加载器仍无计划。
 - **资源约束**：`EngineLimits` 已覆盖源码长度、嵌套深度、AST 节点、对象数量、JSON 深度、正则步数、排队任务、单轮微任务等预算；`JSON.stringify` 与 `JSON.parse` 共用 `maxJsonDepth`，显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎。
 
 ### 1.3 当前边界
 
-当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备同步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性；TLA 设计进行中，宿主文件/URL 加载器、module harness 仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/transfer ArrayBuffer 不在范围。
+当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备同步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性；TLA 与 Test262 module harness 已进入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)），宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/transfer ArrayBuffer 不在范围。
 
 ## 2. 排序原则
 
@@ -51,7 +51,7 @@
 | **维护主线** | `DOC-2`（收口）→ `S6.2` → `S2.2` | 保持文档/门禁绿色，持续补运行时边界与真实库覆盖 |
 | **观测** | `S5.2` | 只做性能复测，B2 仍无计划 |
 | **实验性实现** | 模块阶段 0–9（已完成）、TLA 设计（进行中） | Parser/Provider/图加载/导入属性/链接/环境/namespace/import.meta/动态 import/runModule + 错误定位/预算/取消/恢复加固；TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)，实现前需先解决异步事件循环入口 |
-| **无计划** | 模块加载器、Test262 module harness、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
+| **无计划** | 模块加载器、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
 
 ### 2.1 为什么模块加载器仍不设默认主线
 
@@ -60,7 +60,7 @@
 1. **核心只接受宿主源码/Provider**：`Engine.runModule` 由宿主提供 `ModuleSource`/`ModuleProvider`；核心不读取文件、URL 或网络。
 2. **模块加载器涉及平台差异**：文件系统、URL、包解析在 JVM/Android/Native/Node 与浏览器/Wasm 上差异很大，放进核心会破坏“核心无平台 API”的约束。
 3. **平台矩阵不适合核心做 IO**：JVM/Android/Native/Node 可以读文件，浏览器/Wasm 不能；需要加载器的宿主应自行实现 Provider。
-4. **执行能力仍有边界**：TLA 已确认仅需 Module goal，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)；执行实现前需先完成事件循环异步入口与异步求值状态机。模块 Test262 module harness 仍无计划；动态 `import()` 已在模块内可用，脚本目标仍不支持。
+4. **执行能力仍有边界**：TLA 已确认仅需 Module goal，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)；执行实现前需先完成事件循环异步入口与异步求值状态机。Test262 module harness 已纳入 TLA 验收设计；动态 `import()` 已在模块内可用，脚本目标仍不支持。
 5. **实验性 API 不承诺兼容**：`Engine.runModule` 与 Provider 类型需要 `@ExperimentalModuleApi` opt-in；签名、行为与错误分类仍可能调整。
 
 ## 3. 推进列表
@@ -174,16 +174,16 @@ repeat(100) {
 | `L4.2` | 模块链接（Module Record / ResolveExport） | **阶段 4 已完成（实验性）** |
 | `L4.3` | 模块求值（live binding / 命名空间） | **阶段 7 已完成（实验性、同步子集）** |
 | `L4.4` | 模块加载器抽象与宿主文件加载器 | **无计划**：Provider 抽象已有，文件/URL 加载器不在核心 |
-| `L4.6a+` | Test262 `module-code` parse 门禁 | **无计划** |
-| `L4.6b` | Test262 module harness | **无计划** |
-| `L4.7` | 顶层 await 执行 | **无计划**；链接期拒绝 |
+| `L4.6a+` | Test262 `module-code` parse 门禁 | **部分现状**：262 个 parser 模块语料已纳入；完整 module-code 执行门禁随 TLA/module harness 设计 |
+| `L4.6b` | Test262 module harness | **纳入 TLA 验收设计**，见 [TLA_DESIGN.md](TLA_DESIGN.md)，尚未实现 |
+| `L4.7` | 顶层 await 执行 | **设计进行中**（仅 Module goal），见 [TLA_DESIGN.md](TLA_DESIGN.md)；当前仍链接期拒绝 |
 
 保留现状：
 
 - `Parser.parseModule()`、262 个模块语料门禁与 `ParserModuleTest` 继续保留；
 - 实验性 `Engine.runModule` / Provider / namespace / `import.meta` 保留，需 opt-in；
-- `ImportCallExpr` 执行期仍按未支持报错；
-- 不新增模块加载器、module harness 或 TLA 执行。
+- `ImportCallExpr` 执行期已接通；TLA 与 module harness 进入设计，不代表当前已实现；
+- 不新增模块加载器；TLA/module harness 的实现单列，并保持核心无平台 IO。
 
 > 模块阶段 0–9 的 API 与实施细节见 §6.2；后续只保留加载器/TLA 的设计参考。
 
@@ -422,8 +422,8 @@ data class EngineLimits(
 
 如果未来重启，建议按以下顺序落地（估算仅供参考，不构成排期）：
 
-> 以下是早期粗粒度参考；实际实施以 [MODULE_DESIGN.md](MODULE_DESIGN.md) 的阶段 0–9 为准。
-> Test262 module harness 在详细设计中被后置，不属于静态模块 MVP。
+> 以下是早期粗粒度参考；实际实施以 [MODULE_DESIGN.md](MODULE_DESIGN.md) 的阶段 0–9 与 [TLA_DESIGN.md](TLA_DESIGN.md) 为准。
+> Test262 module harness 已随 TLA 重新纳入设计，不再按“首版后置”处理。
 
 | 阶段 | 内容 | 参考人日 |
 |---|---|---:|
@@ -466,7 +466,7 @@ data class EngineLimits(
 | SharedArrayBuffer / Atomics | **无计划 / 范围外** | 单线程模型不引入共享内存 |
 | resizable / transfer ArrayBuffer | **无计划 / 范围外** | 只支持固定长度与宿主 detach |
 | Temporal / Float16Array / 装饰器 / ShadowRealm | **无计划 / 范围外** | 不在当前语言范围 |
-| `export using` / Test262 module harness | **无计划** | 模块执行其余部分已落地；TLA 已进入设计，不在这两项无计划范围内 |
+| `export using` | **无计划** | 模块执行其余部分已落地；TLA/module harness 已进入设计 |
 | WeakRef / FinalizationRegistry | **无计划** | 并入 M2 弱引用方向 |
 
 ## 8. 验证命令
@@ -505,8 +505,8 @@ data class EngineLimits(
 |---|---|
 | 执行入口 | `Engine.run(source)` 为脚本入口；实验性 `Engine.runModule(...)` 为同步模块入口，需 opt-in；两者共享同一 Engine 但模块图不跨调用缓存 |
 | 核心平台边界 | 核心 `commonMain` 不引用平台 IO/文件/网络 API；文件/URL 加载只能由宿主 Provider 提供；浏览器/Wasm 不得假设文件系统 |
-| 模块解析与执行现状 | `Parser.parseModule()`、262 个模块语料门禁、Provider/链接/环境/namespace/import.meta/runModule 保留；不新增核心加载器/harness/TLA 执行 |
-| 模块后续能力 | 文件/URL 加载器、`L4.6a+`/`L4.6b` module harness、`L4.7` TLA 执行不进入排期；文档不得写成“下一版本承诺” |
+| 模块解析与执行现状 | `Parser.parseModule()`、262 个模块语料门禁、Provider/链接/环境/namespace/import.meta/runModule 保留；不新增核心加载器；TLA/module harness 进入设计，实现单列 |
+| 模块后续能力 | 文件/URL 加载器不进入排期；`L4.6b` module harness 与 `L4.7` TLA 已纳入 [TLA_DESIGN.md](TLA_DESIGN.md)，实现前不得写成“下一版本承诺” |
 | 资源约束 | `EngineLimits` 的默认值不得回退；`ResourceLimitException` 不可被 JS `catch`/`finally` 吞掉；超限行为与分类可预期 |
 | 协作式取消与超时 | 解释器检查点观察取消；宿主取消原样传播；JS `catch`/`finally` 不吞宿主中止；剩余微任务丢弃 |
 | 执行配额 | 步数超限抛宿主 `ExecutionLimitException`；深度超限抛 JS `RangeError`；async 继承创建时的逻辑深度 |

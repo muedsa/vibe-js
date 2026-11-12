@@ -2,6 +2,11 @@
 
 > 状态：**设计提案，未实现**。范围仅限 ECMAScript Module goal；Script goal 明确不支持 TLA。
 >
+> 已确认决策：
+> - 异步循环按规范级支持，不把“拒绝异步循环”作为永久限制；
+> - 事件循环采用新增异步宿主入口，不把 `runTask` 的锁语义扩展到整个 TLA 生命周期；
+> - Test262 module harness 纳入 TLA 验收范围，但实现单列，不与核心求值器混在一起。
+>
 > 目标基线：ES2022 top-level await，并参考当前 Test262 `module-code/top-level-await` 的异步求值/循环语义。
 >
 > 相关文档：[MODULE_DESIGN.md](MODULE_DESIGN.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[COMPATIBILITY.md](COMPATIBILITY.md)。
@@ -62,8 +67,9 @@
 - Script goal 的 TLA；
 - `eval` / `Function` 的 TLA；
 - 模块加载器（文件/URL/网络）继续由宿主 `ModuleProvider` 负责；
-- Test262 module harness 不在本设计范围内；
 - 不把 TLA 实现成“异步脚本入口”。
+
+Test262 module harness 纳入验收范围，但作为独立运行器能力设计，见 §11；它不改变核心“无平台 IO”的边界。
 
 ## 4. 数据模型
 
@@ -200,10 +206,10 @@ inner(module):
 设计建议：
 
 - 记录 `dfsIndex` / `dfsAncestorIndex`，识别循环根；
-- 若异步循环无法按规范完成，明确以 JS `TypeError` 拒绝（消息包含模块 id），并在文档/测试中固定该限制；
-- 规范完整实现作为后续增强，但必须在设计阶段明确 MVP 是“支持异步循环”还是“明确拒绝”。不能静默挂起。
-
-Test262 已有 `pending-async-dep-from-cycle` 等用例；如果目标是规范级 TLA，异步循环不能作为永久限制。
+- 采用当前规范的 `[[CycleRoot]]` / `[[AsyncEvaluationOrder]]` / `[[AsyncParentModules]]` 关系，支持规范级异步循环；
+- 不再保留“异步循环一律拒绝”的 MVP 分支；
+- 用 Test262 `pending-async-dep-from-cycle`、`async-module-does-not-block-sibling-modules` 等用例作为设计验收样本；
+- 若实现过程中发现规范版本差异，固定到当前 TC39 草案算法，并在测试中记录版本假设。
 
 ## 6. 执行入口与事件循环
 
@@ -236,7 +242,7 @@ eventLoop.runTask {
 
 ### 6.3 候选方案
 
-**方案 A（推荐）：新增异步宿主入口**
+**方案 A（已确认）：新增异步宿主入口**
 
 在 `EventLoop` 增加类似 `runAsyncTask` 的入口：
 
@@ -245,15 +251,9 @@ eventLoop.runTask {
 - 用一个执行租约（lease）只在 JS 执行片段持有互斥；
 - `runModule` 等待任务完成时驱动事件循环，而不是在锁内阻塞。
 
-**方案 B：保留 runTask，只允许微任务 TLA**
+方案 B/C 不采用：B 无法等待宿主定时器，C 会改变 `runModule` 的既有 API 语义。
 
-实现简单，但 `await setTimeout` 会挂起/死锁，不符合 TLA 语义，不建议作为最终方案。
-
-**方案 C：`runModule` 返回 Promise/Job**
-
-把“等待 TLA”交给调用方，API 语义改变；不推荐，除非明确接受 breaking change。
-
-建议先做方案 A 的最小 spike：一个模块 `await Promise.resolve()` 和一个 `await 宿主定时器`，验证锁、checkpoint、取消和预算行为，再进入模块求值器改造。
+实施前仍需用 Phase 0 spike 决定租约粒度（整个任务 / 每个 JS 片段）以及它与 `Engine.run`、定时器回调、取消的交互。
 
 ## 7. 动态 import
 
@@ -318,9 +318,47 @@ TLA 后必须：
 
 - 现有 parser / ES5 / ES2015 / 差分 / 真实库 strict 全绿；
 - 现有 `TLA 在链接期被拒绝` 测试必须改写为执行语义测试，不能删除；
-- Test262 module harness 若后续接入，再增加 `flags: [module, async]` 与 `features: [top-level-await]` 的正式基线。
+- Test262 module harness 纳入 TLA 验收：增加 `flags: [module, async]` 与 `features: [top-level-await]` 的正式基线。
 
-## 11. 分阶段实施
+## 11. Test262 module harness
+
+harness 放在 `vibe-js-conformance`，作为 JVM 运行器读取语料，不进入核心。
+
+### 11.1 执行模型
+
+- 每个测试使用独立 `Engine`/realm；
+- 测试文件作为入口 `ModuleSource`，`id` 使用相对 POSIX 路径，`url` 用于 `import.meta.url`；
+- `ModuleProvider` 按当前模块路径解析相对说明符，只允许语料根目录内文件；
+- includes 按 Test262 语义作为经典脚本先执行，再执行模块入口；
+- `$262.evalScript` / `$262.detachArrayBuffer` / `$DONE` / `print` 复用现有 harness 能力；
+- `flags: [async]` 通过 `$DONE` 驱动，TLA 完成后必须继续冲刷微任务；
+- `negative` 覆盖 parse / link / runtime 三个阶段；模块链接错误映射现有 `ModuleLinkException`；
+- 异步用例设置独立超时，超时记为失败而不是挂死。
+
+### 11.2 范围与门禁
+
+建议分两阶段：
+
+- **Phase A（TLA 验收）**：`language/module-code/top-level-await` + 相关 dynamic import/async fixture；
+- **Phase B（模块回归）**：完整 `language/module-code`，再按 features/allowlist 逐项加入。
+
+门禁要求：
+
+- 新增 `test262ModuleConformance` 任务；
+- baseline 记录通过数、失败数、跳过数；
+- 不允许目录/后缀/通配符 allowlist；
+- skip 必须逐条写原因；
+- 每个 TLA 用例的失败必须可复现，不能以“module harness 未实现”统一跳过。
+
+### 11.3 关键决策
+
+- harness 是否复用 `Test262Conformance` 的 harness 代码，还是抽出共享模块；
+- includes 的全局作用域与模块 realm 的关系；
+- 每个测试是否共享模块缓存（建议独立，避免跨测试污染）；
+- 完整 module-code 还是先只接 TLA 目录；
+- 异步超时的默认值。
+
+## 12. 分阶段实施
 
 | 阶段 | 内容 | 估算 |
 |---|---|---:|
@@ -328,16 +366,19 @@ TLA 后必须：
 | 1 | ModuleRecord 异步状态、移除链接期 TLA 拒绝、单模块/依赖链 TLA | 4–6 人日 |
 | 2 | 兄弟模块异步调度、pending async dependency、cycle root | 4–7 人日 |
 | 3 | 动态 import、错误/取消/预算、namespace/TDZ 边界 | 2–4 人日 |
-| 4 | 测试矩阵、文档、strict 门禁、失败恢复 | 2–3 人日 |
+| 4 | 核心测试矩阵、文档、strict 门禁、失败恢复 | 2–3 人日 |
+| 5 | Test262 module harness（Phase A） | 5–8 人日 |
+| 6 | 完整 module-code 接入与 known-fail 分类（Phase B） | 5–12 人日 |
 
-不含 Test262 module harness。若要求正式 TLA 规范基线，module harness 需另立 10–20 人日。
+核心 TLA 与 harness 可以并行，但 harness Phase A 依赖核心 TLA 可用。
 
-## 12. 开放决策
+## 13. 仍待决策
 
-1. 异步循环是首版支持，还是明确拒绝并固定为限制？
-2. `Engine.runModule` 是否保持 `suspend` 返回 namespace，还是提供 Promise 风格的重载？
-3. TLA 等待宿主定时器时，事件循环入口采用方案 A 的哪个粒度（整个 runModule / 每个 JS 执行片段）？
-4. `maxMicrotasksPerRun` 在 TLA 跨轮次时按单轮还是整次 runModule 计算？
-5. 是否把 Test262 module harness 纳入 TLA 的 Definition of Done？
+1. `Engine.runModule` 保持 `suspend` 返回 namespace，还是增加 Promise 风格重载？
+2. 新异步宿主入口的租约粒度：整个 runModule / 每个 JS 执行片段？
+3. `maxMicrotasksPerRun` 在 TLA 跨轮次时按单轮还是整次 runModule 计算？
+4. module harness Phase A 只接 `top-level-await`，还是同时接 `module-code` 的其他目录？
+5. harness 的 includes、realm、模块缓存隔离策略？
+6. Test262 module harness 的 known-fail 策略：先 allowlist 具体路径，还是先只跑通过子集？
 
-在第 0 阶段 spike 完成前，不建议直接修改 `ModuleLinker` / `ModuleEvaluator` 的实现。
+第 0 阶段 spike 完成前，不建议直接修改 `ModuleLinker` / `ModuleEvaluator` 的实现。
