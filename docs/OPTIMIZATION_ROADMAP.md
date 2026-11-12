@@ -565,6 +565,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|---|
+| 2026-11-12 | **TLA 完成（Module goal）**：新增 `EventLoop.runAsyncTask`、`ModuleStatus.EVALUATING_ASYNC`、异步依赖/cycle root；`Engine.runModule` 接入异步求值；Test262 module TLA 子集 249/249；完整 module-code 560/593（既有缺口）；核心 JVM 1199、JS/Wasm 1183、host 40、conformance 42；全量 parser/ES5/ES2015/差分/真实库 strict 全绿 |
 | 2026-11-08 | 重写为“后续路线（未完成工作）”：移除已完成项清单，只保留 P0 模块执行与宿主生态、P1 质量项、长期/延后项；补充每项的范围、依赖、人日、风险、验收与触发条件 |
 | 2026-11-09 | 重新排序：模块执行作为条件 P0，模块语法降为最低优先级；M2/B2/PKG1/L4.7 列为无计划 |
 | 2026-11-09 | **L4.5 完成**：宿主模块新增 TextEncoder/TextDecoder（UTF-8）、structuredClone、URL/URLSearchParams 常用子集与 13 条测试；从按需队列移除 |
