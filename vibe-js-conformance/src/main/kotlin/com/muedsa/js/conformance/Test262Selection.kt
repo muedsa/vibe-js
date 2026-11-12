@@ -306,6 +306,12 @@ internal object Test262Selection {
         // ES2024/2025 小型特性批次：均已在核心实现，逐特性纳入基线
         "promise-try", "Math.sumPrecise", "Error.isError",
         "iterator-includes", "Iterator.prototype.join",
+        "iterator-chunking", "upsert", "symbols-as-weakmap-keys",
+        "iterator-sequencing", "joint-iteration",
+        "explicit-resource-management",
+        "hashbang", "optional-catch-binding", "stable-array-sort",
+        "json-superset", "error-stack-accessor", "json-parse-with-source",
+        "for-in-order", "array-grouping",
     )
 
     /**
