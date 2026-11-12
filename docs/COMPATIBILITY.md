@@ -10,7 +10,7 @@
 > 环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与同步求值），但 **TLA 执行与宿主加载器尚未实现**，
 > 且 API 需 `@ExperimentalModuleApi` opt-in。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
-> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；TLA 执行、性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
+> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；TLA 设计进行中，性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
 > 宿主生态已提供 TextEncoder/TextDecoder（UTF-8）、
 > structuredClone 与 URL/URLSearchParams 常用子集（`:vibe-js-host`）。
 
@@ -159,7 +159,7 @@
 | `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
 | `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
-- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、同步求值、动态 `import()` 与静态/动态导入属性；TLA 仍在链接期拒绝。动态 `import()` 只在模块代码及其延迟回调中可用，脚本目标仍不支持；模块加载器、Test262 module harness 仍无计划；API 需 opt-in；
+- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、同步求值、动态 `import()` 与静态/动态导入属性；TLA 仍在链接期拒绝，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。动态 `import()` 只在模块代码及其延迟回调中可用，脚本目标仍不支持；模块加载器、Test262 module harness 仍无计划；API 需 opt-in；
 - 模块语法限制：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；导入属性按说明符去重，同一说明符带不同属性会被解析器拒绝；
 - 模块导入属性与解析：`ModuleRequest.attributes` 原样传给 Provider；`import.meta.resolve` 委托 `ModuleProvider.resolve`（默认实现退化为 `load` 并返回 `url ?: id`）；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；

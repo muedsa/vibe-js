@@ -3,12 +3,13 @@
 > 状态：**阶段 0–9 已作为实验性模块实现落地；不承诺正式版兼容性**。Parser、
 > 公共 Provider API、内部图加载/链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、
 > 动态 `import()`、导入属性、`Engine.runModule`、同步求值以及错误定位/预算/取消/恢复加固已接通。
-> 模块加载器、TLA 执行、Test262 module harness 仍无计划。
+> 模块加载器、Test262 module harness 仍无计划；TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 > 该 API 需要 `@ExperimentalModuleApi` opt-in。
 >
 > 注：本文主体记录阶段 0–8 的同步静态模块 MVP 设计；阶段 9 补充的动态 `import()`、
 > 导入属性与 `import.meta.resolve` 以 [README.md](../README.md)、[COMPATIBILITY.md](COMPATIBILITY.md)
 > 与 [ARCHITECTURE.md](ARCHITECTURE.md) 的当前口径为准，下文相关"不支持/无计划"表述属于当时设计记录。
+> TLA 已确认仅需支持 Module goal，设计提案见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。

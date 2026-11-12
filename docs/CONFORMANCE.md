@@ -359,7 +359,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 10. 推进顺序
 
-1. **文档与门禁收口（已完成）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–9 标为 experimental，动态 import/导入属性/import.meta.resolve 已落地，加载器/TLA/harness 仍无计划。
+1. **文档与门禁收口（已完成）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–9 标为 experimental，动态 import/导入属性/import.meta.resolve 已落地，TLA 设计进行中，加载器/harness 仍无计划。
 2. **覆盖扩展（P1，下一批）**：优先补运行时边界（Proxy/Reflect、Generator/async generator、TypedArray/AB detach、Iterator helpers、Set 方法等），其次才是有新增特性的 UMD 库；保持“无 DOM/浏览器全局”的加载条件。
 3. **门禁维护（P0）**：每批覆盖或核心改动后重跑 parser、ES5、ES2015、差分与真实库 strict。
 4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。

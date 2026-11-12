@@ -1,10 +1,12 @@
 # 后续路线（未完成工作）
 
-> 更新：2026-11-10。代码基线：见最近提交。
+> 更新：2026-11-12。代码基线：见最近提交。
 >
 > 本文只列**尚未完成**的工作。已实现能力只作为后续工作的依赖与不可破坏契约出现，不逐项重复。
 >
-> **2026-11-11 调整：模块阶段 0–9 已作为实验性实现完成**（Parser 静态表与导入属性、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器、Test262 module harness 与 TLA 执行仍无计划；核心继续不引入平台文件/URL IO。
+> **2026-11-11 调整：模块阶段 0–9 已作为实验性实现完成**（Parser 静态表与导入属性、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器、Test262 module harness 仍无计划；核心继续不引入平台文件/URL IO。
+>
+> **2026-11-12 调整：TLA 已确认仅需支持 Module goal**（Script goal 不支持）。TLA 设计提案见 [TLA_DESIGN.md](TLA_DESIGN.md)；执行实现尚未开始，当前仍在链接期拒绝。
 
 ## 1. 当前基线
 
@@ -33,23 +35,23 @@
 - **二进制与数值**：BigInt、11 种 TypedArray、ArrayBuffer、DataView、detach 语义。
 - **集合与内建**：Iterator helpers、DisposableStack / AsyncDisposableStack、Promise 组合、`RegExp.escape`、ES2025 Set 方法等。
 - **宿主生态**：`:vibe-js-host` 提供 TextEncoder/TextDecoder（UTF-8、fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/二进制/循环）、URL/URLSearchParams 常用子集。
-- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性，但 API 需 opt-in，TLA 执行、宿主加载器、module harness 仍无计划。
+- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性，但 API 需 opt-in；TLA 执行尚未实现（设计进行中），宿主加载器、module harness 仍无计划。
 - **资源约束**：`EngineLimits` 已覆盖源码长度、嵌套深度、AST 节点、对象数量、JSON 深度、正则步数、排队任务、单轮微任务等预算；`JSON.stringify` 与 `JSON.parse` 共用 `maxJsonDepth`，显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎。
 
 ### 1.3 当前边界
 
-当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备同步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性，但 TLA、宿主文件/URL 加载器、module harness 仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/transfer ArrayBuffer 不在范围。
+当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备同步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性；TLA 设计进行中，宿主文件/URL 加载器、module harness 仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/transfer ArrayBuffer 不在范围。
 
 ## 2. 排序原则
 
-模块阶段 0–9 已作为**实验性实现**落地；同一 Engine 可执行 Script 或同步模块图，但模块 API 不承诺正式兼容性，加载器/TLA 仍无计划。
+模块阶段 0–9 已作为**实验性实现**落地；同一 Engine 可执行 Script 或同步模块图，但模块 API 不承诺正式兼容性。加载器仍无计划；TLA 已确认仅需 Module goal，设计已启动但尚未实现。
 
 | 队列 | 范围 | 说明 |
 |---|---|---|
 | **维护主线** | `DOC-2`（收口）→ `S6.2` → `S2.2` | 保持文档/门禁绿色，持续补运行时边界与真实库覆盖 |
 | **观测** | `S5.2` | 只做性能复测，B2 仍无计划 |
-| **实验性实现** | 模块阶段 0–9（已完成） | Parser/Provider/图加载/导入属性/链接/环境/namespace/import.meta/动态 import/runModule + 错误定位/预算/取消/恢复加固；opt-in；无加载器/harness/TLA 执行 |
-| **无计划** | 模块加载器、TLA 执行、module harness、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
+| **实验性实现** | 模块阶段 0–9（已完成）、TLA 设计（进行中） | Parser/Provider/图加载/导入属性/链接/环境/namespace/import.meta/动态 import/runModule + 错误定位/预算/取消/恢复加固；TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)，实现前需先解决异步事件循环入口 |
+| **无计划** | 模块加载器、Test262 module harness、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
 
 ### 2.1 为什么模块加载器仍不设默认主线
 
@@ -58,7 +60,7 @@
 1. **核心只接受宿主源码/Provider**：`Engine.runModule` 由宿主提供 `ModuleSource`/`ModuleProvider`；核心不读取文件、URL 或网络。
 2. **模块加载器涉及平台差异**：文件系统、URL、包解析在 JVM/Android/Native/Node 与浏览器/Wasm 上差异很大，放进核心会破坏“核心无平台 API”的约束。
 3. **平台矩阵不适合核心做 IO**：JVM/Android/Native/Node 可以读文件，浏览器/Wasm 不能；需要加载器的宿主应自行实现 Provider。
-4. **执行能力仍有边界**：TLA 执行与模块 Test262 module harness 需要异步执行状态机，当前没有排期；动态 `import()` 已在模块内可用，脚本目标仍不支持。
+4. **执行能力仍有边界**：TLA 已确认仅需 Module goal，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)；执行实现前需先完成事件循环异步入口与异步求值状态机。模块 Test262 module harness 仍无计划；动态 `import()` 已在模块内可用，脚本目标仍不支持。
 5. **实验性 API 不承诺兼容**：`Engine.runModule` 与 Provider 类型需要 `@ExperimentalModuleApi` opt-in；签名、行为与错误分类仍可能调整。
 
 ## 3. 推进列表
@@ -68,8 +70,9 @@
 | 排位 | 编号 | 任务 | 优先级 | 人日 | 触发条件 | 验收摘要 |
 |---:|---|---|---|---:|---|---|
 | 0 | `S6.2` | 门禁维护 | P0（维护） | 1–2 / 批 | 核心、语料、依赖变更后 | parser/Test262/真实库/差分 strict 全绿；allowlist 可审计 |
-| 1 | `S2.2-B5` | 运行时边界覆盖 | P1 | 2–4 | 下一批覆盖扩展 | 新增 5–10 条无 DOM 边界用例，或 3–5 个有新增特性的 UMD 库；strict 全绿 |
-| 2 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑八组基准；报告落盘；不做优化承诺 |
+| 1 | `TLA-D` | 模块 TLA 设计（仅 Module goal） | P0 | 2–4 | 已确认需要 TLA | [TLA_DESIGN.md](TLA_DESIGN.md) 定稿；事件循环异步入口/锁 spike 有结论 |
+| 2 | `S2.2-B5` | 运行时边界覆盖 | P1 | 2–4 | 下一批覆盖扩展 | 新增 5–10 条无 DOM 边界用例，或 3–5 个有新增特性的 UMD 库；strict 全绿 |
+| 3 | `S5.2` | 性能复测（只观测） | P2（观测） | 1–2 / 次 | 重大运行时改动、性能反馈 | 重跑八组基准；报告落盘；不做优化承诺 |
 
 > `S5.2` 不产生 B2 排期；`B2` 仍为无计划。
 
@@ -192,7 +195,7 @@ repeat(100) {
 >
 > 阶段 0–9 的 Parser、Provider API、内部图加载、静态链接、模块环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与同步求值（静态表、类型化声明、SourceInfo/range、TLA 标记、语法收紧、
 > `ModuleProvider`/`InMemoryModuleProvider`/模块图预算/递归加载/ResolveExport/ModuleRuntime/JSModuleNamespace/runModule）已落地；
-> 以下宿主文件/URL 加载器与 TLA 执行仍是未实现的设计储备。
+> 以下宿主文件/URL 加载器仍是无计划的设计储备；TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)，实现另立阶段。
 
 #### 6.2.1 核心 API：ModuleRequest / ModuleSource / ModuleProvider
 
@@ -358,7 +361,7 @@ internal sealed interface ResolveExportResult {
 3. 创建或复用命名空间对象；属性读取走 live binding，写入按规范抛 TypeError。
 4. `import.meta` 使用 `ModuleSource.url` 构造元数据对象；没有 `url` 时由核心给出稳定的回退值。
 5. 求值失败时记录 `evaluationError`，同一模块图内后续引用直接重抛；循环依赖按规范处理 TDZ 与部分求值状态。
-6. 动态 `import()` 复用同一 `ModuleProvider`，在微任务中加载/链接/求值并返回 Promise；TLA 执行仍未设计。
+6. 动态 `import()` 复用同一 `ModuleProvider`，在微任务中加载/链接/求值并返回 Promise；TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 
 #### 6.2.6 宿主加载器（L4.4）
 
@@ -445,7 +448,7 @@ data class EngineLimits(
 4. 动态 `import()` 的 provider 生命周期：允许在模块求值/延迟回调中再次调用 `load`，受 `maxModules` 与取消约束。
 5. 模块图缓存：建议每次 `runModule` 使用独立图缓存；provider 可跨调用复用，但核心不保留全局模块图。
 6. 路径安全：文件加载器的根目录约束、符号链接、大小写敏感与 Windows 路径必须由宿主测试覆盖。
-7. 顶层 await 执行与同步求值的关系：如果未来支持 TLA，需要把求值状态机改成异步；当前明确无计划。
+7. 顶层 await 执行与同步求值的关系：TLA 已确认仅需 Module goal，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)；需把求值状态机改成异步，当前尚未实现。
 
 平台分工的底线不变：**核心不读文件、不解析路径、不访问网络；`Engine.run(source)` 仍是单脚本文本入口。**
 
@@ -463,7 +466,7 @@ data class EngineLimits(
 | SharedArrayBuffer / Atomics | **无计划 / 范围外** | 单线程模型不引入共享内存 |
 | resizable / transfer ArrayBuffer | **无计划 / 范围外** | 只支持固定长度与宿主 detach |
 | Temporal / Float16Array / 装饰器 / ShadowRealm | **无计划 / 范围外** | 不在当前语言范围 |
-| `export using` / Test262 module harness / TLA 执行 | **无计划** | 模块执行其余部分已落地；这三项仍不排期 |
+| `export using` / Test262 module harness | **无计划** | 模块执行其余部分已落地；TLA 已进入设计，不在这两项无计划范围内 |
 | WeakRef / FinalizationRegistry | **无计划** | 并入 M2 弱引用方向 |
 
 ## 8. 验证命令
