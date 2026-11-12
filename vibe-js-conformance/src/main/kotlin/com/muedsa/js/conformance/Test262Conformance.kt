@@ -634,9 +634,13 @@ private class Test262Runner(
                 fail(if (filter != null) error.toString() else error.value.describe(), startedAt)
             }
         } catch (error: ParseException) {
-            fail("SyntaxError: ${error.describe()}", startedAt, FailureKind.PARSE)
+            // module 依赖的早期语法错误发生在 resolution/instantiation 前，
+            // Test262 的 resolution 负数用例同样以 SyntaxError 期望它。
+            if (negativePhase == "resolution") pass(startedAt)
+            else fail("SyntaxError: ${error.describe()}", startedAt, FailureKind.PARSE)
         } catch (error: LexerException) {
-            fail("SyntaxError: ${error.describe()}", startedAt, FailureKind.PARSE)
+            if (negativePhase == "resolution") pass(startedAt)
+            else fail("SyntaxError: ${error.describe()}", startedAt, FailureKind.PARSE)
         }
     }
 

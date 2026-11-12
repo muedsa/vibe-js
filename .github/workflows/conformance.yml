@@ -203,11 +203,17 @@ jobs:
     - name: Run Test262 module TLA subset
       run: ./gradlew :vibe-js-conformance:test262ModuleConformance -Pstrict --console=plain
 
+    - name: Run Test262 module-code subset
+      run: ./gradlew :vibe-js-conformance:test262ModuleCodeConformance -Pstrict --console=plain
+
     - name: Publish summary
       if: always()
       run: |
         if [ -f vibe-js-conformance/build/reports/conformance/test262-module/test262-summary.md ]; then
           cat vibe-js-conformance/build/reports/conformance/test262-module/test262-summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+        if [ -f vibe-js-conformance/build/reports/conformance/test262-module-code/test262-summary.md ]; then
+          cat vibe-js-conformance/build/reports/conformance/test262-module-code/test262-summary.md >> "$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Upload Test262 module report

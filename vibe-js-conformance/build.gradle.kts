@@ -218,6 +218,34 @@ val test262ModuleConformance = tasks.register<JavaExec>("test262ModuleConformanc
     outputs.dir(moduleReportDir)
 }
 
+/** 运行完整 language/module-code 子集（TLA 之外的模块语义回归）。 */
+val test262ModuleCodeConformance = tasks.register<JavaExec>("test262ModuleCodeConformance") {
+    group = "verification"
+    description = "运行 Test262 language/module-code 子集并生成语义报告（报告模式）"
+    dependsOn(downloadTest262Corpus)
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.muedsa.js.conformance.Test262ConformanceKt")
+    val reportDir = conformanceReportDir.map { it.dir("test262-module-code") }
+    args(
+        test262Dir.asFile.absolutePath,
+        reportDir.get().asFile.absolutePath,
+        "--suite", "module",
+        "--filter", "language/module-code",
+    )
+    if (project.hasProperty("test262Limit")) {
+        args("--limit", project.property("test262Limit").toString())
+    }
+    if (project.hasProperty("test262Jobs")) {
+        args("--jobs", project.property("test262Jobs").toString())
+    }
+    applyRunnerSettings()
+    if (project.hasProperty("strict")) {
+        args("--strict")
+    }
+    inputs.dir(test262Dir)
+    outputs.dir(reportDir)
+}
+
 /** 下载固定版本的真实 JS 库 UMD 构建。 */
 val downloadLibraryCorpus = tasks.register<JavaExec>("downloadLibraryCorpus") {
     group = "verification"
