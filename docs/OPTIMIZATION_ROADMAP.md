@@ -14,8 +14,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1199 / 1199** | 2026-11-12 本地运行 |
-| core JS / Wasm（Node） | 各 **1183 / 1183** | 2026-11-12 复跑 |
+| core JVM 单元测试 | **1203 / 1203** | 2026-11-12 本地运行 |
+| core JS / Wasm（Node） | 各 **1187 / 1187** | 2026-11-12 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **42 / 42** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 22 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -176,7 +176,7 @@ repeat(100) {
 | `L4.3` | 模块求值（live binding / 命名空间） | **阶段 7 已完成（实验性、同步子集）** |
 | `L4.4` | 模块加载器抽象与宿主文件加载器 | **无计划**：Provider 抽象已有，文件/URL 加载器不在核心 |
 | `L4.6a+` | Test262 `module-code` parse 门禁 | **部分现状**：262 个 parser 模块语料已纳入；完整 module-code 执行门禁随 TLA/module harness 设计 |
-| `L4.6b` | Test262 module harness | **TLA 子集已完成**（249/249）；完整 module-code 560/593，剩余既有缺口 |
+| `L4.6b` | Test262 module harness | **已完成**：TLA 249/249；完整 module-code 593/593（3 条 source-phase-imports 跳过） |
 | `L4.7` | 顶层 await 执行 | **已完成**（仅 Module goal），见 [TLA_DESIGN.md](TLA_DESIGN.md) |
 
 保留现状：
@@ -565,6 +565,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|---|
+| 2026-11-12 | **module-code 全绿**：修复间接导出循环/链接期校验、默认导出函数提升/命名、class 可变绑定、namespace define/delete/has/set 与 super TDZ；`language/module-code` 593/593（3 条 source-phase-imports 跳过）；新增 `test262ModuleCodeConformance` strict 门禁；核心 JVM 1203、JS/Wasm 1187 |
 | 2026-11-12 | **TLA 完成（Module goal）**：新增 `EventLoop.runAsyncTask`、`ModuleStatus.EVALUATING_ASYNC`、异步依赖/cycle root；`Engine.runModule` 接入异步求值；Test262 module TLA 子集 249/249；完整 module-code 560/593（既有缺口）；核心 JVM 1199、JS/Wasm 1183、host 40、conformance 42；全量 parser/ES5/ES2015/差分/真实库 strict 全绿 |
 | 2026-11-08 | 重写为“后续路线（未完成工作）”：移除已完成项清单，只保留 P0 模块执行与宿主生态、P1 质量项、长期/延后项；补充每项的范围、依赖、人日、风险、验收与触发条件 |
 | 2026-11-09 | 重新排序：模块执行作为条件 P0，模块语法降为最低优先级；M2/B2/PKG1/L4.7 列为无计划 |

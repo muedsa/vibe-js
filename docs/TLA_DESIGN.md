@@ -6,7 +6,7 @@
 > - `ModuleStatus.EVALUATING_ASYNC`、异步 completion、异步依赖等待与 cycle root 已落地；
 > - 新增内部 `EventLoop.runAsyncTask`，TLA 等待期间不长期持有 `runtimeMutex`，宿主定时器可继续推进；
 > - Test262 `language/module-code/top-level-await` **249/249** 通过（module suite，strict 门禁）；
-> - 完整 `language/module-code` 当前 **560/593**，剩余为既有模块语义缺口（默认导出名、部分歧义导出/循环链接等），不是 TLA 回归；
+> - 完整 `language/module-code` 当前 **593/593**（3 条 source-phase-imports 属未支持特性跳过），核心模块语义缺口已清零；
 > - 已确认决策：异步循环按规范级支持；事件循环采用新增异步宿主入口；module harness 纳入 TLA 验收。
 >
 > 相关文档：[MODULE_DESIGN.md](MODULE_DESIGN.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[COMPATIBILITY.md](COMPATIBILITY.md)。
@@ -337,7 +337,7 @@ harness 放在 `vibe-js-conformance`，作为 JVM 运行器读取语料，不进
 已按两阶段落地：
 
 - **Phase A（TLA 验收，已完成）**：`language/module-code/top-level-await`，249/249；
-- **Phase B（模块回归，进行中）**：完整 `language/module-code` 560/593，剩余为既有模块语义缺口。
+- **Phase B（模块回归，已完成）**：完整 `language/module-code` 593/593；3 条 source-phase-imports 作为未支持特性逐条跳过。
 
 门禁要求：
 
@@ -365,7 +365,7 @@ harness 放在 `vibe-js-conformance`，作为 JVM 运行器读取语料，不进
 | 3 | 动态 import、错误/取消、namespace/TDZ 边界 | 核心已完成；取消/预算边界继续补测 |
 | 4 | 核心测试矩阵、文档、strict 门禁、失败恢复 | 进行中 |
 | 5 | Test262 module harness（Phase A） | 已完成：`test262ModuleConformance` 249/249 |
-| 6 | 完整 module-code 接入与 known-fail 分类（Phase B） | 进行中：560/593，剩余为既有模块语义缺口 |
+| 6 | 完整 module-code 接入与 known-fail 分类（Phase B） | 已完成：593/593，3 条 source-phase-imports 跳过 |
 
 核心 TLA 与 harness Phase A 已完成；Phase B 不属于 TLA 验收阻塞项。
 
