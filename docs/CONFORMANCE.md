@@ -1,10 +1,10 @@
 # 解析一致性与 Test262 基线
 
-> 更新：2026-11-10。代码基线：见最近提交。
+> 更新：2026-11-12。代码基线：见最近提交。
 >
-> 本文件记录 `test262-parser-tests`（脚本 + 模块）、Test262 ES5/ES2015 子集、真实库 UMD 冒烟与 Node 差分的当前口径。
-> 最近一次全量运行的环境为 JDK 21、Kotlin 2.4.21、Gradle 9.8.2、Node v24.12.0、Windows 10/amd64；
-> 本次已在当前基线复跑 parser、ES5、ES2015、差分与真实库。
+> 本文件记录 `test262-parser-tests`（脚本 + 模块）、Test262 ES5/ES2015/module TLA 子集、真实库 UMD 冒烟与 Node 差分的当前口径。
+> 最近一次全量运行的环境为 JDK 21、Kotlin 2.4.21、Gradle 9.9.0、Node v24.12.0、Windows 10/amd64；
+> 本次已在当前基线复跑 parser、ES5、ES2015、module TLA、差分与真实库。
 
 ## 1. 范围与判定
 
@@ -21,10 +21,11 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝）；允许 0 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 module TLA | **249 / 249**，失败 0，崩溃 0，跳过 0 |
 | Node 差分 | **1432 / 1432** |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） |
-| conformance 单元测试 | **39 / 39**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4） |
-| host 单元测试 | **38 / 38**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
+| conformance 单元测试 | **42 / 42**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 22 + RunMetadataTest 4） |
+| host 单元测试 | **40 / 40**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
 
 ## 3. Parser 基线
 
@@ -78,7 +79,7 @@
 
 模块早期错误（early-module）共 63 条，解析成功 0、被拒绝 63、意外接受 0。模块允许列表 `parser-module-allowlist.txt` 当前为空；新增条目必须逐条写“相对语料根目录的 POSIX 路径 + 原因”，且只允许 `.module.js`，禁止目录/后缀/通配符。
 
-> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/同步求值/错误定位），但 Test262 module harness、宿主加载器与 TLA 执行仍未实现；TLA 与 module harness 已纳入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)），模块能力仍需 opt-in。
+> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/异步求值/错误定位），TLA 仅在 Module goal 支持；Test262 module TLA 子集已接入（249/249），完整 module-code 仍有既有缺口；宿主加载器未实现，模块能力仍需 opt-in。
 
 ### 3.4 早期错误（脚本）
 
@@ -146,7 +147,22 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 | unsupported harness: `$262` | 1 |
 | unsupported harness: print | 1 |
 
-`module` 仍跳过是因为 Test262 module harness 尚未实现（解析与同步模块执行已支持，harness 已纳入 TLA 验收设计）；旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
+`module` 在 ES2015 子集仍跳过，因为该子集不执行模块；TLA 已由独立 module suite 覆盖（见 §5.3）。旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
+
+### 5.3 Test262 module TLA 子集
+
+```bash
+# 默认跑 language/module-code/top-level-await（CI 门禁使用 -Pstrict）
+./gradlew :vibe-js-conformance:test262ModuleConformance
+
+# 定向或扩到完整 module-code
+./gradlew :vibe-js-conformance:test262ModuleConformance -Ptest262Filter=await-expr
+./gradlew :vibe-js-conformance:test262ModuleConformance -Ptest262Filter=language/module-code
+```
+
+当前 TLA 目录选中 **249** 个文件、执行 **249** 次，全部通过；includes 作为经典脚本先执行，模块入口由文件型 `ModuleProvider` 加载，异步用例经 `$DONE` 判定。
+
+完整 `language/module-code` 当前 **560 / 593**（失败 29、崩溃 4、跳过 3）；剩余集中在默认导出名、部分歧义导出/循环链接与少量负向用例，属于既有模块语义缺口，不是 TLA 回归。完整 module-code 不进入 TLA 的 strict 门禁。
 
 ### 5.2 筛选统计（未纳入本次口径）
 
@@ -346,8 +362,8 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 9. 已知范围与缺口
 
-- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、同步链接/求值、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()` 与导入属性；TLA 在链接期拒绝。Test262 module harness、宿主加载器与 TLA 执行仍未实现，322 个 `flags: [module]` 用例继续跳过；TLA 与 module harness 已纳入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)）；parser 的 262 个模块用例保留为现状回归门禁。
-- **顶层 await**：只有语法解析和 `hasTopLevelAwait` 标记，没有异步模块求值；模块执行未排期。
+- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、链接、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值；Test262 `language/module-code/top-level-await` 249/249，完整 `language/module-code` 560/593（其余为既有模块语义缺口）。宿主加载器仍未实现；parser 的 262 个模块用例保留为现状回归门禁。
+- **顶层 await**：Module goal 已实现异步模块求值、异步依赖等待、cycle root、错误传播与动态 import 等待；Script goal 继续拒绝。
 - **模块扩展语法**：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；同一说明符带不同导入属性会被解析器拒绝。
 - **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。
 - **弱引用**：WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 仍是强引用存储（M2 无计划）。
@@ -359,7 +375,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 10. 推进顺序
 
-1. **文档与门禁收口（已完成）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–9 标为 experimental，动态 import/导入属性/import.meta.resolve 已落地，TLA 与 module harness 进入设计，加载器仍无计划。
+1. **文档与门禁收口（已完成）**：同步 README/CONFORMANCE/路线图中的模块口径，保持 parser/Test262/真实库/差分 strict 全绿；模块阶段 0–9 标为 experimental，动态 import/导入属性/import.meta.resolve/TLA 与 module TLA 子集已落地，加载器仍无计划。
 2. **覆盖扩展（P1，下一批）**：优先补运行时边界（Proxy/Reflect、Generator/async generator、TypedArray/AB detach、Iterator helpers、Set 方法等），其次才是有新增特性的 UMD 库；保持“无 DOM/浏览器全局”的加载条件。
 3. **门禁维护（P0）**：每批覆盖或核心改动后重跑 parser、ES5、ES2015、差分与真实库 strict。
 4. **性能观测（P2）**：按需做性能复测；B2 与 PKG1 无计划，不因复测恢复排期。
@@ -371,7 +387,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 独立 workflow `.github/workflows/conformance.yml`：
 
 - `pull_request`：只跑 **PR 快速子集**（parser 基线 + Node 差分，均不需要 Test262 语料，约 1–2 分钟）；
-- `workflow_dispatch` 手动触发与每周一 02:00 UTC 定时：跑完整 parser / Test262 ES5 / ES2015 / 真实库 / 差分；
+- `workflow_dispatch` 手动触发与每周一 02:00 UTC 定时：跑完整 parser / Test262 ES5 / ES2015 / module TLA / 真实库 / 差分；
 - 完整 Job 在 PR 事件下跳过，避免每个 PR 下载数万级语料；
 - 报告写入 Job Summary 并上传 artifact。
 

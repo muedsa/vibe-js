@@ -3,13 +3,13 @@
 > 状态：**阶段 0–9 已作为实验性模块实现落地；不承诺正式版兼容性**。Parser、
 > 公共 Provider API、内部图加载/链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、
 > 动态 `import()`、导入属性、`Engine.runModule`、同步求值以及错误定位/预算/取消/恢复加固已接通。
-> 模块加载器仍无计划；TLA 与 Test262 module harness 已纳入设计，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+> 模块加载器仍无计划；TLA 与 Test262 module TLA 子集已落地，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 > 该 API 需要 `@ExperimentalModuleApi` opt-in。
 >
 > 注：本文主体记录阶段 0–8 的同步静态模块 MVP 设计；阶段 9 补充的动态 `import()`、
 > 导入属性与 `import.meta.resolve` 以 [README.md](../README.md)、[COMPATIBILITY.md](COMPATIBILITY.md)
 > 与 [ARCHITECTURE.md](ARCHITECTURE.md) 的当前口径为准，下文相关"不支持/无计划"表述属于当时设计记录。
-> TLA 已确认仅需支持 Module goal，设计提案见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+> TLA 已确认仅需支持 Module goal，设计与验收见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 >
 > 目标不是做 Node/浏览器级 ESM 运行时，而是给 Kotlin 宿主提供一个**纯 Kotlin、无 IO、可注入加载器**
 > 的模块链接/求值核心。首版是同步静态模块 MVP。
@@ -35,7 +35,7 @@
 | 说明符解析 | Provider 全权负责 | package + URL | URL + import maps | 宿主 loader 回调 |
 | 模块缓存 | 每次 `runModule` 独立图 | 运行时缓存 | module map | 宿主/上下文决定 |
 | 动态 `import()` | 后置 | 支持 | 支持 | 视版本/loader |
-| TLA | 后置，链接期拒绝 | 支持 | 支持 | 视版本 |
+| TLA | Module goal 已支持 | 支持 | 支持 | 视版本 |
 | import attributes | 不支持 | 支持 | 支持 | 视版本 |
 | Test262 harness | 不纳入核心 | 运行时提供 | 运行时提供 | 宿主工具 |
 
@@ -54,16 +54,18 @@
 
 ### 2.2 与主流引擎的关键差异
 
+> 下表保留早期设计基线；阶段 0–9 后动态 import、导入属性与 Module goal TLA 已落地，TLA 验收见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+
 | 差异 | 本设计 | 主流引擎 | 影响 |
 |---|---|---|---|
 | 模块图生命周期 | 每次 `runModule` 独立图 | Node/浏览器按模块表缓存 | 同一模块重复求值，副作用重复；宿主需自行缓存 |
 | 说明符规范化 | Provider 全权负责 | Node package/URL；浏览器 URL/import maps | 宿主需实现相对路径、包解析、URL 规则 |
-| 动态 `import()` | 执行到表达式时报错 | 支持 | 路由懒加载、插件动态加载、`await import()` 不可用 |
-| Top-Level Await | 链接期拒绝 | 支持 | 大量现代 ESM 包不能直接运行 |
-| import attributes | 不支持 | Node 22+/现代浏览器支持 | JSON/WASM 模块导入不可用 |
-| 诊断 | MVP 才补 entry range | 文件/行/列/导入链完整 | 链接错误定位弱于主流引擎 |
-| 加载方式 | 顺序 DFS | 可并行/预加载 | 网络/文件慢时吞吐较低 |
-| Test262 harness | 不纳入核心 | 运行时提供 | 无法直接作为通用运行时或宣称完整 ESM 一致性 |
+| 动态 `import()` | 已支持，经异步任务加载/求值 | 支持 | 路由懒加载、插件动态加载可用 |
+| Top-Level Await | Module goal 已支持；Script goal 拒绝 | 支持 | 现代 ESM 包可在 Module goal 运行 |
+| import attributes | 已支持静态/动态导入属性 | Node 22+/现代浏览器支持 | JSON/WASM 模块仍取决于 Provider |
+| 诊断 | 入口 range + 链接错误 | 文件/行/列/导入链完整 | 链接错误定位仍弱于主流引擎 |
+| 加载方式 | 顺序 DFS + 异步依赖 completion | 可并行/预加载 | 网络/文件慢时吞吐较低 |
+| Test262 harness | `:vibe-js-conformance` 的 module TLA 子集 | 运行时提供 | TLA 有独立门禁；完整 ESM 一致性仍有限 |
 | 错误模型 | 链接错误 Kotlin 异常 | 多为 JS `SyntaxError`/宿主错误码 | 嵌入式 API 更自然，但和 JS 生态习惯不同 |
 
 其他需要明确记录的差异：
@@ -662,7 +664,7 @@ M8.1–M8.6 已完成；模块图/求值 benchmark 已加入 JVM 基准套件。
 | M1.2 | `parseModule(sourceInfo)` | `ModuleProgram.sourceInfo` 生效；错误栈带 sourceName |
 | M1.3 | 给 Import/Export entry 加 range | 链接错误能定位声明 |
 | M1.4 | 预计算类型化模块绑定 | `ModuleProgram.bindings` 覆盖 import/var/let/const/class/function/using/default |
-| M1.5 | 预计算 `hasTopLevelAwait` | 正例/反例；链接期拒绝使用该标记 |
+| M1.5 | 预计算 `hasTopLevelAwait` | 正例/反例；供异步求值器选择 TLA 路径 |
 | M1.6 | 收紧普通函数内 `await` 与零参数 `import()` | 与 V8/Node 行为一致；把现有“宽松点合法”的断言改为 SyntaxError，保留覆盖，不删除用例；模块语料不回归 |
 | M1.7 | 更新 AST/Parser KDoc | 移除过期的“字符串导入名未覆盖”等注释 |
 
@@ -735,7 +737,7 @@ M8.1–M8.6 已完成；模块图/求值 benchmark 已加入 JVM 基准套件。
 | M7.2 | DFS 后序求值与状态机 | 循环、重复求值、错误缓存 |
 | M7.3 | 模块项执行与导出更新 | default/re-export/star/namespace 端到端 |
 | M7.4 | `import.meta` 创建/缓存/url 回退 | 同模块复用；`module:<id>` |
-| M7.5 | TLA 链接期拒绝、动态 import 运行期错误 | 错误信息明确；死代码不误报 |
+| M7.5 | 动态 import 错误定位与 TLA 链接期残留 | 错误信息明确；死代码不误报 |
 | M7.6 | `runModule` 接入 eventLoop/预算/微任务 | 与 `run` 串行；返回入口 namespace |
 | M7.7 | 失败后 Engine 复用 | 链接/求值失败不毒化 Engine |
 | M7.8 | 跨 JVM/JS/Wasm/Native 测试 | commonTest 全绿 |

@@ -4,9 +4,9 @@
 >
 > 本文只列**尚未完成**的工作。已实现能力只作为后续工作的依赖与不可破坏契约出现，不逐项重复。
 >
-> **2026-11-11 调整：模块阶段 0–9 已作为实验性实现完成**（Parser 静态表与导入属性、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器仍无计划；核心继续不引入平台文件/URL IO。TLA 与 Test262 module harness 已进入设计，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+> **2026-11-11 调整：模块阶段 0–9 已作为实验性实现完成**（Parser 静态表与导入属性、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器仍无计划；核心继续不引入平台文件/URL IO。TLA 与 Test262 module TLA 子集已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 >
-> **2026-11-12 调整：TLA 已确认仅需支持 Module goal**（Script goal 不支持）。TLA 设计提案见 [TLA_DESIGN.md](TLA_DESIGN.md)；执行实现尚未开始，当前仍在链接期拒绝。
+> **2026-11-12 调整：TLA 已落地**（仅 Module goal）。核心异步求值、异步事件循环入口与 Test262 module TLA 子集已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md)；完整 module-code 仍有既有模块语义缺口。
 
 ## 1. 当前基线
 
@@ -14,18 +14,19 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1192 / 1192** | 2026-11-11 本地运行 |
-| core JS / Wasm（Node） | 各 **1176 / 1176** | 2026-11-11 复跑 |
-| host JVM / JS / Wasm / Native | 各 **38 / 38** | 2026-11-09 新增 TextEncoder/TextDecoder、structuredClone、URL 测试；Windows Native 已复跑 |
-| conformance 单元测试 | **39 / 39** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 19 + RunMetadataTest 4 |
+| core JVM 单元测试 | **1199 / 1199** | 2026-11-12 本地运行 |
+| core JS / Wasm（Node） | 各 **1183 / 1183** | 2026-11-12 复跑 |
+| host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
+| conformance 单元测试 | **42 / 42** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 22 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
-| Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-10 复跑 |
+| Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-12 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 module TLA | **249 / 249**，失败 0，崩溃 0 | 默认 `language/module-code/top-level-await` |
 | Node 差分 | **1432 / 1432** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
-> 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、parser、真实库与差分已在当前基线复跑。
+> 数字口径以 [CONFORMANCE.md](CONFORMANCE.md) 为准。ES5、ES2015、module TLA、parser、真实库与差分已在当前基线复跑。
 
 ### 1.2 已实现能力摘要
 
@@ -35,16 +36,16 @@
 - **二进制与数值**：BigInt、11 种 TypedArray、ArrayBuffer、DataView、detach 语义。
 - **集合与内建**：Iterator helpers、DisposableStack / AsyncDisposableStack、Promise 组合、`RegExp.escape`、ES2025 Set 方法等。
 - **宿主生态**：`:vibe-js-host` 提供 TextEncoder/TextDecoder（UTF-8、fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/二进制/循环）、URL/URLSearchParams 常用子集。
-- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性，但 API 需 opt-in；TLA 执行与 Test262 module harness 已进入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)），尚未实现；宿主加载器仍无计划。
+- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值，但 API 需 opt-in；Test262 module TLA 子集 249/249；宿主加载器仍无计划。
 - **资源约束**：`EngineLimits` 已覆盖源码长度、嵌套深度、AST 节点、对象数量、JSON 深度、正则步数、排队任务、单轮微任务等预算；`JSON.stringify` 与 `JSON.parse` 共用 `maxJsonDepth`，显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎。
 
 ### 1.3 当前边界
 
-当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备同步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()` 与导入属性；TLA 与 Test262 module harness 已进入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)），宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/transfer ArrayBuffer 不在范围。
+当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备异步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA；宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/transfer ArrayBuffer 不在范围。
 
 ## 2. 排序原则
 
-模块阶段 0–9 已作为**实验性实现**落地；同一 Engine 可执行 Script 或同步模块图，但模块 API 不承诺正式兼容性。加载器仍无计划；TLA 已确认仅需 Module goal，设计已启动但尚未实现。
+模块阶段 0–9 已作为**实验性实现**落地；同一 Engine 可执行 Script 或模块图，但模块 API 不承诺正式兼容性。加载器仍无计划；TLA 已落地，完整 module-code 缺口单列。
 
 | 队列 | 范围 | 说明 |
 |---|---|---|
@@ -175,15 +176,15 @@ repeat(100) {
 | `L4.3` | 模块求值（live binding / 命名空间） | **阶段 7 已完成（实验性、同步子集）** |
 | `L4.4` | 模块加载器抽象与宿主文件加载器 | **无计划**：Provider 抽象已有，文件/URL 加载器不在核心 |
 | `L4.6a+` | Test262 `module-code` parse 门禁 | **部分现状**：262 个 parser 模块语料已纳入；完整 module-code 执行门禁随 TLA/module harness 设计 |
-| `L4.6b` | Test262 module harness | **纳入 TLA 验收设计**，见 [TLA_DESIGN.md](TLA_DESIGN.md)，尚未实现 |
-| `L4.7` | 顶层 await 执行 | **设计进行中**（仅 Module goal），见 [TLA_DESIGN.md](TLA_DESIGN.md)；当前仍链接期拒绝 |
+| `L4.6b` | Test262 module harness | **TLA 子集已完成**（249/249）；完整 module-code 560/593，剩余既有缺口 |
+| `L4.7` | 顶层 await 执行 | **已完成**（仅 Module goal），见 [TLA_DESIGN.md](TLA_DESIGN.md) |
 
 保留现状：
 
 - `Parser.parseModule()`、262 个模块语料门禁与 `ParserModuleTest` 继续保留；
 - 实验性 `Engine.runModule` / Provider / namespace / `import.meta` 保留，需 opt-in；
-- `ImportCallExpr` 执行期已接通；TLA 与 module harness 进入设计，不代表当前已实现；
-- 不新增模块加载器；TLA/module harness 的实现单列，并保持核心无平台 IO。
+- `ImportCallExpr` 执行期已接通；TLA 与 module TLA 子集已实现；
+- 不新增模块加载器；module harness 位于 conformance 工具，保持核心无平台 IO。
 
 > 模块阶段 0–9 的 API 与实施细节见 §6.2；后续只保留加载器/TLA 的设计参考。
 
@@ -448,7 +449,7 @@ data class EngineLimits(
 4. 动态 `import()` 的 provider 生命周期：允许在模块求值/延迟回调中再次调用 `load`，受 `maxModules` 与取消约束。
 5. 模块图缓存：建议每次 `runModule` 使用独立图缓存；provider 可跨调用复用，但核心不保留全局模块图。
 6. 路径安全：文件加载器的根目录约束、符号链接、大小写敏感与 Windows 路径必须由宿主测试覆盖。
-7. 顶层 await 执行与同步求值的关系：TLA 已确认仅需 Module goal，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)；需把求值状态机改成异步，当前尚未实现。
+7. 顶层 await 执行与同步求值的关系：TLA 已按 Module goal 实现，异步状态机与 Test262 TLA 子集见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 
 平台分工的底线不变：**核心不读文件、不解析路径、不访问网络；`Engine.run(source)` 仍是单脚本文本入口。**
 
@@ -466,7 +467,7 @@ data class EngineLimits(
 | SharedArrayBuffer / Atomics | **无计划 / 范围外** | 单线程模型不引入共享内存 |
 | resizable / transfer ArrayBuffer | **无计划 / 范围外** | 只支持固定长度与宿主 detach |
 | Temporal / Float16Array / 装饰器 / ShadowRealm | **无计划 / 范围外** | 不在当前语言范围 |
-| `export using` | **无计划** | 模块执行其余部分已落地；TLA/module harness 已进入设计 |
+| `export using` | **无计划** | 模块执行其余部分已落地；TLA/module TLA 子集已完成 |
 | WeakRef / FinalizationRegistry | **无计划** | 并入 M2 弱引用方向 |
 
 ## 8. 验证命令
@@ -524,7 +525,7 @@ data class EngineLimits(
 
 ## 10. 风险与约束
 
-1. **模块执行仍有限**：阶段 0–9 已实现同步模块图、动态 `import()`、导入属性与 `import.meta.resolve`，但 TLA、宿主文件/URL 加载器、module harness 仍未实现；实验性 API 不承诺兼容性。
+1. **模块执行仍有限**：阶段 0–9 已实现模块图、动态 `import()`、导入属性、`import.meta.resolve` 与 TLA；完整 module-code 仍有默认导出名、部分歧义导出/循环链接等既有缺口；宿主文件/URL 加载器仍未实现；实验性 API 不承诺兼容性。
 2. **KMP 与文件 IO 不匹配**：核心不能假设文件系统；JVM/Android/Native/Node 与浏览器/Wasm 的 IO 能力差异大，未来若重启模块方向，只能采用“核心抽象 + 宿主加载器”或纯内存模块表。
 3. **`Engine.run()` 的边界**：多次 `run` 共享全局环境，但不是模块；全局 `let`/`const`/`class` 重复声明仍可能冲突，宿主需要自行管理脚本边界。
 4. **维护主线依赖语料稳定**：`S6.2`/`S2.2` 受 Test262/真实库下载与版本影响，报告必须带 commit 与跳过口径。
@@ -548,7 +549,7 @@ data class EngineLimits(
 | 模块静态链接（阶段 4） | `runtime/module/internal/ModuleExportResolver.kt`、`ModuleLinker.kt` | ResolveExport/星号/namespace 导出名/import 链接/TLA 拒绝 |
 | 模块环境（阶段 5） | `runtime/module/internal/ModuleEnvironment.kt`、`ModuleDeclarationInstantiator.kt` | import 只读转发、函数/TDZ 绑定、`*default*` |
 | 模块 namespace（阶段 6） | `runtime/module/internal/JSModuleNamespace.kt` | 实时数据描述符、排序键、Symbol.toStringTag、嵌套 namespace |
-| 模块求值（阶段 7） | [Engine.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Engine.kt)、[Interpreter.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Interpreter.kt)、`ModuleEvaluator.kt` | runModule/DFS 求值/import.meta/顶层 this；动态 import/导入属性/import.meta.resolve 已接通；TLA 未实现 |
+| 模块求值（阶段 7） | [Engine.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Engine.kt)、[Interpreter.kt](../vibe-js-core/src/commonMain/kotlin/com/muedsa/js/runtime/Interpreter.kt)、`ModuleEvaluator.kt` | runModule/异步求值/import.meta/顶层 this；动态 import/导入属性/import.meta.resolve/TLA 已接通 |
 | 模块运行时（阶段 9） | `ModuleRuntime.kt`、`ModuleGraphResolver.kt`、`ModuleDeclarationInstantiator.kt` | 图缓存复用、动态导入、Provider 属性传递、模块函数延迟回调上下文 |
 | 模块测试（阶段 0–9） | [ParserModuleTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ParserModuleTest.kt)、[ModuleApiTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleApiTest.kt)、[ModuleGraphResolverTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleGraphResolverTest.kt)、[ModuleExportResolverTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleExportResolverTest.kt)、[ModuleLinkerTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleLinkerTest.kt)、[ModuleEnvironmentTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleEnvironmentTest.kt)、[ModuleNamespaceTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleNamespaceTest.kt)、[ModuleExecutionTest.kt](../vibe-js-core/src/commonTest/kotlin/com/muedsa/js/ModuleExecutionTest.kt)、[ParserConformance.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/ParserConformance.kt) | 单元测试 + 262 模块语料回归 |
 | 宿主生态（已完成） | [HostModule.kt](../vibe-js-host/src/commonMain/kotlin/com/muedsa/js/host/HostModule.kt)、`TextEncodingHost.kt`、`StructuredCloneHost.kt`、`UrlHost.kt`、`HostEcosystemSupport.kt` | L4.5 已完成；只做回归与边界扩展 |

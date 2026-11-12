@@ -1,13 +1,13 @@
 # 模块顶层 await（TLA）设计
 
-> 状态：**设计提案，未实现**。范围仅限 ECMAScript Module goal；Script goal 明确不支持 TLA。
+> 状态：**核心 TLA 已实现**。范围仅限 ECMAScript Module goal；Script goal 明确不支持 TLA。
 >
-> 已确认决策：
-> - 异步循环按规范级支持，不把“拒绝异步循环”作为永久限制；
-> - 事件循环采用新增异步宿主入口，不把 `runTask` 的锁语义扩展到整个 TLA 生命周期；
-> - Test262 module harness 纳入 TLA 验收范围，但实现单列，不与核心求值器混在一起。
->
-> 目标基线：ES2022 top-level await，并参考当前 Test262 `module-code/top-level-await` 的异步求值/循环语义。
+> 实施结果（2026-11-12）：
+> - `ModuleStatus.EVALUATING_ASYNC`、异步 completion、异步依赖等待与 cycle root 已落地；
+> - 新增内部 `EventLoop.runAsyncTask`，TLA 等待期间不长期持有 `runtimeMutex`，宿主定时器可继续推进；
+> - Test262 `language/module-code/top-level-await` **249/249** 通过（module suite，strict 门禁）；
+> - 完整 `language/module-code` 当前 **560/593**，剩余为既有模块语义缺口（默认导出名、部分歧义导出/循环链接等），不是 TLA 回归；
+> - 已确认决策：异步循环按规范级支持；事件循环采用新增异步宿主入口；module harness 纳入 TLA 验收。
 >
 > 相关文档：[MODULE_DESIGN.md](MODULE_DESIGN.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[COMPATIBILITY.md](COMPATIBILITY.md)。
 
@@ -34,20 +34,17 @@
 - 动态 `import()` 已在微任务中执行，并可等待异步调用；
 - `ModuleEvaluator` 已有 `NEW / EVALUATING / EVALUATED / ERRORED` 和 `evaluationError` 缓存。
 
-> 初步 spike（未提交）：临时移除链接期拒绝后，单模块 `await Promise.resolve()` 可以在现有
-> `runTask` 下完成，`await` 的执行路径可以复用。该 spike 没有覆盖宿主定时器、异步依赖并发、
-> 循环依赖和取消，因此不能作为完整可行性结论。
+> 实施 spike（已落地）：移除链接期拒绝后，单模块 `await Promise.resolve()` 可复用现有
+> `awaitPromiseValue`；进一步验证了 `await` 宿主定时器需要新的异步入口，最终以
+> `EventLoop.runAsyncTask` 解决，详见 §6.3 与 §12 的实施记录。
 
-### 2.2 当前的硬阻塞
+### 2.2 设计时识别的阻塞（均已处理）
 
-1. `ModuleLinker` 对 `hasTopLevelAwait` 直接抛 `UNSUPPORTED_TLA`；
-2. `ModuleEvaluator` 是同步 DFS：`evaluateModule(dependency)` 会等待依赖**完整求值**；
-3. 没有 async evaluation、pending async dependency、cycle root 等状态；
-4. `Engine.executeModuleGraph` 用 `eventLoop.runTask` 包住整个求值过程；
-5. `runTask` 在 `runtimeMutex.withLock` 内执行，TLA 若等待宿主定时器/异步任务，可能持有锁跨挂起。
-
-第 5 点是设计前必须先验证/解决的**前置风险**，不能等到模块求值器完成后再处理。上面的微任务 spike 只证明
-“模块体中的 await 能让出并恢复”，没有证明“等待宿主定时器/外部异步任务时锁可释放”。
+1. `ModuleLinker` 对 `hasTopLevelAwait` 直接抛 `UNSUPPORTED_TLA`；已移除；
+2. `ModuleEvaluator` 是同步 DFS：`evaluateModule(dependency)` 会等待依赖**完整求值**；已改为 completion 等待；
+3. 没有 async evaluation、pending async dependency、cycle root 等状态；已新增；
+4. `Engine.executeModuleGraph` 用 `eventLoop.runTask` 包住整个求值过程；已改用 `runAsyncTask`；
+5. `runTask` 在 `runtimeMutex.withLock` 内执行，TLA 若等待宿主定时器/异步任务，会持有锁跨挂起；已由 `runAsyncTask` 解决。
 
 ## 3. 语义目标
 
@@ -244,16 +241,16 @@ eventLoop.runTask {
 
 **方案 A（已确认）：新增异步宿主入口**
 
-在 `EventLoop` 增加类似 `runAsyncTask` 的入口：
+在 `EventLoop` 增加内部 `runAsyncTask`：
 
-- 任务以 `launchAsyncTask` 风格启动；
-- 不把 `runtimeMutex` 持有到整个 TLA 生命周期；
-- 用一个执行租约（lease）只在 JS 执行片段持有互斥；
-- `runModule` 等待任务完成时驱动事件循环，而不是在锁内阻塞。
+- 与 `runTask` 共用 operation 生命周期、取消与微任务清理；
+- 不持有 `runtimeMutex`，JS 执行仍由共享 `ExecutionTrampoline` 串行化；
+- 预算由 `Engine` 在异步任务内安装，定时器回调通过 `executeTask` 取得同一预算；
+- `Engine.runModule` 等待 completion，而不是在锁内阻塞。
 
 方案 B/C 不采用：B 无法等待宿主定时器，C 会改变 `runModule` 的既有 API 语义。
 
-实施前仍需用 Phase 0 spike 决定租约粒度（整个任务 / 每个 JS 片段）以及它与 `Engine.run`、定时器回调、取消的交互。
+Phase 0 结论：单模块 `await`、依赖 TLA、兄弟模块调度、异步循环与宿主 `setTimeout` 均已验证；`TLA 挂起期间宿主脚本仍可执行` 也有宿主测试覆盖。
 
 ## 7. 动态 import
 
@@ -317,8 +314,8 @@ TLA 后必须：
 ### 10.2 门禁
 
 - 现有 parser / ES5 / ES2015 / 差分 / 真实库 strict 全绿；
-- 现有 `TLA 在链接期被拒绝` 测试必须改写为执行语义测试，不能删除；
-- Test262 module harness 纳入 TLA 验收：增加 `flags: [module, async]` 与 `features: [top-level-await]` 的正式基线。
+- 原 `TLA 在链接期被拒绝` 测试已改写为执行语义测试（`模块顶层 await 执行完成后返回 namespace`），未删除覆盖；
+- Test262 module TLA 子集纳入验收：`test262ModuleConformance` 249/249。
 
 ## 11. Test262 module harness
 
@@ -337,10 +334,10 @@ harness 放在 `vibe-js-conformance`，作为 JVM 运行器读取语料，不进
 
 ### 11.2 范围与门禁
 
-建议分两阶段：
+已按两阶段落地：
 
-- **Phase A（TLA 验收）**：`language/module-code/top-level-await` + 相关 dynamic import/async fixture；
-- **Phase B（模块回归）**：完整 `language/module-code`，再按 features/allowlist 逐项加入。
+- **Phase A（TLA 验收，已完成）**：`language/module-code/top-level-await`，249/249；
+- **Phase B（模块回归，进行中）**：完整 `language/module-code` 560/593，剩余为既有模块语义缺口。
 
 门禁要求：
 
@@ -348,37 +345,34 @@ harness 放在 `vibe-js-conformance`，作为 JVM 运行器读取语料，不进
 - baseline 记录通过数、失败数、跳过数；
 - 不允许目录/后缀/通配符 allowlist；
 - skip 必须逐条写原因；
-- 每个 TLA 用例的失败必须可复现，不能以“module harness 未实现”统一跳过。
+- 每个 TLA 用例的失败必须可复现，不能以“未实现”统一跳过。
 
-### 11.3 关键决策
+### 11.3 落地选择
 
-- harness 是否复用 `Test262Conformance` 的 harness 代码，还是抽出共享模块；
-- includes 的全局作用域与模块 realm 的关系；
-- 每个测试是否共享模块缓存（建议独立，避免跨测试污染）；
-- 完整 module-code 还是先只接 TLA 目录；
-- 异步超时的默认值。
+- 复用 `Test262Conformance` 的 metadata/harness/`$DONE`/报告，新增 `--suite module` 分支，不另起运行器；
+- includes 先在独立 Engine 的全局 realm 中作为经典脚本执行，再执行模块入口；
+- 每个测试独立 Engine 与模块图，fixture 仅在单个测试内缓存；
+- Phase A 只接 TLA 目录；完整 module-code 作为 Phase B 单独统计，不进入 TLA strict 门禁；
+- 异步超时沿用 `RunnerSettings.caseTimeoutMillis`。
 
 ## 12. 分阶段实施
 
-| 阶段 | 内容 | 估算 |
-|---|---|---:|
-| 0 | 事件循环异步入口 spike；确认 `runTask` 锁与宿主定时器行为 | 2–4 人日 |
-| 1 | ModuleRecord 异步状态、移除链接期 TLA 拒绝、单模块/依赖链 TLA | 4–6 人日 |
-| 2 | 兄弟模块异步调度、pending async dependency、cycle root | 4–7 人日 |
-| 3 | 动态 import、错误/取消/预算、namespace/TDZ 边界 | 2–4 人日 |
-| 4 | 核心测试矩阵、文档、strict 门禁、失败恢复 | 2–3 人日 |
-| 5 | Test262 module harness（Phase A） | 5–8 人日 |
-| 6 | 完整 module-code 接入与 known-fail 分类（Phase B） | 5–12 人日 |
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| 0 | 事件循环异步入口；确认 `runTask` 锁与宿主定时器行为 | 已完成（`runAsyncTask` + 宿主测试） |
+| 1 | ModuleRecord 异步状态、移除链接期 TLA 拒绝、单模块/依赖链 TLA | 已完成 |
+| 2 | 兄弟模块异步调度、pending async dependency、cycle root | 已完成（TLA 249/249） |
+| 3 | 动态 import、错误/取消、namespace/TDZ 边界 | 核心已完成；取消/预算边界继续补测 |
+| 4 | 核心测试矩阵、文档、strict 门禁、失败恢复 | 进行中 |
+| 5 | Test262 module harness（Phase A） | 已完成：`test262ModuleConformance` 249/249 |
+| 6 | 完整 module-code 接入与 known-fail 分类（Phase B） | 进行中：560/593，剩余为既有模块语义缺口 |
 
-核心 TLA 与 harness 可以并行，但 harness Phase A 依赖核心 TLA 可用。
+核心 TLA 与 harness Phase A 已完成；Phase B 不属于 TLA 验收阻塞项。
 
 ## 13. 仍待决策
 
-1. `Engine.runModule` 保持 `suspend` 返回 namespace，还是增加 Promise 风格重载？
-2. 新异步宿主入口的租约粒度：整个 runModule / 每个 JS 执行片段？
-3. `maxMicrotasksPerRun` 在 TLA 跨轮次时按单轮还是整次 runModule 计算？
-4. module harness Phase A 只接 `top-level-await`，还是同时接 `module-code` 的其他目录？
-5. harness 的 includes、realm、模块缓存隔离策略？
-6. Test262 module harness 的 known-fail 策略：先 allowlist 具体路径，还是先只跑通过子集？
-
-第 0 阶段 spike 完成前，不建议直接修改 `ModuleLinker` / `ModuleEvaluator` 的实现。
+1. 完整 module-code 的既有缺口（默认导出名、部分歧义导出/循环链接、部分负向用例）是否单独立项；
+2. TLA 后的 async stack trace 是否保留模块帧；
+3. `runModule` 取消时，已排队的宿主定时器保留还是取消；
+4. 顶层 `await using` / `for await` 的剩余边界测试；
+5. module harness Phase B 的逐路径 known-fail 清单与 CI 时长策略。

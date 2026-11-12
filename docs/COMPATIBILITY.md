@@ -7,10 +7,9 @@
 > TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
 > `import()` 表达式、导入属性 `with { ... }` 与模块顶层 `await` 语法；阶段 0–9 已实现实验性 `Engine.runModule`（Provider、链接、
-> 环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与同步求值），但 **TLA 执行与宿主加载器尚未实现**，
-> 且 API 需 `@ExperimentalModuleApi` opt-in。
+> 环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与异步求值），TLA 仅在 Module goal 接通；**宿主加载器尚未实现**，API 需 `@ExperimentalModuleApi` opt-in。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
-> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；TLA 设计进行中，性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
+> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；TLA 验收见 [TLA_DESIGN.md](TLA_DESIGN.md)，性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
 > 宿主生态已提供 TextEncoder/TextDecoder（UTF-8）、
 > structuredClone 与 URL/URLSearchParams 常用子集（`:vibe-js-host`）。
 
@@ -62,9 +61,9 @@
 | 私有字段/方法/访问器 | ✅ | 品牌检查、不可扩展与重复初始化报错、直接 eval 可见性 |
 | Generator（`function*` / `yield`） | ✅ | 同步/异步生成器、`yield*` 委托、`return`/`throw`/`next`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定在调用时完成 |
 | BigInt（字面量与运算） | ✅ | `123n`、算术/位运算/移位/比较/幂运算、`BigInt()` / `asIntN` / `asUintN`、与 Number 混用抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制 |
-| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；实验性 `Engine.runModule` 已支持 Provider 图加载、链接、声明实例化、同步求值与 namespace，需 opt-in；宿主加载器/TLA 执行未实现。脚本目标继续拒绝 `import` / `export` |
+| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；实验性 `Engine.runModule` 已支持 Provider 图加载、链接、声明实例化、异步求值与 namespace，需 opt-in；宿主加载器未实现。脚本目标继续拒绝 `import` / `export` |
 | 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；模块求值中 `import.meta` 返回缓存的 url 对象，`import()` 执行时抛 `Dynamic import is not supported`；零参数在解析期报错 |
-| 模块顶层 await | ⚠️ | 模块语法层可解析 `await` 并记录 `hasTopLevelAwait`；非 async 函数体中的 `await` 在解析期报错；链接期直接拒绝 TLA，异步求值未实现 |
+| 模块顶层 await | ✅ | 模块语法层可解析 `await` / 顶层 `for await` 并记录 `hasTopLevelAwait`；`Engine.runModule` 已实现异步求值、异步依赖等待与 cycle root；Test262 TLA 子集 249/249。Script goal 仍拒绝 TLA |
 | Proxy / Reflect | ✅ | Proxy 13 个 trap、`Proxy.revocable`、撤销状态与完整不变量校验；Reflect 13 个方法；解释器属性/调用/构造内部方法统一分派 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
 | 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板），try/catch/finally 按待处理语义阻断 |
@@ -129,18 +128,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1192** + 宿主 38 个测试（2026-11-11 记录） |
-| JS（Node） | ✅ | 核心 **1176** + 宿主 38 个测试 |
-| Wasm（Node） | ✅ | 核心 **1176** + 宿主 38 个测试 |
+| JVM | ✅ | 核心 **1199** + 宿主 40 个测试（2026-11-12 记录） |
+| JS（Node） | ✅ | 核心 **1183** + 宿主 40 个测试 |
+| Wasm（Node） | ✅ | 核心 **1183** + 宿主 40 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
-| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-09 本地复跑 Windows mingwX64 宿主 38 通过（核心 Native 近期未全量重跑） |
+| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1192 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、执行、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1176。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1199 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1183。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-10）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-12）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；module TLA **249/249**；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -159,7 +158,7 @@
 | `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
 | `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
-- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、同步求值、动态 `import()` 与静态/动态导入属性；TLA 仍在链接期拒绝，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。动态 `import()` 只在模块代码及其延迟回调中可用，脚本目标仍不支持；模块加载器仍无计划，Test262 module harness 已纳入 TLA 验收但尚未实现；API 需 opt-in；
+- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、异步求值、动态 `import()` 与静态/动态导入属性；TLA 仅在 Module goal 支持，见 [TLA_DESIGN.md](TLA_DESIGN.md)。动态 `import()` 只在模块代码及其延迟回调中可用，脚本目标仍不支持；模块加载器仍无计划，Test262 module TLA 子集已接入；API 需 opt-in；
 - 模块语法限制：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；导入属性按说明符去重，同一说明符带不同属性会被解析器拒绝；
 - 模块导入属性与解析：`ModuleRequest.attributes` 原样传给 Provider；`import.meta.resolve` 委托 `ModuleProvider.resolve`（默认实现退化为 `load` 并返回 `url ?: id`）；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；

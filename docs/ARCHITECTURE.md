@@ -98,9 +98,9 @@ Lexer ──► Parser ──► AST (Program / ModuleProgram)
 5. 模块恒为严格模式；顶层 `super` / `new.target`、Annex B 语法、重复顶层函数声明等按模块早期错误处理；
 6. 表达式层：`import.meta` 解析为 `ImportMetaExpr`，`import(specifier[, options])` 解析为 `ImportCallExpr`；模块顶层 `await` 解析为 `UnaryOp("await", ...)` 并记录 `hasTopLevelAwait`，非 async 函数体中的 `await` 是语法错误；
 7. `moduleContext` 会传播到模板字符串 `${...}` 的子解析器与子词法器，保证模块语境在嵌套表达式里一致；
-8. 当前执行模型：`Engine.runModule`（实验性，需 opt-in）加载 Provider 模块图、链接、建模块环境/namespace 并同步求值，返回入口 namespace。模块求值帧 `this = undefined`、严格模式；动态 `import()` 在模块内通过微任务加载/链接/求值并返回 Promise，`import.meta.resolve` 委托 Provider；TLA 与 Test262 module harness 尚未实现，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+8. 当前执行模型：`Engine.runModule`（实验性，需 opt-in）加载 Provider 模块图、链接、建模块环境/namespace 并异步求值，返回入口 namespace。模块求值帧 `this = undefined`、严格模式；动态 `import()` 在模块内通过异步任务加载/链接/求值并返回 Promise，`import.meta.resolve` 委托 Provider；TLA 仅在 Module goal 支持，异步入口使用 `EventLoop.runAsyncTask`，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 
-已知限制：`export using` 尚未覆盖；脚本目标仍不支持 `import()`；同一说明符带不同导入属性会被解析器拒绝；TLA 仍在链接期拒绝，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+已知限制：`export using` 尚未覆盖；脚本目标仍不支持 `import()`；同一说明符带不同导入属性会被解析器拒绝；完整 module-code 仍有既有模块语义缺口，TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 
 ## 5. 作用域模型
 
