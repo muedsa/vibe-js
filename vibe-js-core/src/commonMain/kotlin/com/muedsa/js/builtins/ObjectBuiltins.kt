@@ -382,6 +382,10 @@ object ObjectBuiltins {
                 }
                 // 原始值按 ES2015 返回自身（不做包装）
                 if (objectValue !is JSObject) return@method objectValue
+                // `Object.prototype` 是不可变原型对象：除保持 null 外不能改原型。
+                if (objectValue === intrinsics.objectPrototype && newPrototype != null) {
+                    interpreter.typeError("Cannot set prototype of Object.prototype")
+                }
                 // 不可扩展对象只能保持原原型
                 if (!interpreter.internalIsExtensible(objectValue) &&
                     interpreter.internalGetPrototypeOf(objectValue) !== newPrototype

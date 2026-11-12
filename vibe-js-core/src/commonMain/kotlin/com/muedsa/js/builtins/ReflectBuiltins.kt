@@ -154,7 +154,7 @@ object ReflectBuiltins {
                 is JSObject -> protoValue
                 else -> interpreter.typeError("Reflect.setPrototypeOf prototype must be an object or null")
             }
-            JSBoolean.getJsBoolean(interpreter.internalSetPrototypeOf(target, proto))
+            JSBoolean.getJsBoolean(interpreter.setPrototypeOf(target, proto))
         }
 
         intrinsics.globalObject.defineDataProperty(

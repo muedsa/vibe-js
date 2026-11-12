@@ -670,8 +670,11 @@ class Interpreter(
      * 环检测已由 [internalSetPrototypeOf] 按规范处理（Proxy 处停止），
      * 这里只做委托，避免对 Proxy 触发意外的 [[GetPrototypeOf]] trap。
      */
-    suspend fun setPrototypeOf(objectValue: JSObject, newPrototype: JSObject?): Boolean =
-        internalSetPrototypeOf(objectValue, newPrototype)
+    suspend fun setPrototypeOf(objectValue: JSObject, newPrototype: JSObject?): Boolean {
+        // `%Object.prototype%` 是不可变原型对象：只有 null 是合法原型。
+        if (objectValue === intrinsics.objectPrototype && newPrototype != null) return false
+        return internalSetPrototypeOf(objectValue, newPrototype)
+    }
 
     /** ToInt32。 */
     suspend fun toInt32(value: JSValue): Int = conversions.toInt32(value)
@@ -1192,12 +1195,22 @@ class Interpreter(
             if (current is JSProxy) {
                 return setWithReceiver(current, key, value, receiver)
             }
-            // 原型链中的 TypedArray：非法数字索引直接判定成功（不创建属性）
+            // 原型链中的 TypedArray：按 TypedArray [[Set]] 处理；Receiver 与 O
+            // 相同时即使索引越界也要完成一次数值转换。
             if (current is JSTypedArray) {
-                when (current.classifyIndex(key)) {
+                when (val classified = current.classifyIndex(key)) {
                     JSTypedArray.IndexKey.NotIndex -> Unit
-                    JSTypedArray.IndexKey.Invalid -> return true
-                    is JSTypedArray.IndexKey.Valid -> Unit
+                    JSTypedArray.IndexKey.Invalid -> {
+                        if (current === receiver) conversions.toNumeric(value)
+                        return true
+                    }
+
+                    is JSTypedArray.IndexKey.Valid -> {
+                        if (current === receiver) {
+                            setTypedArrayElement(current, classified.index, value)
+                            return true
+                        }
+                    }
                 }
             }
             val descriptor = internalGetOwnProperty(current, key)

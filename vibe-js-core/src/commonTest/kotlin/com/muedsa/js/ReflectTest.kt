@@ -56,6 +56,37 @@ class ReflectTest {
         assertEquals(true, runtime.evalBoolean("extensible"))
         assertEquals(true, runtime.evalBoolean("prevented"))
         assertEquals(false, runtime.evalBoolean("extensibleAfter"))
+
+        runtime.eval(
+            """
+            var immutableSet = Reflect.setPrototypeOf(Object.prototype, {});
+            var objectSetThrows = false;
+            try {
+              Object.setPrototypeOf(Object.prototype, {});
+            } catch (error) {
+              objectSetThrows = error instanceof TypeError;
+            }
+            """.trimIndent()
+        )
+        assertEquals(false, runtime.evalBoolean("immutableSet"))
+        assertEquals(true, runtime.evalBoolean("objectSetThrows"))
+        assertEquals(true, runtime.evalBoolean("Object.getPrototypeOf(Object.prototype) === null"))
+
+        runtime.eval(
+            """
+            var receiver = new Int32Array(2);
+            var derived = Object.create(receiver);
+            var converted = 0;
+            var result = Reflect.set(derived, 100, {
+              valueOf: function () {
+                converted++;
+                return 1;
+              }
+            }, receiver);
+            """.trimIndent()
+        )
+        assertEquals(true, runtime.evalBoolean("result"))
+        assertEquals(1.0, runtime.evalNumber("converted"))
     }
 
     @Test
