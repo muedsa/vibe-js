@@ -128,18 +128,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1203** + 宿主 40 个测试（2026-11-12 记录） |
-| JS（Node） | ✅ | 核心 **1187** + 宿主 40 个测试 |
-| Wasm（Node） | ✅ | 核心 **1187** + 宿主 40 个测试 |
+| JVM | ✅ | 核心 **1206** + 宿主 40 个测试（2026-11-12 记录） |
+| JS（Node） | ✅ | 核心 **1190** + 宿主 40 个测试 |
+| Wasm（Node） | ✅ | 核心 **1190** + 宿主 40 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1203 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1187。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1206 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1190。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-12）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；module TLA **249/249**；module-code **593/593**（3 条 source-phase-imports 跳过）；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-12）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **61,786/61,786**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；module TLA **249/249**；module-code **593/593**；language module **686/686**；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -158,7 +158,7 @@
 | `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
 | `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
-- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、异步求值、动态 `import()` 与静态/动态导入属性；TLA 仅在 Module goal 支持，见 [TLA_DESIGN.md](TLA_DESIGN.md)。动态 `import()` 只在模块代码及其延迟回调中可用，脚本目标仍不支持；模块加载器仍无计划，Test262 module TLA/module-code 子集已接入；API 需 opt-in；
+- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、异步求值、动态 `import()` 与静态/动态导入属性；TLA 仅在 Module goal 支持，见 [TLA_DESIGN.md](TLA_DESIGN.md)。动态 `import()` 只在模块代码及其延迟回调中可用，脚本目标仍不支持；模块加载器仍无计划，Test262 module TLA/module-code/language module 子集已接入；API 需 opt-in；
 - 模块语法限制：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；导入属性按说明符去重，同一说明符带不同属性会被解析器拒绝；
 - 模块导入属性与解析：`ModuleRequest.attributes` 原样传给 Provider；`import.meta.resolve` 委托 `ModuleProvider.resolve`（默认实现退化为 `load` 并返回 `url ?: id`）；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；

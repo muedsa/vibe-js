@@ -3,7 +3,7 @@
 > 状态：**阶段 0–9 已作为实验性模块实现落地；不承诺正式版兼容性**。Parser、
 > 公共 Provider API、内部图加载/链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、
 > 动态 `import()`、导入属性、`Engine.runModule`、同步求值以及错误定位/预算/取消/恢复加固已接通。
-> 模块加载器仍无计划；TLA 与 Test262 module TLA 子集已落地，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+> 模块加载器仍无计划；TLA 与 Test262 module TLA/module-code/language 子集已落地，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 > 该 API 需要 `@ExperimentalModuleApi` opt-in。
 >
 > 注：本文主体记录阶段 0–8 的同步静态模块 MVP 设计；阶段 9 补充的动态 `import()`、

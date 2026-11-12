@@ -23,6 +23,7 @@
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0，跳过 0 |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0，跳过 3（source-phase-imports） |
+| Test262 language module | **686 / 686**，失败 0，崩溃 0，跳过 131（未支持特性） |
 | Node 差分 | **1432 / 1432** |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） |
 | conformance 单元测试 | **42 / 42**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 22 + RunMetadataTest 4） |
@@ -80,7 +81,7 @@
 
 模块早期错误（early-module）共 63 条，解析成功 0、被拒绝 63、意外接受 0。模块允许列表 `parser-module-allowlist.txt` 当前为空；新增条目必须逐条写“相对语料根目录的 POSIX 路径 + 原因”，且只允许 `.module.js`，禁止目录/后缀/通配符。
 
-> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/异步求值/错误定位），TLA 仅在 Module goal 支持；Test262 module TLA 子集已接入（249/249），完整 module-code 仍有既有缺口；宿主加载器未实现，模块能力仍需 opt-in。
+> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/异步求值/错误定位），TLA 仅在 Module goal 支持；Test262 module TLA 249/249、module-code 593/593、language module 686/686（未支持特性逐条跳过）；宿主加载器未实现，模块能力仍需 opt-in。
 
 ### 3.4 早期错误（脚本）
 
@@ -150,7 +151,7 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 `module` 在 ES2015 子集仍跳过，因为该子集不执行模块；TLA 已由独立 module suite 覆盖（见 §5.3）。旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
 
-### 5.3 Test262 module TLA 子集
+### 5.3 Test262 module 子集
 
 ```bash
 # 默认跑 language/module-code/top-level-await（CI 门禁使用 -Pstrict）
@@ -159,14 +160,18 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 # 完整 language/module-code（CI 门禁使用 -Pstrict）
 ./gradlew :vibe-js-conformance:test262ModuleCodeConformance
 
-# 定向或扩到完整 module-code
+# language 下所有受支持 module 用例（CI 门禁使用 -Pstrict）
+./gradlew :vibe-js-conformance:test262ModuleLanguageConformance
+
+# 定向调试
 ./gradlew :vibe-js-conformance:test262ModuleConformance -Ptest262Filter=await-expr
-./gradlew :vibe-js-conformance:test262ModuleConformance -Ptest262Filter=language/module-code
 ```
 
 当前 TLA 目录选中 **249** 个文件、执行 **249** 次，全部通过；includes 作为经典脚本先执行，模块入口由文件型 `ModuleProvider` 加载，异步用例经 `$DONE` 判定。
 
 完整 `language/module-code` 当前 **593 / 593**（执行 593，失败 0、崩溃 0；另有 3 条 `source-phase-imports` 未支持而跳过）。已接入独立 `test262ModuleCodeConformance` strict 门禁。
+
+`language` 下所有受支持 module 用例当前 **686 / 686**（失败 0、崩溃 0；131 条 import-defer/source-phase/json/text/bytes modules 等未支持特性逐条跳过）。已接入 `test262ModuleLanguageConformance` strict 门禁。
 
 ### 5.2 筛选统计（未纳入本次口径）
 
@@ -366,7 +371,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 9. 已知范围与缺口
 
-- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、链接、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值；Test262 `language/module-code/top-level-await` 249/249，完整 `language/module-code` 593/593（3 条 source-phase-imports 跳过）。宿主加载器仍未实现；parser 的 262 个模块用例保留为现状回归门禁。
+- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、链接、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值；Test262 `language/module-code/top-level-await` 249/249，完整 `language/module-code` 593/593（3 条 source-phase-imports 跳过），`language` module 子集 686/686（131 条未支持特性跳过）。宿主加载器仍未实现；parser 的 262 个模块用例保留为现状回归门禁。
 - **顶层 await**：Module goal 已实现异步模块求值、异步依赖等待、cycle root、错误传播与动态 import 等待；Script goal 继续拒绝。
 - **模块扩展语法**：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；同一说明符带不同导入属性会被解析器拒绝。
 - **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。

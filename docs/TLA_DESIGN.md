@@ -6,7 +6,7 @@
 > - `ModuleStatus.EVALUATING_ASYNC`、异步 completion、异步依赖等待与 cycle root 已落地；
 > - 新增内部 `EventLoop.runAsyncTask`，TLA 等待期间不长期持有 `runtimeMutex`，宿主定时器可继续推进；
 > - Test262 `language/module-code/top-level-await` **249/249** 通过（module suite，strict 门禁）；
-> - 完整 `language/module-code` 当前 **593/593**（3 条 source-phase-imports 属未支持特性跳过），核心模块语义缺口已清零；
+> - 完整 `language/module-code` **593/593**，`language` module 子集 **686/686**；3 条 source-phase-imports 等未支持特性逐条跳过；
 > - 已确认决策：异步循环按规范级支持；事件循环采用新增异步宿主入口；module harness 纳入 TLA 验收。
 >
 > 相关文档：[MODULE_DESIGN.md](MODULE_DESIGN.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[COMPATIBILITY.md](COMPATIBILITY.md)。
@@ -337,7 +337,7 @@ harness 放在 `vibe-js-conformance`，作为 JVM 运行器读取语料，不进
 已按两阶段落地：
 
 - **Phase A（TLA 验收，已完成）**：`language/module-code/top-level-await`，249/249；
-- **Phase B（模块回归，已完成）**：完整 `language/module-code` 593/593；3 条 source-phase-imports 作为未支持特性逐条跳过。
+- **Phase B（模块回归，已完成）**：完整 `language` module 子集 686/686；module-code 593/593；未支持的 import-defer/source-phase/json/text/bytes modules 逐条跳过。
 
 门禁要求：
 
@@ -352,7 +352,7 @@ harness 放在 `vibe-js-conformance`，作为 JVM 运行器读取语料，不进
 - 复用 `Test262Conformance` 的 metadata/harness/`$DONE`/报告，新增 `--suite module` 分支，不另起运行器；
 - includes 先在独立 Engine 的全局 realm 中作为经典脚本执行，再执行模块入口；
 - 每个测试独立 Engine 与模块图，fixture 仅在单个测试内缓存；
-- Phase A 只接 TLA 目录；完整 module-code 作为 Phase B 单独统计，不进入 TLA strict 门禁；
+- Phase A 接 TLA 目录；Phase B 的 module-code / language module 使用独立 strict 门禁，不混入 TLA 任务。
 - 异步超时沿用 `RunnerSettings.caseTimeoutMillis`。
 
 ## 12. 分阶段实施
@@ -365,13 +365,13 @@ harness 放在 `vibe-js-conformance`，作为 JVM 运行器读取语料，不进
 | 3 | 动态 import、错误/取消、namespace/TDZ 边界 | 核心已完成；取消/预算边界继续补测 |
 | 4 | 核心测试矩阵、文档、strict 门禁、失败恢复 | 进行中 |
 | 5 | Test262 module harness（Phase A） | 已完成：`test262ModuleConformance` 249/249 |
-| 6 | 完整 module-code 接入与 known-fail 分类（Phase B） | 已完成：593/593，3 条 source-phase-imports 跳过 |
+| 6 | 完整 module-code / language module 接入与 known-fail 分类（Phase B） | 已完成：module-code 593/593；language 686/686 |
 
 核心 TLA 与 harness Phase A 已完成；Phase B 不属于 TLA 验收阻塞项。
 
 ## 13. 仍待决策
 
-1. 完整 module-code 的既有缺口（默认导出名、部分歧义导出/循环链接、部分负向用例）是否单独立项；
+1. `export using` 与 import-defer/source-phase/json/text/bytes modules 是否单独立项；
 2. TLA 后的 async stack trace 是否保留模块帧；
 3. `runModule` 取消时，已排队的宿主定时器保留还是取消；
 4. 顶层 `await using` / `for await` 的剩余边界测试；

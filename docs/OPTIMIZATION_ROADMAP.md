@@ -6,7 +6,7 @@
 >
 > **2026-11-11 调整：模块阶段 0–9 已作为实验性实现完成**（Parser 静态表与导入属性、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器仍无计划；核心继续不引入平台文件/URL IO。TLA 与 Test262 module TLA 子集已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 >
-> **2026-11-12 调整：TLA 已落地**（仅 Module goal）。核心异步求值、异步事件循环入口与 Test262 module TLA 子集已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md)；完整 module-code 仍有既有模块语义缺口。
+> **2026-11-12 调整：TLA 已落地**（仅 Module goal）。核心异步求值、异步事件循环入口、module-code 593/593 与 language module 686/686 已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md)；未支持的 module 特性逐条跳过。
 
 ## 1. 当前基线
 
@@ -14,8 +14,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1203 / 1203** | 2026-11-12 本地运行 |
-| core JS / Wasm（Node） | 各 **1187 / 1187** | 2026-11-12 复跑 |
+| core JVM 单元测试 | **1206 / 1206** | 2026-11-12 本地运行 |
+| core JS / Wasm（Node） | 各 **1190 / 1190** | 2026-11-12 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **42 / 42** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 22 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -23,6 +23,8 @@
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-12 复跑 |
 | Test262 ES2015 | **61,786 / 61,786**，失败 0，崩溃 0 | 选中 32,293；跳过 **324**（module flag 322 + `$262`/`print` 2） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0 | 默认 `language/module-code/top-level-await` |
+| Test262 module-code | **593 / 593**，失败 0，崩溃 0 | 3 条 source-phase-imports 跳过 |
+| Test262 language module | **686 / 686**，失败 0，崩溃 0 | 131 条未支持 module 特性跳过 |
 | Node 差分 | **1432 / 1432** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
@@ -36,7 +38,7 @@
 - **二进制与数值**：BigInt、11 种 TypedArray、ArrayBuffer、DataView、detach 语义。
 - **集合与内建**：Iterator helpers、DisposableStack / AsyncDisposableStack、Promise 组合、`RegExp.escape`、ES2025 Set 方法等。
 - **宿主生态**：`:vibe-js-host` 提供 TextEncoder/TextDecoder（UTF-8、fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/二进制/循环）、URL/URLSearchParams 常用子集。
-- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值，但 API 需 opt-in；Test262 module TLA 子集 249/249；宿主加载器仍无计划。
+- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值，但 API 需 opt-in；Test262 module TLA 249/249、module-code 593/593、language module 686/686；宿主加载器仍无计划。
 - **资源约束**：`EngineLimits` 已覆盖源码长度、嵌套深度、AST 节点、对象数量、JSON 深度、正则步数、排队任务、单轮微任务等预算；`JSON.stringify` 与 `JSON.parse` 共用 `maxJsonDepth`，显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎。
 
 ### 1.3 当前边界
@@ -45,7 +47,7 @@
 
 ## 2. 排序原则
 
-模块阶段 0–9 已作为**实验性实现**落地；同一 Engine 可执行 Script 或模块图，但模块 API 不承诺正式兼容性。加载器仍无计划；TLA 已落地，完整 module-code 缺口单列。
+模块阶段 0–9 已作为**实验性实现**落地；同一 Engine 可执行 Script 或模块图，但模块 API 不承诺正式兼容性。加载器仍无计划；TLA 与 module-code 已落地，未支持特性单列。
 
 | 队列 | 范围 | 说明 |
 |---|---|---|
@@ -175,7 +177,7 @@ repeat(100) {
 | `L4.2` | 模块链接（Module Record / ResolveExport） | **阶段 4 已完成（实验性）** |
 | `L4.3` | 模块求值（live binding / 命名空间） | **阶段 7 已完成（实验性、同步子集）** |
 | `L4.4` | 模块加载器抽象与宿主文件加载器 | **无计划**：Provider 抽象已有，文件/URL 加载器不在核心 |
-| `L4.6a+` | Test262 `module-code` parse 门禁 | **部分现状**：262 个 parser 模块语料已纳入；完整 module-code 执行门禁随 TLA/module harness 设计 |
+| `L4.6a+` | Test262 `module-code` parse 门禁 | **已完成**：262 个 parser 模块语料 + module-code 593/593 执行门禁 |
 | `L4.6b` | Test262 module harness | **已完成**：TLA 249/249；完整 module-code 593/593（3 条 source-phase-imports 跳过） |
 | `L4.7` | 顶层 await 执行 | **已完成**（仅 Module goal），见 [TLA_DESIGN.md](TLA_DESIGN.md) |
 
@@ -525,7 +527,7 @@ data class EngineLimits(
 
 ## 10. 风险与约束
 
-1. **模块执行仍有限**：阶段 0–9 已实现模块图、动态 `import()`、导入属性、`import.meta.resolve` 与 TLA；完整 module-code 仍有默认导出名、部分歧义导出/循环链接等既有缺口；宿主文件/URL 加载器仍未实现；实验性 API 不承诺兼容性。
+1. **模块执行仍有限**：阶段 0–9 已实现模块图、动态 `import()`、导入属性、`import.meta.resolve` 与 TLA；module-code 593/593、language module 686/686；未支持的 import-defer/source-phase/json/text/bytes modules 逐条跳过；宿主文件/URL 加载器仍未实现；实验性 API 不承诺兼容性。
 2. **KMP 与文件 IO 不匹配**：核心不能假设文件系统；JVM/Android/Native/Node 与浏览器/Wasm 的 IO 能力差异大，未来若重启模块方向，只能采用“核心抽象 + 宿主加载器”或纯内存模块表。
 3. **`Engine.run()` 的边界**：多次 `run` 共享全局环境，但不是模块；全局 `let`/`const`/`class` 重复声明仍可能冲突，宿主需要自行管理脚本边界。
 4. **维护主线依赖语料稳定**：`S6.2`/`S2.2` 受 Test262/真实库下载与版本影响，报告必须带 commit 与跳过口径。
@@ -565,6 +567,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|---|
+| 2026-11-12 | **module language Phase B 完成**：module 顶层 `using`/`await using` 释放、动态 import 目标 SyntaxError 映射、`import.meta` 按函数所属模块隔离；`language` module 子集 686/686（131 条未支持特性跳过）；新增 `test262ModuleLanguageConformance` strict 门禁；核心 JVM 1206、JS/Wasm 1190 |
 | 2026-11-12 | **module-code 全绿**：修复间接导出循环/链接期校验、默认导出函数提升/命名、class 可变绑定、namespace define/delete/has/set 与 super TDZ；`language/module-code` 593/593（3 条 source-phase-imports 跳过）；新增 `test262ModuleCodeConformance` strict 门禁；核心 JVM 1203、JS/Wasm 1187 |
 | 2026-11-12 | **TLA 完成（Module goal）**：新增 `EventLoop.runAsyncTask`、`ModuleStatus.EVALUATING_ASYNC`、异步依赖/cycle root；`Engine.runModule` 接入异步求值；Test262 module TLA 子集 249/249；完整 module-code 560/593（既有缺口）；核心 JVM 1199、JS/Wasm 1183、host 40、conformance 42；全量 parser/ES5/ES2015/差分/真实库 strict 全绿 |
 | 2026-11-08 | 重写为“后续路线（未完成工作）”：移除已完成项清单，只保留 P0 模块执行与宿主生态、P1 质量项、长期/延后项；补充每项的范围、依赖、人日、风险、验收与触发条件 |
