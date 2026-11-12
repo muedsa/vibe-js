@@ -106,6 +106,39 @@ class HostModuleTest {
 
     @OptIn(ExperimentalModuleApi::class)
     @Test
+    fun `TLA 挂起期间宿主脚本仍可执行`() = runTest {
+        val scheduler = QueueScheduler()
+        val engine = Engine(DefaultHostEnvironment(scheduler = scheduler))
+        engine.install(HostModule(engine.eventLoop, RecordingConsole()))
+
+        val run = async(start = CoroutineStart.UNDISPATCHED) {
+            engine.runModule(
+                ModuleSource(
+                    id = "a",
+                    source = """
+                        export var value = 0;
+                        await new Promise(function (resolve) {
+                          setTimeout(resolve, 0);
+                        });
+                        value = 42;
+                    """.trimIndent(),
+                ),
+            )
+        }
+
+        // TLA 正在等待定时器，事件循环没有长期持有运行锁，宿主脚本应能完成。
+        engine.run("globalThis.hostRan = true;")
+        assertTrue((engine.run("hostRan") as JSBoolean).value)
+        scheduler.runAll()
+        val namespace = run.await()
+        assertEquals(
+            42.0,
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value,
+        )
+    }
+
+    @OptIn(ExperimentalModuleApi::class)
+    @Test
     fun `TLA 可等待宿主定时器`() = runTest {
         val scheduler = QueueScheduler()
         val engine = Engine(DefaultHostEnvironment(scheduler = scheduler))

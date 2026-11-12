@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
  * 同步模块仍按 DFS 后序同步执行；带 TLA 或异步依赖的模块通过 completion 等待，
  * 启动依赖时使用 UNDISPATCHED，让依赖的同步前缀先执行到首个 await，再继续兄弟模块。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 internal class ModuleEvaluator(
     private val interpreter: Interpreter,
 ) {
