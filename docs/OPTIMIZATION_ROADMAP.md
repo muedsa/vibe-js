@@ -22,7 +22,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-12 复跑 |
 | Test262 ES2015 | **63,456 / 63,456**，失败 0，崩溃 0 | 选中 33,128；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Test262 ES2016+ | **20,488 / 20,488**，失败 0，崩溃 0 | 选中 10,389；跳过 24（不支持 flag） |
+| Test262 ES2016+ | **22,956 / 22,956**，失败 0，崩溃 0 | 选中 11,682；跳过 24（module flag） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0 | 默认 `language/module-code/top-level-await` |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0 | 3 条 source-phase-imports 跳过 |
 | Test262 language module | **686 / 686**，失败 0，崩溃 0 | 131 条未支持 module 特性跳过 |
@@ -568,6 +568,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
+| 2026-11-12 | **ES2019+ 版本锚点批次**：纳入 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll；ES2016+ **22,956/22,956**，选中 11,682 个文件 |
 | 2026-11-12 | **ES2024/2025 语言特性扩展批次**：纳入 iterator-chunking、upsert、symbols-as-weakmap-keys、iterator-sequencing、joint-iteration、explicit-resource-management、hashbang、optional-catch-binding、stable-array-sort、json-superset、error-stack-accessor、json-parse-with-source、for-in-order、array-grouping；ES2016+ **20,488/20,488**，选中 10,389 个文件 |
 | 2026-11-12 | **ES2024/2025 小型特性批次**：纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`；ES2016+ **18,856/18,856**，选中 9,549 个文件 |
 | 2026-11-12 | **resizable ArrayBuffer 完成批次**：`{ maxByteLength }`、`resize`、动态 TypedArray/DataView 视图、越界视图/迭代/DataView 的 TypeError、silent OOB 写入、species/slice/with 的动态长度语义；Test262 ES2015 **63,456/63,456**、ES2016+ **18,662/18,662** |

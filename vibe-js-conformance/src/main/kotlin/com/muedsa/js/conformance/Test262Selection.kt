@@ -312,6 +312,11 @@ internal object Test262Selection {
         "hashbang", "optional-catch-binding", "stable-array-sort",
         "json-superset", "error-stack-accessor", "json-parse-with-source",
         "for-in-order", "array-grouping",
+        // ES2019+ 特性锚点：实现已存在，纳入 ES2016+ 版本统计
+        "BigInt", "BigInt64Array", "BigUint64Array",
+        "AggregateError", "globalThis", "string-trimming",
+        "await-dictionary", "nonextensible-applies-to-private",
+        "String.prototype.matchAll", "Symbol.matchAll",
     )
 
     /**
