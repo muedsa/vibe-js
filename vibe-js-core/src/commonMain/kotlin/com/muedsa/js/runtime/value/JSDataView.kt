@@ -1,5 +1,6 @@
 package com.muedsa.js.runtime.value
 
+import com.muedsa.js.runtime.Float16Math
 import com.muedsa.js.runtime.Float32Math
 
 /**
@@ -56,6 +57,10 @@ class JSDataView(
     internal fun getUint32(index: Int, littleEndian: Boolean): Long =
         readBits32(index, littleEndian).toLong() and 0xFFFFFFFFL
 
+    /** getFloat16：两个字节按 IEEE-754 binary16 位模式解释。 */
+    internal fun getFloat16(index: Int, littleEndian: Boolean): Double =
+        Float16Math.fromBits(readBits16(index, littleEndian))
+
     /** getFloat32：四个字节按 IEEE-754 单精度位模式精确扩展为 double。 */
     internal fun getFloat32(index: Int, littleEndian: Boolean): Double =
         Float32Math.fromBits(readBits32(index, littleEndian))
@@ -104,6 +109,11 @@ class JSDataView(
     /** setUint32：写入无符号 32 位值的低 32 位。 */
     internal fun setUint32(index: Int, value: Long, littleEndian: Boolean) {
         writeBits32(index, value.toInt(), littleEndian)
+    }
+
+    /** setFloat16：按 roundTiesToEven 转成 IEEE-754 binary16 位模式后写入。 */
+    internal fun setFloat16(index: Int, value: Double, littleEndian: Boolean) {
+        writeBits16(index, Float16Math.toBits(value), littleEndian)
     }
 
     /** setFloat32：按 roundTiesToEven 转成 IEEE-754 单精度位模式后写入。 */

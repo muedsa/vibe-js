@@ -353,6 +353,10 @@ internal object TypedArrayBuiltins {
             if (count > 0 && array.isDetached) {
                 interpreter.typeError("TypedArray.prototype.slice called on a detached TypedArray")
             }
+            if (count > 0 && result.type == array.type) {
+                array.copyRawToForward(result, sourceStart = start, targetStart = 0, count = count)
+                return@defineMethod result
+            }
             var targetIndex = 0
             var sourceIndex = start
             while (sourceIndex < end) {
@@ -415,25 +419,11 @@ internal object TypedArrayBuiltins {
             if (count <= 0) {
                 return@defineMethod array
             }
-            var from = start
-            var to = target
-            // 目标区间与源区间重叠且目标在源之前时，必须从后往前复制
-            if (start < target && target < start + count) {
-                from = start + count - 1
-                to = target + count - 1
-                while (count > 0) {
-                    interpreter.setTypedArrayElement(array, to, array.getElement(from))
-                    from--
-                    to--
-                    count--
-                }
+            // 规范：同元素类型按字节拷贝；重叠区间从后往前复制。
+            if (start < target) {
+                array.copyRawToBackward(array, sourceStart = start, targetStart = target, count = count)
             } else {
-                while (count > 0) {
-                    interpreter.setTypedArrayElement(array, to, array.getElement(from))
-                    from++
-                    to++
-                    count--
-                }
+                array.copyRawToForward(array, sourceStart = start, targetStart = target, count = count)
             }
             // 规范：copyWithin 返回 this
             array
@@ -1297,6 +1287,11 @@ internal object TypedArrayBuiltins {
                 interpreter.rangeError("Source is too large")
             }
             val start = targetOffset.toInt()
+            if (source.type == target.type) {
+                // 规范：相同元素类型按原始字节拷贝以保留 NaN payload/负零。
+                source.copyRawTo(target, sourceStart = 0, targetStart = start, count = sourceLength)
+                return
+            }
             if (source.buffer === target.buffer) {
                 // 规范：同一缓冲区上的重叠拷贝等价于先复制到临时列表
                 val values = ArrayList<JSValue>(sourceLength)

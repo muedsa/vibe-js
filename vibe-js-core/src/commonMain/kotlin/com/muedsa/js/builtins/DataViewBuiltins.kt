@@ -212,6 +212,9 @@ object DataViewBuiltins {
         defineReadMethod("getUint32", 4) { view, index, littleEndian ->
             JSNumber(view.getUint32(index, littleEndian).toDouble())
         }
+        defineReadMethod("getFloat16", 2) { view, index, littleEndian ->
+            JSNumber(view.getFloat16(index, littleEndian))
+        }
         defineReadMethod("getFloat32", 4) { view, index, littleEndian ->
             JSNumber(view.getFloat32(index, littleEndian))
         }
@@ -236,6 +239,9 @@ object DataViewBuiltins {
         }
         defineWriteMethod("setUint32", 4) { view, index, littleEndian, value, interpreter ->
             view.setUint32(index, interpreter.toUint32(value), littleEndian)
+        }
+        defineWriteMethod("setFloat16", 2) { view, index, littleEndian, value, interpreter ->
+            view.setFloat16(index, interpreter.toNumber(value), littleEndian)
         }
         defineWriteMethod("setFloat32", 4) { view, index, littleEndian, value, interpreter ->
             view.setFloat32(index, interpreter.toNumber(value), littleEndian)

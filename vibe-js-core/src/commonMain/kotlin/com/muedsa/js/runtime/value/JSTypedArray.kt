@@ -30,6 +30,7 @@ enum class JSTypedArrayType(
     UINT32("Uint32Array", 4),
     BIGINT64("BigInt64Array", 8, isBigIntContent = true),
     BIGUINT64("BigUint64Array", 8, isBigIntContent = true),
+    FLOAT16("Float16Array", 2),
     FLOAT32("Float32Array", 4),
     FLOAT64("Float64Array", 8),
 }
@@ -177,6 +178,9 @@ class JSTypedArray(
             JSTypedArrayType.BIGUINT64 ->
                 view.getBigUint64(byteIndex, LITTLE_ENDIAN)
 
+            JSTypedArrayType.FLOAT16 ->
+                JSNumber(view.getFloat16(byteIndex, LITTLE_ENDIAN))
+
             JSTypedArrayType.FLOAT32 ->
                 JSNumber(view.getFloat32(byteIndex, LITTLE_ENDIAN))
 
@@ -219,6 +223,53 @@ class JSTypedArray(
     internal fun setUint8ClampedElement(index: Int, value: Double) {
         if (buffer.isDetached) return
         view.setUint8(index * bytesPerElement, toUint8Clamp(value))
+    }
+
+    /** 写入 Float16 元素（binary16 舍入由 [JSDataView.setFloat16] 统一完成）。 */
+    internal fun setFloat16Element(index: Int, value: Double) {
+        if (buffer.isDetached) return
+        view.setFloat16(index * bytesPerElement, value, LITTLE_ENDIAN)
+    }
+
+    /**
+     * 同元素类型的原始字节拷贝（保留 NaN payload 与 -0 位模式）。
+     *
+     * 同一缓冲区上的重叠拷贝先落入临时字节数组，避免正向覆盖。
+     */
+    internal fun copyRawTo(target: JSTypedArray, sourceStart: Int, targetStart: Int, count: Int) {
+        if (count <= 0 || buffer.isDetached || target.buffer.isDetached) return
+        val byteCount = count * bytesPerElement
+        val sourceOffset = byteOffset + sourceStart * bytesPerElement
+        val targetOffset = target.byteOffset + targetStart * bytesPerElement
+        val temp = ByteArray(byteCount)
+        for (index in 0 until byteCount) {
+            temp[index] = buffer.getByte(sourceOffset + index)
+        }
+        for (index in 0 until byteCount) {
+            target.buffer.setByte(targetOffset + index, temp[index])
+        }
+    }
+
+    /** 正序逐字节拷贝；同一缓冲区的不同视图按规范会观察到前向覆盖。 */
+    internal fun copyRawToForward(target: JSTypedArray, sourceStart: Int, targetStart: Int, count: Int) {
+        if (count <= 0 || buffer.isDetached || target.buffer.isDetached) return
+        val byteCount = count * bytesPerElement
+        val sourceOffset = byteOffset + sourceStart * bytesPerElement
+        val targetOffset = target.byteOffset + targetStart * bytesPerElement
+        for (index in 0 until byteCount) {
+            target.buffer.setByte(targetOffset + index, buffer.getByte(sourceOffset + index))
+        }
+    }
+
+    /** 逆序逐字节拷贝，用于 copyWithin 的前向重叠区间。 */
+    internal fun copyRawToBackward(target: JSTypedArray, sourceStart: Int, targetStart: Int, count: Int) {
+        if (count <= 0 || buffer.isDetached || target.buffer.isDetached) return
+        val byteCount = count * bytesPerElement
+        val sourceOffset = byteOffset + sourceStart * bytesPerElement
+        val targetOffset = target.byteOffset + targetStart * bytesPerElement
+        for (index in byteCount - 1 downTo 0) {
+            target.buffer.setByte(targetOffset + index, buffer.getByte(sourceOffset + index))
+        }
     }
 
     /** 写入 Float32 元素（binary32 舍入由 [JSDataView.setFloat32] 统一完成）。 */
@@ -367,6 +418,7 @@ class JSTypedArray(
 
             JSTypedArrayType.UINT32 -> setUint32Element(index, toUint32Number(value))
             JSTypedArrayType.UINT8_CLAMPED -> setUint8ClampedElement(index, value)
+            JSTypedArrayType.FLOAT16 -> setFloat16Element(index, value)
             JSTypedArrayType.FLOAT32 -> setFloat32Element(index, value)
             JSTypedArrayType.FLOAT64 -> setFloat64Element(index, value)
             // BigInt 视图不接受 Number：调用方（defineOwnProperty）已分支到 writeBigInt

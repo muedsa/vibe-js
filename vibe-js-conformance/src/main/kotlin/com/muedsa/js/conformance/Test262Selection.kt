@@ -227,6 +227,7 @@ internal object Test262Selection {
         "Int8Array", "Uint8Array", "Uint8ClampedArray",
         "Int16Array", "Uint16Array", "Int32Array", "Uint32Array",
         "Float32Array", "Float64Array", "BigInt64Array", "BigUint64Array",
+        "Float16Array",
         "for-of", "new.target", "super", "Symbol", "Symbol.iterator",
     "Symbol.asyncIterator",
         "Symbol.toPrimitive", "Symbol.toStringTag", "Symbol.hasInstance",
@@ -292,7 +293,7 @@ internal object Test262Selection {
         "class-fields-private-in", "class-static-block",
         "Array.prototype.at", "String.prototype.at",
         "change-array-by-copy", "array-find-from-last",
-        "arraybuffer-transfer", "uint8array-base64",
+        "arraybuffer-transfer", "uint8array-base64", "Float16Array",
         "error-cause", "Array.fromAsync",
         "String.prototype.isWellFormed", "String.prototype.toWellFormed",
         "well-formed-json-stringify",
@@ -339,7 +340,7 @@ internal object Test262Selection {
         "dynamic-import", "import-attributes", "top-level-await",
         "import-defer", "import-bytes", "import-text", "json-modules",
         "source-phase-imports", "source-phase-imports-module-source",
-        "resizable-arraybuffer", "Float16Array",
+        "resizable-arraybuffer",
         "Temporal", "ShadowRealm",
     )
 

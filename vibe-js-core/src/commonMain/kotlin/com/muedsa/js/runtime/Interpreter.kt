@@ -911,6 +911,7 @@ class Interpreter(
 
             JSTypedArrayType.UINT32 -> array.setUint32Element(index, toUint32(value))
             JSTypedArrayType.UINT8_CLAMPED -> array.setUint8ClampedElement(index, toNumber(value))
+            JSTypedArrayType.FLOAT16 -> array.setFloat16Element(index, toNumber(value))
             JSTypedArrayType.FLOAT32 -> array.setFloat32Element(index, toNumber(value))
             JSTypedArrayType.FLOAT64 -> array.setFloat64Element(index, toNumber(value))
             // BigInt 视图：Number 值会在 ToBigInt 抛 TypeError（规范要求的隐式转换限制）
