@@ -104,6 +104,12 @@ internal object TypedArrayBuiltins {
         }
         intrinsics.typedArrayConstructors = constructors
 
+        Uint8ArrayBase64Builtins.install(
+            intrinsics = intrinsics,
+            constructor = constructors.getValue(JSTypedArrayType.UINT8),
+            prototype = intrinsics.typedArrayPrototypes.getValue(JSTypedArrayType.UINT8),
+        )
+
         installAccessors(intrinsics)
         installMethods(intrinsics)
         installStaticMethods(intrinsics)

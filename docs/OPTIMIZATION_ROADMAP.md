@@ -14,15 +14,15 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1208 / 1208** | 2026-11-12 本地运行 |
-| core JS / Wasm（Node） | 各 **1192 / 1192** | 2026-11-12 复跑 |
+| core JVM 单元测试 | **1210 / 1210** | 2026-11-12 本地运行 |
+| core JS / Wasm（Node） | 各 **1194 / 1194** | 2026-11-12 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **44 / 44** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-12 复跑 |
-| Test262 ES2015 | **62,302 / 62,302**，失败 0，崩溃 0 | 选中 32,551；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Test262 ES2016+ | **17,508 / 17,508**，失败 0，崩溃 0 | 选中 8,875；跳过 15（module flag） |
+| Test262 ES2015 | **62,438 / 62,438**，失败 0，崩溃 0 | 选中 32,619；跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 ES2016+ | **17,644 / 17,644**，失败 0，崩溃 0 | 选中 8,943；跳过 15（module flag） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0 | 默认 `language/module-code/top-level-await` |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0 | 3 条 source-phase-imports 跳过 |
 | Test262 language module | **686 / 686**，失败 0，崩溃 0 | 131 条未支持 module 特性跳过 |
@@ -568,6 +568,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
+| 2026-11-12 | **Uint8Array base64/hex 批次**：实现 `fromBase64`/`fromHex`/`toBase64`/`toHex`/`setFromBase64`/`setFromHex`；ES2015 62,438/62,438、ES2016+ 17,644/17,644；核心 JVM 1210、JS/Wasm 1194 |
 | 2026-11-12 | **ArrayBuffer transfer 批次**：新增 `transfer`/`transferToFixedLength`、`resizable`/`maxByteLength`/`detached` 访问器；ES2015 62,302/62,302、ES2016+ 17,508/17,508；核心 JVM 1208、JS/Wasm 1192 |
 | 2026-11-12 | **ES2016+ 第二批**：纳入全部 DataView.prototype.* 方法标注、11 种 TypedArray 构造器标注；ES2015 62,230/62,230、ES2016+ 17,436/17,436 |
 | 2026-11-12 | **ES2016+ 基线启动**：新增 `test262Es2016PlusConformance`，以已实现后 ES2015 特性为版本种子，17,432/17,432 通过；同时纳入 `Reflect.set`/`Reflect.setPrototypeOf`/`DataView.prototype.setUint8`/`TypedArray.prototype.at`，ES2015 扩展到 62,044/62,044 |

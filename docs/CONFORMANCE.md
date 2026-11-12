@@ -20,8 +20,8 @@
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝）；允许 0 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
-| Test262 ES2015 | **62,302 / 62,302**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Test262 ES2016+ | **17,508 / 17,508**，失败 0，崩溃 0，跳过 **15**（module flag） |
+| Test262 ES2015 | **62,438 / 62,438**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 ES2016+ | **17,644 / 17,644**，失败 0，崩溃 0，跳过 **15**（module flag） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0，跳过 0 |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0，跳过 3（source-phase-imports） |
 | Test262 language module | **686 / 686**，失败 0，崩溃 0，跳过 131（未支持特性） |
@@ -131,13 +131,13 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 范围：`test/language` + `test/built-ins` + `test/annexB` 中非 `es5id` 且满足以下条件之一的脚本：`features` 全部落在已支持集合内；或无 `features` 标注但带 `es6id` / `esid`。默认纳入 esid 用例。
 
-当前选中 **32,551** 个文件，执行 **62,302** 次（strict + sloppy）。
+当前选中 **32,619** 个文件，执行 **62,438** 次（strict + sloppy）。
 
 | 指标 | 数值 |
 |---|---:|
-| 选中测试文件 | 32,551 |
-| 执行次数（含 strict/sloppy） | 62,302 |
-| 通过 | 62,302（100%） |
+| 选中测试文件 | 32,619 |
+| 执行次数（含 strict/sloppy） | 62,438 |
+| 通过 | 62,438（100%） |
 | 失败 | 0 |
 | 崩溃 | 0 |
 | 跳过测试文件 | 324 |
@@ -184,9 +184,9 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 ./gradlew :vibe-js-conformance:test262Es2016PlusConformance -Ptest262Filter=exponentiation
 ```
 
-Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版本门禁锚点；用例仍必须全部落在已支持特性集合内。当前选中 **8,875** 个文件、执行 **17,508** 次，全部通过；15 个 module flag 用例跳过，由独立 module suite 覆盖。
+Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版本门禁锚点；用例仍必须全部落在已支持特性集合内。当前选中 **8,943** 个文件、执行 **17,644** 次，全部通过；15 个 module flag 用例跳过，由独立 module suite 覆盖。
 
-本轮把 `Reflect.set`/`Reflect.setPrototypeOf`、全部 `DataView.prototype.*` 方法标注、`TypedArray.prototype.at`、11 种 TypedArray 构造器标注与 `arraybuffer-transfer` 纳入支持特性，并实现 `transfer`/`transferToFixedLength` 及 `resizable`/`maxByteLength`/`detached` 访问器；ES2015 子集从 61,786 次扩展到 62,302 次。
+本轮把 `Reflect.set`/`Reflect.setPrototypeOf`、全部 `DataView.prototype.*` 方法标注、`TypedArray.prototype.at`、11 种 TypedArray 构造器标注、`arraybuffer-transfer` 与 `uint8array-base64` 纳入支持特性，并实现 `transfer`/`transferToFixedLength`、`resizable`/`maxByteLength`/`detached` 访问器及 Uint8Array base64/hex API；ES2015 子集从 61,786 次扩展到 62,438 次。
 
 ### 5.2 筛选统计（未纳入本次口径）
 
@@ -203,7 +203,7 @@ Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版�
 
 ### 5.3 已启用并纳入基线的特性
 
-`Reflect` / `Reflect.construct`、`Proxy` / `proxy-missing-checks`、`BigInt`、`TypedArray` / `ArrayBuffer` / `DataView`（含 BigInt 视图、detach/transfer 语义）、`generators`、`async-iteration`，以及此前已支持的 ES2015 / ES2016+ 特性集合（class、解构、模板、默认/rest、for-of、Symbol、Promise、async/await、Iterator helpers、using、Set 方法等）。
+`Reflect` / `Reflect.construct`、`Proxy` / `proxy-missing-checks`、`BigInt`、`TypedArray` / `ArrayBuffer` / `DataView`（含 BigInt 视图、detach/transfer 语义）、`generators`、`async-iteration`、`uint8array-base64`，以及此前已支持的 ES2015 / ES2016+ 特性集合（class、解构、模板、默认/rest、for-of、Symbol、Promise、async/await、Iterator helpers、using、Set 方法等）。
 
 ### 5.4 harness 替换与注入
 

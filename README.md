@@ -366,6 +366,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - **Reflect**：13 个方法（`apply/construct/defineProperty/deleteProperty/get/getOwnPropertyDescriptor/getPrototypeOf/has/isExtensible/ownKeys/preventExtensions/set/setPrototypeOf`）
 - **Generator / AsyncGenerator**：`%GeneratorPrototype%` / `%AsyncGeneratorPrototype%`、`next/return/throw` 协议、`yield*` 委托、异步生成器的 Promise 队列
 - **ArrayBuffer / DataView / TypedArray**：ArrayBuffer（`byteLength/slice/isView`、detach）、DataView 8 种数值 + 4 种 BigInt 读写（大小端由 `littleEndian` 参数控制）、11 种 TypedArray（9 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序）、构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；支持 transfer/transferToFixedLength；不支持 resizable / SharedArrayBuffer / Atomics
+- **Uint8Array base64/hex**：`fromBase64`/`fromHex`/`toBase64`/`toHex`/`setFromBase64`/`setFromHex`，支持 base64url、omitPadding、lastChunkHandling 与部分写入
 - **集合**：`Map`、`Set`、`WeakMap`、`WeakSet`，配套迭代器协议
 - **Promise**：`resolve/reject/all/race/allSettled/any/allKeyed/allSettledKeyed`、`then/catch/finally`、`withResolvers/try`
 - **Iterator**：抽象构造器、`Iterator.from/concat/zip/zipKeyed` 与 helpers（map/filter/take/drop/flatMap/reduce/toArray 等）；`%AsyncIteratorPrototype%` 与 `for await` 消费
@@ -473,15 +474,15 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1208 / 1208** |
-| core JS（Node）/ Wasm（Node） | 各 **1192 / 1192** |
+| core JVM | **1210 / 1210** |
+| core JS（Node）/ Wasm（Node） | 各 **1194 / 1194** |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** |
 | conformance 单元测试 | **44 / 44** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
 | Test262 ES5 | **15,248/15,248**（跳过 0） |
-| Test262 ES2015 | **62,302/62,302**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
-| Test262 ES2016+ | **17,508/17,508**，失败 0、崩溃 0，跳过 15（module flag） |
+| Test262 ES2015 | **62,438/62,438**，失败 0、崩溃 0，跳过 **324**（module flag 322 + 宿主钩子 2） |
+| Test262 ES2016+ | **17,644/17,644**，失败 0、崩溃 0，跳过 15（module flag） |
 | Test262 module TLA | **249/249**（`language/module-code/top-level-await`） |
 | Test262 module-code | **593/593**（3 条 source-phase-imports 跳过） |
 | Test262 language module | **686/686**（131 条未支持特性跳过） |
@@ -510,7 +511,7 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 ## 阶段状态
 
-- **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach/transfer）；对应特性已纳入 Test262 基线。
+- **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach/transfer、base64/hex）；对应特性已纳入 Test262 基线。
 - **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–9（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、`Engine.runModule` 同步/异步求值与错误定位/预算/取消加固）已完成；模块加载器 **未实现/无计划**；TLA 已在 Module goal 接通，Test262 module TLA 249/249、module-code 593/593、language module 686/686；脚本目标中的 `import()` 仍不支持；API 需 opt-in。
 - **未完成/无计划**：WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer / resizable 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划；宿主生态已提供 TextEncoder/TextDecoder、structuredClone 与 URL 子集。
 
