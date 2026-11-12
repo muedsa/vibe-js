@@ -123,6 +123,7 @@ import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSSymbol
 import com.muedsa.js.runtime.value.JSTypedArray
 import com.muedsa.js.runtime.value.JSTypedArrayType
+import com.muedsa.js.runtime.value.canonicalNumericIndexString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.JSWeakMap
@@ -140,6 +141,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.coroutines.ContinuationInterceptor
 
@@ -877,6 +879,9 @@ class Interpreter(
                 // 规范：非法数字索引的定义一律失败，且不执行值转换
                 JSTypedArray.IndexKey.Invalid -> return false
                 is JSTypedArray.IndexKey.Valid -> {
+                    if (objectValue.isOutOfBounds || classified.index >= objectValue.length) {
+                        return false
+                    }
                     // 规范：索引不允许改成访问器，也不允许显式请求不可配置/不可枚举/不可写
                     if (descriptor.hasAccessorFields) return false
                     if (descriptor.hasConfigurable && !descriptor.configurable) return false
@@ -906,24 +911,51 @@ class Interpreter(
         if (array.buffer.isImmutable) {
             typeError("Cannot write to an immutable ArrayBuffer")
         }
-        if (index !in 0 until array.length) return
+        fun stillValid(): Boolean = !array.isOutOfBounds && index < array.length
         when (array.type) {
             JSTypedArrayType.INT8, JSTypedArrayType.UINT8,
             JSTypedArrayType.INT16, JSTypedArrayType.UINT16,
             JSTypedArrayType.INT32,
-            -> array.setIntElement(index, toInt32(value))
+            -> {
+                val converted = toInt32(value)
+                if (stillValid()) array.setIntElement(index, converted)
+            }
 
-            JSTypedArrayType.UINT32 -> array.setUint32Element(index, toUint32(value))
-            JSTypedArrayType.UINT8_CLAMPED -> array.setUint8ClampedElement(index, toNumber(value))
-            JSTypedArrayType.FLOAT16 -> array.setFloat16Element(index, toNumber(value))
-            JSTypedArrayType.FLOAT32 -> array.setFloat32Element(index, toNumber(value))
-            JSTypedArrayType.FLOAT64 -> array.setFloat64Element(index, toNumber(value))
+            JSTypedArrayType.UINT32 -> {
+                val converted = toUint32(value)
+                if (stillValid()) array.setUint32Element(index, converted)
+            }
+
+            JSTypedArrayType.UINT8_CLAMPED -> {
+                val converted = toNumber(value)
+                if (stillValid()) array.setUint8ClampedElement(index, converted)
+            }
+
+            JSTypedArrayType.FLOAT16 -> {
+                val converted = toNumber(value)
+                if (stillValid()) array.setFloat16Element(index, converted)
+            }
+
+            JSTypedArrayType.FLOAT32 -> {
+                val converted = toNumber(value)
+                if (stillValid()) array.setFloat32Element(index, converted)
+            }
+
+            JSTypedArrayType.FLOAT64 -> {
+                val converted = toNumber(value)
+                if (stillValid()) array.setFloat64Element(index, converted)
+            }
+
             // BigInt 视图：Number 值会在 ToBigInt 抛 TypeError（规范要求的隐式转换限制）
-            JSTypedArrayType.BIGINT64 ->
-                array.setBigInt64Element(index, conversions.toBigInt64(value).toInt64Bits())
+            JSTypedArrayType.BIGINT64 -> {
+                val converted = conversions.toBigInt64(value).toInt64Bits()
+                if (stillValid()) array.setBigInt64Element(index, converted)
+            }
 
-            JSTypedArrayType.BIGUINT64 ->
-                array.setBigUint64Element(index, conversions.toBigUint64(value).toInt64Bits())
+            JSTypedArrayType.BIGUINT64 -> {
+                val converted = conversions.toBigUint64(value).toInt64Bits()
+                if (stillValid()) array.setBigUint64Element(index, converted)
+            }
         }
     }
 
@@ -1907,13 +1939,20 @@ class Interpreter(
             when (val classified = objectValue.classifyIndex(key)) {
                 JSTypedArray.IndexKey.NotIndex -> Unit
                 JSTypedArray.IndexKey.Invalid -> {
-                    // 规范：分离缓冲区的 [[Set]] 返回 true 且不写任何元素，严格模式也不抛错；
-                    // 普通越界/非法索引保持既有语义（严格模式由赋值语义抛 TypeError）
-                    if (objectValue.isDetached) return
-                    if (strict) throw typeError("Cannot assign to read only property '$key'")
+                    // 整数索引越界仍先执行 ToNumber，再按转换后的当前长度决定是否写入。
+                    val numeric = (key as? PropertyKey.Str)?.value
+                        ?.let(::canonicalNumericIndexString)
+                    if (numeric != null && numeric >= 0.0 && numeric == floor(numeric) &&
+                        numeric <= Int.MAX_VALUE.toDouble()
+                    ) {
+                        setTypedArrayElement(objectValue, numeric.toInt(), value)
+                    }
                     return
                 }
                 is JSTypedArray.IndexKey.Valid -> {
+                    if (objectValue.isOutOfBounds || classified.index >= objectValue.length) {
+                        return
+                    }
                     // ToNumber 在 [[Set]] 内完成，可能调用 valueOf/toString
                     setTypedArrayElement(objectValue, classified.index, value)
                     return

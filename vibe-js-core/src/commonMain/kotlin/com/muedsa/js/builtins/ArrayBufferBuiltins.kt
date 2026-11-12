@@ -63,6 +63,9 @@ object ArrayBufferBuiltins {
                     resizable = true
                 }
             }
+            if (maxByteLength < byteLength) {
+                interpreter.rangeError("maxByteLength must not be less than byteLength")
+            }
             // 规范顺序：先完成 ToIndex/选项副作用，再由 OrdinaryCreateFromConstructor
             // 解析实例原型（可能触发 NewTarget.prototype getter），最后才分配字节存储。
             val instancePrototype =
@@ -71,9 +74,6 @@ object ArrayBufferBuiltins {
                 maxByteLength > MAX_BYTE_LENGTH.toLong()
             ) {
                 interpreter.rangeError("Array buffer allocation failed")
-            }
-            if (maxByteLength < byteLength) {
-                interpreter.rangeError("maxByteLength must not be less than byteLength")
             }
             JSArrayBuffer(
                 prototype = instancePrototype,
@@ -335,6 +335,9 @@ object ArrayBufferBuiltins {
                 val newLength = (last - first).coerceAtLeast(0L)
                 if (buffer.isDetached) {
                     interpreter.typeError("ArrayBuffer.prototype.sliceToImmutable called on a detached ArrayBuffer")
+                }
+                if (buffer.byteLength.toLong() < last) {
+                    interpreter.rangeError("ArrayBuffer shrank below the resolved end")
                 }
                 val result = JSArrayBuffer(
                     prototype = interpreter.intrinsics.arrayBufferPrototype,

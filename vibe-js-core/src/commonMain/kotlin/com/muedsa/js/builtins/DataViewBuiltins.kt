@@ -72,6 +72,13 @@ object DataViewBuiltins {
             if (buffer.isDetached) {
                 interpreter.typeError("First argument to DataView constructor must not be detached")
             }
+            if (lengthTracking) {
+                if (byteOffset > buffer.byteLength.toLong()) {
+                    interpreter.rangeError("DataView byteOffset is outside the resized buffer")
+                }
+            } else if (byteOffset + byteLength > buffer.byteLength.toLong()) {
+                interpreter.rangeError("DataView byteLength is outside the resized buffer")
+            }
             JSDataView(
                 prototype = instancePrototype,
                 buffer = buffer,

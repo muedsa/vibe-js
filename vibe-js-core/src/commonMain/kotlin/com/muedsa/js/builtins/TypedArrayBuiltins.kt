@@ -283,7 +283,7 @@ internal object TypedArrayBuiltins {
             JSNumber(if (it.isDetached) 0.0 else it.byteLength.toDouble())
         }
         defineGetter("byteOffset") {
-            JSNumber(if (it.isDetached) 0.0 else it.byteOffset.toDouble())
+            JSNumber(if (it.isOutOfBounds) 0.0 else it.byteOffset.toDouble())
         }
         defineGetter("length") { JSNumber(if (it.isDetached) 0.0 else it.length.toDouble()) }
 
@@ -354,8 +354,8 @@ internal object TypedArrayBuiltins {
             val result = speciesCreate(interpreter, array, count)
             // 规范：SpeciesCreate 可能执行任意 JS（例如在 @@species 构造器里分离源缓冲区），
             // 拷贝前必须重新确认源缓冲区仍然可用；count 为 0 时无需拷贝，不抛错。
-            if (count > 0 && array.isDetached) {
-                interpreter.typeError("TypedArray.prototype.slice called on a detached TypedArray")
+            if (count > 0 && array.isOutOfBounds) {
+                interpreter.typeError("TypedArray.prototype.slice called on an out-of-bounds TypedArray")
             }
             if (count > 0 && result.type == array.type) {
                 array.copyRawToForward(result, sourceStart = start, targetStart = 0, count = count)
@@ -365,7 +365,14 @@ internal object TypedArrayBuiltins {
             var sourceIndex = start
             while (sourceIndex < end) {
                 interpreter.checkExecution()
-                interpreter.setTypedArrayElement(result, targetIndex, array.getElement(sourceIndex))
+                val value = if (sourceIndex < array.length) {
+                    array.getElement(sourceIndex)
+                } else if (result.type.isBigIntContent) {
+                    JSBigInt.ZERO
+                } else {
+                    JSNumber(0.0)
+                }
+                interpreter.setTypedArrayElement(result, targetIndex, value)
                 targetIndex++
                 sourceIndex++
             }
@@ -393,10 +400,8 @@ internal object TypedArrayBuiltins {
             } else {
                 relativeIndex(interpreter, endArgument, len)
             }
-            // 规范：参数转换可能分离缓冲区（coerced-start/end/value-detach 用例），写入前复检
-            if (array.isDetached) {
-                interpreter.typeError("TypedArray.prototype.fill called on a detached TypedArray")
-            }
+            // 规范：参数转换可能分离或收缩缓冲区（coerced-*-resize 用例），写入前复检
+            requireAttached(interpreter, array, "TypedArray.prototype.fill")
             var index = start
             while (index < end) {
                 interpreter.setTypedArrayElement(array, index, value)
@@ -422,9 +427,7 @@ internal object TypedArrayBuiltins {
                 relativeIndex(interpreter, endArgument, len)
             }
             // 规范：target/start/end 的转换可能分离缓冲区（coerced-values-*-detached 用例）
-            if (array.isDetached) {
-                interpreter.typeError("TypedArray.prototype.copyWithin called on a detached TypedArray")
-            }
+            requireAttached(interpreter, array, "TypedArray.prototype.copyWithin")
             var count = min(end - start, len - target)
             if (count <= 0) {
                 return@defineMethod array
@@ -579,13 +582,15 @@ internal object TypedArrayBuiltins {
         defineMethod("join", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.join")
             requireAttached(interpreter, array, "TypedArray.prototype.join")
+            // 规范：len 在 separator 的 ToString 之前读取；参数转换期间 resize 不影响迭代次数。
+            val length = array.length
             val separatorArgument = args.getOrElse(0) { JSUndefined }
             val separator = if (separatorArgument is JSUndefined) {
                 ","
             } else {
                 interpreter.toStringValue(separatorArgument)
             }
-            joinElements(interpreter, array, separator)
+            joinElements(interpreter, array, separator, length)
         }
 
         defineMethod("indexOf", 1) { interpreter, thisValue, args ->
@@ -597,7 +602,7 @@ internal object TypedArrayBuiltins {
             val fromIndex = toIntegerOrInfinity(interpreter, args.getOrElse(1) { JSUndefined })
             // 规范：indexOf 逐项先用 HasProperty 判断；分离后所有整数索引都不存在，
             // 因此 fromIndex 转换期间分离会得到 -1（元素本身不会被读取）
-            if (array.isDetached) return@defineMethod JSNumber(-1.0)
+            if (array.isOutOfBounds) return@defineMethod JSNumber(-1.0)
             if (fromIndex == Double.POSITIVE_INFINITY) return@defineMethod JSNumber(-1.0)
             var index = if (fromIndex >= 0.0) {
                 min(fromIndex, len.toDouble()).toInt()
@@ -627,7 +632,7 @@ internal object TypedArrayBuiltins {
                 toIntegerOrInfinity(interpreter, args[1])
             }
             // 与 indexOf 同理：分离后 HasProperty 恒为 false
-            if (array.isDetached) return@defineMethod JSNumber(-1.0)
+            if (array.isOutOfBounds) return@defineMethod JSNumber(-1.0)
             if (fromIndex == Double.NEGATIVE_INFINITY) return@defineMethod JSNumber(-1.0)
             var index = if (fromIndex >= 0.0) {
                 min(fromIndex, (len - 1).toDouble()).toInt()
@@ -935,14 +940,17 @@ internal object TypedArrayBuiltins {
                 toIntegerOrInfinity(interpreter, args.getOrElse(0) { JSUndefined })
             val actualIndex = if (relativeIndex >= 0.0) relativeIndex else len + relativeIndex
             // 规范顺序：先按 [[ContentType]] 执行 ToBigInt/ToNumber(value)（可能抛错），
-            // 再检查下标范围并复制
+            // 再基于当前长度检查下标范围并复制。
             val valueArgument = args.getOrElse(1) { JSUndefined }
             val numericValue = if (array.type.isBigIntContent) {
                 interpreter.conversions.toBigInt(valueArgument)
             } else {
                 JSNumber(interpreter.toNumber(valueArgument))
             }
-            if (actualIndex < 0.0 || actualIndex >= len.toDouble()) {
+            val currentLength = array.length
+            if (array.isOutOfBounds ||
+                actualIndex < 0.0 || actualIndex >= currentLength.toDouble()
+            ) {
                 interpreter.rangeError("Invalid typed array index")
             }
             val result = createSameType(interpreter, array, len)
@@ -1109,8 +1117,8 @@ internal object TypedArrayBuiltins {
     ): JSTypedArray {
         // 规范：InitializeTypedArrayFromTypedArray 先检查 IsTypedArrayOutOfBounds，
         // 分离缓冲区属于 out-of-bounds，直接抛 TypeError（不分配新缓冲区）
-        if (source.isDetached) {
-            interpreter.typeError("Cannot construct a TypedArray from a detached TypedArray")
+        if (source.isOutOfBounds) {
+            interpreter.typeError("Cannot construct a TypedArray from an out-of-bounds TypedArray")
         }
         val result = allocate(interpreter, type, source.length.toLong(), prototype)
         if (source.type == type) {
@@ -1156,8 +1164,8 @@ internal object TypedArrayBuiltins {
         val lengthArgument = args.getOrNull(2)
         val lengthTracking = lengthArgument == null || lengthArgument is JSUndefined
         val elementLength = if (lengthTracking) {
-            // 缺省：视图延伸到缓冲区末尾，剩余字节必须能被元素宽度整除
-            if (remainingByteLength % elementSize != 0L) {
+            // 缺省：视图延伸到缓冲区末尾；resizable 缓冲区允许非整除，按元素宽度取 floor。
+            if (!buffer.isResizable && remainingByteLength % elementSize != 0L) {
                 interpreter.rangeError(
                     "byte length of ${type.typeName} should be a multiple of $elementSize"
                 )
@@ -1308,9 +1316,9 @@ internal object TypedArrayBuiltins {
         requireAttached(interpreter, target, "TypedArray.prototype.set")
         val targetLength = target.length
         if (source is JSTypedArray) {
-            // 规范：源 TypedArray 的缓冲区分离时抛 TypeError（先于长度与范围检查）
-            if (source.isDetached) {
-                interpreter.typeError("Source TypedArray has a detached buffer")
+            // 规范：源 TypedArray 的缓冲区分离或视图越界时抛 TypeError（先于长度与范围检查）
+            if (source.isOutOfBounds) {
+                interpreter.typeError("Source TypedArray is out of bounds")
             }
             val sourceLength = source.length
             if (targetOffset + sourceLength > targetLength.toDouble()) {
@@ -1500,8 +1508,8 @@ internal object TypedArrayBuiltins {
         array: JSTypedArray,
         name: String,
     ) {
-        if (array.isDetached) {
-            interpreter.typeError("$name called on a TypedArray with a detached buffer")
+        if (array.isOutOfBounds) {
+            interpreter.typeError("$name called on an out-of-bounds TypedArray")
         }
     }
 
@@ -1517,10 +1525,11 @@ internal object TypedArrayBuiltins {
         interpreter: Interpreter,
         array: JSTypedArray,
         separator: String,
+        length: Int,
     ): JSValue {
-        if (array.length == 0) return JSString("")
+        if (length == 0) return JSString("")
         val builder = StringBuilder()
-        for (index in 0 until array.length) {
+        for (index in 0 until length) {
             if (index > 0) builder.append(separator)
             val value = array.getElement(index)
             if (value !is JSUndefined && value !is JSNull) {

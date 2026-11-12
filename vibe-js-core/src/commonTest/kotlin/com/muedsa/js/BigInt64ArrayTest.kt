@@ -162,12 +162,16 @@ class BigInt64ArrayTest {
             ].join(',');
             """.trimIndent()
         )
-        assertEquals("true,true,true,true,true,0", result)
-        // 严格模式下越界写入抛 TypeError
-        assertErrorName(
-            runtime,
-            "(function () { 'use strict'; var array = new BigInt64Array(2); array[5] = 1n; })();",
-            "TypeError",
+        assertEquals("true,true,true,true,true,1", result)
+        // 规范：越界写入静默成功，但 ToBigInt 仍先执行一次
+        runtime.eval(
+            """
+            (function () {
+              'use strict';
+              var array = new BigInt64Array(2);
+              array[5] = 1n;
+            })();
+            """.trimIndent()
         )
     }
 

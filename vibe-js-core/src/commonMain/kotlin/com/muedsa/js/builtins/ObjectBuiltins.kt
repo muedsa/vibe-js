@@ -15,8 +15,9 @@ import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSProxy
 import com.muedsa.js.runtime.value.JSRegExp
-import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSSymbol
+import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSTypedArray
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.JSValue
 import com.muedsa.js.runtime.value.PropertyDescriptor
@@ -580,6 +581,9 @@ object ObjectBuiltins {
             key = PropertyKey.Str("freeze"),
             value = BuiltinHelpers.method(intrinsics, "freeze", 1) { interpreter, _, args ->
                 val value = args.getOrNull(0) ?: JSUndefined
+                if (value is JSTypedArray && value.buffer.isResizable) {
+                    interpreter.typeError("Cannot freeze a TypedArray backed by a resizable ArrayBuffer")
+                }
                 when (value) {
                     is JSArray -> {
                         value.freezeArray()

@@ -262,7 +262,9 @@ class JSTypedArray(
      */
     internal fun copyRawTo(target: JSTypedArray, sourceStart: Int, targetStart: Int, count: Int) {
         if (count <= 0 || buffer.isDetached || target.buffer.isDetached) return
-        val byteCount = count * bytesPerElement
+        val safeCount = rawCopyCount(target, sourceStart, targetStart, count)
+        if (safeCount <= 0) return
+        val byteCount = safeCount * bytesPerElement
         val sourceOffset = byteOffset + sourceStart * bytesPerElement
         val targetOffset = target.byteOffset + targetStart * bytesPerElement
         val temp = ByteArray(byteCount)
@@ -277,7 +279,9 @@ class JSTypedArray(
     /** 正序逐字节拷贝；同一缓冲区的不同视图按规范会观察到前向覆盖。 */
     internal fun copyRawToForward(target: JSTypedArray, sourceStart: Int, targetStart: Int, count: Int) {
         if (count <= 0 || buffer.isDetached || target.buffer.isDetached) return
-        val byteCount = count * bytesPerElement
+        val safeCount = rawCopyCount(target, sourceStart, targetStart, count)
+        if (safeCount <= 0) return
+        val byteCount = safeCount * bytesPerElement
         val sourceOffset = byteOffset + sourceStart * bytesPerElement
         val targetOffset = target.byteOffset + targetStart * bytesPerElement
         for (index in 0 until byteCount) {
@@ -288,12 +292,29 @@ class JSTypedArray(
     /** 逆序逐字节拷贝，用于 copyWithin 的前向重叠区间。 */
     internal fun copyRawToBackward(target: JSTypedArray, sourceStart: Int, targetStart: Int, count: Int) {
         if (count <= 0 || buffer.isDetached || target.buffer.isDetached) return
-        val byteCount = count * bytesPerElement
+        val safeCount = rawCopyCount(target, sourceStart, targetStart, count)
+        if (safeCount <= 0) return
+        val byteCount = safeCount * bytesPerElement
         val sourceOffset = byteOffset + sourceStart * bytesPerElement
         val targetOffset = target.byteOffset + targetStart * bytesPerElement
         for (index in byteCount - 1 downTo 0) {
             target.buffer.setByte(targetOffset + index, buffer.getByte(sourceOffset + index))
         }
+    }
+
+    /** 按当前缓冲区边界裁剪原始字节拷贝的元素数。 */
+    private fun rawCopyCount(
+        target: JSTypedArray,
+        sourceStart: Int,
+        targetStart: Int,
+        count: Int,
+    ): Int {
+        if (sourceStart < 0 || targetStart < 0) return 0
+        val sourceAvailable = ((buffer.byteLength - byteOffset) / bytesPerElement - sourceStart)
+            .coerceAtLeast(0)
+        val targetAvailable = ((target.buffer.byteLength - target.byteOffset) / target.bytesPerElement - targetStart)
+            .coerceAtLeast(0)
+        return minOf(count, sourceAvailable, targetAvailable)
     }
 
     /** 写入 Float32 元素（binary32 舍入由 [JSDataView.setFloat32] 统一完成）。 */
@@ -382,6 +403,7 @@ class JSTypedArray(
             JSTypedArray.IndexKey.NotIndex -> super.defineOwnProperty(key, descriptor)
             JSTypedArray.IndexKey.Invalid -> false
             is JSTypedArray.IndexKey.Valid -> {
+                if (isOutOfBounds || classified.index >= length) return false
                 // 规范：禁止把索引改成不可配置/不可枚举/不可写，也禁止访问器描述符
                 if (descriptor.isAccessor ||
                     !descriptor.configurable || !descriptor.enumerable || !descriptor.writable

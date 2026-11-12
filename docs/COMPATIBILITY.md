@@ -9,7 +9,7 @@
 > `import()` 表达式、导入属性 `with { ... }` 与模块顶层 `await` 语法；阶段 0–9 已实现实验性 `Engine.runModule`（Provider、链接、
 > 环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与异步求值），TLA 仅在 Module goal 接通；**宿主加载器尚未实现**，API 需 `@ExperimentalModuleApi` opt-in。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
-> SharedArrayBuffer / Atomics、resizable ArrayBuffer；TLA 验收见 [TLA_DESIGN.md](TLA_DESIGN.md)，性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
+> SharedArrayBuffer / Atomics；TLA 验收见 [TLA_DESIGN.md](TLA_DESIGN.md)，性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
 > 宿主生态已提供 TextEncoder/TextDecoder（UTF-8）、
 > structuredClone 与 URL/URLSearchParams 常用子集（`:vibe-js-host`）。
 
@@ -90,7 +90,7 @@
 | BigInt | ✅ | `BigInt()`、`asIntN`/`asUintN`、任意精度算术/位运算/移位/比较、`toString(radix)`；与 Number 混用、`JSON.stringify` 直接序列化均抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制（超出抛 RangeError） |
 | Proxy | ✅ | 13 个 trap、`Proxy.revocable`、撤销状态；`getOwnPropertyDescriptor`/`defineProperty`/`deleteProperty`/`ownKeys`/`get`/`set`/`has`/`isExtensible`/`preventExtensions` 等不变量校验；撤销后所有操作抛 TypeError |
 | Reflect | ✅ | 13 个方法（apply/construct/defineProperty/deleteProperty/get/getOwnPropertyDescriptor/getPrototypeOf/has/isExtensible/ownKeys/preventExtensions/set/setPrototypeOf）；失败返回 false，target 参数错误抛 TypeError，支持 receiver |
-| ArrayBuffer / DataView / TypedArray | ✅ | ArrayBuffer（`byteLength`/`slice`/`isView`/`transfer`/`transferToImmutable`/`sliceToImmutable`/`detach`）；DataView 9 种数值 + 2 种 BigInt 读写（大小端由 `littleEndian` 参数控制）；12 种 TypedArray（含 `Float16Array`；10 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序），构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；**支持 transfer/transferToFixedLength/immutable；resizable 基础实现进行中，未纳入基线**（见 §6） |
+| ArrayBuffer / DataView / TypedArray | ✅ | ArrayBuffer（`byteLength`/`slice`/`isView`/`transfer`/`transferToImmutable`/`sliceToImmutable`/`detach`）；DataView 9 种数值 + 2 种 BigInt 读写（大小端由 `littleEndian` 参数控制）；12 种 TypedArray（含 `Float16Array`；10 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序），构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；**支持 transfer/transferToFixedLength/immutable/resizable**（见 §6） |
 | Uint8Array base64/hex | ✅ | `fromBase64`/`fromHex`/`toBase64`/`toHex`/`setFromBase64`/`setFromHex`；支持 base64/base64url、omitPadding、lastChunkHandling（loose/strict/stop-before-partial）与部分写入 |
 | Generator / AsyncGenerator | ✅ | 同步/异步生成器、`yield`/`yield*`、`next`/`return`/`throw`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定与默认参数在调用生成器函数时完成 |
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；SameValueZero 索引存储：get/set/has/delete 均摊 O(1)、size O(1)，墓碑在无活跃迭代器时压缩；forEach 与迭代器为实时语义（遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代、支持非注册 Symbol 键，但**底层是强引用存储，未实现 GC 弱语义**（M2），不能当作长期缓存的自动清理机制 |
@@ -140,7 +140,7 @@
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-12）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **62,624/62,624**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；ES2016+ **17,830/17,830**，跳过 15；module TLA **249/249**；module-code **593/593**；language module **686/686**；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-12）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **63,456/63,456**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；ES2016+ **18,662/18,662**，跳过 15；module TLA **249/249**；module-code **593/593**；language module **686/686**；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -167,7 +167,7 @@
 - 宿主生态已实现 UTF-8 子集：TextEncoder（encode/encodeInto）、TextDecoder（fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/ArrayBuffer/视图/循环）、URL/URLSearchParams 常用能力；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API；
 - WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 使用强引用存储，没有 GC 弱语义，不能用于长期缓存的自动回收（M2 无计划）；
 - Intl、SharedArrayBuffer / Atomics、Temporal / 装饰器 / ShadowRealm 不在当前范围或明确无计划；
-- ArrayBuffer 支持 `transfer`/`transferToFixedLength` 与 `detached`；不支持 `resizable`（`resize`/`maxByteLength` 可变语义尚未实现），宿主持久 detach 仍通过 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 提供；
+- ArrayBuffer 支持 `transfer`/`transferToFixedLength`/`immutable` 与 `detached`，以及 `resizable`（`resize`/`maxByteLength`、动态 TypedArray/DataView 视图）；宿主持久 detach 仍通过 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 提供；
 - BigInt 是任意精度实现，但 `MAX_RESULT_BITS = 2^24`（16,777,216 位）；超过上限的 `pow` / 左移 / `asIntN` / `asUintN` 抛 RangeError，这是规范允许的实现定义上限；
 - 其他已知行为/差异：TypedArray 固定小端序；`BigInt("")` 返回 `0n`；`toLocaleString` 使用十进制兜底；`Object.freeze` / `Object.seal` 对非空 TypedArray 抛 `TypeError`，空 TypedArray 成功（与规范及 Node 一致）；
 - R1 资源约束已覆盖源码/嵌套/AST/对象/JSON/正则/排队任务/微任务；第三批补充 `JSON.stringify` 的 `maxJsonDepth` 检查，并在 `maxRegexSteps` 显式降到默认值以下时把常见嵌套量词正则路由到受该预算约束的回退引擎。Kotlin Regex 快路径仍由平台实现，不消耗该预算，这是文档化的边界；`EngineLimits` 不是进程级隔离；

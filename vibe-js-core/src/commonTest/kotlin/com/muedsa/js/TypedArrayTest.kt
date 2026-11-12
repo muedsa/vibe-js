@@ -98,11 +98,20 @@ class TypedArrayTest {
                 """.trimIndent()
             )
         )
-        // 严格模式下越界写入抛 TypeError（由 putV 负责）
-        assertErrorName(
-            runtime,
-            "(function () { 'use strict'; var array = new Uint8Array(2); array[5] = 1; })();",
-            "TypeError",
+        // 规范：越界写入静默成功，严格模式也不抛错；值保持不变
+        assertEquals(
+            "0,7",
+            runtime.evalString(
+                """
+                (function () {
+                  'use strict';
+                  var array = new Uint8Array(2);
+                  array[0] = 7;
+                  array[5] = 1;
+                  return [array[1], array[0]].join(',');
+                })();
+                """.trimIndent()
+            )
         )
         // 严格模式下访问器只读/越界赋值同样抛 TypeError
         assertErrorName(
@@ -772,9 +781,9 @@ class TypedArrayTest {
     }
 
     @Test
-    fun `TypedArray 索引写入不调用越界值的 valueOf`() = runTest {
+    fun `TypedArray 索引写入仍转换越界值的 valueOf`() = runTest {
         val runtime = TestRuntime()
-        // 规范：越界时先判定下标非法，不得执行 ToNumber（valueOf 不会被调用）
+        // 规范：先执行 ToNumber(value)，再按当前长度检查下标是否有效
         val result = runtime.evalString(
             """
             var called = 0;
@@ -786,7 +795,7 @@ class TypedArrayTest {
             [bounded, called].join(',');
             """.trimIndent()
         )
-        assertEquals("1,1", result)
+        assertEquals("1,2", result)
     }
 
     @Test

@@ -286,11 +286,13 @@ object ArrayBuiltins {
             key = PropertyKey.Str("join"),
             value = BuiltinHelpers.method(intrinsics, "join", 1) { interpreter, thisValue, args ->
                 val objectValue = requireObject(interpreter, thisValue, "Array.prototype.join")
+                // 规范：len 在 separator 的 ToString 之前读取
+                val length = lengthOf(interpreter, objectValue)
                 val separator = when (val value = args.getOrNull(0)) {
                     null, is JSUndefined -> ","
                     else -> interpreter.toStringValue(value)
                 }
-                JSString(joinElements(interpreter, objectValue, lengthOf(interpreter, objectValue), separator))
+                JSString(joinElements(interpreter, objectValue, length, separator))
             },
         )
 
