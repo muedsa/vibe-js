@@ -6,12 +6,14 @@ import com.muedsa.js.ast.ModuleProgram
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.value.JSObject
-/** 模块图内的求值/链接状态。阶段 3 只创建 NEW 状态。 */
+import kotlinx.coroutines.CompletableDeferred
+/** 模块图内的求值/链接状态。 */
 internal enum class ModuleStatus {
     NEW,
     LINKING,
     LINKED,
     EVALUATING,
+    EVALUATING_ASYNC,
     EVALUATED,
     ERRORED,
 }
@@ -66,6 +68,24 @@ internal class ModuleRecord(
 
     /** 求值失败时缓存原始异常；同图内再次求值直接重抛。 */
     var evaluationError: Throwable? = null
+
+    /** 本次求值的完成信号；同步模块完成后立即 complete。 */
+    var evaluationCompletion: CompletableDeferred<Unit>? = null
+
+    /** 异步依赖数量；大于 0 表示模块体需等待依赖完成。 */
+    var pendingAsyncDependencies: Int = 0
+
+    /** 等待本模块完成的其他异步模块；循环/错误传播的调试信息。 */
+    val asyncParentModules: MutableList<ModuleRecord> = mutableListOf()
+
+    /** 异步求值的调度序号；用于诊断和稳定排序。 */
+    var asyncEvaluationOrder: Int? = null
+
+    /** 循环求值的根模块；非循环模块在求值开始时指向自身。 */
+    var cycleRoot: ModuleRecord? = null
+
+    var dfsIndex: Int = -1
+    var dfsAncestorIndex: Int = -1
 
     /** 按原说明符查找已加载的依赖；requestedModules 与 dependencies 顺序一致。 */
     fun dependencyFor(specifier: String): ModuleRecord? {

@@ -4685,42 +4685,44 @@ class Interpreter(
 
         val promise = JSPromise(intrinsics.promisePrototype)
         context.eventLoop.enqueueMicrotask {
-            val job = forkForCallback()
-            job.currentModuleRecord = record
-            job.moduleRuntime = runtime
-            try {
-                val namespace = runtime.importModule(job, specifier, record, attributes)
-                PromiseSupport.resolve(job, promise, namespace)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: ExecutionLimitException) {
-                throw error
-            } catch (error: ResourceLimitException) {
-                throw error
-            } catch (error: JSException) {
-                PromiseSupport.reject(job, promise, error.value, error.stack)
-            } catch (error: ModuleLinkException) {
-                PromiseSupport.reject(
-                    job,
-                    promise,
-                    JSError(
-                        errorName = "Error",
-                        messageText = error.message ?: "Module loading failed",
-                        prototype = job.intrinsics.errorPrototype,
-                    ),
-                    job.captureStack(),
-                )
-            } catch (error: Throwable) {
-                PromiseSupport.reject(
-                    job,
-                    promise,
-                    JSError(
-                        errorName = "InternalError",
-                        messageText = error.message ?: error::class.simpleName ?: "Module loading failed",
-                        prototype = job.intrinsics.errorPrototype,
-                    ),
-                    job.captureStack(),
-                )
+            context.eventLoop.launchAsyncTask {
+                val job = forkForCallback()
+                job.currentModuleRecord = record
+                job.moduleRuntime = runtime
+                try {
+                    val namespace = runtime.importModule(job, specifier, record, attributes)
+                    PromiseSupport.resolve(job, promise, namespace)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: ExecutionLimitException) {
+                    throw error
+                } catch (error: ResourceLimitException) {
+                    throw error
+                } catch (error: JSException) {
+                    PromiseSupport.reject(job, promise, error.value, error.stack)
+                } catch (error: ModuleLinkException) {
+                    PromiseSupport.reject(
+                        job,
+                        promise,
+                        JSError(
+                            errorName = "Error",
+                            messageText = error.message ?: "Module loading failed",
+                            prototype = job.intrinsics.errorPrototype,
+                        ),
+                        job.captureStack(),
+                    )
+                } catch (error: Throwable) {
+                    PromiseSupport.reject(
+                        job,
+                        promise,
+                        JSError(
+                            errorName = "InternalError",
+                            messageText = error.message ?: error::class.simpleName ?: "Module loading failed",
+                            prototype = job.intrinsics.errorPrototype,
+                        ),
+                        job.captureStack(),
+                    )
+                }
             }
         }
         return promise

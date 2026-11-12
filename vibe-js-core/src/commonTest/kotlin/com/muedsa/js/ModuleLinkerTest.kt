@@ -129,12 +129,11 @@ class ModuleLinkerTest {
     }
 
     @Test
-    fun `模块图包含 TLA 时链接期拒绝`() = runTest {
+    fun `模块图包含 TLA 时仍可链接`() = runTest {
         val graph = graph(source("a", "await 1;"))
-        val error = assertFailsWith<ModuleLinkException> { ModuleLinker.link(graph) }
+        ModuleLinker.link(graph)
 
-        assertEquals(ModuleLinkErrorKind.UNSUPPORTED_TLA, error.kind)
-        assertEquals("a", error.moduleId)
+        assertEquals(ModuleStatus.LINKED, graph.entry.status)
     }
 
     @Test

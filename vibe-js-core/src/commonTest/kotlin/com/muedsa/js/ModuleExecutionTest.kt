@@ -311,12 +311,240 @@ class ModuleExecutionTest {
     }
 
     @Test
-    fun `TLA 在链接期被拒绝`() = runTest {
+    fun `依赖 TLA 拒绝传播到入口模块`() = runTest {
         val engine = Engine()
-        val error = assertFailsWith<ModuleLinkException> {
-            engine.runModule(source("a", "await 1;"))
+        val error = assertFailsWith<JSException> {
+            engine.runModule(
+                source("a", """import "./b.js"; export const value = 1;"""),
+                Provider(
+                    mapOf(
+                        "./b.js" to source(
+                            "b",
+                            """
+                            await Promise.resolve();
+                            throw new Error("tla-boom");
+                            """.trimIndent(),
+                        ),
+                    ),
+                ),
+            )
         }
-        assertEquals(ModuleLinkErrorKind.UNSUPPORTED_TLA, error.kind)
+
+        assertTrue(error.message?.contains("tla-boom") == true)
+    }
+
+    @Test
+    fun `动态 import 拒绝错误的 TLA 模块`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export var message = "pending";
+                import("./bad.js").then(function () {
+                  message = "resolved";
+                }, function (error) {
+                  message = error.message;
+                });
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./bad.js" to source(
+                        "bad",
+                        """
+                        await Promise.resolve();
+                        throw new Error("dynamic-tla-boom");
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        val message = engine.interpreter.getProperty(namespace, PropertyKey.Str("message"))
+        assertEquals("dynamic-tla-boom", (message as JSString).value)
+    }
+
+    @Test
+    fun `模块顶层 for await 可执行`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                var sum = 0;
+                for await (const value of [Promise.resolve(1), Promise.resolve(2)]) {
+                  sum += value;
+                }
+                export const result = sum;
+                """.trimIndent(),
+            ),
+        )
+
+        assertEquals(
+            3.0,
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSNumber).value,
+        )
+    }
+
+    @Test
+    fun `异步循环按 cycle root 顺序求值`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                import "./b.js";
+                import "./d.js";
+                globalThis.log = globalThis.log || [];
+                globalThis.log.push("entry");
+                export const result = globalThis.log.join(",");
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./b.js" to source(
+                        "b",
+                        """
+                        import "./c.js";
+                        globalThis.log = globalThis.log || [];
+                        globalThis.log.push("root start");
+                        await 1;
+                        globalThis.log.push("root end");
+                        """.trimIndent(),
+                    ),
+                    "./c.js" to source(
+                        "c",
+                        """
+                        import "./b.js";
+                        globalThis.log = globalThis.log || [];
+                        globalThis.log.push("leaf start");
+                        await 1;
+                        globalThis.log.push("leaf end");
+                        """.trimIndent(),
+                    ),
+                    "./d.js" to source(
+                        "d",
+                        """
+                        import "./c.js";
+                        globalThis.log = globalThis.log || [];
+                        globalThis.log.push("importer");
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("result"))
+        assertEquals("leaf start,leaf end,root start,root end,importer,entry", (result as JSString).value)
+    }
+
+    @Test
+    fun `TLA 依赖完成后才执行入口模块体`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                import { value } from "./b.js";
+                globalThis.__tlaOrder.push("a");
+                export const result = value + ":" + globalThis.__tlaOrder.join(",");
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./b.js" to source(
+                        "b",
+                        """
+                        globalThis.__tlaOrder = [];
+                        globalThis.__tlaOrder.push("b-start");
+                        await Promise.resolve();
+                        globalThis.__tlaOrder.push("b-end");
+                        export const value = "b";
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("result"))
+        assertEquals("b:b-start,b-end,a", (result as JSString).value)
+    }
+
+    @Test
+    fun `TLA 依赖挂起时继续执行兄弟模块`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                import "./b.js";
+                import "./c.js";
+                globalThis.__tlaOrder.push("a");
+                export const result = globalThis.__tlaOrder.join(",");
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./b.js" to source(
+                        "b",
+                        """
+                        globalThis.__tlaOrder = [];
+                        globalThis.__tlaOrder.push("b-start");
+                        await Promise.resolve();
+                        globalThis.__tlaOrder.push("b-end");
+                        """.trimIndent(),
+                    ),
+                    "./c.js" to source("c", """globalThis.__tlaOrder.push("c");"""),
+                ),
+            ),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("result"))
+        assertEquals("b-start,c,b-end,a", (result as JSString).value)
+    }
+
+    @Test
+    fun `动态 import 等待目标模块 TLA 完成`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export var result = "pending";
+                import("./b.js").then(function (ns) {
+                  result = ns.value;
+                });
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./b.js" to source(
+                        "b",
+                        """
+                        await Promise.resolve();
+                        export const value = "ready";
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("result"))
+        assertEquals("ready", (result as JSString).value)
+    }
+
+    @Test
+    fun `模块顶层 await 执行完成后返回 namespace`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source("a", "export const value = await Promise.resolve(7);"),
+        )
+
+        assertEquals(
+            7.0,
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value,
+        )
     }
 
     @Test

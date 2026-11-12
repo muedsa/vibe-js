@@ -112,7 +112,6 @@ public enum class ModuleLinkErrorKind {
     INVALID_MODULE,
     TOO_MANY_MODULES,
     TOTAL_SOURCE_TOO_LARGE,
-    UNSUPPORTED_TLA,
 }
 
 /**

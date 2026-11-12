@@ -266,7 +266,7 @@ class Engine(
     private suspend fun executeModuleGraph(graph: ModuleGraph, runtime: ModuleRuntime): JSObject {
         ModuleLinker.link(graph)
         interpreter.moduleRuntime = runtime
-        return eventLoop.runTask {
+        return eventLoop.runAsyncTask {
             val previousBudget = eventLoop.executionBudget
             val budget = ExecutionBudget(limits.maxSteps)
             eventLoop.executionBudget = budget

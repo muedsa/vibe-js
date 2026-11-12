@@ -18,15 +18,6 @@ internal object ModuleLinker {
         for (record in graph.records.values) {
             // 动态 import 复用的记录可能已经链接/求值；重复链接会把状态回退并导致重复求值。
             if (record.status != ModuleStatus.NEW) continue
-            if (record.program.hasTopLevelAwait) {
-                throw ModuleLinkException(
-                    kind = ModuleLinkErrorKind.UNSUPPORTED_TLA,
-                    moduleId = record.id,
-                    sourceName = record.source.sourceName,
-                    range = record.program.range,
-                    message = "Top-level await is not supported by the module MVP: ${record.id}",
-                )
-            }
             for (entry in record.program.importEntries) {
                 val target = record.dependencyFor(entry.moduleRequest)
                     ?: throw ModuleLinkException(

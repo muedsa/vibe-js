@@ -7,11 +7,16 @@ import com.muedsa.js.runtime.MonotonicClock
 import com.muedsa.js.runtime.ScheduledTask
 import com.muedsa.js.runtime.Scheduler
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.PropertyKey
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -97,6 +102,34 @@ class HostModuleTest {
         engine.install(HostModule(engine.eventLoop, output))
         engine.run("console.log('a', 1); console.error('bad');")
         assertEquals(listOf("a 1", "ERROR:bad"), output.logs)
+    }
+
+    @OptIn(ExperimentalModuleApi::class)
+    @Test
+    fun `TLA 可等待宿主定时器`() = runTest {
+        val scheduler = QueueScheduler()
+        val engine = Engine(DefaultHostEnvironment(scheduler = scheduler))
+        engine.install(HostModule(engine.eventLoop, RecordingConsole()))
+
+        val run = async(start = CoroutineStart.UNDISPATCHED) {
+            engine.runModule(
+                ModuleSource(
+                    id = "a",
+                    source = """
+                        export const value = await new Promise(function (resolve) {
+                          setTimeout(function () { resolve(42); }, 0);
+                        });
+                    """.trimIndent(),
+                ),
+            )
+        }
+
+        scheduler.runAll()
+        val namespace = run.await()
+        assertEquals(
+            42.0,
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("value")) as JSNumber).value,
+        )
     }
 
     @Test

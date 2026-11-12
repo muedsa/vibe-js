@@ -104,9 +104,23 @@ class EventLoop(
      * 宿主执行入口：完整调用互斥，所有恢复片段通过同一分段队列串行执行。
      * 为调用创建可取消的子 Job，close 可以停止在途 run，而不会取消宿主的父 Job。
      */
-    suspend fun <T> runTask(block: suspend () -> T): T = executeTask(null, block)
+    suspend fun <T> runTask(block: suspend () -> T): T = executeTask(null, lockRuntime = true, block)
 
-    private suspend fun <T> executeTask(timer: TimerEntry?, block: suspend () -> T): T {
+    /**
+     * 异步宿主入口：任务执行期间不长期持有 [runtimeMutex]。
+     *
+     * JS 执行仍由共享的 [ExecutionTrampoline] 串行化；TLA 在 `await` 挂起时释放运行锁，
+     * 让定时器/其他宿主入口取得锁并推进事件循环。仅由模块求值等需要等待异步完成、
+     * 且期间必须允许事件循环推进的入口使用。
+     */
+    internal suspend fun <T> runAsyncTask(block: suspend () -> T): T =
+        executeTask(null, lockRuntime = false, block)
+
+    private suspend fun <T> executeTask(
+        timer: TimerEntry?,
+        lockRuntime: Boolean,
+        block: suspend () -> T,
+    ): T {
         ensureOpen()
         val caller = currentCoroutineContext()
         check(caller[Entry]?.loop !== this) { "Cannot reenter the same event loop execution" }
@@ -119,10 +133,10 @@ class EventLoop(
         if (closed.load()) operation.cancel(EventLoopClosedException())
         try {
             return withContext(operation + dispatcher + AsyncStartPhase() + Entry(this)) {
-                runtimeMutex.withLock {
+                suspend fun execute(): T {
                     ensureOpen()
                     try {
-                        block().also { currentCoroutineContext().ensureActive() }
+                        return block().also { currentCoroutineContext().ensureActive() }
                     } catch (error: CancellationException) {
                         discardPendingMicrotasks()
                         throw error
@@ -131,6 +145,7 @@ class EventLoop(
                         throw error
                     }
                 }
+                if (lockRuntime) runtimeMutex.withLock { execute() } else execute()
             }
         } finally {
             operation.complete()
@@ -437,7 +452,7 @@ class EventLoop(
             val handle = scheduler.schedule(delayMillis) {
                 if (!entry.started.compareAndSet(false, true) || entry.cancelled.load() || closed.load()) return@schedule
                 try {
-                    executeTask(entry) {
+                    executeTask(entry, lockRuntime = true) {
                         if (!entry.cancelled.load()) {
                             var aborted = false
                             try {
