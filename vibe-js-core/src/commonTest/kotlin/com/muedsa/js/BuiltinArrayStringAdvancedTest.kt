@@ -333,9 +333,9 @@ class BuiltinArrayStringAdvancedTest {
     @Test
     fun `replace 字符串模式支持替换占位符`() = runTest {
         val runtime = TestRuntime()
-        assertEquals("[a]", runtime.evalString("'a'.replace('a', '[\$&]')"))
-        assertEquals("\$a", runtime.evalString("'a'.replace('a', '\$\$a')"))
-        assertEquals("ab1", runtime.evalString("'ab'.replace('b', '\$&1')"))
+        assertEquals("[a]", runtime.evalString($$"'a'.replace('a', '[$&]')"))
+        assertEquals("\$a", runtime.evalString($$$"'a'.replace('a', '$$a')"))
+        assertEquals("ab1", runtime.evalString($$"'ab'.replace('b', '$&1')"))
         assertEquals("-abc", runtime.evalString("'abc'.replace('', '-')"))
     }
 

@@ -187,7 +187,7 @@ class BigIntTest {
         assertEquals("12", runtime.evalString("1n + '2'"))
         assertEquals("21", runtime.evalString("'2' + 1n"))
         assertEquals("1", runtime.evalString("'' + 1n"))
-        assertEquals("1", runtime.evalString("`\${1n}`"))
+        assertEquals("1", runtime.evalString($$"`${1n}`"))
     }
 
     @Test

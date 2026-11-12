@@ -124,7 +124,7 @@ class ResourceLimitsTest {
     fun `模板表达式嵌套深度跨子解析器累计`() = runTest {
         // 构造 5 层 `${` 模板：每一层由外层 Lexer 进入嵌套，子 Lexer/Parser 继承深度。
         var template = "`1`"
-        repeat(5) { template = "`\${$template}`" }
+        repeat(5) { template = $$"`${$${template}}`" }
         val engine = Engine(limits = EngineLimits(maxNestingDepth = 4))
         try {
             val error = assertFailsWith<ResourceLimitException> { engine.parse(template) }
@@ -457,7 +457,7 @@ class ResourceLimitsTest {
         try {
             // 6 个子表达式各产生 1 个节点，加上模板/语句/Program 节点后超过 8。
             val error = assertFailsWith<ResourceLimitException> {
-                engine.parse("`\${1}\${1}\${1}\${1}\${1}\${1}`")
+                engine.parse($$"`${1}${1}${1}${1}${1}${1}`")
             }
             assertEquals(ResourceLimitKind.AST_NODES, error.kind)
             assertEquals(8L, error.limitValue)

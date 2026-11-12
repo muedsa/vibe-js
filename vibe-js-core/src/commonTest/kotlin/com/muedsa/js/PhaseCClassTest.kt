@@ -137,14 +137,14 @@ class PhaseCClassTest {
         assertEquals(
             "a|b|c:1,2",
             runtime.evalString(
-                """
+                $$"""
                 function tag(strings, ...values) {
                     return strings.raw.join('|') + ':' + values.join(',');
                 }
-                tag`a${'$'}{1}b${'$'}{2}c`;
+                tag`a${1}b${2}c`;
                 """.trimIndent()
             )
         )
-        assertEquals("a1b", runtime.evalString("String.raw\u0060a\${1}b\u0060"))
+        assertEquals("a1b", runtime.evalString($$"String.raw\u0060a${1}b\u0060"))
     }
 }

@@ -157,9 +157,9 @@ class PhaseBTest {
     @Test
     fun `模板字符串`() = runTest {
         val runtime = TestRuntime()
-        assertEquals("hi x", runtime.evalString("var name = 'x'; `hi \${name}`"))
-        assertEquals("3", runtime.evalString("`\${1 + 2}`"))
-        assertEquals("a1b", runtime.evalString("var a = 1; `a\${a}b`"))
+        assertEquals("hi x", runtime.evalString($$"var name = 'x'; `hi ${name}`"))
+        assertEquals("3", runtime.evalString($$"`${1 + 2}`"))
+        assertEquals("a1b", runtime.evalString($$"var a = 1; `a${a}b`"))
     }
 
     @Test

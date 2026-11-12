@@ -508,8 +508,8 @@ class ParserModuleTest {
         parseModule("const f = () => import.meta;")
         parseModule("const p = import(\"./m.js\");")
         // 模板表达式由子 Parser 解析，必须继承模块语境
-        parseModule("const u = `\${import.meta.url}`;")
-        parseModule("const p = `\${import(\"./m.js\")}`;")
+        parseModule($$"const u = `${import.meta.url}`;")
+        parseModule($$"const p = `${import(\"./m.js\")}`;")
     }
 
     @Test
@@ -586,13 +586,13 @@ class ParserModuleTest {
         assertFailsWith<ParseException> { parseModule("function f() { return await 1; }") }
         assertFailsWith<ParseException> { parseModule("const f = () => await 1;") }
         assertFailsWith<ParseException> {
-            parseModule("function f() { return `\${await 1}`; }")
+            parseModule($$"function f() { return `${await 1}`; }")
         }
     }
 
     @Test
     fun `模块顶层await在模板表达式中可解析`() {
-        parseModule("const x = `\${await 1}`;")
+        parseModule($$"const x = `${await 1}`;")
     }
 
     @Test
@@ -802,7 +802,7 @@ class ParserModuleTest {
         assertTrue(parseModule("export default await 1;").hasTopLevelAwait)
         assertTrue(parseModule("if (x) { await y; }").hasTopLevelAwait)
         assertTrue(parseModule("for await (const x of xs) {}").hasTopLevelAwait)
-        assertTrue(parseModule("const t = `\${await 1}`;").hasTopLevelAwait)
+        assertTrue(parseModule($$"const t = `${await 1}`;").hasTopLevelAwait)
         assertTrue(!parseModule("async function f() { await 1; }").hasTopLevelAwait)
         assertTrue(!parseModule("function f() { return 1; }").hasTopLevelAwait)
     }

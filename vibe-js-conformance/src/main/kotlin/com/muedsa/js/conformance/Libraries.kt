@@ -1062,9 +1062,9 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
                 "schema ref",
                 assertion(
                     "(function () { var validator = new Ajv({ logger: false }); " +
-                        "validator.addSchema({ \$id: 's', type: 'number' }); " +
-                        "return validator.validate({ \$ref: 's' }, 5) === true && " +
-                        "validator.validate({ \$ref: 's' }, 'x') === false; })()"
+                        $$"validator.addSchema({ $id: 's', type: 'number' }); " +
+                        $$"return validator.validate({ $ref: 's' }, 5) === true && " +
+                        $$"validator.validate({ $ref: 's' }, 'x') === false; })()"
                 ),
             ),
             SmokeCase(
@@ -2174,7 +2174,7 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
                 "watcher next tick",
                 "globalThis.setTimeout = function (fn) { Promise.resolve().then(fn); }; " +
                     "(function () { var app = new Vue({ data: { count: 0 } }); " +
-                    "app['${'$'}watch']('count', function (value, oldValue) { " +
+                    $$"app['$watch']('count', function (value, oldValue) { " +
                     "globalThis.__libResult = value === 2 && oldValue === 0; }); " +
                     "app.count = 2; })();",
                 async = true,

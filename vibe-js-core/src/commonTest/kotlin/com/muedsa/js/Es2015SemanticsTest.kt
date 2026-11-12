@@ -149,19 +149,19 @@ class Es2015SemanticsTest {
         )
         assertEquals(
             "a[1]b",
-            runtime.evalString("'a1b'.replace(/\\d/, '[\$&]')")
+            runtime.evalString($$"'a1b'.replace(/\\d/, '[$&]')")
         )
         assertEquals(
             "a[a]b",
-            runtime.evalString("'a1b'.replace(/\\d/, '[\$`]')")
+            runtime.evalString($$"'a1b'.replace(/\\d/, '[$`]')")
         )
         assertEquals(
             "a[b]b",
-            runtime.evalString("'a1b'.replace(/\\d/, \"[\$']\")")
+            runtime.evalString($$"'a1b'.replace(/\\d/, \"[$']\")")
         )
         assertEquals(
             "a\$b",
-            runtime.evalString("'a1b'.replace(/\\d/, '\$\$')")
+            runtime.evalString($$"'a1b'.replace(/\\d/, '$$')")
         )
     }
 

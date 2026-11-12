@@ -142,7 +142,7 @@ class RuntimeSemanticsRegressionTest {
         ))
         // 字符类与转义中的 $ 是字面量，不是锚点
         assertEquals(true, runtime.evalBoolean(
-            "/[$]/.test('$') && /\\$/.test('$') && !/\\$/.test('a')"
+            $$"/[$]/.test('$') && /\\$/.test('$') && !/\\$/.test('a')"
         ))
     }
 
@@ -1373,10 +1373,10 @@ class RuntimeSemanticsRegressionTest {
         val runtime = TestRuntime()
         // 正则内的引号曾被当作字符串起点，导致 ${...} 扫描越界
         assertEquals("preapost", runtime.evalString(
-            "var s = `pre\${'a'.replace(/'/g, 'b')}post`; s"
+            $$"var s = `pre${'a'.replace(/'/g, 'b')}post`; s"
         ))
         // 除号不应被误判为正则起点
-        assertEquals("3", runtime.evalString("var s = `\${6 / 2}`; s"))
+        assertEquals("3", runtime.evalString($$"var s = `${6 / 2}`; s"))
     }
 
     @Test

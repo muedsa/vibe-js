@@ -185,22 +185,22 @@ class Test262SelectionTest {
     @Test
     fun `只使用 evalScript 与 detachArrayBuffer 的用例放行其余宿主钩子跳过`() {
         val allowed = Test262Selection.skipReason(
-            "\$262.evalScript('var a = 1;');", metadata(), "es2015",
+            $$"$262.evalScript('var a = 1;');", metadata(), "es2015",
         )
         assertNull(allowed)
 
         // L3.5：detachArrayBuffer 已成为 runner 提供的宿主钩子
         val detachAllowed = Test262Selection.skipReason(
-            "\$262.detachArrayBuffer(buffer);",
+            $$"$262.detachArrayBuffer(buffer);",
             metadata(includes = listOf("detachArrayBuffer.js")),
             "es2015",
         )
         assertNull(detachAllowed)
 
         val skipped = Test262Selection.skipReason(
-            "\$262.createRealm();", metadata(), "es2015",
+            $$"$262.createRealm();", metadata(), "es2015",
         )
-        assertEquals("unsupported harness: \$262", skipped)
+        assertEquals($$"unsupported harness: $262", skipped)
     }
 
     @Test

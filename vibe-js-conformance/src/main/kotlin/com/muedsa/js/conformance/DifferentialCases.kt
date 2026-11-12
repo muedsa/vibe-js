@@ -1305,7 +1305,7 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     // 求值顺序矩阵：通过 getter/setter/日志观察规范规定的访问顺序
     DifferentialCase(
         "eval-order-matrix",
-        """
+        $$"""
         (function () {
           var out = [];
           function push(fn) {
@@ -1392,7 +1392,7 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
               log.push('part');
               return 'x';
             }
-            tag`a${'$'}{part()}b`;
+            tag`a${part()}b`;
             return log.join(',');
           });
           push(function () {
@@ -2281,18 +2281,18 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     DifferentialCase("eval-direct-value", "(function () { return eval('1 + 2'); })()"),
     DifferentialCase(
         "template-cache-site",
-        """
+        $$"""
         (function () {
           var seen = [];
           function tag(t) {
             seen.push(t);
           }
           function f() {
-            tag`a${'$'}{1}b`;
+            tag`a${1}b`;
           }
           f();
           f();
-          tag`a${'$'}{1}b`;
+          tag`a${1}b`;
           return (seen[0] === seen[1]) + ':' + (seen[1] === seen[2]);
         })()
         """.trimIndent()
@@ -2417,14 +2417,14 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     ),
     DifferentialCase(
         "template-raw-frozen",
-        """
+        $$"""
         (function () {
           var obj;
           function tag(t) {
             obj = t;
           }
           function f() {
-            tag`a${'$'}{1}b`;
+            tag`a${1}b`;
           }
           f();
           return [obj[0], obj.raw[0], Object.isFrozen(obj), Object.isFrozen(obj.raw)].join('|');
@@ -2490,7 +2490,7 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     // URI 编解码与数字解析边界
     DifferentialCase(
         "uri-encode-reserved",
-        "[encodeURI(';/?:@&=+\$,#'), encodeURIComponent(';')].join('|')"
+        $$"[encodeURI(';/?:@&=+$,#'), encodeURIComponent(';')].join('|')"
     ),
     DifferentialCase(
         "uri-encode-lone-surrogate",
@@ -8879,12 +8879,12 @@ internal val extraDifferentialCases: List<DifferentialCase> = listOf(
     // replaceAll 的字符串替换支持 $& 等替换模式。
     DifferentialCase(
         "string-replaceall-dollar",
-        "'abc'.replaceAll('b', '\$&\$&')",
+        $$"'abc'.replaceAll('b', '$&$&')",
     ),
     // replaceAll 中 $$ 表示一个字面量美元符号。
     DifferentialCase(
         "string-replaceall-literal-dollar",
-        "'abc'.replaceAll('b', '\$\$')",
+        $$"'abc'.replaceAll('b', '$$')",
     ),
     // toSpliced 的负起点按长度归一化。
     DifferentialCase(

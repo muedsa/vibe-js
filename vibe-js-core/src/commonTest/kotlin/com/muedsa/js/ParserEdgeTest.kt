@@ -39,7 +39,7 @@ class ParserEdgeTest {
             com.muedsa.js.lexer.Lexer("`abc").tokenize()
         }
         assertFailsWith<LexerException> {
-            com.muedsa.js.lexer.Lexer("`a\${1}").tokenize()
+            com.muedsa.js.lexer.Lexer($$"`a${1}").tokenize()
         }
     }
 
@@ -50,7 +50,7 @@ class ParserEdgeTest {
         assertEquals("\u0000", runtime.evalString("'\\0'"))
         assertEquals("a\nb", runtime.evalString("`a\nb`"))
         assertEquals("a`b", runtime.evalString("`a\\`b`"))
-        assertEquals("1:2", runtime.evalString("var a = 1; `\${a}:\${2}`"))
+        assertEquals("1:2", runtime.evalString($$"var a = 1; `${a}:${2}`"))
     }
 
     @Test
@@ -191,7 +191,7 @@ class ParserEdgeTest {
     fun `new target 与模板表达式错误`() {
         val parser = { code: String -> com.muedsa.js.parser.Parser(com.muedsa.js.lexer.Lexer(code).tokenize()).parseProgram() }
         assertFailsWith<ParseException> { parser("new.foo;") }
-        assertFailsWith<ParseException> { parser("var s = `\${}`;") }
+        assertFailsWith<ParseException> { parser($$"var s = `${}`;") }
     }
 
     @Test

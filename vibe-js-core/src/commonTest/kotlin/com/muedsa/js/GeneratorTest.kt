@@ -649,9 +649,9 @@ class GeneratorTest {
     fun `模板字符串子表达式可以包含 yield`() = runTest {
         val runtime = TestRuntime()
         runtime.eval(
-            """
+            $$"""
             function* g() {
-                var text = 'value=' + `${'$'}{yield 1}`;
+                var text = 'value=' + `${yield 1}`;
                 yield text;
             }
             var it = g();
