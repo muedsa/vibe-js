@@ -134,6 +134,9 @@ object DataViewBuiltins {
             prototype.defineDataProperty(
                 key = PropertyKey.Str(name),
                 value = BuiltinHelpers.method(intrinsics, name, 2) { interpreter, thisValue, args ->
+                    if (thisValue is JSDataView && thisValue.buffer.isImmutable) {
+                        interpreter.typeError("Cannot write to an immutable ArrayBuffer")
+                    }
                     val access = prepareViewAccess(
                         interpreter = interpreter,
                         thisValue = thisValue,
@@ -173,6 +176,9 @@ object DataViewBuiltins {
             prototype.defineDataProperty(
                 key = PropertyKey.Str(name),
                 value = BuiltinHelpers.method(intrinsics, name, 2) { interpreter, thisValue, args ->
+                    if (thisValue is JSDataView && thisValue.buffer.isImmutable) {
+                        interpreter.typeError("Cannot write to an immutable ArrayBuffer")
+                    }
                     val access = prepareViewAccess(
                         interpreter = interpreter,
                         thisValue = thisValue,

@@ -155,7 +155,8 @@ internal object TypedArrayBuiltins {
                 if (!interpreter.isCallable(iteratorMethod)) {
                     interpreter.typeError("@@iterator is not a function")
                 }
-                val values = interpreter.iterateValues(source)
+                val values = ArrayList<JSValue>()
+                interpreter.consumeIterator(source, iteratorMethod) { values.add(it) }
                 val result = typedArrayCreateFromConstructor(
                     interpreter,
                     thisValue,
@@ -241,6 +242,9 @@ internal object TypedArrayBuiltins {
         )
         val result = created as? JSTypedArray
             ?: interpreter.typeError("Constructor did not return a TypedArray")
+        if (result.buffer.isImmutable) {
+            interpreter.typeError("Constructor returned a TypedArray backed by an immutable ArrayBuffer")
+        }
         if (result.length < length) {
             interpreter.typeError("Constructor returned a too-small TypedArray")
         }
@@ -371,6 +375,9 @@ internal object TypedArrayBuiltins {
         defineMethod("fill", 1) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.fill")
             requireAttached(interpreter, array, "TypedArray.prototype.fill")
+            if (array.buffer.isImmutable) {
+                interpreter.typeError("TypedArray.prototype.fill called on an immutable ArrayBuffer")
+            }
             val len = array.length
             // 规范顺序：先按 [[ContentType]] 执行 ToBigInt/ToNumber(value)，再归一 start/end
             val valueArgument = args.getOrElse(0) { JSUndefined }
@@ -402,6 +409,9 @@ internal object TypedArrayBuiltins {
         defineMethod("copyWithin", 2) { interpreter, thisValue, args ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.copyWithin")
             requireAttached(interpreter, array, "TypedArray.prototype.copyWithin")
+            if (array.buffer.isImmutable) {
+                interpreter.typeError("TypedArray.prototype.copyWithin called on an immutable ArrayBuffer")
+            }
             val len = array.length
             val target = relativeIndex(interpreter, args.getOrElse(0) { JSUndefined }, len)
             val start = relativeIndex(interpreter, args.getOrElse(1) { JSUndefined }, len)
@@ -832,6 +842,9 @@ internal object TypedArrayBuiltins {
             }
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.sort")
             requireAttached(interpreter, array, "TypedArray.prototype.sort")
+            if (array.buffer.isImmutable) {
+                interpreter.typeError("TypedArray.prototype.sort called on an immutable ArrayBuffer")
+            }
             val len = array.length
             if (len <= 1) return@defineMethod array
             val values = ArrayList<JSValue>(len)
@@ -848,6 +861,9 @@ internal object TypedArrayBuiltins {
         defineMethod("reverse", 0) { interpreter, thisValue, _ ->
             val array = requireTypedArray(interpreter, thisValue, "TypedArray.prototype.reverse")
             requireAttached(interpreter, array, "TypedArray.prototype.reverse")
+            if (array.buffer.isImmutable) {
+                interpreter.typeError("TypedArray.prototype.reverse called on an immutable ArrayBuffer")
+            }
             val len = array.length
             val middle = len / 2
             var lower = 0
@@ -1270,6 +1286,9 @@ internal object TypedArrayBuiltins {
         source: JSValue,
         offset: JSValue,
     ) {
+        if (target.buffer.isImmutable) {
+            interpreter.typeError("TypedArray.prototype.set called on an immutable ArrayBuffer")
+        }
         val targetOffset = toIntegerOrInfinity(interpreter, offset)
         if (targetOffset < 0.0) {
             interpreter.rangeError("offset is out of bounds")
@@ -1347,6 +1366,9 @@ internal object TypedArrayBuiltins {
         val created = interpreter.construct(constructor, listOf(JSNumber(length.toDouble())))
         val result = created as? JSTypedArray
             ?: interpreter.typeError("Species constructor did not return a TypedArray")
+        if (result.buffer.isImmutable) {
+            interpreter.typeError("Species constructor returned a TypedArray backed by an immutable ArrayBuffer")
+        }
         // 规范不再要求 species 返回相同元素类型（跨类型结果按目标类型转换写入）
         if (result.length < length) {
             interpreter.typeError("Species constructor returned a too-small TypedArray")

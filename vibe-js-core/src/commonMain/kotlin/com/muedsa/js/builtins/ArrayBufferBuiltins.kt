@@ -120,6 +120,21 @@ object ArrayBufferBuiltins {
             configurable = true,
         )
 
+        prototype.defineAccessorProperty(
+            key = PropertyKey.Str("immutable"),
+            get = BuiltinHelpers.method(intrinsics, "get immutable", 0) { interpreter, thisValue, _ ->
+                val buffer = requireArrayBuffer(
+                    interpreter,
+                    thisValue,
+                    "ArrayBuffer.prototype.immutable",
+                )
+                JSBoolean.getJsBoolean(buffer.isImmutable)
+            },
+            set = null,
+            enumerable = false,
+            configurable = true,
+        )
+
         // ArrayBuffer.prototype.slice(start, end)：按 species 创建副本并拷贝
         prototype.defineDataProperty(
             key = PropertyKey.Str("slice"),
@@ -162,6 +177,9 @@ object ArrayBufferBuiltins {
                 if (result === buffer) {
                     interpreter.typeError("Species constructor returned the same ArrayBuffer")
                 }
+                if (result.isImmutable) {
+                    interpreter.typeError("Species constructor returned an immutable ArrayBuffer")
+                }
                 if (result.byteLength.toLong() < newLength) {
                     interpreter.typeError("Species constructor returned a too-small ArrayBuffer")
                 }
@@ -196,6 +214,87 @@ object ArrayBufferBuiltins {
                     args,
                     "ArrayBuffer.prototype.transferToFixedLength",
                 )
+            },
+        )
+        prototype.defineDataProperty(
+            key = PropertyKey.Str("transferToImmutable"),
+            value = BuiltinHelpers.method(intrinsics, "transferToImmutable", 0) { interpreter, thisValue, args ->
+                val buffer = requireArrayBuffer(
+                    interpreter,
+                    thisValue,
+                    "ArrayBuffer.prototype.transferToImmutable",
+                )
+                val lengthArgument = args.getOrNull(0)
+                val newLength = if (lengthArgument == null || lengthArgument is JSUndefined) {
+                    buffer.byteLength
+                } else {
+                    val index = interpreter.toIndex(lengthArgument)
+                    if (index > MAX_BYTE_LENGTH.toLong()) {
+                        interpreter.rangeError("Array buffer allocation failed")
+                    }
+                    index.toInt()
+                }
+                // 规范要求先完成 newLength 的副作用，再检查 detached/immutable。
+                if (buffer.isDetached) {
+                    interpreter.typeError("ArrayBuffer.prototype.transferToImmutable called on a detached ArrayBuffer")
+                }
+                if (buffer.isImmutable) {
+                    interpreter.typeError("ArrayBuffer.prototype.transferToImmutable called on an immutable ArrayBuffer")
+                }
+                val result = JSArrayBuffer(
+                    prototype = interpreter.intrinsics.arrayBufferPrototype,
+                    byteLength = newLength,
+                )
+                val copyLength = minOf(buffer.byteLength, newLength)
+                if (copyLength > 0) {
+                    buffer.copyInto(result, start = 0, targetStart = 0, count = copyLength)
+                }
+                result.markImmutable()
+                buffer.detach()
+                result
+            },
+        )
+        prototype.defineDataProperty(
+            key = PropertyKey.Str("sliceToImmutable"),
+            value = BuiltinHelpers.method(intrinsics, "sliceToImmutable", 2) { interpreter, thisValue, args ->
+                val buffer = requireArrayBuffer(
+                    interpreter,
+                    thisValue,
+                    "ArrayBuffer.prototype.sliceToImmutable",
+                )
+                if (buffer.isDetached) {
+                    interpreter.typeError("ArrayBuffer.prototype.sliceToImmutable called on a detached ArrayBuffer")
+                }
+                val length = buffer.byteLength
+                val first = relativeIndex(
+                    interpreter,
+                    args.getOrElse(0) { JSUndefined },
+                    length,
+                )
+                val endArgument = args.getOrNull(1)
+                val last = if (endArgument == null || endArgument is JSUndefined) {
+                    length.toLong()
+                } else {
+                    relativeIndex(interpreter, endArgument, length)
+                }
+                val newLength = (last - first).coerceAtLeast(0L)
+                if (buffer.isDetached) {
+                    interpreter.typeError("ArrayBuffer.prototype.sliceToImmutable called on a detached ArrayBuffer")
+                }
+                val result = JSArrayBuffer(
+                    prototype = interpreter.intrinsics.arrayBufferPrototype,
+                    byteLength = newLength.toInt(),
+                )
+                if (newLength > 0) {
+                    buffer.copyInto(
+                        target = result,
+                        start = first.toInt(),
+                        targetStart = 0,
+                        count = newLength.toInt(),
+                    )
+                }
+                result.markImmutable()
+                result
             },
         )
 
@@ -256,6 +355,9 @@ object ArrayBufferBuiltins {
                 interpreter.rangeError("Array buffer allocation failed")
             }
             index.toInt()
+        }
+        if (buffer.isImmutable) {
+            interpreter.typeError("$name called on an immutable ArrayBuffer")
         }
         val result = JSArrayBuffer(
             prototype = interpreter.intrinsics.arrayBufferPrototype,

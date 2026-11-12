@@ -38,6 +38,15 @@ class JSArrayBuffer(
     var isDetached: Boolean = false
         private set
 
+    /** [[ArrayBufferIsImmutable]]：不可变缓冲区拒绝所有写入，且不能再次 transfer/detach。 */
+    var isImmutable: Boolean = false
+        private set
+
+    /** 把新建缓冲区标记为不可变；只允许在完成初始复制后调用。 */
+    internal fun markImmutable() {
+        isImmutable = true
+    }
+
     /**
      * [[ArrayBufferByteLength]]：分离后按规范为 0。
      *

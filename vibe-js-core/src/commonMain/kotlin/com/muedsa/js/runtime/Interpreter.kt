@@ -903,6 +903,9 @@ class Interpreter(
      * - BigInt64/BigUint64 使用 ToBigInt64/ToBigUint64 后写入低 64 位位模式。
      */
     suspend fun setTypedArrayElement(array: JSTypedArray, index: Int, value: JSValue) {
+        if (array.buffer.isImmutable) {
+            typeError("Cannot write to an immutable ArrayBuffer")
+        }
         when (array.type) {
             JSTypedArrayType.INT8, JSTypedArrayType.UINT8,
             JSTypedArrayType.INT16, JSTypedArrayType.UINT16,

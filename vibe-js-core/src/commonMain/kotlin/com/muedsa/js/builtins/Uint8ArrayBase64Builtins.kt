@@ -77,6 +77,9 @@ internal object Uint8ArrayBase64Builtins {
             key = PropertyKey.Str("setFromBase64"),
             value = BuiltinHelpers.method(intrinsics, "setFromBase64", 1) { interpreter, thisValue, args ->
                 val array = requireUint8(interpreter, thisValue, "Uint8Array.prototype.setFromBase64")
+                if (array.buffer.isImmutable) {
+                    interpreter.typeError("Cannot write to an immutable ArrayBuffer")
+                }
                 val input = requireStringArgument(interpreter, args, "Uint8Array.prototype.setFromBase64")
                 val options = decodeOptions(interpreter, args.getOrNull(1))
                 requireAttached(interpreter, array, "Uint8Array.prototype.setFromBase64")
@@ -95,6 +98,9 @@ internal object Uint8ArrayBase64Builtins {
             key = PropertyKey.Str("setFromHex"),
             value = BuiltinHelpers.method(intrinsics, "setFromHex", 1) { interpreter, thisValue, args ->
                 val array = requireUint8(interpreter, thisValue, "Uint8Array.prototype.setFromHex")
+                if (array.buffer.isImmutable) {
+                    interpreter.typeError("Cannot write to an immutable ArrayBuffer")
+                }
                 val input = requireStringArgument(interpreter, args, "Uint8Array.prototype.setFromHex")
                 requireAttached(interpreter, array, "Uint8Array.prototype.setFromHex")
                 val decoded = decodeHex(interpreter, input, array.length, array)
