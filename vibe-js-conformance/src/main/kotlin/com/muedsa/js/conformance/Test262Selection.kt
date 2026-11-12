@@ -317,6 +317,7 @@ internal object Test262Selection {
         "AggregateError", "globalThis", "string-trimming",
         "await-dictionary", "nonextensible-applies-to-private",
         "String.prototype.matchAll", "Symbol.matchAll",
+        "async-iteration",
     )
 
     /**

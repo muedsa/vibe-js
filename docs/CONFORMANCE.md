@@ -21,7 +21,7 @@
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝）；允许 0 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
 | Test262 ES2015 | **63,456 / 63,456**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Test262 ES2016+ | **22,956 / 22,956**，失败 0，崩溃 0，跳过 **24**（module flag） |
+| Test262 ES2016+ | **30,161 / 30,161**，失败 0，崩溃 0，跳过 **24**（module flag） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0，跳过 0 |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0，跳过 3（source-phase-imports） |
 | Test262 language module | **686 / 686**，失败 0，崩溃 0，跳过 131（未支持特性） |
@@ -184,9 +184,9 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 ./gradlew :vibe-js-conformance:test262Es2016PlusConformance -Ptest262Filter=exponentiation
 ```
 
-Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版本门禁锚点；用例仍必须全部落在已支持特性集合内。当前选中 **11,682** 个文件、执行 **22,956** 次，全部通过；24 个 module flag 用例跳过，由独立 module suite 覆盖。
+Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版本门禁锚点；用例仍必须全部落在已支持特性集合内。当前选中 **15,319** 个文件、执行 **30,161** 次，全部通过；24 个 module flag 用例跳过，由独立 module suite 覆盖。
 
-本轮把 `Reflect.set`/`Reflect.setPrototypeOf`、全部 `DataView.prototype.*` 方法标注、`TypedArray.prototype.at`、12 种 TypedArray 构造器标注、`arraybuffer-transfer`、`immutable-arraybuffer`、`uint8array-base64` 与 `resizable-arraybuffer` 纳入支持特性，并实现 `transfer`/`transferToFixedLength`、immutable ArrayBuffer API、Uint8Array base64/hex API、`{ maxByteLength }`/`resize` 及动态 TypedArray/DataView 视图；ES2015 子集从 61,786 次扩展到 63,456 次；ES2016+ 继续纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`、`iterator-chunking`、`upsert`、`symbols-as-weakmap-keys`、`iterator-sequencing`、`joint-iteration`、`explicit-resource-management`、`hashbang`、`optional-catch-binding`、`stable-array-sort`、`json-superset`、`error-stack-accessor`、`json-parse-with-source`、`for-in-order`、`array-grouping`，执行次数扩展到 22,956。随后把 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll 作为 ES2019+ 版本锚点纳入，覆盖所有已支持的 ES2016+ 特性。
+本轮把 `Reflect.set`/`Reflect.setPrototypeOf`、全部 `DataView.prototype.*` 方法标注、`TypedArray.prototype.at`、12 种 TypedArray 构造器标注、`arraybuffer-transfer`、`immutable-arraybuffer`、`uint8array-base64` 与 `resizable-arraybuffer` 纳入支持特性，并实现 `transfer`/`transferToFixedLength`、immutable ArrayBuffer API、Uint8Array base64/hex API、`{ maxByteLength }`/`resize` 及动态 TypedArray/DataView 视图；ES2015 子集从 61,786 次扩展到 63,456 次；ES2016+ 继续纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`、`iterator-chunking`、`upsert`、`symbols-as-weakmap-keys`、`iterator-sequencing`、`joint-iteration`、`explicit-resource-management`、`hashbang`、`optional-catch-binding`、`stable-array-sort`、`json-superset`、`error-stack-accessor`、`json-parse-with-source`、`for-in-order`、`array-grouping`，执行次数扩展到 30,161。随后把 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll 作为 ES2019+ 版本锚点纳入，并纳入 async-iteration，覆盖所有已支持的 ES2016+ 特性。
 
 ### 5.2 筛选统计（未纳入本次口径）
 
