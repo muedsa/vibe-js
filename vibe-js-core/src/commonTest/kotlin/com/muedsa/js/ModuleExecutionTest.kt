@@ -574,6 +574,70 @@ class ModuleExecutionTest {
     }
 
     @Test
+    fun `动态 import 目标模块语法错误以 SyntaxError 拒绝`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                export var name = "pending";
+                import("./b.js").then(function () {
+                  name = "resolved";
+                }, function (error) {
+                  name = error.name;
+                });
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./b.js" to source(
+                        "b",
+                        """
+                        var duplicated;
+                        function duplicated() {}
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "SyntaxError",
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("name")) as JSString).value,
+        )
+    }
+
+    @Test
+    fun `模块函数使用所属模块的 importMeta`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                import { getMeta } from "./b.js";
+                export const same = import.meta === getMeta();
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./b.js" to source(
+                        "b",
+                        """
+                        export function getMeta() {
+                          return import.meta;
+                        }
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        assertFalse(
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("same")) as JSBoolean).value,
+        )
+    }
+
+    @Test
     fun `取消 runModule 会停止等待中的 TLA`() = runTest {
         val engine = Engine()
         val job = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {

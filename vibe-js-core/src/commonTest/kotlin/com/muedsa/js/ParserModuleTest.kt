@@ -628,6 +628,21 @@ class ParserModuleTest {
     }
 
     @Test
+    fun `模块顶层 using 对象初始化可解析`() {
+        parseModule(
+            """
+            export let disposed = false;
+            using resource = {
+              [Symbol.dispose]() {
+                disposed = true;
+              }
+            };
+            export { resource };
+            """.trimIndent(),
+        )
+    }
+
+    @Test
     fun `模块顶层支持 for await 与 using 声明`() {
         // 模块顶层是 [+Await] 语境，for await / await using 与顶层 await 一样可解析
         parseModule("for await (const x of []) {}")

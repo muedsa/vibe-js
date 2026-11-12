@@ -216,11 +216,11 @@ class Interpreter(
     internal var moduleRuntime: ModuleRuntime? = null
 
     /**
-     * 当前生效的模块记录：模块体求值期间由 [currentModuleRecord] 提供，
-     * 模块内函数延迟调用时回退到函数所属的 [ExecutionContext.sourceModule]。
+     * 当前生效的模块记录：模块内函数调用优先使用函数所属模块
+     * [ExecutionContext.sourceModule]，模块体求值期间回退到 [currentModuleRecord]。
      */
     internal fun resolveModuleRecord(): ModuleRecord? =
-        currentModuleRecord ?: frame?.sourceModule
+        frame?.sourceModule ?: currentModuleRecord
 
     /**
      * 生成器函数体执行期间绑定的暂停/恢复通道。
@@ -366,8 +366,12 @@ class Interpreter(
         frame = moduleFrame
         currentModuleRecord = record
         try {
-            for (item in record.program.items) {
-                executeModuleItem(item)
+            // 模块顶层 using/await using 的释放作用域覆盖整个模块体，
+            // TLA 完成后在 runModule 返回前释放资源。
+            withDisposalScope {
+                for (item in record.program.items) {
+                    executeModuleItem(item)
+                }
             }
             return JSUndefined
         } catch (error: Throwable) {
@@ -4696,10 +4700,17 @@ class Interpreter(
             ?: throw syntaxError("import() is only available in module code")
         val specifierExpression = expression.specifier
             ?: throw typeError("import() requires a module specifier")
-        val specifier = toStringValue(evaluate(specifierExpression))
+        val promise = JSPromise(intrinsics.promisePrototype)
+        val specifier = try {
+            toStringValue(evaluate(specifierExpression))
+        } catch (error: JSException) {
+            // ImportCall 的 ToString(specifier) 失败必须拒绝返回的 Promise，
+            // 不能把 TypeError 同步抛给模块体。
+            PromiseSupport.reject(this, promise, error.value, error.stack)
+            return promise
+        }
         val attributes = expression.options?.let { readImportAttributes(evaluate(it)) } ?: emptyMap()
 
-        val promise = JSPromise(intrinsics.promisePrototype)
         context.eventLoop.enqueueMicrotask {
             context.eventLoop.launchAsyncTask {
                 val job = forkForCallback()
@@ -4724,6 +4735,30 @@ class Interpreter(
                             errorName = "Error",
                             messageText = error.message ?: "Module loading failed",
                             prototype = job.intrinsics.errorPrototype,
+                        ),
+                        job.captureStack(),
+                    )
+                } catch (error: ParseException) {
+                    // 动态 import 的目标按 Module Record 解析；目标文件即使原本是脚本，
+                    // 其早期语法错误也必须以 SyntaxError 拒绝 import()。
+                    PromiseSupport.reject(
+                        job,
+                        promise,
+                        JSError(
+                            errorName = "SyntaxError",
+                            messageText = error.message ?: "Invalid module syntax",
+                            prototype = job.intrinsics.syntaxErrorPrototype,
+                        ),
+                        job.captureStack(),
+                    )
+                } catch (error: LexerException) {
+                    PromiseSupport.reject(
+                        job,
+                        promise,
+                        JSError(
+                            errorName = "SyntaxError",
+                            messageText = error.message ?: "Invalid module syntax",
+                            prototype = job.intrinsics.syntaxErrorPrototype,
                         ),
                         job.captureStack(),
                     )
