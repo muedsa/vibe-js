@@ -35,6 +35,7 @@ import kotlin.system.exitProcess
  * 当前范围：
  * - `--suite es5`：test/language 与 test/built-ins 中带 `es5id` 的脚本；
  * - `--suite es2015`：非 ES5、特性全部受支持的用例（`--include-esid` 时纳入 esid 标注用例）；
+ * - `--suite es2016plus`：非 ES5、特性全部受支持且命中 ES2016+ 特性种子的用例；
  * - `--suite module`：带 `flags: [module]` 的模块用例，使用文件型 Provider 与 `Engine.runModule`；
  * - 支持 includes、negative（parse/runtime）、strict/sloppy/raw 变体与 `flags: [async]`；
  * - module、未支持特性与部分 `$262` 宿主钩子由 `Test262Selection` 跳过并记录原因；
@@ -45,12 +46,12 @@ fun main(args: Array<String>) {
     val corpusDir = File(args.getOrElse(0) { "corpus/test262" })
     val reportDir = File(args.getOrElse(1) { "build/reports/conformance" })
     val strict = args.contains("--strict")
-    // --suite es5（默认）、es2015（按支持特性筛选）或 module（模块执行）
+    // --suite es5（默认）、es2015（按支持特性筛选）、es2016plus（后 ES2015 特性种子）或 module（模块执行）
     val suite = args.indexOf("--suite").takeIf { it >= 0 }?.let { index ->
         args.getOrNull(index + 1)
     } ?: "es5"
-    if (suite !in setOf("es5", "es2015", "module")) {
-        System.err.println("未知的 Test262 子集：$suite（可选 es5 / es2015 / module）")
+    if (suite !in setOf("es5", "es2015", "es2016plus", "module")) {
+        System.err.println("未知的 Test262 子集：$suite（可选 es5 / es2015 / es2016plus / module）")
         exitProcess(3)
     }
     val limit = args.indexOf("--limit").takeIf { it >= 0 }?.let { index ->
@@ -297,7 +298,7 @@ private class Test262Runner(
     private fun collectTests(): SelectionStats {
         val selected = mutableListOf<TestFile>()
         val excluded = LinkedHashMap<String, Int>()
-        val roots = if (suite == "es2015") {
+        val roots = if (suite == "es2015" || suite == "es2016plus") {
             listOf("test/language", "test/built-ins", "test/annexB")
         } else {
             listOf("test/language", "test/built-ins")
@@ -1009,6 +1010,7 @@ private data class Test262Report(
     fun writeMarkdown(file: File) {
         val suiteLabel = when (suite) {
             "es2015" -> "ES2015"
+            "es2016plus" -> "ES2016+"
             "module" -> "module"
             else -> "ES5"
         }
@@ -1025,6 +1027,7 @@ private data class Test262Report(
                 appendLine("- 语料目录：`$corpus`")
                 when (suite) {
                     "es2015" -> appendLine("- 范围：test/language + test/built-ins 中按已支持特性筛选的 ES2015 子集（排除 ES5 与未支持特性）")
+                    "es2016plus" -> appendLine("- 范围：非 ES5、全部特性已支持且命中 ES2016+ 特性种子的用例")
                     "module" -> appendLine("- 范围：带 `flags: [module]` 的 Test262 module 语料；默认 TLA 验收目录可用 --filter 定向")
                     else -> appendLine("- 范围：test/language + test/built-ins 中带 `es5id` 的脚本")
                 }
@@ -1227,6 +1230,7 @@ private data class Test262Report(
     fun printSummary() {
         val suiteLabel = when (suite) {
             "es2015" -> "ES2015"
+            "es2016plus" -> "ES2016+"
             "module" -> "module"
             else -> "ES5"
         }

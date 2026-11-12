@@ -274,6 +274,41 @@ val test262ModuleLanguageConformance = tasks.register<JavaExec>("test262ModuleLa
     outputs.dir(reportDir)
 }
 
+/**
+ * 运行 ES2016+ 特性种子子集。
+ *
+ * Test262 没有版本字段；用已实现的后 ES2015 特性作为版本门禁锚点，
+ * 用例仍必须全部落在已支持特性集合内。
+ */
+val test262Es2016PlusConformance = tasks.register<JavaExec>("test262Es2016PlusConformance") {
+    group = "verification"
+    description = "运行 ES2016+ 特性种子子集并生成语义报告（报告模式）"
+    dependsOn(downloadTest262Corpus)
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.muedsa.js.conformance.Test262ConformanceKt")
+    val reportDir = conformanceReportDir.map { it.dir("test262-es2016plus") }
+    args(
+        test262Dir.asFile.absolutePath,
+        reportDir.get().asFile.absolutePath,
+        "--suite", "es2016plus",
+    )
+    if (project.hasProperty("test262Limit")) {
+        args("--limit", project.property("test262Limit").toString())
+    }
+    if (project.hasProperty("test262Jobs")) {
+        args("--jobs", project.property("test262Jobs").toString())
+    }
+    if (project.hasProperty("test262Filter")) {
+        args("--filter", project.property("test262Filter").toString())
+    }
+    applyRunnerSettings()
+    if (project.hasProperty("strict")) {
+        args("--strict")
+    }
+    inputs.dir(test262Dir)
+    outputs.dir(reportDir)
+}
+
 /** 下载固定版本的真实 JS 库 UMD 构建。 */
 val downloadLibraryCorpus = tasks.register<JavaExec>("downloadLibraryCorpus") {
     group = "verification"

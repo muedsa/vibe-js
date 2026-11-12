@@ -156,6 +156,59 @@ class Test262SelectionTest {
     }
 
     @Test
+    fun `ES2016+ 子集只选中后 ES2015 特性种子`() {
+        assertIs<SelectionDecision.Selected>(
+            Test262Selection.decide(
+                "test/language/expressions/exponentiation/x.js",
+                metadata(features = setOf("exponentiation")),
+                "es2016plus",
+                includeEsid = false,
+                filter = null,
+            )
+        )
+        assertEquals(
+            Test262Selection.EXCLUDED_NOT_ES2016_PLUS,
+            reasonOf(
+                Test262Selection.decide(
+                    "test/language/arrow-function.js",
+                    metadata(features = setOf("arrow-function")),
+                    "es2016plus",
+                    includeEsid = false,
+                    filter = null,
+                )
+            ),
+        )
+        assertEquals(
+            Test262Selection.EXCLUDED_UNSUPPORTED_FEATURES,
+            reasonOf(
+                Test262Selection.decide(
+                    "test/built-ins/Intl/x.js",
+                    metadata(features = setOf("Intl")),
+                    "es2016plus",
+                    includeEsid = false,
+                    filter = null,
+                )
+            ),
+        )
+    }
+
+    @Test
+    fun `ES2016+ 子集不接纳无特性标注的 esid 用例`() {
+        assertEquals(
+            Test262Selection.EXCLUDED_NO_FEATURE_ANNOTATION,
+            reasonOf(
+                Test262Selection.decide(
+                    "test/language/x.js",
+                    metadata(es6Id = "6.1"),
+                    "es2016plus",
+                    includeEsid = true,
+                    filter = null,
+                )
+            ),
+        )
+    }
+
+    @Test
     fun `module 标志只在 module 子集放行`() {
         val metadata = metadata(flags = setOf("module"), features = setOf("top-level-await"))
         assertIs<SelectionDecision.Selected>(

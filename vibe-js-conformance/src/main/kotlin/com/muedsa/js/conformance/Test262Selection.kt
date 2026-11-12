@@ -55,13 +55,14 @@ internal object Test262Selection {
     const val EXCLUDED_PATH = "路径排除"
     const val EXCLUDED_FILTER = "--filter 不匹配"
     const val EXCLUDED_NOT_MODULE = "非 module flag 用例（module 子集排除）"
+    const val EXCLUDED_NOT_ES2016_PLUS = "不含 ES2016+ 特性标注"
 
     /**
      * 判定一个用例是否属于当前子集。
      *
      * @param relativePath 相对语料根目录的路径（分隔符统一为 `/`）
      * @param metadata 解析出的 metadata；文件没有 `---` 元数据块时为 null
-     * @param suite `es5` 或 `es2015`
+     * @param suite `es5`、`es2015`、`es2016plus` 或 `module`
      * @param includeEsid 是否把"无 features 但有 esid"的用例纳入 ES2015 子集
      * @param filter 相对路径子串筛选；null 表示不过滤
      */
@@ -82,18 +83,23 @@ internal object Test262Selection {
             }
             return SelectionDecision.Selected
         }
-        if (suite == "es2015") {
-            // ES2015 子集排除 ES5 用例，避免与 ES5 基线重复
+        if (suite == "es2015" || suite == "es2016plus") {
+            // 两个子集都排除 ES5 用例，避免与 ES5 基线重复。
             if (metadata.es5Id != null) return SelectionDecision.Excluded(EXCLUDED_ES5_CASE)
             val featuresSupported = metadata.features.isNotEmpty() &&
                 metadata.features.all { it in es2015SupportedFeatures }
             val annotated = metadata.features.isEmpty() &&
                 (metadata.es6Id != null || (includeEsid && metadata.esId != null))
-            if (!featuresSupported && !annotated) {
+            if (!featuresSupported && !(suite == "es2015" && annotated)) {
                 return SelectionDecision.Excluded(
                     if (metadata.features.isEmpty()) EXCLUDED_NO_FEATURE_ANNOTATION
                     else EXCLUDED_UNSUPPORTED_FEATURES
                 )
+            }
+            if (suite == "es2016plus" &&
+                metadata.features.none { it in es2016PlusFeatures }
+            ) {
+                return SelectionDecision.Excluded(EXCLUDED_NOT_ES2016_PLUS)
             }
             if (es2015ExcludedPathFragments.any { relativePath.contains(it) }) {
                 return SelectionDecision.Excluded(EXCLUDED_PATH)
@@ -167,7 +173,7 @@ internal object Test262Selection {
             return SkipDecision("unsupported harness: print", textMatchOnly = true)
         }
         // 未实现的宿主型内建：测试源码中可能直接构造（ArrayBuffer 已支持，SharedArrayBuffer 仍排除）
-        if (suite == "es2015" && source.contains("new SharedArrayBuffer")) {
+        if (suite != "es5" && source.contains("new SharedArrayBuffer")) {
             return SkipDecision("unsupported feature: SharedArrayBuffer", textMatchOnly = true)
         }
         if (metadata.negativePhase != null &&
@@ -187,7 +193,7 @@ internal object Test262Selection {
     private val supportedDollar262Members = setOf("evalScript", "detachArrayBuffer")
 
     /**
-     * ES2015 子集选择：用例的全部 features 必须在此集合内。
+     * 脚本特性支持集合：ES2015 与 ES2016+ 子集都要求用例的全部 features 在此集合内。
      * 该集合只列出项目已实现并愿意纳入基线的特性。
      */
     private val es2015SupportedFeatures = setOf(
@@ -197,14 +203,15 @@ internal object Test262Selection {
         // 核心库已提供完整 Reflect（ReflectBuiltins）：L1.4 验证后纳入基线，
         // 其中 GeneratorFunction/AsyncGeneratorFunction 的 is-a-constructor 用例
         // 依赖 Reflect.construct 与 wellKnownIntrinsicObjects harness
-        "Reflect", "Reflect.construct",
+        "Reflect", "Reflect.construct", "Reflect.set", "Reflect.setPrototypeOf",
         // L2.4 补齐 Proxy 不变量并启用 Test262 Proxy 用例；
         // proxy-missing-checks 覆盖 GetOwnProperty/DefineOwnProperty/Delete 的补充校验
         "Proxy", "proxy-missing-checks",
         // L3.3 已实现 BigInt 运行时：字面量/typeof/算术/转换/内建与 Test262 BigInt 用例
         "BigInt",
         // L3.5 已实现 ArrayBuffer detach、DataView 与 TypedArray（含 BigInt 视图）语义
-        "TypedArray", "ArrayBuffer", "DataView",
+        "TypedArray", "ArrayBuffer", "DataView", "DataView.prototype.setUint8",
+        "TypedArray.prototype.at",
         "for-of", "new.target", "super", "Symbol", "Symbol.iterator",
     "Symbol.asyncIterator",
         "Symbol.toPrimitive", "Symbol.toStringTag", "Symbol.hasInstance",
@@ -247,6 +254,38 @@ internal object Test262Selection {
         // L1.6（第二批）：Generator / async generator / for-await-of 已纳入基线。
         // 之前按源码文本排除 Generator 的规则已删除，改由 features 精确筛选。
         "generators", "async-iteration",
+    )
+
+    /**
+     * ES2016+ 子集的特性种子。
+     *
+     * Test262 没有版本字段，这里用已实现的后 ES2015 特性作为版本门禁的锚点；
+     * 用例仍需通过 [es2015SupportedFeatures] 的完整支持检查。
+     */
+    private val es2016PlusFeatures = setOf(
+        "exponentiation",
+        "async-functions", "object-rest", "object-spread",
+        "Array.prototype.includes", "Array.prototype.flat", "Array.prototype.flatMap",
+        "Object.fromEntries", "Object.hasOwn",
+        "Promise.prototype.finally", "Promise.allSettled", "Promise.any",
+        "String.prototype.replaceAll",
+        "optional-chaining", "coalesce-expression", "logical-assignment-operators",
+        "numeric-separator-literal",
+        "class-fields-public", "class-static-fields-public",
+        "class-fields-private", "class-methods-private",
+        "class-static-fields-private", "class-static-methods-private",
+        "class-fields-private-in", "class-static-block",
+        "Array.prototype.at", "String.prototype.at",
+        "change-array-by-copy", "array-find-from-last",
+        "error-cause", "Array.fromAsync",
+        "String.prototype.isWellFormed", "String.prototype.toWellFormed",
+        "well-formed-json-stringify",
+        "regexp-dotall", "regexp-named-groups", "regexp-lookbehind",
+        "regexp-unicode-property-escapes", "regexp-match-indices",
+        "regexp-v-flag", "regexp-modifiers", "regexp-duplicate-named-groups",
+        "Symbol.prototype.description",
+        "iterator-helpers", "set-methods", "RegExp.escape",
+        "promise-with-resolvers",
     )
 
     /**
