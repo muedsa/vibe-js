@@ -505,8 +505,8 @@ internal object IteratorBuiltins {
     ): JSObject {
         var index = 0L
         return createIteratorWithNext(intrinsics, intrinsics.arrayIteratorPrototype) { interpreter, _, _ ->
-            if (target is JSTypedArray && target.isDetached) {
-                interpreter.typeError("Array iterator target is a TypedArray with a detached buffer")
+            if (target is JSTypedArray && target.isOutOfBounds) {
+                interpreter.typeError("Array iterator target is an out-of-bounds TypedArray")
             }
             val length = arrayLikeLength(interpreter, target)
             if (index >= length) return@createIteratorWithNext null

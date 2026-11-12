@@ -348,6 +348,9 @@ object DataViewBuiltins {
         if (view.isDetached) {
             interpreter.typeError("$methodName called on a DataView with a detached buffer")
         }
+        if (view.isOutOfBounds) {
+            interpreter.typeError("$methodName called on an out-of-bounds DataView")
+        }
         if (index + elementSize > view.byteLength.toLong()) {
             interpreter.rangeError("Offset is outside the bounds of the DataView")
         }

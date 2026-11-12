@@ -84,6 +84,16 @@ class JSTypedArray(
     /** 每个元素的字节宽度（`BYTES_PER_ELEMENT`）。 */
     val bytesPerElement: Int get() = type.bytesPerElement
 
+    /** 视图是否因分离或 resizable buffer 收缩而越界。 */
+    val isOutOfBounds: Boolean
+        get() {
+            if (isDetached) return true
+            if (byteOffset > buffer.byteLength) return true
+            return !lengthTracking &&
+                byteOffset.toLong() + storedLength.toLong() * bytesPerElement >
+                buffer.byteLength.toLong()
+        }
+
     /**
      * [[ArrayLength]]：固定长度视图在越界时按规范返回 0；length-tracking
      * 视图按当前缓冲区长度实时计算。
@@ -94,14 +104,7 @@ class JSTypedArray(
             if (lengthTracking) {
                 return ((buffer.byteLength - byteOffset).coerceAtLeast(0)) / bytesPerElement
             }
-            return if (
-                byteOffset.toLong() + storedLength.toLong() * bytesPerElement >
-                buffer.byteLength.toLong()
-            ) {
-                0
-            } else {
-                storedLength
-            }
+            return if (isOutOfBounds) 0 else storedLength
         }
 
     /** 是否为 length-tracking 视图。 */

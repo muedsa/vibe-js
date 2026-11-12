@@ -568,7 +568,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
-| 2026-11-12 | **resizable ArrayBuffer 基础批次**：新增 `{ maxByteLength }` 构造选项、`resize`、动态 TypedArray/DataView 长度骨架与 transfer 保留 resizable；特性暂未纳入 Test262 基线 |
+| 2026-11-12 | **resizable ArrayBuffer 基础批次**：新增 `{ maxByteLength }` 构造选项、`resize`、动态 TypedArray/DataView 长度、越界视图迭代/DataView 的 TypeError，以及 transfer 保留 resizable；特性暂未纳入 Test262 基线 |
 | 2026-11-12 | **immutable ArrayBuffer 批次**：新增 `immutable`、`transferToImmutable`、`sliceToImmutable`；拒绝 immutable 目标写入与 species 结果；ES2015 62,624/62,624、ES2016+ 17,830/17,830；核心 JVM 1213、JS/Wasm 1197 |
 | 2026-11-12 | **Float16 批次**：新增 `Float16Array`、DataView `getFloat16`/`setFloat16`、`Math.f16round`；同类型 TypedArray 按字节拷贝保留 NaN payload/负零；ES2015 62,532/62,532、ES2016+ 17,738/17,738；核心 JVM 1211、JS/Wasm 1195 |
 | 2026-11-12 | **Uint8Array base64/hex 批次**：实现 `fromBase64`/`fromHex`/`toBase64`/`toHex`/`setFromBase64`/`setFromHex`；ES2015 62,438/62,438、ES2016+ 17,644/17,644；核心 JVM 1210、JS/Wasm 1194 |
