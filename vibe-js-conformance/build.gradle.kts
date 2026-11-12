@@ -11,6 +11,8 @@ kotlin {
 dependencies {
     implementation(project(":vibe-js-core"))
     implementation(libs.kotlinx.coroutines.core)
+    // 差分/库冒烟用例内嵌 JavaScript 源码的 @Language 注入注解。
+    implementation(libs.jetbrains.annotations)
     // 运行器自身的测试：分类、超时与关闭行为需要独立于语料验证
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlinx.coroutines.test)

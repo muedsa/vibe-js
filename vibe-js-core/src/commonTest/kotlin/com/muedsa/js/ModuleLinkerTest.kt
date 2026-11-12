@@ -12,6 +12,7 @@ import com.muedsa.js.runtime.module.internal.ModuleGraphResolver
 import com.muedsa.js.runtime.module.internal.ModuleImportBinding
 import com.muedsa.js.runtime.module.internal.ModuleLinker
 import com.muedsa.js.runtime.module.internal.ModuleStatus
+import org.intellij.lang.annotations.Language
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,7 +34,7 @@ class ModuleLinkerTest {
         sources: Map<String, ModuleSource> = emptyMap(),
     ): ModuleGraph = ModuleGraphResolver(EngineLimits()).load(entry, Provider(sources))
 
-    private fun source(id: String, code: String) = ModuleSource(id, code)
+    private fun source(id: String, @Language("JavaScript") code: String) = ModuleSource(id, code)
 
     @Test
     fun `链接填充具名与命名空间 import 并标记 LINKED`() = runTest {

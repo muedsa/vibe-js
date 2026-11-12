@@ -1,5 +1,7 @@
 package com.muedsa.js.conformance
 
+import org.intellij.lang.annotations.Language
+
 /**
  * 异步差分用例：source 为一段脚本，通过 Promise/async 调度后把可观察结果写入
  * `globalThis.__diffResult`；运行器在微任务队列清空后读取该值并与 Node 对比。
@@ -9,7 +11,7 @@ package com.muedsa.js.conformance
  */
 internal data class AsyncDifferentialCase(
     val name: String,
-    val source: String,
+    @Language("JavaScript") val source: String,
 )
 
 internal val asyncDifferentialCases: List<AsyncDifferentialCase> = listOf(

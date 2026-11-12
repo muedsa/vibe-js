@@ -10,6 +10,7 @@ import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.module.internal.ModuleGraphResolver
 import com.muedsa.js.runtime.module.internal.ModuleStatus
+import org.intellij.lang.annotations.Language
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
@@ -39,7 +40,7 @@ class ModuleGraphResolverTest {
         }
     }
 
-    private fun source(id: String, code: String, sourceName: String = id) =
+    private fun source(id: String, @Language("JavaScript") code: String, sourceName: String = id) =
         ModuleSource(id = id, source = code, sourceName = sourceName)
 
     @Test

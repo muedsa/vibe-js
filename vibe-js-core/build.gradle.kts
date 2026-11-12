@@ -105,6 +105,8 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+            // 测试内嵌 JavaScript 源码的 @Language 注入注解（KMP 通用元数据）。
+            implementation(libs.jetbrains.annotations)
         }
     }
 }

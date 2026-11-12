@@ -29,6 +29,7 @@ import com.muedsa.js.lexer.LexerException
 import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
+import org.intellij.lang.annotations.Language
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -45,10 +46,11 @@ import kotlin.test.assertTrue
  */
 class ParserModuleTest {
 
-    private fun parseModule(code: String) =
+    private fun parseModule(@Language("JavaScript") code: String) =
         Parser(Lexer(code, moduleContext = true).tokenize()).parseModule()
 
-    private fun parseScript(code: String) = Parser(Lexer(code).tokenize()).parseProgram()
+    private fun parseScript(@Language("JavaScript") code: String) =
+        Parser(Lexer(code).tokenize()).parseProgram()
 
     /** 取模块中第一个模块项的语句（用于只有普通语句的用例）。 */
     private fun firstStatement(module: ModuleProgram): Statement =

@@ -12,6 +12,7 @@ import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.PropertyKey
+import org.intellij.lang.annotations.Language
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -32,7 +33,7 @@ class ModuleExecutionMatrixTest {
         override suspend fun load(request: ModuleRequest): ModuleSource? = sources[request.specifier]
     }
 
-    private fun source(id: String, code: String) = ModuleSource(id, code)
+    private fun source(id: String, @Language("JavaScript") code: String) = ModuleSource(id, code)
 
     @Test
     fun `循环依赖求值后函数与 live binding 可用`() = runTest {

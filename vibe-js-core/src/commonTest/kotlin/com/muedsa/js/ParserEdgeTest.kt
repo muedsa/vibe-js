@@ -7,6 +7,7 @@ import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSError
 import kotlinx.coroutines.test.runTest
+import org.intellij.lang.annotations.Language
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -570,7 +571,7 @@ class ParserEdgeTest {
     // Unicode 标识符、sloppy let、rest 解构与早期错误
     // ================================================================
 
-    private fun parse(code: String) = Parser(Lexer(code).tokenize()).parseProgram()
+    private fun parse(@Language("JavaScript") code: String) = Parser(Lexer(code).tokenize()).parseProgram()
 
     @Test
     fun `Unicode 标识符与 u 转义标识符可解析`() = runTest {

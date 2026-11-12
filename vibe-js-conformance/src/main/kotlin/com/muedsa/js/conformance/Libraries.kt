@@ -1,5 +1,7 @@
 package com.muedsa.js.conformance
 
+import org.intellij.lang.annotations.Language
+
 /**
  * 固定版本的真实 JS 库清单（浏览器/UMD 构建）。
  */
@@ -14,7 +16,7 @@ internal data class LibrarySpec(
 
 internal data class SmokeCase(
     val name: String,
-    val source: String,
+    @Language("JavaScript") val source: String,
     /** 异步用例：脚本在微任务中把布尔结果写入 globalThis.__libResult */
     val async: Boolean = false,
 )
@@ -3168,7 +3170,7 @@ internal val librarySpecs: List<LibrarySpec> = listOf(
 )
 
 
-private fun assertion(expression: String): String = """
+private fun assertion(@Language("JavaScript") expression: String): String = """
     (function () {
         var value = ($expression);
         if (value !== true) {

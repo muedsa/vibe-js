@@ -9,6 +9,7 @@ import com.muedsa.js.runtime.module.internal.ModuleExportResolver
 import com.muedsa.js.runtime.module.internal.ModuleGraph
 import com.muedsa.js.runtime.module.internal.ModuleGraphResolver
 import com.muedsa.js.runtime.module.internal.ResolveExportResult
+import org.intellij.lang.annotations.Language
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -28,7 +29,7 @@ class ModuleExportResolverTest {
         sources: Map<String, ModuleSource> = emptyMap(),
     ): ModuleGraph = ModuleGraphResolver(EngineLimits()).load(entry, Provider(sources))
 
-    private fun source(id: String, code: String) = ModuleSource(id, code)
+    private fun source(id: String, @Language("JavaScript") code: String) = ModuleSource(id, code)
 
     @Test
     fun `本地导出解析到当前模块的本地绑定`() = runTest {

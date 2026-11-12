@@ -22,6 +22,7 @@ import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.PropertyKey
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import org.intellij.lang.annotations.Language
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -46,7 +47,7 @@ class ModuleExecutionTest {
         override suspend fun load(request: ModuleRequest): ModuleSource? = sources[request.specifier]
     }
 
-    private fun source(id: String, code: String, url: String? = null) =
+    private fun source(id: String, @Language("JavaScript") code: String, url: String? = null) =
         ModuleSource(id = id, source = code, url = url)
 
     @Test

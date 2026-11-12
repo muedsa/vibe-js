@@ -7,6 +7,7 @@ import com.muedsa.js.ast.VarDeclaration
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
+import org.intellij.lang.annotations.Language
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -18,7 +19,7 @@ import kotlin.test.assertTrue
  */
 class ParserTest {
 
-    private fun parse(code: String) = Parser(Lexer(code).tokenize()).parseProgram()
+    private fun parse(@Language("JavaScript") code: String) = Parser(Lexer(code).tokenize()).parseProgram()
 
     @Test
     fun `空语句`() {

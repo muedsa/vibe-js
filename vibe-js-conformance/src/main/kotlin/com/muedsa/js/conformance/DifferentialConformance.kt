@@ -8,6 +8,7 @@ import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSUndefined
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import org.intellij.lang.annotations.Language
 import java.io.File
 import java.time.Instant
 import kotlin.system.exitProcess
@@ -81,7 +82,7 @@ private fun markdownCell(value: String): String {
 
 internal data class DifferentialCase(
     val name: String,
-    val expression: String,
+    @Language("JavaScript") val expression: String,
 )
 
 private data class DifferentialResult(

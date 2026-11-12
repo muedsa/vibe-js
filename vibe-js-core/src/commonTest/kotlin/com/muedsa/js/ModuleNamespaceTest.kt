@@ -16,6 +16,7 @@ import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.PropertyDescriptor
 import com.muedsa.js.runtime.value.PropertyKey
+import org.intellij.lang.annotations.Language
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -40,7 +41,7 @@ class ModuleNamespaceTest {
         sources: Map<String, ModuleSource> = emptyMap(),
     ): ModuleGraph = ModuleGraphResolver(EngineLimits()).load(entry, Provider(sources))
 
-    private fun source(id: String, code: String) = ModuleSource(id, code)
+    private fun source(id: String, @Language("JavaScript") code: String) = ModuleSource(id, code)
 
     @Test
     fun `namespace 是空原型不可扩展对象且键排序`() = runTest {

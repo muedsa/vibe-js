@@ -15,6 +15,7 @@ import com.muedsa.js.runtime.value.JSFunction
 import com.muedsa.js.runtime.value.JSNumber
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSUndefined
+import org.intellij.lang.annotations.Language
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -39,7 +40,7 @@ class ModuleEnvironmentTest {
         sources: Map<String, ModuleSource> = emptyMap(),
     ): ModuleGraph = ModuleGraphResolver(EngineLimits()).load(entry, Provider(sources))
 
-    private fun source(id: String, code: String) = ModuleSource(id, code)
+    private fun source(id: String, @Language("JavaScript") code: String) = ModuleSource(id, code)
 
     @Test
     fun `声明实例化创建 var 函数与词法 TDZ 但不执行模块体`() = runTest {
