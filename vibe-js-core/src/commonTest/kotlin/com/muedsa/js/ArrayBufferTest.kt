@@ -45,6 +45,57 @@ class ArrayBufferTest {
     }
 
     @Test
+    fun `ArrayBuffer transfer 复制并分离源缓冲区`() = runTest {
+        val runtime = TestRuntime()
+        runtime.eval(
+            """
+            var source = new ArrayBuffer(4);
+            var sourceView = new Uint8Array(source);
+            sourceView[0] = 1;
+            sourceView[1] = 2;
+            sourceView[2] = 3;
+            sourceView[3] = 4;
+            var dest = source.transfer(6);
+            var destView = new Uint8Array(dest);
+            var sourceDetached = false;
+            try {
+              source.slice();
+            } catch (error) {
+              sourceDetached = error instanceof TypeError;
+            }
+            var same = new ArrayBuffer(2).transfer();
+            """.trimIndent()
+        )
+        assertEquals(0.0, runtime.evalNumber("source.byteLength"))
+        assertEquals(6.0, runtime.evalNumber("dest.byteLength"))
+        assertEquals(false, runtime.evalBoolean("dest.resizable"))
+        assertEquals(6.0, runtime.evalNumber("dest.maxByteLength"))
+        assertEquals(1.0, runtime.evalNumber("destView[0]"))
+        assertEquals(4.0, runtime.evalNumber("destView[3]"))
+        assertEquals(0.0, runtime.evalNumber("destView[4]"))
+        assertEquals(true, runtime.evalBoolean("sourceDetached"))
+        assertEquals(2.0, runtime.evalNumber("same.byteLength"))
+    }
+
+    @Test
+    fun `ArrayBuffer transfer 非法长度与 detached 源抛错`() = runTest {
+        val runtime = TestRuntime()
+        for (code in listOf(
+            "new ArrayBuffer(2).transfer(-1);",
+            "new ArrayBuffer(2).transfer(Infinity);",
+        )) {
+            val error = assertFailsWith<JSException> { runtime.eval(code) }
+            assertEquals("RangeError", (error.value as JSError).errorName, code)
+        }
+        val detached = assertFailsWith<JSException> {
+            runtime.eval(
+                "(function () { var b = new ArrayBuffer(2); b.transfer(); return b.transfer(); })();"
+            )
+        }
+        assertEquals("TypeError", (detached.value as JSError).errorName)
+    }
+
+    @Test
     fun `ArrayBuffer 不带 new 调用抛 TypeError`() = runTest {
         val runtime = TestRuntime()
         val error = assertFailsWith<JSException> { runtime.eval("ArrayBuffer(8);") }

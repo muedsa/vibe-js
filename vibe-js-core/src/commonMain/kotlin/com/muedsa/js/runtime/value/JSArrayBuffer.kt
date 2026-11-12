@@ -4,8 +4,8 @@ package com.muedsa.js.runtime.value
  * ArrayBuffer 对象。
  *
  * 当前（L3.5）支持固定长度缓冲区与分离（detach）语义，仍不支持：
- * - 可调整大小（resizable / [[ArrayBufferMaxByteLength]]）；
- * - transfer / transferToFixedLength（L3.6 再补）。
+ * - 可调整大小（resizable / [[ArrayBufferMaxByteLength]]）尚未实现；
+ * - transfer / transferToFixedLength 已支持固定长度缓冲区。
  *
  * [[ArrayBufferData]] 使用 Kotlin 通用标准库的 [ByteArray] 保存，因此长度上限
  * 受 [Int.MAX_VALUE] 约束；更长的请求由构造器按规范抛 RangeError。

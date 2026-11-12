@@ -211,6 +211,7 @@ internal object Test262Selection {
         "BigInt",
         // L3.5 已实现 ArrayBuffer detach、DataView 与 TypedArray（含 BigInt 视图）语义
         "TypedArray", "ArrayBuffer", "DataView",
+        "arraybuffer-transfer",
         "DataView.prototype.getInt8", "DataView.prototype.getUint8",
         "DataView.prototype.getInt16", "DataView.prototype.getUint16",
         "DataView.prototype.getInt32", "DataView.prototype.getUint32",
@@ -290,6 +291,7 @@ internal object Test262Selection {
         "class-fields-private-in", "class-static-block",
         "Array.prototype.at", "String.prototype.at",
         "change-array-by-copy", "array-find-from-last",
+        "arraybuffer-transfer",
         "error-cause", "Array.fromAsync",
         "String.prototype.isWellFormed", "String.prototype.toWellFormed",
         "well-formed-json-stringify",
@@ -336,7 +338,7 @@ internal object Test262Selection {
         "dynamic-import", "import-attributes", "top-level-await",
         "import-defer", "import-bytes", "import-text", "json-modules",
         "source-phase-imports", "source-phase-imports-module-source",
-        "resizable-arraybuffer", "arraybuffer-transfer", "Float16Array",
+        "resizable-arraybuffer", "Float16Array",
         "Temporal", "ShadowRealm",
     )
 

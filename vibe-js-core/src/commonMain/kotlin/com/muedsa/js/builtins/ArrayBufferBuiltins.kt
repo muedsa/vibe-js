@@ -20,7 +20,7 @@ import com.muedsa.js.runtime.value.PropertyKey
  * - `slice` 在分离时抛 TypeError（含 species 构造期间被分离的复检）；
  * - `isView` 识别 DataView 与全部 TypedArray（含 BigInt64Array/BigUint64Array），
  *   分离后仍返回 true；
- * - 仍不支持 resizable / transfer（L3.6）。
+ * - 支持固定长度缓冲区的 transfer / transferToFixedLength；resizable 仍不支持（L3.6）。
  */
 object ArrayBufferBuiltins {
 
@@ -72,6 +72,48 @@ object ArrayBufferBuiltins {
                     "ArrayBuffer.prototype.byteLength",
                 )
                 JSNumber(buffer.byteLength.toDouble())
+            },
+            set = null,
+            enumerable = false,
+            configurable = true,
+        )
+
+        // 固定长度 ArrayBuffer 的 ES2024 兼容访问器：resizable=false，
+        // maxByteLength 等于当前 byteLength。真正的 resizable 语义仍不在范围内。
+        prototype.defineAccessorProperty(
+            key = PropertyKey.Str("resizable"),
+            get = BuiltinHelpers.method(intrinsics, "get resizable", 0) { interpreter, thisValue, _ ->
+                requireArrayBuffer(interpreter, thisValue, "ArrayBuffer.prototype.resizable")
+                JSBoolean.FALSE
+            },
+            set = null,
+            enumerable = false,
+            configurable = true,
+        )
+        prototype.defineAccessorProperty(
+            key = PropertyKey.Str("maxByteLength"),
+            get = BuiltinHelpers.method(intrinsics, "get maxByteLength", 0) { interpreter, thisValue, _ ->
+                val buffer = requireArrayBuffer(
+                    interpreter,
+                    thisValue,
+                    "ArrayBuffer.prototype.maxByteLength",
+                )
+                JSNumber(buffer.byteLength.toDouble())
+            },
+            set = null,
+            enumerable = false,
+            configurable = true,
+        )
+
+        prototype.defineAccessorProperty(
+            key = PropertyKey.Str("detached"),
+            get = BuiltinHelpers.method(intrinsics, "get detached", 0) { interpreter, thisValue, _ ->
+                val buffer = requireArrayBuffer(
+                    interpreter,
+                    thisValue,
+                    "ArrayBuffer.prototype.detached",
+                )
+                JSBoolean.getJsBoolean(buffer.isDetached)
             },
             set = null,
             enumerable = false,
@@ -137,6 +179,26 @@ object ArrayBufferBuiltins {
             },
         )
 
+        // ES2024 ArrayBuffer.prototype.transfer / transferToFixedLength。
+        // 固定长度缓冲区上二者语义一致；resizable 源暂不支持。
+        prototype.defineDataProperty(
+            key = PropertyKey.Str("transfer"),
+            value = BuiltinHelpers.method(intrinsics, "transfer", 0) { interpreter, thisValue, args ->
+                transferBuffer(interpreter, thisValue, args, "ArrayBuffer.prototype.transfer")
+            },
+        )
+        prototype.defineDataProperty(
+            key = PropertyKey.Str("transferToFixedLength"),
+            value = BuiltinHelpers.method(intrinsics, "transferToFixedLength", 0) { interpreter, thisValue, args ->
+                transferBuffer(
+                    interpreter,
+                    thisValue,
+                    args,
+                    "ArrayBuffer.prototype.transferToFixedLength",
+                )
+            },
+        )
+
         // ArrayBuffer.isView(arg)：DataView 与 11 种 TypedArray 都是视图对象
         constructor.defineDataProperty(
             key = PropertyKey.Str("isView"),
@@ -167,6 +229,44 @@ object ArrayBufferBuiltins {
         )
 
         registry.defineGlobal("ArrayBuffer", constructor)
+    }
+
+    /**
+     * ArrayBufferCopyAndDetach 的固定长度子集。
+     *
+     * 先按新长度构造 `%ArrayBuffer%`，复制 min(新旧长度) 字节，最后分离源缓冲区。
+     * resizable 源尚未支持，因此 `transfer` 与 `transferToFixedLength` 共用此实现。
+     */
+    private suspend fun transferBuffer(
+        interpreter: Interpreter,
+        thisValue: JSValue,
+        args: List<JSValue>,
+        name: String,
+    ): JSValue {
+        val buffer = requireArrayBuffer(interpreter, thisValue, name)
+        if (buffer.isDetached) {
+            interpreter.typeError("$name called on a detached ArrayBuffer")
+        }
+        val lengthArgument = args.getOrNull(0)
+        val newLength = if (lengthArgument == null || lengthArgument is JSUndefined) {
+            buffer.byteLength
+        } else {
+            val index = interpreter.toIndex(lengthArgument)
+            if (index > MAX_BYTE_LENGTH.toLong()) {
+                interpreter.rangeError("Array buffer allocation failed")
+            }
+            index.toInt()
+        }
+        val result = JSArrayBuffer(
+            prototype = interpreter.intrinsics.arrayBufferPrototype,
+            byteLength = newLength,
+        )
+        val copyLength = minOf(buffer.byteLength, newLength)
+        if (copyLength > 0) {
+            buffer.copyInto(result, start = 0, targetStart = 0, count = copyLength)
+        }
+        buffer.detach()
+        return result
     }
 
     /** 品牌检查：ArrayBuffer.prototype 上的方法只接受真正的 ArrayBuffer。 */

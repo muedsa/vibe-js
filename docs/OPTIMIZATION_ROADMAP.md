@@ -14,15 +14,15 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1206 / 1206** | 2026-11-12 本地运行 |
-| core JS / Wasm（Node） | 各 **1190 / 1190** | 2026-11-12 复跑 |
+| core JVM 单元测试 | **1208 / 1208** | 2026-11-12 本地运行 |
+| core JS / Wasm（Node） | 各 **1192 / 1192** | 2026-11-12 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **44 / 44** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-12 复跑 |
-| Test262 ES2015 | **62,230 / 62,230**，失败 0，崩溃 0 | 选中 32,515；跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Test262 ES2016+ | **17,436 / 17,436**，失败 0，崩溃 0 | 选中 8,839；跳过 15（module flag） |
+| Test262 ES2015 | **62,302 / 62,302**，失败 0，崩溃 0 | 选中 32,551；跳过 **324**（module flag 322 + `$262`/`print` 2） |
+| Test262 ES2016+ | **17,508 / 17,508**，失败 0，崩溃 0 | 选中 8,875；跳过 15（module flag） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0 | 默认 `language/module-code/top-level-await` |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0 | 3 条 source-phase-imports 跳过 |
 | Test262 language module | **686 / 686**，失败 0，崩溃 0 | 131 条未支持 module 特性跳过 |
@@ -36,7 +36,7 @@
 - **语言**：ES5 + ES2015 常用语法，以及 `using` / `await using`、严格模式尾调用优化。
 - **生成器与异步迭代**：同步/异步 Generator、`yield` / `yield*`、`for await...of`。
 - **元编程**：Proxy 13 个 trap、`Proxy.revocable`、不变量校验；Reflect 13 个方法。
-- **二进制与数值**：BigInt、11 种 TypedArray、ArrayBuffer、DataView、detach 语义。
+- **二进制与数值**：BigInt、11 种 TypedArray、ArrayBuffer、DataView、detach/transfer 语义。
 - **集合与内建**：Iterator helpers、DisposableStack / AsyncDisposableStack、Promise 组合、`RegExp.escape`、ES2025 Set 方法等。
 - **宿主生态**：`:vibe-js-host` 提供 TextEncoder/TextDecoder（UTF-8、fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/二进制/循环）、URL/URLSearchParams 常用子集。
 - **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值，但 API 需 opt-in；Test262 module TLA 249/249、module-code 593/593、language module 686/686；宿主加载器仍无计划。
@@ -44,7 +44,7 @@
 
 ### 1.3 当前边界
 
-当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备异步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA；宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/transfer ArrayBuffer 不在范围。
+当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备异步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA；宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable/immutable ArrayBuffer 不在范围。
 
 ## 2. 排序原则
 
@@ -468,7 +468,7 @@ data class EngineLimits(
 | Intl | **无计划 / 范围外** | `toLocaleString` 保持简化行为 |
 | 真实 DOM / Web API | **无计划 / 范围外** | fetch、localStorage、document 等由宿主自行提供 |
 | SharedArrayBuffer / Atomics | **无计划 / 范围外** | 单线程模型不引入共享内存 |
-| resizable / transfer ArrayBuffer | **无计划 / 范围外** | 只支持固定长度与宿主 detach |
+| resizable / immutable ArrayBuffer | **无计划 / 范围外** | 只支持固定长度、transfer 与宿主 detach |
 | Temporal / Float16Array / 装饰器 / ShadowRealm | **无计划 / 范围外** | 不在当前语言范围 |
 | `export using` | **无计划** | 模块执行其余部分已落地；TLA/module TLA 子集已完成 |
 | WeakRef / FinalizationRegistry | **无计划** | 并入 M2 弱引用方向 |
@@ -538,7 +538,7 @@ data class EngineLimits(
 8. **平台差异**：JS/Wasm 单线程；Native/Android/Apple 仅 CI 或历史记录，文档结论必须带“本地/CI”标注。
 9. **BigInt 内存上限**：`MAX_RESULT_BITS = 2^24`；大数运算可能触发 RangeError，这是规范允许的实现定义限制。
 10. **WeakMap/WeakSet 仍是强引用**：不能当作长期缓存自动清理机制；M2 无计划。
-11. **范围外能力不要混入缺口**：Intl、DOM/Web API、SAB/Atomics、resizable/transfer 等应标注“无计划/范围外”，不能作为回归处理。
+11. **范围外能力不要混入缺口**：Intl、DOM/Web API、SAB/Atomics、resizable/immutable 等应标注“无计划/范围外”，不能作为回归处理。
 12. **文档一致性**：README、COMPATIBILITY、CONFORMANCE 中不得再出现“模块执行 P0/下一阶段”的承诺；Parser 前置可标为实验性实现，但执行/加载/harness 必须标为未实现/无计划。
 
 ## 11. 关键文件入口
@@ -568,8 +568,9 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
-| 2026-11-12 | **ES2016+ 第二批**：纳入全部 DataView.prototype.* 方法标注、11 种 TypedArray 构造器标注；ES2015 62,230/62,230、ES2016+ 17,436/17,436 |---|
-| 2026-11-12 | **ES2016+ 基线启动**：新增 `test262Es2016PlusConformance`，以已实现后 ES2015 特性为版本种子，17,436/17,436 通过；同时纳入 `Reflect.set`/`Reflect.setPrototypeOf`/`DataView.prototype.setUint8`/`TypedArray.prototype.at`，ES2015 扩展到 62,230/62,230 |
+| 2026-11-12 | **ArrayBuffer transfer 批次**：新增 `transfer`/`transferToFixedLength`、`resizable`/`maxByteLength`/`detached` 访问器；ES2015 62,302/62,302、ES2016+ 17,508/17,508；核心 JVM 1208、JS/Wasm 1192 |
+| 2026-11-12 | **ES2016+ 第二批**：纳入全部 DataView.prototype.* 方法标注、11 种 TypedArray 构造器标注；ES2015 62,230/62,230、ES2016+ 17,436/17,436 |
+| 2026-11-12 | **ES2016+ 基线启动**：新增 `test262Es2016PlusConformance`，以已实现后 ES2015 特性为版本种子，17,432/17,432 通过；同时纳入 `Reflect.set`/`Reflect.setPrototypeOf`/`DataView.prototype.setUint8`/`TypedArray.prototype.at`，ES2015 扩展到 62,044/62,044 |
 | 2026-11-12 | **module language Phase B 完成**：module 顶层 `using`/`await using` 释放、动态 import 目标 SyntaxError 映射、`import.meta` 按函数所属模块隔离；`language` module 子集 686/686（131 条未支持特性跳过）；新增 `test262ModuleLanguageConformance` strict 门禁；核心 JVM 1206、JS/Wasm 1190 |
 | 2026-11-12 | **module-code 全绿**：修复间接导出循环/链接期校验、默认导出函数提升/命名、class 可变绑定、namespace define/delete/has/set 与 super TDZ；`language/module-code` 593/593（3 条 source-phase-imports 跳过）；新增 `test262ModuleCodeConformance` strict 门禁；核心 JVM 1203、JS/Wasm 1187 |
 | 2026-11-12 | **TLA 完成（Module goal）**：新增 `EventLoop.runAsyncTask`、`ModuleStatus.EVALUATING_ASYNC`、异步依赖/cycle root；`Engine.runModule` 接入异步求值；Test262 module TLA 子集 249/249；完整 module-code 560/593（既有缺口）；核心 JVM 1199、JS/Wasm 1183、host 40、conformance 42；全量 parser/ES5/ES2015/差分/真实库 strict 全绿 |

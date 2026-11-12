@@ -4,12 +4,12 @@
 
 > 当前覆盖 ES5 与 ES2015 的常用语法和内建，并已实现部分 ES2016+ 特性。
 > Generator / async generator、`for await`、Proxy / Reflect、BigInt、
-> TypedArray / ArrayBuffer / DataView（含 detach 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
+> TypedArray / ArrayBuffer / DataView（含 detach/transfer 语义）均已支持并纳入 Test262 基线（2026-11-09，`53fb71b`）。
 > 模块侧已能通过 `Parser.parseModule` 解析 `import` / `export` 声明、`import.meta`、
 > `import()` 表达式、导入属性 `with { ... }` 与模块顶层 `await` 语法；阶段 0–9 已实现实验性 `Engine.runModule`（Provider、链接、
 > 环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与异步求值），TLA 仅在 Module goal 接通；**宿主加载器尚未实现**，API 需 `@ExperimentalModuleApi` opt-in。
 > 真实剩余差异集中在：WeakRef / FinalizationRegistry、Intl、DOM/Web API、
-> SharedArrayBuffer / Atomics、resizable / transfer ArrayBuffer；TLA 验收见 [TLA_DESIGN.md](TLA_DESIGN.md)，性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
+> SharedArrayBuffer / Atomics、resizable / immutable ArrayBuffer；TLA 验收见 [TLA_DESIGN.md](TLA_DESIGN.md)，性能优化（B2）与 API 契约（PKG1）均为无计划；R1 资源约束已完成主要路径加固。
 > 宿主生态已提供 TextEncoder/TextDecoder（UTF-8）、
 > structuredClone 与 URL/URLSearchParams 常用子集（`:vibe-js-host`）。
 
@@ -90,7 +90,7 @@
 | BigInt | ✅ | `BigInt()`、`asIntN`/`asUintN`、任意精度算术/位运算/移位/比较、`toString(radix)`；与 Number 混用、`JSON.stringify` 直接序列化均抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制（超出抛 RangeError） |
 | Proxy | ✅ | 13 个 trap、`Proxy.revocable`、撤销状态；`getOwnPropertyDescriptor`/`defineProperty`/`deleteProperty`/`ownKeys`/`get`/`set`/`has`/`isExtensible`/`preventExtensions` 等不变量校验；撤销后所有操作抛 TypeError |
 | Reflect | ✅ | 13 个方法（apply/construct/defineProperty/deleteProperty/get/getOwnPropertyDescriptor/getPrototypeOf/has/isExtensible/ownKeys/preventExtensions/set/setPrototypeOf）；失败返回 false，target 参数错误抛 TypeError，支持 receiver |
-| ArrayBuffer / DataView / TypedArray | ✅ | ArrayBuffer（`byteLength`/`slice`/`isView`/detach）；DataView 8 种数值 + 4 种 BigInt 读写（大小端由 `littleEndian` 参数控制）；11 种 TypedArray（9 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序），构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；**不支持 resizable / transfer**（不在当前范围，见 §6） |
+| ArrayBuffer / DataView / TypedArray | ✅ | ArrayBuffer（`byteLength`/`slice`/`isView`/`transfer`/`detach`）；DataView 8 种数值 + 4 种 BigInt 读写（大小端由 `littleEndian` 参数控制）；11 种 TypedArray（9 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序），构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；**支持 transfer/transferToFixedLength；不支持 resizable**（见 §6） |
 | Generator / AsyncGenerator | ✅ | 同步/异步生成器、`yield`/`yield*`、`next`/`return`/`throw`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定与默认参数在调用生成器函数时完成 |
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；SameValueZero 索引存储：get/set/has/delete 均摊 O(1)、size O(1)，墓碑在无活跃迭代器时压缩；forEach 与迭代器为实时语义（遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代、支持非注册 Symbol 键，但**底层是强引用存储，未实现 GC 弱语义**（M2），不能当作长期缓存的自动清理机制 |
 | Iterator | ✅ | 抽象构造器（可 extends）、`Iterator.from`/`concat`/`zip`/`zipKeyed`、helpers（含 chunks/windows/includes/join）、独立迭代器原型与 constructor/@@toStringTag 访问器 |
@@ -128,18 +128,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1206** + 宿主 40 个测试（2026-11-12 记录） |
-| JS（Node） | ✅ | 核心 **1190** + 宿主 40 个测试 |
-| Wasm（Node） | ✅ | 核心 **1190** + 宿主 40 个测试 |
+| JVM | ✅ | 核心 **1208** + 宿主 40 个测试（2026-11-12 记录） |
+| JS（Node） | ✅ | 核心 **1192** + 宿主 40 个测试 |
+| Wasm（Node） | ✅ | 核心 **1192** + 宿主 40 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1206 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1190。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1208 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1192。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-12）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **62,230/62,230**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；ES2016+ **17,436/17,436**，跳过 15；module TLA **249/249**；module-code **593/593**；language module **686/686**；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-12）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **62,302/62,302**，失败 0、跳过 **324**（module flag 322 + 宿主钩子 2）；ES2016+ **17,508/17,508**，跳过 15；module TLA **249/249**；module-code **593/593**；language module **686/686**；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -166,7 +166,7 @@
 - 宿主生态已实现 UTF-8 子集：TextEncoder（encode/encodeInto）、TextDecoder（fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/ArrayBuffer/视图/循环）、URL/URLSearchParams 常用能力；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API；
 - WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 使用强引用存储，没有 GC 弱语义，不能用于长期缓存的自动回收（M2 无计划）；
 - Intl、SharedArrayBuffer / Atomics、Temporal / Float16Array / 装饰器 / ShadowRealm 不在当前范围或明确无计划；
-- ArrayBuffer 不支持 resizable / transfer：`ArrayBuffer.prototype.resize` / `transfer` 不存在；分离（detach）状态只能由宿主调用 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 触发，JS 语言本身没有公开 detach API；
+- ArrayBuffer 支持 `transfer`/`transferToFixedLength` 与 `detached`；不支持 `resizable`（`resize`/`maxByteLength` 可变语义尚未实现），宿主持久 detach 仍通过 `JSArrayBuffer.detach()` 或 Test262 的 `$262.detachArrayBuffer` 提供；
 - BigInt 是任意精度实现，但 `MAX_RESULT_BITS = 2^24`（16,777,216 位）；超过上限的 `pow` / 左移 / `asIntN` / `asUintN` 抛 RangeError，这是规范允许的实现定义上限；
 - 其他已知行为/差异：TypedArray 固定小端序；`BigInt("")` 返回 `0n`；`toLocaleString` 使用十进制兜底；`Object.freeze` / `Object.seal` 对非空 TypedArray 抛 `TypeError`，空 TypedArray 成功（与规范及 Node 一致）；
 - R1 资源约束已覆盖源码/嵌套/AST/对象/JSON/正则/排队任务/微任务；第三批补充 `JSON.stringify` 的 `maxJsonDepth` 检查，并在 `maxRegexSteps` 显式降到默认值以下时把常见嵌套量词正则路由到受该预算约束的回退引擎。Kotlin Regex 快路径仍由平台实现，不消耗该预算，这是文档化的边界；`EngineLimits` 不是进程级隔离；
