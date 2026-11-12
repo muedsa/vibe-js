@@ -40,7 +40,13 @@ internal object ModuleExportResolver {
 
         val explicit = module.program.exportEntries.firstOrNull { it.exportName == exportName }
         if (explicit != null) {
-            return resolveExplicit(module, explicit.importName, explicit.moduleRequest, explicit.localName)
+            return resolveExplicit(
+                module = module,
+                importName = explicit.importName,
+                moduleRequest = explicit.moduleRequest,
+                localName = explicit.localName,
+                resolveSet = resolveSet,
+            )
         }
 
         // `export *` 不导出 default；default 只能由显式条目提供。
@@ -72,14 +78,24 @@ internal object ModuleExportResolver {
         importName: String?,
         moduleRequest: String?,
         localName: String?,
+        resolveSet: MutableList<Pair<ModuleRecord, String>>,
     ): ResolveExportResult {
         if (moduleRequest == null) {
-            return localName?.let { ResolveExportResult.Resolved(module, it) }
-                ?: ResolveExportResult.NotFound
+            val local = localName ?: return ResolveExportResult.NotFound
+            // `export { foo }` 若 foo 是 import 绑定，规范要求继续解析到原始导出，
+            // 否则两个星号导出会错误地把同一绑定判成不同模块的歧义。
+            val imported = module.program.importEntries.firstOrNull { it.localName == local }
+            if (imported != null) {
+                val target = module.dependencyFor(imported.moduleRequest)
+                    ?: return ResolveExportResult.NotFound
+                if (imported.importName == "*") return ResolveExportResult.Namespace(target)
+                return resolveExport(target, imported.importName, resolveSet)
+            }
+            return ResolveExportResult.Resolved(module, local)
         }
         val target = module.dependencyFor(moduleRequest) ?: return ResolveExportResult.NotFound
         if (importName == "*") return ResolveExportResult.Namespace(target)
-        return importName?.let { resolveExport(target, it) } ?: ResolveExportResult.NotFound
+        return importName?.let { resolveExport(target, it, resolveSet) } ?: ResolveExportResult.NotFound
     }
 
     /** 返回排序、去重后的导出名集合；星号导出排除 default。 */

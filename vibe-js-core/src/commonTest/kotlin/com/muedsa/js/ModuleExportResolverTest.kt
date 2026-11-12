@@ -147,4 +147,16 @@ class ModuleExportResolverTest {
         )
         assertEquals(ResolveExportResult.NotFound, ModuleExportResolver.resolveExport(graph.entry, "x"))
     }
+
+    @Test
+    fun `间接导出循环不会无限递归`() = runTest {
+        val graph = graph(
+            source("a", "export { x } from \"./b.js\";"),
+            mapOf(
+                "./b.js" to source("b", "export { x } from \"./a.js\";"),
+                "./a.js" to source("a", "export { x } from \"./b.js\";"),
+            ),
+        )
+        assertEquals(ResolveExportResult.NotFound, ModuleExportResolver.resolveExport(graph.entry, "x"))
+    }
 }

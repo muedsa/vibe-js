@@ -2,6 +2,7 @@
 
 package com.muedsa.js.runtime.module.internal
 
+import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
@@ -20,6 +21,7 @@ import com.muedsa.js.runtime.value.PropertyKey
 internal class JSModuleNamespace(
     private val record: ModuleRecord,
     private val symbolToStringTag: JSSymbol,
+    private val interpreter: Interpreter,
 ) : JSObject(prototype = null) {
 
     init {
@@ -55,7 +57,8 @@ internal class JSModuleNamespace(
     }
 
     override fun hasOwnProperty(key: PropertyKey): Boolean =
-        getOwnProperty(key) != null
+        (key is PropertyKey.Sym && key.symbol === symbolToStringTag) ||
+            (key is PropertyKey.Str && isExportName(key.value))
 
     override fun ownPropertyKeys(): List<PropertyKey> {
         val keys = ArrayList<PropertyKey>(record.exportedNames.size + 1)
@@ -64,7 +67,40 @@ internal class JSModuleNamespace(
         return keys
     }
 
-    override fun defineOwnProperty(key: PropertyKey, descriptor: PropertyDescriptor): Boolean = false
+    /**
+     * 规范 [[DefineOwnProperty]]：只允许不改变现有描述的请求。
+     *
+     * 不能直接复用普通对象的 ValidateAndApply，因为 namespace 的导出描述
+     * 由内部槽实时生成，且不可扩展。
+     */
+    override fun defineOwnProperty(key: PropertyKey, descriptor: PropertyDescriptor): Boolean {
+        if (key is PropertyKey.Sym) {
+            if (key.symbol !== symbolToStringTag) return false
+            if (descriptor.isAccessor) return false
+            if (descriptor.hasConfigurable && descriptor.configurable) return false
+            if (descriptor.hasEnumerable && descriptor.enumerable) return false
+            if (descriptor.hasWritable && descriptor.writable) return false
+            if (descriptor.hasValue) {
+                val value = descriptor.value
+                if (value !is JSString || value.value != "Module") return false
+            }
+            return true
+        }
+        if (key !is PropertyKey.Str || !isExportName(key.value)) return false
+        if (descriptor.isAccessor) return false
+        if (descriptor.hasConfigurable && descriptor.configurable) return false
+        if (descriptor.hasEnumerable && !descriptor.enumerable) return false
+        if (descriptor.hasWritable && !descriptor.writable) return false
+        if (descriptor.hasValue && !interpreter.sameValue(descriptor.value!!, bindingValue(key.value))) {
+            return false
+        }
+        return true
+    }
 
-    override fun deleteOwnProperty(key: PropertyKey): Boolean = false
+    /** 规范 [[Delete]]：导出名与 @@toStringTag 不可删，其余键返回 true。 */
+    override fun deleteOwnProperty(key: PropertyKey): Boolean = when (key) {
+        is PropertyKey.Str -> !isExportName(key.value)
+        is PropertyKey.Sym -> key.symbol !== symbolToStringTag
+        else -> true
+    }
 }

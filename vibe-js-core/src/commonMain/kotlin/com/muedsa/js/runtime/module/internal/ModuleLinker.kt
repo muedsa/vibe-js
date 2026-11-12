@@ -69,6 +69,48 @@ internal object ModuleLinker {
                     )
                 }
             }
+
+            // ModuleDeclarationInstantiation 会先解析所有间接导出；循环或缺失必须
+            // 在求值前报 SyntaxError，不能让 `$DONOTEVALUATE()` 进入模块体。
+            for (entry in record.program.exportEntries) {
+                val importName = entry.importName ?: continue
+                if (entry.moduleRequest == null || importName == "*") continue
+                val target = record.dependencyFor(entry.moduleRequest)
+                    ?: throw ModuleLinkException(
+                        kind = ModuleLinkErrorKind.NOT_FOUND,
+                        specifier = entry.moduleRequest,
+                        referrer = record.id,
+                        moduleId = record.id,
+                        sourceName = record.source.sourceName,
+                        range = entry.range,
+                        message = "Module dependency was not loaded: ${entry.moduleRequest}",
+                    )
+                when (ModuleExportResolver.resolveExport(target, importName)) {
+                    ResolveExportResult.NotFound -> throw ModuleLinkException(
+                        kind = ModuleLinkErrorKind.MISSING_EXPORT,
+                        specifier = entry.moduleRequest,
+                        referrer = record.id,
+                        moduleId = target.id,
+                        exportName = entry.exportName,
+                        sourceName = record.source.sourceName,
+                        range = entry.range,
+                        message = "Indirect export '${entry.exportName}' cannot be resolved in ${target.id}",
+                    )
+
+                    ResolveExportResult.Ambiguous -> throw ModuleLinkException(
+                        kind = ModuleLinkErrorKind.AMBIGUOUS_EXPORT,
+                        specifier = entry.moduleRequest,
+                        referrer = record.id,
+                        moduleId = target.id,
+                        exportName = entry.exportName,
+                        sourceName = record.source.sourceName,
+                        range = entry.range,
+                        message = "Indirect export '${entry.exportName}' is ambiguous in ${target.id}",
+                    )
+
+                    else -> Unit
+                }
+            }
             // GetExportedNames 会保留星号导出的候选名；namespace 只暴露能唯一解析的名字，
             // 因而同名的多个 `export *` 来源不应出现在 namespace 键中。
             record.exportedNames = ModuleExportResolver.exportedNames(record).filter { name ->

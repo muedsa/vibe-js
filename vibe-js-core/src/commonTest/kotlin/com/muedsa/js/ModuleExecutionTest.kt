@@ -13,6 +13,7 @@ import com.muedsa.js.runtime.module.ModuleLinkException
 import com.muedsa.js.runtime.module.ModuleProvider
 import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
+import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSError
 import com.muedsa.js.runtime.value.JSFunction
 import com.muedsa.js.runtime.value.JSNumber
@@ -532,6 +533,77 @@ class ModuleExecutionTest {
 
         val result = engine.interpreter.getProperty(namespace, PropertyKey.Str("result"))
         assertEquals("ready", (result as JSString).value)
+    }
+
+    @Test
+    fun `模块 namespace 的 has define delete set 语义`() = runTest {
+        val engine = Engine()
+        val namespace = engine.runModule(
+            source(
+                "a",
+                """
+                import * as ns from "./ns.js";
+                export const has = "renamed" in ns;
+                export const missing = "missing" in ns;
+                export const deleted = delete ns.missing;
+                export const defined = Reflect.defineProperty(ns, "renamed", {});
+                export const set = Reflect.set(ns, "renamed", 2);
+                """.trimIndent(),
+            ),
+            Provider(
+                mapOf(
+                    "./ns.js" to source(
+                        "ns",
+                        """
+                        export let local = 1;
+                        export { local as renamed };
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        suspend fun value(name: String): Boolean =
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str(name)) as JSBoolean).value
+
+        assertTrue(value("has"))
+        assertFalse(value("missing"))
+        assertTrue(value("deleted"))
+        assertTrue(value("defined"))
+        assertFalse(value("set"))
+    }
+
+    @Test
+    fun `取消 runModule 会停止等待中的 TLA`() = runTest {
+        val engine = Engine()
+        val job = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            engine.runModule(
+                source("a", "await new Promise(function () {});"),
+            )
+        }
+        runCurrent()
+
+        job.cancelAndJoin()
+
+        assertTrue(job.isCancelled)
+        // 取消后事件循环仍可继续执行普通脚本。
+        assertEquals(2.0, (engine.run("1 + 1") as JSNumber).value)
+    }
+
+    @Test
+    fun `TLA 恢复后的预算仍然生效`() = runTest {
+        val engine = Engine(limits = EngineLimits(maxSteps = 2_000))
+        assertFailsWith<ExecutionLimitException> {
+            engine.runModule(
+                source(
+                    "a",
+                    """
+                    await Promise.resolve();
+                    while (true) {}
+                    """.trimIndent(),
+                ),
+            )
+        }
     }
 
     @Test

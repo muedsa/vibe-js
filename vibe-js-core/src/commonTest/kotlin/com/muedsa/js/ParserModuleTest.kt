@@ -283,10 +283,12 @@ class ParserModuleTest {
     }
 
     @Test
-    fun `匿名默认导出函数与类按表达式处理`() {
+    fun `匿名默认导出函数按声明、类按表达式处理`() {
         val function = parseModule("export default function () {}")
         val functionDeclaration = assertIs<ExportDefaultDeclaration>(function.items.single())
-        assertIs<FunctionExpression>(functionDeclaration.expression)
+        val declaration = assertIs<FunctionDeclaration>(functionDeclaration.declaration)
+        assertEquals("*default*", declaration.name)
+        assertNull(functionDeclaration.expression)
 
         val clazz = parseModule("export default class {}")
         val classDeclaration = assertIs<ExportDefaultDeclaration>(clazz.items.single())

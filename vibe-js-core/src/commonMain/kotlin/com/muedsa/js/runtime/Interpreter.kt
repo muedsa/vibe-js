@@ -89,6 +89,7 @@ import com.muedsa.js.runtime.exception.StackFrame
 import com.muedsa.js.runtime.exception.StackFrameLink
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleLinkException
+import com.muedsa.js.runtime.module.internal.JSModuleNamespace
 import com.muedsa.js.runtime.module.internal.ModuleRecord
 import com.muedsa.js.runtime.module.internal.ModuleRuntime
 import com.muedsa.js.runtime.regex.JsRegex
@@ -389,7 +390,11 @@ class Interpreter(
                 if (declaration != null) {
                     executeStatement(declaration)
                 } else if (expression != null) {
-                    val value = evaluate(expression)
+                    val value = if (isAnonymousFunctionDefinition(expression)) {
+                        evaluateNamed(expression, "default")
+                    } else {
+                        evaluate(expression)
+                    }
                     (currentFrame.lexicalEnv as? DeclarativeEnvironment)
                         ?.initializeLexical("*default*", value)
                 }
@@ -1105,7 +1110,13 @@ class Interpreter(
                     is JSTypedArray.IndexKey.Valid -> return true
                 }
             }
-            if (current.getOwnProperty(key) != null) return true
+            // Module namespace 的 [[HasProperty]] 不能读取绑定值；
+            // 其他对象仍走 [[GetOwnProperty]]，保持数组/TypedArray 等存储语义。
+            if (current is JSModuleNamespace) {
+                if (current.hasOwnProperty(key)) return true
+            } else if (current.getOwnProperty(key) != null) {
+                return true
+            }
             current = current.prototype
         }
         return false
@@ -1218,6 +1229,11 @@ class Interpreter(
     ): Boolean {
         val receiverObject = receiver as? JSObject ?: return false
         val existing = internalGetOwnProperty(receiverObject, key)
+        // Module namespace 的 [[Set]] 恒为 false；不能在 OrdinarySet 的
+        // “值未变化”路径里误成功。
+        if (receiverObject is JSModuleNamespace) {
+            return false
+        }
         if (existing != null) {
             if (existing.isAccessor || !existing.writable) return false
             val valueDescriptor = PropertyDescriptor.partial()
@@ -6134,16 +6150,11 @@ class Interpreter(
             }
             current = current.prototype
         }
-        val receiverObject = receiver as? JSObject
-            ?: if (strict) {
-                throw typeError("Cannot create property '$key' on primitive value")
-            } else {
-                return
-            }
-        val defined = receiverObject.defineOwnProperty(
-            key,
-            PropertyDescriptor.data(value, writable = true, enumerable = true, configurable = true),
-        )
+        if (receiver !is JSObject) {
+            if (strict) throw typeError("Cannot create property '$key' on primitive value")
+            return
+        }
+        val defined = ordinarySetOnReceiver(receiver, key, value)
         if (!defined && strict) throw typeError("Cannot create property '$key'")
     }
 

@@ -5188,8 +5188,29 @@ class Parser(
                 startPos = functionStart,
                 isAsync = isAsyncFunction,
             )
-            // HoistableDeclaration 形式不要求分号，后续语句可以同一行开始
-            return anonymousDefaultDeclaration(start, expression)
+            // 匿名函数是 HoistableDeclaration：按 `*default*` 函数声明实例化，
+            // 不能在求值点才创建，否则自导入/前置调用会读到 TDZ。
+            val declaration = FunctionDeclaration(
+                name = "*default*",
+                params = expression.params,
+                body = expression.body,
+                strict = expression.strict,
+                isAsync = expression.isAsync,
+                isGenerator = expression.isGenerator,
+                varDeclarations = expression.varDeclarations,
+                functionDeclarations = expression.functionDeclarations,
+                range = expression.range,
+                sourceText = expression.sourceText,
+            )
+            return ModuleParseResult(
+                item = ExportDefaultDeclaration(
+                    declaration = declaration,
+                    expression = null,
+                    range = SourceRange(start, previous().range.end),
+                ),
+                exports = listOf(ExportEntry("default", null, null, "*default*")),
+                lexicalNames = listOf("*default*"),
+            )
         }
         if (check(TokenType.CLASS)) {
             if (peek(1).type == TokenType.IDENTIFIER) {

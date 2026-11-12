@@ -37,7 +37,9 @@ internal class ModuleDeclarationInstantiator(
         // 顶层 function 在模块中是词法声明；先创建函数对象并初始化绑定。
         for (declaration in record.program.functionDeclarations) {
             val function = interpreter.createFunction(
-                name = declaration.name,
+                // 匿名 `export default function` 的绑定名是内部的 `*default*`，
+                // 但函数对象自身的 name 必须是 "default"。
+                name = if (declaration.name == "*default*") "default" else declaration.name,
                 params = declaration.params,
                 body = declaration.body,
                 closure = environment,
@@ -62,9 +64,9 @@ internal class ModuleDeclarationInstantiator(
                 ModuleBindingKind.FUNCTION -> Unit // 已在上面创建
                 ModuleBindingKind.LET -> environment.declareLexical(binding.name, mutable = true)
                 ModuleBindingKind.USING -> environment.declareLexical(binding.name, mutable = true)
-                ModuleBindingKind.CONST,
-                ModuleBindingKind.CLASS,
-                -> environment.declareLexical(binding.name, mutable = false)
+                ModuleBindingKind.CONST -> environment.declareLexical(binding.name, mutable = false)
+                // 模块顶层 class 是可变词法绑定；只有 const 不可重新赋值。
+                ModuleBindingKind.CLASS -> environment.declareLexical(binding.name, mutable = true)
 
                 ModuleBindingKind.DEFAULT -> environment.declareLexical(binding.name, mutable = true)
             }
@@ -75,6 +77,7 @@ internal class ModuleDeclarationInstantiator(
             record.namespace = JSModuleNamespace(
                 record = record,
                 symbolToStringTag = interpreter.intrinsics.symbolToStringTag,
+                interpreter = interpreter,
             ).attachAllocationBudget(interpreter.context.objectAllocations)
         }
         if (record.importMeta == null) {
