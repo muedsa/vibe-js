@@ -69,8 +69,12 @@ class JSTypedArray(
     /** [[ByteOffset]]：视图在缓冲区中的起始字节下标。 */
     val byteOffset: Int,
     /** [[ArrayLength]]：元素个数（不是字节长度）。 */
-    val length: Int,
+    length: Int,
+    /** 是否为 length-tracking 视图（构造时省略 length，随 resizable buffer 变化）。 */
+    private val lengthTracking: Boolean = false,
 ) : JSObject(prototype) {
+
+    private val storedLength: Int = length
 
     companion object {
         /** TypedArray 统一使用小端序（与主流宿主一致）。 */
@@ -81,31 +85,47 @@ class JSTypedArray(
     val bytesPerElement: Int get() = type.bytesPerElement
 
     /**
-     * [[ByteLength]]：视图占用的字节数。
-     *
-     * 这是对象构造时固定的原始长度；分离后内建访问器按规范返回 0，但本属性
-     * 保持不变，供 `subarray` 等需要"分离前长度"的算法使用。
+     * [[ArrayLength]]：固定长度视图在越界时按规范返回 0；length-tracking
+     * 视图按当前缓冲区长度实时计算。
      */
+    val length: Int
+        get() {
+            if (isDetached) return 0
+            if (lengthTracking) {
+                return ((buffer.byteLength - byteOffset).coerceAtLeast(0)) / bytesPerElement
+            }
+            return if (
+                byteOffset.toLong() + storedLength.toLong() * bytesPerElement >
+                buffer.byteLength.toLong()
+            ) {
+                0
+            } else {
+                storedLength
+            }
+        }
+
+    /** 是否为 length-tracking 视图。 */
+    val isLengthTracking: Boolean get() = lengthTracking
+
+    /** 当前视图占用的字节数。 */
     val byteLength: Int get() = length * type.bytesPerElement
 
     /**
      * 底层缓冲区是否已分离。
-     *
-     * 分离后 Integer-Indexed 异质对象的元素读写、`length`/`byteLength` 访问器
-     * 都按规范切换到 0/undefined 分支。
      */
     val isDetached: Boolean get() = buffer.isDetached
 
     /**
      * 内部字节视图：只用于按元素类型读写，不对外暴露。
      *
-     * 构造参数已由调用方保证落在缓冲区范围内，这里不做重复校验。
+     * 使用构造时的长度建立固定窗口；实际元素访问由 [length] 与缓冲区边界
+     * 共同限制，resizable 缓冲区增长后仍可访问新增字节。
      */
     private val view: JSDataView = JSDataView(
         prototype = null,
         buffer = buffer,
         byteOffset = byteOffset,
-        byteLength = byteLength,
+        byteLength = storedLength * bytesPerElement,
     )
 
     // ================================================================
@@ -155,6 +175,7 @@ class JSTypedArray(
         // 分离后 IsValidIntegerIndex 恒为 false，内建按规范读到 undefined；
         // 回调中途分离缓冲区的用例（如 forEach 的 callbackfn-detachbuffer）依赖该分支。
         if (buffer.isDetached) return JSUndefined
+        if (index !in 0 until length) return JSUndefined
         val byteIndex = index * bytesPerElement
         return when (type) {
             JSTypedArrayType.INT8 -> JSNumber(view.getInt8(byteIndex).toDouble())

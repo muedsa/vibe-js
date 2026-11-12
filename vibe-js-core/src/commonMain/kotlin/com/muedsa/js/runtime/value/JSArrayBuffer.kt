@@ -24,10 +24,17 @@ class JSArrayBuffer(
     prototype: JSObject?,
     /** 分配时的字节长度（[[ArrayBufferByteLength]] 的初始值）。 */
     byteLength: Int,
+    /** 可调整大小时的上限；固定长度缓冲区等于 [byteLength]。 */
+    val maxByteLength: Int = byteLength,
+    /** 是否为 resizable ArrayBuffer。 */
+    val isResizable: Boolean = false,
 ) : JSObject(prototype) {
 
-    /** [[ArrayBufferData]]：唯一的底层字节存储，不暴露给脚本。 */
-    private val bytes: ByteArray = ByteArray(byteLength)
+    /** [[ArrayBufferData]]：唯一的底层字节存储，不暴露给脚本；resizable 按上限预留。 */
+    private var bytes: ByteArray = ByteArray(if (isResizable) maxByteLength else byteLength)
+
+    /** 当前 [[ArrayBufferByteLength]]。 */
+    private var currentByteLength: Int = byteLength
 
     /**
      * 分离状态。
@@ -48,12 +55,22 @@ class JSArrayBuffer(
     }
 
     /**
-     * [[ArrayBufferByteLength]]：分离后按规范为 0。
-     *
-     * 注意：视图（DataView/TypedArray）的长度在对象构造时已固定，不随本属性
-     * 变化；分离后视图自身的 `length`/`byteLength` 访问器另行返回 0。
+     * [[ArrayBufferByteLength]]：分离后按规范为 0；resizable 缓冲区按当前长度。
      */
-    val byteLength: Int get() = if (isDetached) 0 else bytes.size
+    val byteLength: Int get() = if (isDetached) 0 else currentByteLength
+
+    /**
+     * [[ArrayBuffer.prototype.resize]] 的底层实现。
+     *
+     * 调用方负责完成品牌/可调整性/detached 与 ToIndex 检查。
+     */
+    fun resize(newLength: Int) {
+        val oldLength = currentByteLength
+        if (newLength > oldLength) {
+            bytes.fill(0, oldLength, newLength)
+        }
+        currentByteLength = newLength
+    }
 
     /**
      * 分离本缓冲区（对应规范 DetachArrayBuffer）。

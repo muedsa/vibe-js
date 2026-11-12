@@ -906,6 +906,7 @@ class Interpreter(
         if (array.buffer.isImmutable) {
             typeError("Cannot write to an immutable ArrayBuffer")
         }
+        if (index !in 0 until array.length) return
         when (array.type) {
             JSTypedArrayType.INT8, JSTypedArrayType.UINT8,
             JSTypedArrayType.INT16, JSTypedArrayType.UINT16,

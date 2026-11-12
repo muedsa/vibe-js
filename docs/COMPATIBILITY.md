@@ -90,7 +90,7 @@
 | BigInt | ✅ | `BigInt()`、`asIntN`/`asUintN`、任意精度算术/位运算/移位/比较、`toString(radix)`；与 Number 混用、`JSON.stringify` 直接序列化均抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制（超出抛 RangeError） |
 | Proxy | ✅ | 13 个 trap、`Proxy.revocable`、撤销状态；`getOwnPropertyDescriptor`/`defineProperty`/`deleteProperty`/`ownKeys`/`get`/`set`/`has`/`isExtensible`/`preventExtensions` 等不变量校验；撤销后所有操作抛 TypeError |
 | Reflect | ✅ | 13 个方法（apply/construct/defineProperty/deleteProperty/get/getOwnPropertyDescriptor/getPrototypeOf/has/isExtensible/ownKeys/preventExtensions/set/setPrototypeOf）；失败返回 false，target 参数错误抛 TypeError，支持 receiver |
-| ArrayBuffer / DataView / TypedArray | ✅ | ArrayBuffer（`byteLength`/`slice`/`isView`/`transfer`/`transferToImmutable`/`sliceToImmutable`/`detach`）；DataView 9 种数值 + 2 种 BigInt 读写（大小端由 `littleEndian` 参数控制）；12 种 TypedArray（含 `Float16Array`；10 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序），构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；**支持 transfer/transferToFixedLength/immutable；不支持 resizable**（见 §6） |
+| ArrayBuffer / DataView / TypedArray | ✅ | ArrayBuffer（`byteLength`/`slice`/`isView`/`transfer`/`transferToImmutable`/`sliceToImmutable`/`detach`）；DataView 9 种数值 + 2 种 BigInt 读写（大小端由 `littleEndian` 参数控制）；12 种 TypedArray（含 `Float16Array`；10 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序），构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；**支持 transfer/transferToFixedLength/immutable；resizable 基础实现进行中，未纳入基线**（见 §6） |
 | Uint8Array base64/hex | ✅ | `fromBase64`/`fromHex`/`toBase64`/`toHex`/`setFromBase64`/`setFromHex`；支持 base64/base64url、omitPadding、lastChunkHandling（loose/strict/stop-before-partial）与部分写入 |
 | Generator / AsyncGenerator | ✅ | 同步/异步生成器、`yield`/`yield*`、`next`/`return`/`throw`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定与默认参数在调用生成器函数时完成 |
 | Map / Set / WeakMap / WeakSet | ✅ | 常用方法、迭代器协议、Map/WeakMap `getOrInsert`/`getOrInsertComputed`；SameValueZero 索引存储：get/set/has/delete 均摊 O(1)、size O(1)，墓碑在无活跃迭代器时压缩；forEach 与迭代器为实时语义（遍历期间新增可访问、删除跳过、重删重加再次访问）；Weak 版本不可迭代、支持非注册 Symbol 键，但**底层是强引用存储，未实现 GC 弱语义**（M2），不能当作长期缓存的自动清理机制 |
@@ -129,13 +129,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1213** + 宿主 40 个测试（2026-11-12 记录） |
-| JS（Node） | ✅ | 核心 **1197** + 宿主 40 个测试 |
-| Wasm（Node） | ✅ | 核心 **1197** + 宿主 40 个测试 |
+| JVM | ✅ | 核心 **1215** + 宿主 40 个测试（2026-11-12 记录） |
+| JS（Node） | ✅ | 核心 **1199** + 宿主 40 个测试 |
+| Wasm（Node） | ✅ | 核心 **1199** + 宿主 40 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1213 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1197。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1215 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1199。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。

@@ -24,11 +24,34 @@ class JSDataView(
     /** [[ByteOffset]]：窗口在缓冲区中的起始绝对下标。 */
     val byteOffset: Int,
     /** [[ByteLength]]：窗口长度。 */
-    val byteLength: Int,
+    byteLength: Int,
+    /** 是否为 length-tracking 视图（随 resizable buffer 变化）。 */
+    private val lengthTracking: Boolean = false,
 ) : JSObject(prototype) {
+
+    private val storedByteLength: Int = byteLength
 
     /** 被查看的缓冲区是否已分离（供内建访问器与读写前置检查使用）。 */
     val isDetached: Boolean get() = buffer.isDetached
+
+    /** 视图是否已越界（resizable buffer 收缩后）。 */
+    val isOutOfBounds: Boolean
+        get() {
+            if (isDetached) return true
+            if (byteOffset > buffer.byteLength) return true
+            return !lengthTracking && byteOffset.toLong() + storedByteLength > buffer.byteLength.toLong()
+        }
+
+    /** 当前窗口长度：分离或越界返回 0，tracking 视图按缓冲区实时计算。 */
+    val byteLength: Int
+        get() {
+            if (isDetached) return 0
+            if (isOutOfBounds) return 0
+            if (lengthTracking) {
+                return (buffer.byteLength - byteOffset).coerceAtLeast(0)
+            }
+            return storedByteLength
+        }
 
     // ================================================================
     // 读取

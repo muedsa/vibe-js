@@ -55,7 +55,8 @@ object DataViewBuiltins {
                 )
             }
             val lengthArgument = args.getOrNull(2)
-            val byteLength = if (lengthArgument == null || lengthArgument is JSUndefined) {
+            val lengthTracking = lengthArgument == null || lengthArgument is JSUndefined
+            val byteLength = if (lengthTracking) {
                 // 缺省：窗口延伸到缓冲区末尾
                 bufferByteLength - byteOffset
             } else {
@@ -76,6 +77,7 @@ object DataViewBuiltins {
                 buffer = buffer,
                 byteOffset = byteOffset.toInt(),
                 byteLength = byteLength.toInt(),
+                lengthTracking = lengthTracking,
             )
         }
         intrinsics.dataViewConstructor = constructor
@@ -99,8 +101,8 @@ object DataViewBuiltins {
         }
         defineGetter("buffer") { it.buffer }
         // 规范：IsViewOutOfBounds（含分离）时 byteOffset / byteLength 返回 0
-        defineGetter("byteOffset") { JSNumber(if (it.isDetached) 0.0 else it.byteOffset.toDouble()) }
-        defineGetter("byteLength") { JSNumber(if (it.isDetached) 0.0 else it.byteLength.toDouble()) }
+        defineGetter("byteOffset") { JSNumber(if (it.isOutOfBounds) 0.0 else it.byteOffset.toDouble()) }
+        defineGetter("byteLength") { JSNumber(it.byteLength.toDouble()) }
 
         /** 定义一个读取方法：签名固定为 (byteOffset, littleEndian)。 */
         fun defineReadMethod(

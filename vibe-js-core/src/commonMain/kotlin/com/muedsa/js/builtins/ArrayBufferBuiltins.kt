@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.value.JSArrayBuffer
 import com.muedsa.js.runtime.value.JSBoolean
 import com.muedsa.js.runtime.value.JSDataView
 import com.muedsa.js.runtime.value.JSNumber
+import com.muedsa.js.runtime.value.JSNull
 import com.muedsa.js.runtime.value.JSString
 import com.muedsa.js.runtime.value.JSTypedArray
 import com.muedsa.js.runtime.value.JSUndefined
@@ -48,16 +49,37 @@ object ArrayBufferBuiltins {
             }
             // 规范：length 为 undefined 时按 0 处理，否则 ToIndex
             val byteLength = interpreter.toIndex(args.getOrElse(0) { JSUndefined })
-            // 规范顺序：ToIndex 之后先由 OrdinaryCreateFromConstructor 解析实例原型
-            // （可能触发 NewTarget.prototype getter），最后才分配字节存储
+            var maxByteLength = byteLength
+            var resizable = false
+            val options = args.getOrNull(1)
+            if (options != null && options !is JSUndefined && options !is JSNull) {
+                val optionsObject = interpreter.toObject(options)
+                val maxValue = interpreter.getV(
+                    optionsObject,
+                    PropertyKey.Str("maxByteLength"),
+                )
+                if (maxValue !is JSUndefined) {
+                    maxByteLength = interpreter.toIndex(maxValue)
+                    resizable = true
+                }
+            }
+            // 规范顺序：先完成 ToIndex/选项副作用，再由 OrdinaryCreateFromConstructor
+            // 解析实例原型（可能触发 NewTarget.prototype getter），最后才分配字节存储。
             val instancePrototype =
                 interpreter.prototypeFromNewTarget(newTarget, prototype)
-            if (byteLength > MAX_BYTE_LENGTH.toLong()) {
+            if (byteLength > MAX_BYTE_LENGTH.toLong() ||
+                maxByteLength > MAX_BYTE_LENGTH.toLong()
+            ) {
                 interpreter.rangeError("Array buffer allocation failed")
+            }
+            if (maxByteLength < byteLength) {
+                interpreter.rangeError("maxByteLength must not be less than byteLength")
             }
             JSArrayBuffer(
                 prototype = instancePrototype,
                 byteLength = byteLength.toInt(),
+                maxByteLength = maxByteLength.toInt(),
+                isResizable = resizable,
             )
         }
         intrinsics.arrayBufferConstructor = constructor
@@ -78,13 +100,16 @@ object ArrayBufferBuiltins {
             configurable = true,
         )
 
-        // 固定长度 ArrayBuffer 的 ES2024 兼容访问器：resizable=false，
-        // maxByteLength 等于当前 byteLength。真正的 resizable 语义仍不在范围内。
+        // resizable / maxByteLength 访问器；固定长度缓冲区的 maxByteLength 等于当前长度。
         prototype.defineAccessorProperty(
             key = PropertyKey.Str("resizable"),
             get = BuiltinHelpers.method(intrinsics, "get resizable", 0) { interpreter, thisValue, _ ->
-                requireArrayBuffer(interpreter, thisValue, "ArrayBuffer.prototype.resizable")
-                JSBoolean.FALSE
+                val buffer = requireArrayBuffer(
+                    interpreter,
+                    thisValue,
+                    "ArrayBuffer.prototype.resizable",
+                )
+                JSBoolean.getJsBoolean(buffer.isResizable)
             },
             set = null,
             enumerable = false,
@@ -98,11 +123,34 @@ object ArrayBufferBuiltins {
                     thisValue,
                     "ArrayBuffer.prototype.maxByteLength",
                 )
-                JSNumber(buffer.byteLength.toDouble())
+                JSNumber((if (buffer.isDetached) 0 else buffer.maxByteLength).toDouble())
             },
             set = null,
             enumerable = false,
             configurable = true,
+        )
+
+        prototype.defineDataProperty(
+            key = PropertyKey.Str("resize"),
+            value = BuiltinHelpers.method(intrinsics, "resize", 1) { interpreter, thisValue, args ->
+                val buffer = requireArrayBuffer(
+                    interpreter,
+                    thisValue,
+                    "ArrayBuffer.prototype.resize",
+                )
+                if (!buffer.isResizable) {
+                    interpreter.typeError("ArrayBuffer is not resizable")
+                }
+                val newLength = interpreter.toIndex(args.getOrElse(0) { JSUndefined })
+                if (buffer.isDetached) {
+                    interpreter.typeError("ArrayBuffer.prototype.resize called on a detached ArrayBuffer")
+                }
+                if (newLength > buffer.maxByteLength.toLong()) {
+                    interpreter.rangeError("newLength exceeds maxByteLength")
+                }
+                buffer.resize(newLength.toInt())
+                JSUndefined
+            },
         )
 
         prototype.defineAccessorProperty(
@@ -202,7 +250,13 @@ object ArrayBufferBuiltins {
         prototype.defineDataProperty(
             key = PropertyKey.Str("transfer"),
             value = BuiltinHelpers.method(intrinsics, "transfer", 0) { interpreter, thisValue, args ->
-                transferBuffer(interpreter, thisValue, args, "ArrayBuffer.prototype.transfer")
+                transferBuffer(
+                    interpreter,
+                    thisValue,
+                    args,
+                    "ArrayBuffer.prototype.transfer",
+                    preserveResizable = true,
+                )
             },
         )
         prototype.defineDataProperty(
@@ -213,6 +267,7 @@ object ArrayBufferBuiltins {
                     thisValue,
                     args,
                     "ArrayBuffer.prototype.transferToFixedLength",
+                    preserveResizable = false,
                 )
             },
         )
@@ -341,6 +396,7 @@ object ArrayBufferBuiltins {
         thisValue: JSValue,
         args: List<JSValue>,
         name: String,
+        preserveResizable: Boolean,
     ): JSValue {
         val buffer = requireArrayBuffer(interpreter, thisValue, name)
         if (buffer.isDetached) {
@@ -359,9 +415,16 @@ object ArrayBufferBuiltins {
         if (buffer.isImmutable) {
             interpreter.typeError("$name called on an immutable ArrayBuffer")
         }
+        val resultResizable = preserveResizable && buffer.isResizable
+        val resultMaxByteLength = if (resultResizable) buffer.maxByteLength else newLength
+        if (newLength > resultMaxByteLength) {
+            interpreter.rangeError("Array buffer allocation failed")
+        }
         val result = JSArrayBuffer(
             prototype = interpreter.intrinsics.arrayBufferPrototype,
             byteLength = newLength,
+            maxByteLength = resultMaxByteLength,
+            isResizable = resultResizable,
         )
         val copyLength = minOf(buffer.byteLength, newLength)
         if (copyLength > 0) {

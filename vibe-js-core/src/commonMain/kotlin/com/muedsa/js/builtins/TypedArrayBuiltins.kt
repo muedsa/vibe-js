@@ -1154,7 +1154,8 @@ internal object TypedArrayBuiltins {
         }
         val remainingByteLength = bufferByteLength - byteOffset
         val lengthArgument = args.getOrNull(2)
-        val elementLength = if (lengthArgument == null || lengthArgument is JSUndefined) {
+        val lengthTracking = lengthArgument == null || lengthArgument is JSUndefined
+        val elementLength = if (lengthTracking) {
             // 缺省：视图延伸到缓冲区末尾，剩余字节必须能被元素宽度整除
             if (remainingByteLength % elementSize != 0L) {
                 interpreter.rangeError(
@@ -1175,7 +1176,15 @@ internal object TypedArrayBuiltins {
         }
         // 参数处理完成后再解析 NewTarget.prototype（可能触发 getter）
         val prototype = interpreter.prototypeFromNewTarget(newTarget, defaultPrototype)
-        return create(interpreter, type, buffer, byteOffset, elementLength, prototype)
+        return create(
+            interpreter = interpreter,
+            type = type,
+            buffer = buffer,
+            byteOffset = byteOffset,
+            elementLength = elementLength,
+            prototype = prototype,
+            lengthTracking = lengthTracking,
+        )
     }
 
     /** new T(iterable | arrayLike)：可迭代对象优先，取不到 @@iterator 时按类数组处理。 */
@@ -1262,6 +1271,7 @@ internal object TypedArrayBuiltins {
         byteOffset: Long,
         elementLength: Long,
         prototype: JSObject,
+        lengthTracking: Boolean = false,
     ): JSTypedArray {
         if (byteOffset > Int.MAX_VALUE.toLong() || elementLength > Int.MAX_VALUE.toLong()) {
             interpreter.rangeError("Invalid typed array length")
@@ -1272,6 +1282,7 @@ internal object TypedArrayBuiltins {
             buffer = buffer,
             byteOffset = byteOffset.toInt(),
             length = elementLength.toInt(),
+            lengthTracking = lengthTracking,
         )
     }
 
@@ -1398,14 +1409,20 @@ internal object TypedArrayBuiltins {
             defaultConstructor(interpreter, array.type),
         )
         val byteOffset = array.byteOffset + begin * array.bytesPerElement
-        val created = interpreter.construct(
-            constructor,
+        val constructorArguments = if (
+            array.isLengthTracking && array.buffer.isResizable &&
+            (endArgument == null || endArgument is JSUndefined)
+        ) {
+            // length-tracking 视图的 subarray 不传显式长度，结果继续跟踪缓冲区。
+            listOf(array.buffer, JSNumber(byteOffset.toDouble()))
+        } else {
             listOf(
                 array.buffer,
                 JSNumber(byteOffset.toDouble()),
                 JSNumber(newLength.toDouble()),
-            ),
-        )
+            )
+        }
+        val created = interpreter.construct(constructor, constructorArguments)
         return created as? JSTypedArray
             ?: interpreter.typeError("Species constructor did not return a TypedArray")
     }

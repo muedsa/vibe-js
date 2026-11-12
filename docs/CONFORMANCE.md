@@ -391,7 +391,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 - **模块扩展语法**：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；同一说明符带不同导入属性会被解析器拒绝。
 - **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。
 - **弱引用**：WeakRef / FinalizationRegistry 未实现；WeakMap / WeakSet 仍是强引用存储（M2 无计划）。
-- **范围外**：Intl、真实 DOM / Web API、SharedArrayBuffer / Atomics、resizable ArrayBuffer、Temporal、装饰器、ShadowRealm。
+- **范围外**：Intl、真实 DOM / Web API、SharedArrayBuffer / Atomics、Temporal、装饰器、ShadowRealm（resizable 基础实现未纳入基线）。
 - **资源约束**：R1 已覆盖源码/嵌套/AST/对象/JSON/正则/排队任务/微任务；`JSON.stringify` 与 `JSON.parse` 共用 `maxJsonDepth`；`maxRegexSteps` 显式降到默认值以下时，常见嵌套量词正则路由到受该预算约束的回退引擎。Kotlin Regex 快路径不消耗该预算，是文档化边界；`EngineLimits` 不是进程级隔离。
 - **性能与 API 契约**：B2（25–48 人日）与 PKG1.2–1.6（7–13 人日）无计划，见[后续路线](OPTIMIZATION_ROADMAP.md)。
 - **parser early 5 条**：均为现行 Annex B / 宽松语义允许项，不是缺陷；已列入 `parser-early-allowlist.txt`。

@@ -14,8 +14,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1213 / 1213** | 2026-11-12 本地运行 |
-| core JS / Wasm（Node） | 各 **1197 / 1197** | 2026-11-12 复跑 |
+| core JVM 单元测试 | **1215 / 1215** | 2026-11-12 本地运行 |
+| core JS / Wasm（Node） | 各 **1199 / 1199** | 2026-11-12 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **44 / 44** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -44,7 +44,7 @@
 
 ### 1.3 当前边界
 
-当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备异步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA；宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable ArrayBuffer 不在范围。
+当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备异步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA；宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics、resizable ArrayBuffer 基础实现进行中。
 
 ## 2. 排序原则
 
@@ -468,7 +468,7 @@ data class EngineLimits(
 | Intl | **无计划 / 范围外** | `toLocaleString` 保持简化行为 |
 | 真实 DOM / Web API | **无计划 / 范围外** | fetch、localStorage、document 等由宿主自行提供 |
 | SharedArrayBuffer / Atomics | **无计划 / 范围外** | 单线程模型不引入共享内存 |
-| resizable ArrayBuffer | **无计划 / 范围外** | 只支持固定长度、transfer/immutable 与宿主 detach |
+| resizable ArrayBuffer | **进行中 / 未纳入基线** | 基础存储/resize 已实现，视图动态语义仍在补 |
 | Temporal / 装饰器 / ShadowRealm | **无计划 / 范围外** | 不在当前语言范围 |
 | `export using` | **无计划** | 模块执行其余部分已落地；TLA/module TLA 子集已完成 |
 | WeakRef / FinalizationRegistry | **无计划** | 并入 M2 弱引用方向 |
@@ -568,6 +568,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
+| 2026-11-12 | **resizable ArrayBuffer 基础批次**：新增 `{ maxByteLength }` 构造选项、`resize`、动态 TypedArray/DataView 长度骨架与 transfer 保留 resizable；特性暂未纳入 Test262 基线 |
 | 2026-11-12 | **immutable ArrayBuffer 批次**：新增 `immutable`、`transferToImmutable`、`sliceToImmutable`；拒绝 immutable 目标写入与 species 结果；ES2015 62,624/62,624、ES2016+ 17,830/17,830；核心 JVM 1213、JS/Wasm 1197 |
 | 2026-11-12 | **Float16 批次**：新增 `Float16Array`、DataView `getFloat16`/`setFloat16`、`Math.f16round`；同类型 TypedArray 按字节拷贝保留 NaN payload/负零；ES2015 62,532/62,532、ES2016+ 17,738/17,738；核心 JVM 1211、JS/Wasm 1195 |
 | 2026-11-12 | **Uint8Array base64/hex 批次**：实现 `fromBase64`/`fromHex`/`toBase64`/`toHex`/`setFromBase64`/`setFromHex`；ES2015 62,438/62,438、ES2016+ 17,644/17,644；核心 JVM 1210、JS/Wasm 1194 |

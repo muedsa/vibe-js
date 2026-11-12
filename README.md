@@ -365,7 +365,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - **Proxy**：13 个 trap（`get/set/has/deleteProperty/ownKeys/getOwnPropertyDescriptor/defineProperty/getPrototypeOf/setPrototypeOf/isExtensible/preventExtensions/apply/construct`）、`Proxy.revocable`、撤销状态与不变量校验
 - **Reflect**：13 个方法（`apply/construct/defineProperty/deleteProperty/get/getOwnPropertyDescriptor/getPrototypeOf/has/isExtensible/ownKeys/preventExtensions/set/setPrototypeOf`）
 - **Generator / AsyncGenerator**：`%GeneratorPrototype%` / `%AsyncGeneratorPrototype%`、`next/return/throw` 协议、`yield*` 委托、异步生成器的 Promise 队列
-- **ArrayBuffer / DataView / TypedArray**：ArrayBuffer（`byteLength/slice/isView`、transfer/transferToImmutable/sliceToImmutable/detach）、DataView 9 种数值 + 2 种 BigInt 读写（大小端由 `littleEndian` 参数控制）、12 种 TypedArray（含 `Float16Array`；10 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序）、构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；支持 transfer/transferToFixedLength/immutable；不支持 resizable / SharedArrayBuffer / Atomics
+- **ArrayBuffer / DataView / TypedArray**：ArrayBuffer（`byteLength/slice/isView`、transfer/transferToImmutable/sliceToImmutable/detach）、DataView 9 种数值 + 2 种 BigInt 读写（大小端由 `littleEndian` 参数控制）、12 种 TypedArray（含 `Float16Array`；10 种数值 + `BigInt64Array`/`BigUint64Array`，固定小端序）、构造/`from`/`of`/species/迭代/`subarray`/`set`/排序查找；支持 transfer/transferToFixedLength/immutable；resizable 仅内部基础实现（未纳入 Test262 基线）；不支持 SharedArrayBuffer / Atomics
 - **Uint8Array base64/hex**：`fromBase64`/`fromHex`/`toBase64`/`toHex`/`setFromBase64`/`setFromHex`，支持 base64url、omitPadding、lastChunkHandling 与部分写入
 - **集合**：`Map`、`Set`、`WeakMap`、`WeakSet`，配套迭代器协议
 - **Promise**：`resolve/reject/all/race/allSettled/any/allKeyed/allSettledKeyed`、`then/catch/finally`、`withResolvers/try`
@@ -474,8 +474,8 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1213 / 1213** |
-| core JS（Node）/ Wasm（Node） | 各 **1197 / 1197** |
+| core JVM | **1215 / 1215** |
+| core JS（Node）/ Wasm（Node） | 各 **1199 / 1199** |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** |
 | conformance 单元测试 | **44 / 44** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
