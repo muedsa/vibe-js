@@ -179,8 +179,8 @@ jobs:
         path: vibe-js-conformance/build/reports/conformance/
         retention-days: 30
 
-  test262-module-tla:
-    name: Test262 Module TLA
+  test262-module:
+    name: Test262 Module
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -206,6 +206,9 @@ jobs:
     - name: Run Test262 module-code subset
       run: ./gradlew :vibe-js-conformance:test262ModuleCodeConformance -Pstrict --console=plain
 
+    - name: Run Test262 language module subset
+      run: ./gradlew :vibe-js-conformance:test262ModuleLanguageConformance -Pstrict --console=plain
+
     - name: Publish summary
       if: always()
       run: |
@@ -214,6 +217,9 @@ jobs:
         fi
         if [ -f vibe-js-conformance/build/reports/conformance/test262-module-code/test262-summary.md ]; then
           cat vibe-js-conformance/build/reports/conformance/test262-module-code/test262-summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+        if [ -f vibe-js-conformance/build/reports/conformance/test262-module-language/test262-summary.md ]; then
+          cat vibe-js-conformance/build/reports/conformance/test262-module-language/test262-summary.md >> "$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Upload Test262 module report

@@ -246,6 +246,34 @@ val test262ModuleCodeConformance = tasks.register<JavaExec>("test262ModuleCodeCo
     outputs.dir(reportDir)
 }
 
+/** 运行 language 下所有受支持的 module 用例（Phase B 回归）。 */
+val test262ModuleLanguageConformance = tasks.register<JavaExec>("test262ModuleLanguageConformance") {
+    group = "verification"
+    description = "运行 Test262 language module 子集并生成语义报告（报告模式）"
+    dependsOn(downloadTest262Corpus)
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.muedsa.js.conformance.Test262ConformanceKt")
+    val reportDir = conformanceReportDir.map { it.dir("test262-module-language") }
+    args(
+        test262Dir.asFile.absolutePath,
+        reportDir.get().asFile.absolutePath,
+        "--suite", "module",
+        "--filter", "language/",
+    )
+    if (project.hasProperty("test262Limit")) {
+        args("--limit", project.property("test262Limit").toString())
+    }
+    if (project.hasProperty("test262Jobs")) {
+        args("--jobs", project.property("test262Jobs").toString())
+    }
+    applyRunnerSettings()
+    if (project.hasProperty("strict")) {
+        args("--strict")
+    }
+    inputs.dir(test262Dir)
+    outputs.dir(reportDir)
+}
+
 /** 下载固定版本的真实 JS 库 UMD 构建。 */
 val downloadLibraryCorpus = tasks.register<JavaExec>("downloadLibraryCorpus") {
     group = "verification"
