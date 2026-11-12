@@ -303,6 +303,9 @@ internal object Test262Selection {
         "Symbol.prototype.description",
         "iterator-helpers", "set-methods", "RegExp.escape",
         "promise-with-resolvers",
+        // ES2024/2025 小型特性批次：均已在核心实现，逐特性纳入基线
+        "promise-try", "Math.sumPrecise", "Error.isError",
+        "iterator-includes", "Iterator.prototype.join",
     )
 
     /**
