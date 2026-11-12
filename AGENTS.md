@@ -40,7 +40,7 @@
 - 修改核心或宿主后运行对应测试；涉及值模型、容器或调度时补跑 JS/Wasm。
 - 修改 parser、运行时语义或语料相关逻辑后运行对应的 strict 门禁。
 - `commonTest` 使用 `runTest` 与虚拟时间；禁止 `Thread.sleep`、真实时钟、系统时区/locale 依赖或哈希遍历顺序断言。
-- 测试中的多行 JavaScript 源码统一使用 `"""...""".trimIndent()` 原始字符串，并按 JavaScript 格式化：每条语句独立成行、块缩进 2 空格、运算符与逗号后保留空格；不得用 `\n` 转义或相邻字符串 `+` 拼接构造多行脚本。单行脚本可以保留普通字符串；原始字符串中的 `$` 按 Kotlin 插值规则转义。
+- 测试（含 `commonTest`、差分与门禁用例）中的多行 JavaScript 源码统一使用 `"""...""".trimIndent()` 原始字符串，并按 JavaScript 格式化：每条语句独立成行、块缩进 2 空格、运算符与逗号后保留空格；不得用 `\n` 转义或相邻字符串 `+` 拼接构造多行脚本。`DifferentialCase` / `AsyncDifferentialCase` 等差分用例的 `source` 同样适用；单行脚本可以保留普通字符串；原始字符串中的 `$` 按 Kotlin 插值规则转义。
 - 门禁/allowlist 只能逐条、带原因地调整；禁止用目录、后缀或通配符扩大排除。
 - 不得提交 `build/`、`corpus/`、生成的报告；真实库必须固定版本与 URL。
 - 对外数字以 `docs/CONFORMANCE.md` 为准；AGENTS.md 不维护基线数字。
