@@ -1,6 +1,7 @@
 package com.muedsa.js
 
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.value.JSArrayBuffer
 import com.muedsa.js.runtime.value.JSError
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -40,5 +41,28 @@ class ArrayBufferResizableTest {
             runtime.eval("new ArrayBuffer(4).resize(2);")
         }
         assertEquals("TypeError", (error.value as JSError).errorName)
+    }
+
+    @Test
+    fun `JSArrayBuffer 宿主构造与 resize 不变量`() {
+        assertFailsWith<IllegalArgumentException> {
+            JSArrayBuffer(null, 4, maxByteLength = 3, isResizable = true)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            JSArrayBuffer(null, -1)
+        }
+
+        val fixed = JSArrayBuffer(null, 4)
+        assertFailsWith<IllegalStateException> {
+            fixed.resize(2)
+        }
+
+        val resizable = JSArrayBuffer(null, 4, maxByteLength = 8, isResizable = true)
+        assertFailsWith<IllegalArgumentException> {
+            resizable.resize(-1)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            resizable.resize(9)
+        }
     }
 }

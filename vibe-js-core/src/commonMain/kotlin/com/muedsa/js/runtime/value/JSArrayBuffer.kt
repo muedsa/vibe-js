@@ -30,6 +30,16 @@ class JSArrayBuffer(
     val isResizable: Boolean = false,
 ) : JSObject(prototype) {
 
+    init {
+        require(byteLength >= 0) { "byteLength must not be negative" }
+        require(maxByteLength >= byteLength) {
+            "maxByteLength must not be less than byteLength"
+        }
+        require(isResizable || maxByteLength == byteLength) {
+            "fixed-length ArrayBuffer must have maxByteLength equal to byteLength"
+        }
+    }
+
     /** [[ArrayBufferData]]：唯一的底层字节存储，不暴露给脚本；resizable 按上限预留。 */
     private var bytes: ByteArray = ByteArray(if (isResizable) maxByteLength else byteLength)
 
@@ -65,6 +75,10 @@ class JSArrayBuffer(
      * 调用方负责完成品牌/可调整性/detached 与 ToIndex 检查。
      */
     fun resize(newLength: Int) {
+        check(isResizable) { "Cannot resize a fixed-length ArrayBuffer" }
+        require(newLength in 0..maxByteLength) {
+            "newLength must be between 0 and maxByteLength"
+        }
         val oldLength = currentByteLength
         if (newLength > oldLength) {
             bytes.fill(0, oldLength, newLength)

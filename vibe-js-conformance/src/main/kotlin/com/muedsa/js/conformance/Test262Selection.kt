@@ -318,6 +318,10 @@ internal object Test262Selection {
         "await-dictionary", "nonextensible-applies-to-private",
         "String.prototype.matchAll", "Symbol.matchAll",
         "async-iteration",
+        // 已支持但此前未 seed 的 ES2016+ 标注
+        "TypedArray.prototype.at",
+        "DataView.prototype.getBigInt64", "DataView.prototype.getBigUint64",
+        "DataView.prototype.setBigInt64", "DataView.prototype.setBigUint64",
     )
 
     /**
