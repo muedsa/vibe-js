@@ -141,7 +141,6 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.coroutines.ContinuationInterceptor
 
@@ -911,50 +910,76 @@ class Interpreter(
         if (array.buffer.isImmutable) {
             typeError("Cannot write to an immutable ArrayBuffer")
         }
-        fun stillValid(): Boolean = !array.isOutOfBounds && index < array.length
+        convertAndMaybeWriteTypedArrayElement(array, index, value)
+    }
+
+    /**
+     * 只执行 TypedArray 元素值转换，不写入。
+     *
+     * 规范要求 `IntegerIndexedElementSet` 先按 [[ContentType]] 执行
+     * `ToNumber`/`ToBigInt`，再判断索引是否有效。非法 numeric index 也必须有
+     * 这一步副作用，但不能写入任何元素。
+     */
+    private suspend fun convertTypedArrayElementValue(array: JSTypedArray, value: JSValue) {
+        convertAndMaybeWriteTypedArrayElement(array, index = null, value)
+    }
+
+    /**
+     * 转换元素值并在 [index] 有效时写入；index 为 null 时只转换。
+     *
+     * `stillValid` 在转换之后重新检查当前长度/越界状态，覆盖 resizable buffer
+     * 在 valueOf/toString 中收缩或增长的情况。
+     */
+    private suspend fun convertAndMaybeWriteTypedArrayElement(
+        array: JSTypedArray,
+        index: Int?,
+        value: JSValue,
+    ) {
+        fun stillValid(): Boolean =
+            index != null && index >= 0 && !array.isOutOfBounds && index < array.length
         when (array.type) {
             JSTypedArrayType.INT8, JSTypedArrayType.UINT8,
             JSTypedArrayType.INT16, JSTypedArrayType.UINT16,
             JSTypedArrayType.INT32,
             -> {
                 val converted = toInt32(value)
-                if (stillValid()) array.setIntElement(index, converted)
+                if (stillValid()) array.setIntElement(index!!, converted)
             }
 
             JSTypedArrayType.UINT32 -> {
                 val converted = toUint32(value)
-                if (stillValid()) array.setUint32Element(index, converted)
+                if (stillValid()) array.setUint32Element(index!!, converted)
             }
 
             JSTypedArrayType.UINT8_CLAMPED -> {
                 val converted = toNumber(value)
-                if (stillValid()) array.setUint8ClampedElement(index, converted)
+                if (stillValid()) array.setUint8ClampedElement(index!!, converted)
             }
 
             JSTypedArrayType.FLOAT16 -> {
                 val converted = toNumber(value)
-                if (stillValid()) array.setFloat16Element(index, converted)
+                if (stillValid()) array.setFloat16Element(index!!, converted)
             }
 
             JSTypedArrayType.FLOAT32 -> {
                 val converted = toNumber(value)
-                if (stillValid()) array.setFloat32Element(index, converted)
+                if (stillValid()) array.setFloat32Element(index!!, converted)
             }
 
             JSTypedArrayType.FLOAT64 -> {
                 val converted = toNumber(value)
-                if (stillValid()) array.setFloat64Element(index, converted)
+                if (stillValid()) array.setFloat64Element(index!!, converted)
             }
 
             // BigInt 视图：Number 值会在 ToBigInt 抛 TypeError（规范要求的隐式转换限制）
             JSTypedArrayType.BIGINT64 -> {
                 val converted = conversions.toBigInt64(value).toInt64Bits()
-                if (stillValid()) array.setBigInt64Element(index, converted)
+                if (stillValid()) array.setBigInt64Element(index!!, converted)
             }
 
             JSTypedArrayType.BIGUINT64 -> {
                 val converted = conversions.toBigUint64(value).toInt64Bits()
-                if (stillValid()) array.setBigUint64Element(index, converted)
+                if (stillValid()) array.setBigUint64Element(index!!, converted)
             }
         }
     }
@@ -1939,13 +1964,22 @@ class Interpreter(
             when (val classified = objectValue.classifyIndex(key)) {
                 JSTypedArray.IndexKey.NotIndex -> Unit
                 JSTypedArray.IndexKey.Invalid -> {
-                    // 整数索引越界仍先执行 ToNumber，再按转换后的当前长度决定是否写入。
+                    // 规范：所有 canonical numeric index（含 -0、1.1、NaN、Infinity）
+                    // 都先执行 ToNumber/ToBigInt；非负整数索引在转换后可能因 buffer
+                    // 增长而变为有效，需要重新检查并写入；其余非法索引绝不写入。
                     val numeric = (key as? PropertyKey.Str)?.value
                         ?.let(::canonicalNumericIndexString)
-                    if (numeric != null && numeric >= 0.0 && numeric == floor(numeric) &&
-                        numeric <= Int.MAX_VALUE.toDouble()
-                    ) {
-                        setTypedArrayElement(objectValue, numeric.toInt(), value)
+                    if (numeric != null) {
+                        val isNonNegativeInteger =
+                            numeric >= 0.0 &&
+                                numeric == kotlin.math.floor(numeric) &&
+                                !(numeric == 0.0 && 1.0 / numeric < 0.0) &&
+                                numeric <= Int.MAX_VALUE.toDouble()
+                        if (isNonNegativeInteger) {
+                            setTypedArrayElement(objectValue, numeric.toInt(), value)
+                        } else {
+                            convertTypedArrayElementValue(objectValue, value)
+                        }
                     }
                     return
                 }

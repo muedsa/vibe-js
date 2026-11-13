@@ -415,4 +415,30 @@ class BigInt64ArrayTest {
             result,
         )
     }
+
+    @Test
+    fun `BigInt 视图非法 numeric index 仍执行 ToBigInt 并拒绝 Number`() = runTest {
+        val runtime = TestRuntime()
+        val result = runtime.evalString(
+            """
+            var array = new BigInt64Array(2);
+            array[0] = 7n;
+            function errorName(fn) {
+              try {
+                fn();
+                return "none";
+              } catch (e) {
+                return e.name;
+              }
+            }
+            [
+              errorName(function () { array["1.1"] = 1; }),
+              errorName(function () { array["-0"] = 1; }),
+              array[0] === 7n,
+              array[1] === 0n
+            ].join(",");
+            """.trimIndent()
+        )
+        assertEquals("TypeError,TypeError,true,true", result)
+    }
 }

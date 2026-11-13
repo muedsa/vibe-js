@@ -799,6 +799,43 @@ class TypedArrayTest {
     }
 
     @Test
+    fun `TypedArray 非法 numeric index 仍执行值转换且不写入`() = runTest {
+        val runtime = TestRuntime()
+        val result = runtime.evalString(
+            """
+            var array = new Uint8Array(2);
+            array[0] = 7;
+            var called = 0;
+            var value = {
+              valueOf: function () {
+                called = called + 1;
+                throw new Error("boom");
+              }
+            };
+            function errorName(fn) {
+              try {
+                fn();
+                return "none";
+              } catch (e) {
+                return e.name;
+              }
+            }
+            var converted = [
+              errorName(function () { array["1.1"] = value; }),
+              errorName(function () { array["-1"] = value; }),
+              errorName(function () { array["NaN"] = value; }),
+              errorName(function () { array["-0"] = value; })
+            ].join(",");
+            array["-0"] = 9;
+            array["1.1"] = 9;
+            array["-1"] = 9;
+            [converted, called, array[0], array[1]].join("|");
+            """.trimIndent()
+        )
+        assertEquals("Error,Error,Error,Error|4|7|0", result)
+    }
+
+    @Test
     fun `TypedArray 自定义属性与数字索引互不干扰`() = runTest {
         val runtime = TestRuntime()
         val result = runtime.evalString(

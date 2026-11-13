@@ -14,8 +14,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1215 / 1215** | 2026-11-12 本地运行 |
-| core JS / Wasm（Node） | 各 **1199 / 1199** | 2026-11-12 复跑 |
+| core JVM 单元测试 | **1217 / 1217** | 2026-11-13 本地运行 |
+| core JS / Wasm（Node） | 各 **1201 / 1201** | 2026-11-13 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **44 / 44** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -568,6 +568,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
+| 2026-11-13 | **P0 TypedArray 非法 numeric index 修复**：所有 canonical numeric index 先执行 ToNumber/ToBigInt；`-0`/`1.1`/`NaN`/`Infinity` 不再写入；resized 后转为有效的非负整数索引仍可写入；新增 2 条 commonTest；core JVM **1217**、JS/Wasm **1201** |
 | 2026-11-12 | **async-iteration 版本锚点**：纳入 async generator / for-await-of；ES2016+ **30,161/30,161**，选中 15,319 个文件；至此所有 supported 的 post-ES2015 特性均已进入 ES2016+ 种子 |
 | 2026-11-12 | **ES2019+ 版本锚点批次**：纳入 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll；ES2016+ **22,956/22,956**，选中 11,682 个文件 |
 | 2026-11-12 | **ES2024/2025 语言特性扩展批次**：纳入 iterator-chunking、upsert、symbols-as-weakmap-keys、iterator-sequencing、joint-iteration、explicit-resource-management、hashbang、optional-catch-binding、stable-array-sort、json-superset、error-stack-accessor、json-parse-with-source、for-in-order、array-grouping；ES2016+ **20,488/20,488**，选中 10,389 个文件 |
