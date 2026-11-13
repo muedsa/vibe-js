@@ -30,11 +30,11 @@ Lexer ──► Parser ──► AST (Program / ModuleProgram)
                        │             EngineContext
                        │   （GlobalObject / Intrinsics / BuiltinRegistry / EventLoop / HostEnvironment）
                        │
-                       └── Module ──► Parser.parseModule（仅解析）
+                       └── Module ──► Parser.parseModule / Engine.runModule（实验性）
                                          │
                                          ▼
                                    ModuleProgram / ModuleItem
-                                   （静态表；链接/求值无计划）
+                                   （静态表；链接/求值已实现；加载器无计划）
 ```
 
 ## 3. 关键类型

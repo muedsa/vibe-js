@@ -338,7 +338,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - 异步：`async` 函数/箭头函数、`await`、Promise 微任务、async generator
 - 异步迭代：`for await...of`、`Symbol.asyncIterator`、`%AsyncIteratorPrototype%` / `%AsyncGeneratorPrototype%`
 - BigInt：`123n` 字面量（含 `0x`/`0o`/`0b` 前缀与 `n` 后缀）、算术/位运算/比较/幂运算与 BigInt 转换
-- 模块语法（仅解析）：`import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法；`Parser.parseModule()` 解析并预计算静态表，`Engine.runModule` 负责实验性链接/同步求值，动态 `import()` 在模块内可用
+- 模块语法与实验性执行：`import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法；`Parser.parseModule()` 解析并预计算静态表，`Engine.runModule` 负责实验性链接、环境/namespace 初始化与同步/异步（含 TLA）求值，动态 `import()` 在模块内可用；脚本目标不支持 `import()`，模块加载器无计划
 - 资源管理：`using` / `await using`、DisposableStack / AsyncDisposableStack
 - 严格模式尾调用优化（含 try/catch/finally 的待处理语义阻断）
 
@@ -377,7 +377,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
 - **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、静态/动态导入属性与 TLA 异步求值，需 `@ExperimentalModuleApi` opt-in；Test262 module TLA 249/249、module-code 593/593、language module 686/686（未支持特性逐条跳过）见 [TLA_DESIGN.md](docs/TLA_DESIGN.md)；脚本目标中的 `import()` 与模块加载器 **未实现/无计划**；
-- **无计划**：顶层 await 的执行（L4.7）、WeakRef / FinalizationRegistry；
+- **无计划**：WeakRef / FinalizationRegistry；
 - **宿主生态（已实现子集）**：`TextEncoder` / `TextDecoder`（UTF-8、fatal/ignoreBOM/stream）、`structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）、`URL` / `URLSearchParams` 常用能力，均位于 `:vibe-js-host`；
 - **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供通用宿主能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、装饰器；
 - **已实现但有限制**：WeakMap/WeakSet 仍是强引用存储，未实现 GC 弱语义（M2 无计划）；BigInt 结果受 `MAX_RESULT_BITS` 限制；`export using` 未支持；导入属性按说明符去重（同一说明符带不同属性会被解析器拒绝）；动态 `import()` 与 `import.meta.resolve` 只在模块代码及其延迟回调中可用；
@@ -396,10 +396,10 @@ lexer -> parser -> AST (Program / ModuleProgram)
                          |                +-> EventLoop / Promise / async-await
                          |                +-> Generator channels / Proxy internal methods / binary views
                          |
-                         +-> ModuleProgram -> Parser.parseModule（仅解析；链接/求值/加载无计划）
+                         +-> ModuleProgram -> Parser.parseModule / Engine.runModule（解析；链接/求值已实现；加载器无计划）
 ```
 
-- `Engine`：门面，持有全局对象、内建注册表、事件循环与解释器；当前只执行 Script；
+- `Engine`：门面，持有全局对象、内建注册表、事件循环与解释器；执行 Script，并通过 `Engine.runModule` 执行实验性模块图；
 - `Parser.parseModule` / `ModuleProgram`：模块目标解析入口与独立 AST 层次（`ModuleItem` 不继承 `Statement`），预计算 `requestedModules` / `ImportEntry` / `ExportEntry`，不参与求值；
 - `Executor`：执行器接口，当前实现是 AST 解释器，后续可替换为编译执行器而不改语义；
 - `BuiltinModule`：内建模块注册接口；标准库（`CoreBuiltins`）与宿主模块（`HostModule`）都通过它安装；

@@ -44,7 +44,7 @@
 
 ### 1.3 当前边界
 
-当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备异步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA；宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics。
+当前有两个执行入口：`Engine.run(source)`（单脚本文本）与实验性 `Engine.runModule(...)`（宿主提供 Provider，核心不引入平台 IO）。模块已具备异步链接/求值、live binding、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA；宿主文件/URL 加载器仍无计划；宿主生态已提供 UTF-8 编解码、structuredClone 与 URL 子集；WeakRef / FinalizationRegistry、Intl、真实 DOM/Web API、SharedArrayBuffer/Atomics 仍无计划。
 
 ## 2. 排序原则
 
@@ -54,7 +54,7 @@
 |---|---|---|
 | **维护主线** | `DOC-2`（收口）→ `S6.2` → `S2.2` | 保持文档/门禁绿色，持续补运行时边界与真实库覆盖 |
 | **观测** | `S5.2` | 只做性能复测，B2 仍无计划 |
-| **实验性实现** | 模块阶段 0–9（已完成）、TLA 设计（进行中） | Parser/Provider/图加载/导入属性/链接/环境/namespace/import.meta/动态 import/runModule + 错误定位/预算/取消/恢复加固；TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)，实现前需先解决异步事件循环入口 |
+| **实验性实现** | 模块阶段 0–9（已完成）、TLA（已完成） | Parser/Provider/图加载/导入属性/链接/环境/namespace/import.meta/动态 import/runModule + 错误定位/预算/取消/恢复加固；TLA 与异步事件循环入口已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md) |
 | **无计划** | 模块加载器、`M2`、`B2`、`PKG1`、范围外能力 | 不估算、不排期、不设启动条件 |
 
 ### 2.1 为什么模块加载器仍不设默认主线
@@ -468,7 +468,7 @@ data class EngineLimits(
 | Intl | **无计划 / 范围外** | `toLocaleString` 保持简化行为 |
 | 真实 DOM / Web API | **无计划 / 范围外** | fetch、localStorage、document 等由宿主自行提供 |
 | SharedArrayBuffer / Atomics | **无计划 / 范围外** | 单线程模型不引入共享内存 |
-| resizable ArrayBuffer | **已完成** | `{ maxByteLength }`、`resize`、动态 TypedArray/DataView、transfer 保留 resizable；Test262 63,456/18,662 全绿 |
+| resizable ArrayBuffer | **已完成** | `{ maxByteLength }`、`resize`、动态 TypedArray/DataView、transfer 保留 resizable；Test262 63,456/30,161 全绿 |
 | Temporal / 装饰器 / ShadowRealm | **无计划 / 范围外** | 不在当前语言范围 |
 | `export using` | **无计划** | 模块执行其余部分已落地；TLA/module TLA 子集已完成 |
 | WeakRef / FinalizationRegistry | **无计划** | 并入 M2 弱引用方向 |
@@ -539,7 +539,7 @@ data class EngineLimits(
 9. **BigInt 内存上限**：`MAX_RESULT_BITS = 2^24`；大数运算可能触发 RangeError，这是规范允许的实现定义限制。
 10. **WeakMap/WeakSet 仍是强引用**：不能当作长期缓存自动清理机制；M2 无计划。
 11. **范围外能力不要混入缺口**：Intl、DOM/Web API、SAB/Atomics等应标注“无计划/范围外”，不能作为回归处理。
-12. **文档一致性**：README、COMPATIBILITY、CONFORMANCE 中不得再出现“模块执行 P0/下一阶段”的承诺；Parser 前置可标为实验性实现，但执行/加载/harness 必须标为未实现/无计划。
+12. **文档一致性**：README、COMPATIBILITY、CONFORMANCE 中不得再出现“模块执行 P0/下一阶段”的承诺；Parser 前置与模块执行可标为实验性实现；仅宿主加载器与未支持 module 特性标为无计划。
 
 ## 11. 关键文件入口
 
@@ -569,7 +569,7 @@ data class EngineLimits(
 | 日期 | 变更 |
 |---|
 | 2026-11-13 | **P0 TypedArray 非法 numeric index 修复**：所有 canonical numeric index 先执行 ToNumber/ToBigInt；`-0`/`1.1`/`NaN`/`Infinity` 不再写入；resized 后转为有效的非负整数索引仍可写入；新增 2 条 commonTest；core JVM **1217**、JS/Wasm **1201** |
-| 2026-11-12 | **async-iteration 版本锚点**：纳入 async generator / for-await-of；ES2016+ **30,161/30,161**，选中 15,319 个文件；至此所有 supported 的 post-ES2015 特性均已进入 ES2016+ 种子 |
+| 2026-11-12 | **async-iteration 版本锚点**：纳入 async generator / for-await-of；ES2016+ **30,161/30,161**，选中 15,319 个文件；除 `TypedArray.prototype.at` 与 DataView BigInt 方法标签外，已支持的 post-ES2015 特性均已进入 ES2016+ 种子 |
 | 2026-11-12 | **ES2019+ 版本锚点批次**：纳入 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll；ES2016+ **22,956/22,956**，选中 11,682 个文件 |
 | 2026-11-12 | **ES2024/2025 语言特性扩展批次**：纳入 iterator-chunking、upsert、symbols-as-weakmap-keys、iterator-sequencing、joint-iteration、explicit-resource-management、hashbang、optional-catch-binding、stable-array-sort、json-superset、error-stack-accessor、json-parse-with-source、for-in-order、array-grouping；ES2016+ **20,488/20,488**，选中 10,389 个文件 |
 | 2026-11-12 | **ES2024/2025 小型特性批次**：纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`；ES2016+ **18,856/18,856**，选中 9,549 个文件 |

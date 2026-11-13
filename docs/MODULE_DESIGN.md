@@ -808,7 +808,7 @@ M7 -> L1/L2/L3/L4/L5
 
 ## 15. 与路线图的关系
 
-- 阶段 0–8 的 Parser、Provider API、内部图加载、静态链接、模块环境/声明实例化、namespace、求值与加固已按本文落地；后续能力（加载器/TLA/harness）仍无计划。
-- `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置标为实验性实现；模块执行、加载器与 harness 仍无计划。
+- 阶段 0–9 的 Parser、Provider API、内部图加载、静态链接、模块环境/声明实例化、namespace、求值与加固已按本文落地；TLA 与 module harness 已完成，宿主加载器仍无计划。
+- `docs/OPTIMIZATION_ROADMAP.md` 把模块 Parser 前置与执行标为实验性实现；宿主加载器仍无计划。
 - 只有需求方明确继续重启时，才把阶段 2+ 转为实际排期。
-- 首版完成后仍不应宣称“完整 ESM 运行时”；动态 import、import attributes、模块加载器和 Test262 module harness 是后续能力；TLA 与 module harness 已进入设计（见 [TLA_DESIGN.md](TLA_DESIGN.md)）。
+- 首版完成后仍不应宣称“完整 ESM 运行时”；模块加载器仍无计划；动态 import、import attributes、TLA 与 Test262 module harness 已落地（见 [TLA_DESIGN.md](TLA_DESIGN.md)）。

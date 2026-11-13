@@ -152,6 +152,19 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 `module` 在 ES2015 子集仍跳过，因为该子集不执行模块；TLA 已由独立 module suite 覆盖（见 §5.3）。旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
 
+### 5.2 筛选统计（未纳入本次口径）
+
+| 原因 | 数量 |
+|---|---:|
+| ES5 用例（ES2015 子集排除） | 8,115 |
+| 特性未全部支持 | 7,230 |
+| 无特性标注且缺少 es6id/esid | 281 |
+| 路径排除 | 12 |
+
+另有 **2 条**仅由源码文本匹配排除（`test262-text-exclusions.txt`）：`test/built-ins/Proxy/revocable/tco-fn-realm.js`（其余 `$262` 钩子）与 `test/built-ins/RegExp/prototype/Symbol.replace/coerce-global.js`（`print`）。两者都是宿主钩子，不是已实现特性被误排。
+
+路径排除的 12 个文件主要是：`SharedArrayBuffer` / `Atomics`、旧草案的 `RegExp.prototype.compile` 子类用例，以及 `Object.seal` 的 11 个 TypedArray 整数索引用例。
+
 ### 5.3 Test262 module 子集
 
 ```bash
@@ -186,26 +199,13 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版本门禁锚点；用例仍必须全部落在已支持特性集合内。当前选中 **15,319** 个文件、执行 **30,161** 次，全部通过；24 个 module flag 用例跳过，由独立 module suite 覆盖。
 
-本轮把 `Reflect.set`/`Reflect.setPrototypeOf`、全部 `DataView.prototype.*` 方法标注、`TypedArray.prototype.at`、12 种 TypedArray 构造器标注、`arraybuffer-transfer`、`immutable-arraybuffer`、`uint8array-base64` 与 `resizable-arraybuffer` 纳入支持特性，并实现 `transfer`/`transferToFixedLength`、immutable ArrayBuffer API、Uint8Array base64/hex API、`{ maxByteLength }`/`resize` 及动态 TypedArray/DataView 视图；ES2015 子集从 61,786 次扩展到 63,456 次；ES2016+ 继续纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`、`iterator-chunking`、`upsert`、`symbols-as-weakmap-keys`、`iterator-sequencing`、`joint-iteration`、`explicit-resource-management`、`hashbang`、`optional-catch-binding`、`stable-array-sort`、`json-superset`、`error-stack-accessor`、`json-parse-with-source`、`for-in-order`、`array-grouping`，执行次数扩展到 30,161。随后把 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll 作为 ES2019+ 版本锚点纳入，并纳入 async-iteration，覆盖所有已支持的 ES2016+ 特性。
+本轮把 `Reflect.set`/`Reflect.setPrototypeOf`、全部 `DataView.prototype.*` 方法标注、`TypedArray.prototype.at`、12 种 TypedArray 构造器标注、`arraybuffer-transfer`、`immutable-arraybuffer`、`uint8array-base64` 与 `resizable-arraybuffer` 纳入支持特性，并实现 `transfer`/`transferToFixedLength`、immutable ArrayBuffer API、Uint8Array base64/hex API、`{ maxByteLength }`/`resize` 及动态 TypedArray/DataView 视图；ES2015 子集从 61,786 次扩展到 63,456 次；ES2016+ 继续纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`、`iterator-chunking`、`upsert`、`symbols-as-weakmap-keys`、`iterator-sequencing`、`joint-iteration`、`explicit-resource-management`、`hashbang`、`optional-catch-binding`、`stable-array-sort`、`json-superset`、`error-stack-accessor`、`json-parse-with-source`、`for-in-order`、`array-grouping`，执行次数扩展到 30,161。随后把 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll 作为 ES2019+ 版本锚点纳入，并纳入 async-iteration；当前基线已覆盖 `es2016PlusFeatures` 种子中的全部特性，但 `TypedArray.prototype.at` 与 DataView BigInt 方法标签仍未 seed，因此不能声称所有 supported 的 post-ES2015 特性都已覆盖。
 
-### 5.2 筛选统计（未纳入本次口径）
-
-| 原因 | 数量 |
-|---|---:|
-| ES5 用例（ES2015 子集排除） | 8,115 |
-| 特性未全部支持 | 8,065 |
-| 无特性标注且缺少 es6id/esid | 281 |
-| 路径排除 | 12 |
-
-另有 **2 条**仅由源码文本匹配排除（`test262-text-exclusions.txt`）：`test/built-ins/Proxy/revocable/tco-fn-realm.js`（其余 `$262` 钩子）与 `test/built-ins/RegExp/prototype/Symbol.replace/coerce-global.js`（`print`）。两者都是宿主钩子，不是已实现特性被误排。
-
-路径排除的 12 个文件主要是：`SharedArrayBuffer` / `Atomics`、旧草案的 `RegExp.prototype.compile` 子类用例，以及 `Object.seal` 的 11 个 TypedArray 整数索引用例。
-
-### 5.3 已启用并纳入基线的特性
+### 5.5 已启用并纳入基线的特性
 
 `Reflect` / `Reflect.construct`、`Proxy` / `proxy-missing-checks`、`BigInt`、`TypedArray` / `ArrayBuffer` / `DataView`（含 BigInt 视图、Float16、detach/transfer/immutable/resizable 语义）、`generators`、`async-iteration`、`uint8array-base64`，以及此前已支持的 ES2015 / ES2016+ 特性集合（class、解构、模板、默认/rest、for-of、Symbol、Promise、async/await、Iterator helpers、using、Set 方法等）。
 
-### 5.4 harness 替换与注入
+### 5.6 harness 替换与注入
 
 runner 当前只做以下注入/替换：
 
@@ -217,7 +217,7 @@ runner 当前只做以下注入/替换：
 
 运行器只注入上述 5 项；历史兼容垫片与生成器语料替换已删除，Generator 已原生执行。报告中的 harness 清单与上述一致。
 
-### 5.5 已收敛的语义簇
+### 5.7 已收敛的语义簇
 
 类与 super、class 静态初始化块、公有/私有字段与方法、`using` / `await using`、Promise capability/species/组合器、async/await 与 thenable 时序、Array/Map/Set/RegExp/Promise 的 `@@species`、对象剩余/展开、数字分隔符、Error `cause`、ES2016+ 的 String/Array/Object 方法、change-array-by-copy、RegExp 的 `@@match` / `@@replace` / `@@search` / `@@split` / `@@matchAll`、`RegExp.escape`、可选链、`Symbol.unscopables`、Iterator helpers 与内建迭代器原型、`Array.fromAsync`、ES2025 Set 方法集、Proxy/Reflect、Generator/async generator、TypedArray/AB/DV/BigInt 等。
 
@@ -233,7 +233,7 @@ runner 当前只做以下注入/替换：
 
 ### 6.1 真实库
 
-固定版本清单见 [Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt)。当前 **90 个库、375/375 用例通过，0 失败**。最近一次新增 fflate 0.8.2、js-base64 3.7.7、long 5.2.3、loglevel 1.9.1，共 12 条断言。
+固定版本清单见 [Libraries.kt](../vibe-js-conformance/src/main/kotlin/com/muedsa/js/conformance/Libraries.kt)。当前 **102 个库、375/375 用例通过，0 失败**。最近一次新增 fflate 0.8.2、js-base64 3.7.7、long 5.2.3、loglevel 1.9.1，共 12 条断言。
 
 | 库 | 状态 | 用例 |
 |---|---|---:|
