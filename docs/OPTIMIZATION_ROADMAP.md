@@ -570,7 +570,7 @@ data class EngineLimits(
 |---|
 | 2026-11-13 | **P2 API 不变量与 seed 收口**：`JSArrayBuffer` 构造器校验 byteLength/maxByteLength，`resize` 校验可调整性与范围；补 `TypedArray.prototype.at` 与 DataView BigInt 方法 seed；ES2016+ **30,183/30,183**、选中 15,330；core JVM **1218**、JS/Wasm **1202** |
 | 2026-11-13 | **P0 TypedArray 非法 numeric index 修复**：所有 canonical numeric index 先执行 ToNumber/ToBigInt；`-0`/`1.1`/`NaN`/`Infinity` 不再写入；resized 后转为有效的非负整数索引仍可写入；新增 2 条 commonTest；core JVM **1217**、JS/Wasm **1201** |
-| 2026-11-12 | **async-iteration 版本锚点**：纳入 async generator / for-await-of；ES2016+ **30,161/30,161**，选中 15,319 个文件；至此所有 supported 的 post-ES2015 特性均已进入 ES2016+ 种子 |
+| 2026-11-12 | **async-iteration 版本锚点**：纳入 async generator / for-await-of；ES2016+ **30,161/30,161**，选中 15,319 个文件；除 `TypedArray.prototype.at` 与 DataView BigInt 方法标签外，已支持的 post-ES2015 特性均已进入 ES2016+ 种子 |
 | 2026-11-12 | **ES2019+ 版本锚点批次**：纳入 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll；ES2016+ **22,956/22,956**，选中 11,682 个文件 |
 | 2026-11-12 | **ES2024/2025 语言特性扩展批次**：纳入 iterator-chunking、upsert、symbols-as-weakmap-keys、iterator-sequencing、joint-iteration、explicit-resource-management、hashbang、optional-catch-binding、stable-array-sort、json-superset、error-stack-accessor、json-parse-with-source、for-in-order、array-grouping；ES2016+ **20,488/20,488**，选中 10,389 个文件 |
 | 2026-11-12 | **ES2024/2025 小型特性批次**：纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`；ES2016+ **18,856/18,856**，选中 9,549 个文件 |
