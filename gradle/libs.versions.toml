@@ -5,7 +5,7 @@ android-minSdk = "24"
 android-compileSdk = "36"
 kotlin-benchmark = "0.5.0"
 kotlinx-coroutines = "1.11.0"
-jetbrains-annotations = "26.0.2"
+jetbrains-annotations = "26.1.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
