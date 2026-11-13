@@ -18,10 +18,11 @@
 
 - 核心负责：模块图、链接、`ResolveExport`、模块环境、namespace、同步求值。
 - 宿主负责：说明符规范化、源码读取、网络/文件/打包器、模块 id 的稳定性。
-- 首版支持：静态 `import` / `export`、默认导出、re-export、`export *`、`export * as ns`、
-  命名空间导入、`import.meta`、循环依赖、live binding。
-- 首版不支持：动态 `import()` 执行、Top-Level Await 执行、import attributes/JSON modules、
-  文件/URL/网络加载器、Test262 module harness。
+- 当前已支持：静态 `import` / `export`、默认导出、re-export、`export *`、`export * as ns`、
+  命名空间导入、`import.meta`、循环依赖、live binding、动态 `import()`、Top-Level Await、
+  import attributes、JSON/text/bytes module 资产。
+- 仍未实现：文件/URL/网络加载器、import-defer、source-phase-imports、Test262 module harness
+  （后者位于 `:vibe-js-conformance`）。
 - `Engine.runModule` 每次调用使用独立模块图；同一模块在单次调用内只求值一次。
 - 模块共享 `Engine` 的 realm/global，但每个模块有独立 `ModuleEnvironment`。
 - 模块顶层 `this = undefined`，恒严格模式。
@@ -62,7 +63,7 @@
 | 说明符规范化 | Provider 全权负责 | Node package/URL；浏览器 URL/import maps | 宿主需实现相对路径、包解析、URL 规则 |
 | 动态 `import()` | 已支持，经异步任务加载/求值 | 支持 | 路由懒加载、插件动态加载可用 |
 | Top-Level Await | Module goal 已支持；Script goal 拒绝 | 支持 | 现代 ESM 包可在 Module goal 运行 |
-| import attributes | 已支持静态/动态导入属性 | Node 22+/现代浏览器支持 | JSON/WASM 模块仍取决于 Provider |
+| import attributes | 已支持静态/动态导入属性与 JSON/text/bytes 资产 | Node 22+/现代浏览器支持 | WASM 模块未实现；资产由 Provider 提供 |
 | 诊断 | 入口 range + 链接错误 | 文件/行/列/导入链完整 | 链接错误定位仍弱于主流引擎 |
 | 加载方式 | 顺序 DFS + 异步依赖 completion | 可并行/预加载 | 网络/文件慢时吞吐较低 |
 | Test262 harness | `:vibe-js-conformance` 的 module TLA 子集 | 运行时提供 | TLA 有独立门禁；完整 ESM 一致性仍有限 |
@@ -135,17 +136,23 @@ data class ModuleRequest(
     val specifier: String,
     /** 发起请求的模块 id；入口请求为 null。 */
     val referrer: String? = null,
+    /** 导入属性；入口请求为空。 */
+    val attributes: Map<String, String> = emptyMap(),
 )
 
 data class ModuleSource(
-    /** 宿主规范化的稳定唯一 id；相同 id 表示同一个模块。 */
+    /** 宿主规范化的稳定唯一 id；普通模块相同 id 表示同一个模块。 */
     val id: String,
-    /** 已解码的 UTF-8 文本；BOM 由宿主剥离。 */
+    /** 已解码的文本（JS/JSON/text）；bytes 资产可为空。 */
     val source: String,
     /** 错误栈显示名；不参与模块身份。 */
     val sourceName: String = id,
     /** import.meta.url；为空时使用 module:<id>。 */
     val url: String? = null,
+    /** 资产类型；JSON/text/bytes 由核心在加载期标记。 */
+    val assetType: String? = null,
+    /** 原始字节资产；仅 bytes 类型使用。 */
+    val bytes: ByteArray? = null,
 )
 
 fun interface ModuleProvider {
@@ -178,12 +185,13 @@ class InMemoryModuleProvider(
 约束：
 
 - 核心不拼 `./`、`../`、URL、平台路径；provider 负责。
-- `id` 必须非空且稳定；核心只按 `id` 去重。
+- `id` 必须非空且稳定；普通模块按 `id` 去重，非 JS 资产按 `id + assetType` 去重。
 - `sourceName` 只影响错误栈；`url` 只影响 `import.meta.url`。
 - provider 可以跨 `runModule` 复用；核心不缓存 provider 实例。
 - `InMemoryModuleProvider` 使用精确 id，不做相对路径解析；宿主需要自行规范化。
+- JSON/text/bytes 资产通过 `with { type: ... }` 标记；bytes 必须由 Provider 提供 `bytes`。
 
-### 4.3 Engine 入口（目标 API，尚未实现）
+### 4.3 Engine 入口（已实现，实验性）
 
 ```kotlin
 suspend fun Engine.runModule(
@@ -759,9 +767,9 @@ M8.1–M8.6 已完成；模块图/求值 benchmark 已加入 JVM 基准套件。
 
 | ID | 能力 | 参考人日 | 前置 |
 |---|---|---:|---|
-| L1 | 动态 `import()`：Promise、图复用、错误传播 | 3–5 | M7 |
-| L2 | Top-Level Await：异步求值状态机 | 8–15 | L1/M7 |
-| L3 | import attributes / JSON modules | 3–5 | M1/M4 |
+| L1 | 动态 `import()`：Promise、图复用、错误传播 | 已完成 | M7 |
+| L2 | Top-Level Await：异步求值状态机 | 已完成 | L1/M7 |
+| L3 | import attributes / JSON/text/bytes modules | 已完成 | M1/M4 |
 | L4 | 文件/URL/网络 Provider（仅 host） | 3–5 | M2/M3 |
 | L5 | Test262 module harness + 全量 module 门禁 | 5–9 | L1/L2 |
 

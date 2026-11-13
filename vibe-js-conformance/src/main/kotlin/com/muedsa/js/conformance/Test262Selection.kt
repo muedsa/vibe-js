@@ -210,7 +210,7 @@ internal object Test262Selection {
         // L3.3 已实现 BigInt 运行时：字面量/typeof/算术/转换/内建与 Test262 BigInt 用例
         "BigInt",
         // L3.5 已实现 ArrayBuffer detach、DataView 与 TypedArray（含 BigInt 视图）语义
-        "TypedArray", "ArrayBuffer", "DataView",
+        "TypedArray", "ArrayBuffer", "DataView", "align-detached-buffer-semantics-with-web-reality",
         "arraybuffer-transfer", "immutable-arraybuffer", "resizable-arraybuffer",
         "DataView.prototype.getInt8", "DataView.prototype.getUint8",
         "DataView.prototype.getInt16", "DataView.prototype.getUint16",
@@ -322,6 +322,7 @@ internal object Test262Selection {
         "TypedArray.prototype.at",
         "DataView.prototype.getBigInt64", "DataView.prototype.getBigUint64",
         "DataView.prototype.setBigInt64", "DataView.prototype.setBigUint64",
+        "align-detached-buffer-semantics-with-web-reality",
     )
 
     /**
@@ -367,5 +368,8 @@ internal object Test262Selection {
         "top-level-await",
         "dynamic-import",
         "import-attributes",
+        "json-modules",
+        "import-text",
+        "import-bytes",
     )
 }

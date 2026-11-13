@@ -231,7 +231,7 @@ class TypedArrayTest {
             ].join('|');
             """.trimIndent()
         )
-        assertEquals("true|true|true|true|false|false|false|true|true|leading|true|7", result)
+        assertEquals("true|true|true|true|false|false|true|true|true|leading|true|7", result)
     }
 
     @Test
@@ -833,6 +833,37 @@ class TypedArrayTest {
             """.trimIndent()
         )
         assertEquals("Error,Error,Error,Error|4|7|0", result)
+    }
+
+    @Test
+    fun `TypedArray 非法 numeric index 的 Reflect 设置返回 true`() = runTest {
+        val runtime = TestRuntime()
+        val result = runtime.evalString(
+            """
+            var array = new Uint8Array(2);
+            array[0] = 7;
+            var called = 0;
+            var value = {
+              valueOf: function () {
+                called = called + 1;
+                return 1;
+              }
+            };
+            var receiver = {};
+            var direct = Reflect.set(array, "-0", value);
+            var altered = Reflect.set(array, 100, value, receiver);
+            var primitive = Reflect.set(array, 100, value, "not an object");
+            [
+              direct,
+              altered,
+              primitive,
+              called,
+              array[0],
+              receiver[100] === undefined
+            ].join(",");
+            """.trimIndent()
+        )
+        assertEquals("true,true,true,1,7,true", result)
     }
 
     @Test

@@ -204,11 +204,11 @@ class ModuleGraphResolverTest {
     @Test
     fun `静态导入属性随依赖请求传给 Provider`() = runTest {
         val provider = RecordingProvider(
-            mapOf("./b.js" to source("b", "export const x = 1;")),
+            mapOf("./b.js" to source("b", "1")),
         )
         val entry = source(
             "a",
-            """import { x } from "./b.js" with { type: "json", mode: "strict" };""",
+            """import x from "./b.js" with { type: "json", mode: "strict" };""",
         )
         ModuleGraphResolver(EngineLimits()).load(entry, provider)
 

@@ -2,6 +2,7 @@ package com.muedsa.js
 
 import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSArrayBuffer
+import com.muedsa.js.runtime.value.JSDataView
 import com.muedsa.js.runtime.value.JSError
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -41,6 +42,18 @@ class ArrayBufferResizableTest {
             runtime.eval("new ArrayBuffer(4).resize(2);")
         }
         assertEquals("TypeError", (error.value as JSError).errorName)
+    }
+
+    @Test
+    fun `JSDataView 宿主构造拒绝越界窗口`() {
+        val buffer = JSArrayBuffer(null, 8)
+        assertFailsWith<IllegalArgumentException> {
+            JSDataView(null, buffer, 0, 9)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            JSDataView(null, buffer, -1, 1)
+        }
+        JSDataView(null, buffer, 8, 0)
     }
 
     @Test

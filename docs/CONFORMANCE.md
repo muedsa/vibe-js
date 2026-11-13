@@ -20,11 +20,11 @@
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝）；允许 0 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，崩溃 0，跳过 0 |
-| Test262 ES2015 | **63,456 / 63,456**，失败 0，崩溃 0，跳过 **324**（module flag 322 + `$262`/`print` 2） |
-| Test262 ES2016+ | **30,183 / 30,183**，失败 0，崩溃 0，跳过 **24**（module flag） |
+| Test262 ES2015 | **63,716 / 63,716**，失败 0，崩溃 0，跳过 **326**（module flag 322 + `$262`/`print` 4） |
+| Test262 ES2016+ | **30,443 / 30,443**，失败 0，崩溃 0，跳过 **26**（module flag + 宿主钩子） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0，跳过 0 |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0，跳过 3（source-phase-imports） |
-| Test262 language module | **686 / 686**，失败 0，崩溃 0，跳过 131（未支持特性） |
+| Test262 language module | **708 / 708**，失败 0，崩溃 0，跳过 109（未支持特性） |
 | Node 差分 | **1432 / 1432** |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） |
 | conformance 单元测试 | **44 / 44**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4） |
@@ -82,7 +82,7 @@
 
 模块早期错误（early-module）共 63 条，解析成功 0、被拒绝 63、意外接受 0。模块允许列表 `parser-module-allowlist.txt` 当前为空；新增条目必须逐条写“相对语料根目录的 POSIX 路径 + 原因”，且只允许 `.module.js`，禁止目录/后缀/通配符。
 
-> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/异步求值/错误定位），TLA 仅在 Module goal 支持；Test262 module TLA 249/249、module-code 593/593、language module 686/686（未支持特性逐条跳过）；宿主加载器未实现，模块能力仍需 opt-in。
+> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/异步求值/错误定位），TLA 仅在 Module goal 支持；Test262 module TLA 249/249、module-code 593/593、language module 708/708（未支持特性逐条跳过）；宿主加载器未实现，模块能力仍需 opt-in。
 
 ### 3.4 早期错误（脚本）
 
@@ -131,23 +131,23 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 范围：`test/language` + `test/built-ins` + `test/annexB` 中非 `es5id` 且满足以下条件之一的脚本：`features` 全部落在已支持集合内；或无 `features` 标注但带 `es6id` / `esid`。默认纳入 esid 用例。
 
-当前选中 **33,128** 个文件，执行 **63,456** 次（strict + sloppy）。
+当前选中 **33,271** 个文件，执行 **63,716** 次（strict + sloppy）。
 
 | 指标 | 数值 |
 |---|---:|
-| 选中测试文件 | 33,128 |
-| 执行次数（含 strict/sloppy） | 63,456 |
-| 通过 | 63,456（100%） |
+| 选中测试文件 | 33,271 |
+| 执行次数（含 strict/sloppy） | 63,716 |
+| 通过 | 63,716（100%） |
 | 失败 | 0 |
 | 崩溃 | 0 |
-| 跳过测试文件 | 324 |
+| 跳过测试文件 | 326 |
 
 ### 5.1 跳过原因
 
 | 原因 | 数量 |
 |---|---:|
 | unsupported flag（322 个全部是 `flags: [module]`） | 322 |
-| unsupported harness: `$262` | 1 |
+| unsupported harness: `$262` | 3 |
 | unsupported harness: print | 1 |
 
 `module` 在 ES2015 子集仍跳过，因为该子集不执行模块；TLA 已由独立 module suite 覆盖（见 §5.3）。旧语料中的 `generator` 历史 flag 仅作兼容判定，现行语料已改用 `features: [generators]`，不影响已纳入基线的生成器用例。
@@ -157,11 +157,11 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 | 原因 | 数量 |
 |---|---:|
 | ES5 用例（ES2015 子集排除） | 8,115 |
-| 特性未全部支持 | 7,230 |
+| 特性未全部支持 | 7,087 |
 | 无特性标注且缺少 es6id/esid | 281 |
 | 路径排除 | 12 |
 
-另有 **2 条**仅由源码文本匹配排除（`test262-text-exclusions.txt`）：`test/built-ins/Proxy/revocable/tco-fn-realm.js`（其余 `$262` 钩子）与 `test/built-ins/RegExp/prototype/Symbol.replace/coerce-global.js`（`print`）。两者都是宿主钩子，不是已实现特性被误排。
+另有 **4 条**仅由源码文本匹配排除（`test262-text-exclusions.txt`）：`test/built-ins/Proxy/revocable/tco-fn-realm.js` 与两条 TypedArray `DefineOwnProperty` cross-realm 用例（均缺 `$262` 钩子），以及 `test/built-ins/RegExp/prototype/Symbol.replace/coerce-global.js`（`print`）。它们都是宿主钩子，不是已实现特性被误排。
 
 路径排除的 12 个文件主要是：`SharedArrayBuffer` / `Atomics`、旧草案的 `RegExp.prototype.compile` 子类用例，以及 `Object.seal` 的 11 个 TypedArray 整数索引用例。
 
@@ -185,7 +185,7 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 完整 `language/module-code` 当前 **593 / 593**（执行 593，失败 0、崩溃 0；另有 3 条 `source-phase-imports` 未支持而跳过）。已接入独立 `test262ModuleCodeConformance` strict 门禁。
 
-`language` 下所有受支持 module 用例当前 **686 / 686**（失败 0、崩溃 0；131 条 import-defer/source-phase/json/text/bytes modules 等未支持特性逐条跳过）。已接入 `test262ModuleLanguageConformance` strict 门禁。
+`language` 下所有受支持 module 用例当前 **708 / 708**（失败 0、崩溃 0；109 条 import-defer/source-phase modules 等未支持特性逐条跳过）。已接入 `test262ModuleLanguageConformance` strict 门禁。
 
 ### 5.4 Test262 ES2016+ 子集
 
@@ -197,13 +197,13 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 ./gradlew :vibe-js-conformance:test262Es2016PlusConformance -Ptest262Filter=exponentiation
 ```
 
-Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版本门禁锚点；用例仍必须全部落在已支持特性集合内。当前选中 **15,330** 个文件、执行 **30,183** 次，全部通过；24 个 module flag 用例跳过，由独立 module suite 覆盖。
+Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版本门禁锚点；用例仍必须全部落在已支持特性集合内。当前选中 **15,473** 个文件、执行 **30,443** 次，全部通过；26 个 module flag / 宿主钩子用例跳过，由独立 module suite 覆盖。
 
-本轮把 `Reflect.set`/`Reflect.setPrototypeOf`、全部 `DataView.prototype.*` 方法标注、`TypedArray.prototype.at`、12 种 TypedArray 构造器标注、`arraybuffer-transfer`、`immutable-arraybuffer`、`uint8array-base64` 与 `resizable-arraybuffer` 纳入支持特性，并实现 `transfer`/`transferToFixedLength`、immutable ArrayBuffer API、Uint8Array base64/hex API、`{ maxByteLength }`/`resize` 及动态 TypedArray/DataView 视图；ES2015 子集从 61,786 次扩展到 63,456 次；ES2016+ 继续纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`、`iterator-chunking`、`upsert`、`symbols-as-weakmap-keys`、`iterator-sequencing`、`joint-iteration`、`explicit-resource-management`、`hashbang`、`optional-catch-binding`、`stable-array-sort`、`json-superset`、`error-stack-accessor`、`json-parse-with-source`、`for-in-order`、`array-grouping`，执行次数扩展到 30,183。随后把 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll 作为 ES2019+ 版本锚点纳入，并纳入 async-iteration；`TypedArray.prototype.at` 与 DataView BigInt 方法标签也已 seed；当前 ES2016+ 种子覆盖全部 supported 的 post-ES2015 特性。
+本轮把 `Reflect.set`/`Reflect.setPrototypeOf`、全部 `DataView.prototype.*` 方法标注、`TypedArray.prototype.at`、12 种 TypedArray 构造器标注、`arraybuffer-transfer`、`immutable-arraybuffer`、`uint8array-base64` 与 `resizable-arraybuffer` 纳入支持特性，并实现 `transfer`/`transferToFixedLength`、immutable ArrayBuffer API、Uint8Array base64/hex API、`{ maxByteLength }`/`resize` 及动态 TypedArray/DataView 视图；ES2015 子集从 61,786 次扩展到 63,716 次；ES2016+ 继续纳入 `promise-try`、`Math.sumPrecise`、`Error.isError`、`iterator-includes`、`Iterator.prototype.join`、`iterator-chunking`、`upsert`、`symbols-as-weakmap-keys`、`iterator-sequencing`、`joint-iteration`、`explicit-resource-management`、`hashbang`、`optional-catch-binding`、`stable-array-sort`、`json-superset`、`error-stack-accessor`、`json-parse-with-source`、`for-in-order`、`array-grouping`，执行次数扩展到 30,443。随后把 BigInt/BigInt64Array/BigUint64Array、AggregateError、globalThis、string-trimming、await-dictionary、nonextensible-applies-to-private、String.prototype.matchAll/Symbol.matchAll 作为 ES2019+ 版本锚点纳入，并纳入 async-iteration；`TypedArray.prototype.at` 与 DataView BigInt 方法标签也已 seed；此外新增 detached-buffer 语义批次（`align-detached-buffer-semantics-with-web-reality`），当前 ES2016+ 种子覆盖全部 supported 的 post-ES2015 特性。
 
 ### 5.5 已启用并纳入基线的特性
 
-`Reflect` / `Reflect.construct`、`Proxy` / `proxy-missing-checks`、`BigInt`、`TypedArray` / `ArrayBuffer` / `DataView`（含 BigInt 视图、Float16、detach/transfer/immutable/resizable 语义）、`generators`、`async-iteration`、`uint8array-base64`，以及此前已支持的 ES2015 / ES2016+ 特性集合（class、解构、模板、默认/rest、for-of、Symbol、Promise、async/await、Iterator helpers、using、Set 方法等）。
+`Reflect` / `Reflect.construct`、`Proxy` / `proxy-missing-checks`、`BigInt`、`TypedArray` / `ArrayBuffer` / `DataView`（含 BigInt 视图、Float16、detach/transfer/immutable/resizable 语义）、`generators`、`async-iteration`、`uint8array-base64`、detached-buffer 语义，以及此前已支持的 ES2015 / ES2016+ 特性集合（class、解构、模板、默认/rest、for-of、Symbol、Promise、async/await、Iterator helpers、using、Set 方法等）。
 
 ### 5.6 harness 替换与注入
 
@@ -386,7 +386,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 9. 已知范围与缺口
 
-- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、链接、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值；Test262 `language/module-code/top-level-await` 249/249，完整 `language/module-code` 593/593（3 条 source-phase-imports 跳过），`language` module 子集 686/686（131 条未支持特性跳过）。宿主加载器仍未实现；parser 的 262 个模块用例保留为现状回归门禁。
+- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、链接、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值；Test262 `language/module-code/top-level-await` 249/249，完整 `language/module-code` 593/593（3 条 source-phase-imports 跳过），`language` module 子集 708/708（109 条未支持特性跳过）。宿主加载器仍未实现；parser 的 262 个模块用例保留为现状回归门禁。
 - **顶层 await**：Module goal 已实现异步模块求值、异步依赖等待、cycle root、错误传播与动态 import 等待；Script goal 继续拒绝。
 - **模块扩展语法**：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；同一说明符带不同导入属性会被解析器拒绝。
 - **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。

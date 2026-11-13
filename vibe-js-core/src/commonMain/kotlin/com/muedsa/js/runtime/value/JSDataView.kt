@@ -29,6 +29,17 @@ class JSDataView(
     private val lengthTracking: Boolean = false,
 ) : JSObject(prototype) {
 
+    init {
+        require(byteOffset >= 0) { "byteOffset must not be negative" }
+        require(byteLength >= 0) { "byteLength must not be negative" }
+        require(byteOffset <= buffer.byteLength) {
+            "DataView offset is outside the ArrayBuffer"
+        }
+        require(lengthTracking || byteOffset.toLong() + byteLength.toLong() <= buffer.byteLength.toLong()) {
+            "DataView window is outside the ArrayBuffer"
+        }
+    }
+
     private val storedByteLength: Int = byteLength
 
     /** 被查看的缓冲区是否已分离（供内建访问器与读写前置检查使用）。 */

@@ -920,11 +920,13 @@ private class Test262ModuleProvider(
         if (!resolved.toPath().startsWith(rootPath) || !resolved.isFile) return null
         val relativePath = resolved.toRelativeString(corpusRoot.canonicalFile)
             .replace(File.separatorChar, '/')
+        val bytes = if (request.attributes["type"] == "bytes") resolved.readBytes() else null
         return ModuleSource(
             id = relativePath,
-            source = resolved.readText(),
+            source = if (bytes != null) "" else resolved.readText(),
             sourceName = relativePath,
             url = resolved.toURI().toString(),
+            bytes = bytes,
         )
     }
 }

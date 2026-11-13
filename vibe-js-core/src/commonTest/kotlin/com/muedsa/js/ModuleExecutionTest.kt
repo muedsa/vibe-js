@@ -158,12 +158,12 @@ class ModuleExecutionTest {
         val provider = ModuleProvider { request ->
             requests.add(request)
             when (request.specifier) {
-                "./b.js" -> source("b", "export const x = 1;")
+                "./b.js" -> source("b", "1")
                 else -> null
             }
         }
         val namespace = engine.runModule(
-            source("a", """import { x } from "./b.js" with { type: "json" }; export { x };"""),
+            source("a", """import x from "./b.js" with { type: "json" }; export { x };"""),
             provider,
         )
 
@@ -730,7 +730,7 @@ class ModuleExecutionTest {
         val engine = Engine()
         val provider = ModuleProvider { request ->
             requests.add(request)
-            if (request.specifier == "./b.js") source("b", "export const x = 1;") else null
+            if (request.specifier == "./b.js") source("b", "1") else null
         }
         val namespace = engine.runModule(
             source(
@@ -738,7 +738,7 @@ class ModuleExecutionTest {
                 """
                 export var result = 0;
                 import("./b.js", { with: { type: "json" } }).then(function (ns) {
-                    result = ns.x;
+                    result = ns.default;
                 });
                 """.trimIndent(),
             ),

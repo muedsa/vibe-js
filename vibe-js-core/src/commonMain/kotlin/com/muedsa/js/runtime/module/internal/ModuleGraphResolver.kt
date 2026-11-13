@@ -2,6 +2,9 @@
 
 package com.muedsa.js.runtime.module.internal
 
+import com.muedsa.js.builtins.JsonDepthLimitException
+import com.muedsa.js.builtins.JsonParseException
+import com.muedsa.js.builtins.JsonParser
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.lexer.LexerException
 import com.muedsa.js.lexer.SourceInfo
@@ -107,7 +110,7 @@ internal class ModuleGraphResolver(
             )
         }
 
-        records[source.id]?.let { return it }
+        records[recordKey(source)]?.let { return it }
 
         limits.checkSourceLength(source.source.length)
         val maxModules = limits.maxModules
@@ -138,7 +141,7 @@ internal class ModuleGraphResolver(
             program = program,
             runtime = runtime,
         )
-        records[source.id] = record
+        records[recordKey(source)] = record
         totalSourceLength = nextTotal
 
         for (dependencySpecifier in program.requestedModules) {
@@ -172,19 +175,131 @@ internal class ModuleGraphResolver(
             message = "Module not found: $specifier" +
                 (referrer?.let { " (referrer=$it)" } ?: ""),
         )
-        return loadSource(
+        val prepared = prepareAssetSource(
             source = loaded,
+            attributes = attributes,
+            specifier = specifier,
+            referrer = referrer,
+        )
+        return loadSource(
+            source = prepared,
             specifier = specifier,
             referrer = referrer,
             provider = provider,
         ).also { requestCache[key] = it }
     }
 
+    /**
+     * 把非 JS 资产包装成最小 ES module。
+     *
+     * 当前模块记录仍以 `ModuleProgram` 为核心，因此 JSON/text/bytes 在加载期
+     * 转成 synthetic default export 的源码；JSON 先在加载期用严格 JSON parser
+     * 校验，保证错误发生在 resolution 阶段而不是模块求值阶段。
+     */
+    private suspend fun prepareAssetSource(
+        source: ModuleSource,
+        attributes: Map<String, String>,
+        specifier: String,
+        referrer: String?,
+    ): ModuleSource {
+        return when (attributes["type"]) {
+            "json" -> source.copy(
+                source = jsonModuleSource(source, specifier, referrer),
+                assetType = "json",
+            )
+            "text" -> source.copy(
+                source = textModuleSource(source.source),
+                assetType = "text",
+            )
+            "bytes" -> source.copy(
+                source = bytesModuleSource(source.bytes ?: source.source.encodeToByteArray()),
+                assetType = "bytes",
+            )
+            else -> source
+        }
+    }
+
+    private suspend fun jsonModuleSource(
+        source: ModuleSource,
+        specifier: String,
+        referrer: String?,
+    ): String {
+        try {
+            JsonParser(
+                text = source.source,
+                objectPrototype = null,
+                arrayPrototype = null,
+                maxDepth = limits.maxJsonDepth,
+            ).parse()
+        } catch (error: JsonParseException) {
+            throw invalidAsset(source, specifier, referrer, "Invalid JSON module: ${error.message}")
+        } catch (error: JsonDepthLimitException) {
+            throw invalidAsset(source, specifier, referrer, error.message ?: "JSON module is too deep")
+        }
+        return "const __json = JSON.parse(${jsStringLiteral(source.source)});\n" +
+            "export default __json;\n"
+    }
+
+    private fun textModuleSource(text: String): String =
+        "export default ${jsStringLiteral(text)};\n"
+
+    private fun bytesModuleSource(bytes: ByteArray): String {
+        val values = bytes.joinToString(",") { (it.toInt() and 0xFF).toString() }
+        return "const __bytes = new Uint8Array([$values]);\n" +
+            "export default new Uint8Array(__bytes.buffer.transferToImmutable());\n"
+    }
+
+    private fun invalidAsset(
+        source: ModuleSource,
+        specifier: String,
+        referrer: String?,
+        message: String,
+    ): ModuleLinkException = ModuleLinkException(
+        kind = ModuleLinkErrorKind.INVALID_MODULE,
+        specifier = specifier,
+        referrer = referrer,
+        moduleId = source.id,
+        sourceName = source.sourceName,
+        message = message,
+    )
+
+    /** 生成可嵌入 JS 字符串字面量的值；转义控制字符与行分隔符。 */
+    private fun jsStringLiteral(text: String): String {
+        val builder = StringBuilder(text.length + 2)
+        builder.append('"')
+        for (character in text) {
+            when (character) {
+                '\\' -> builder.append("\\\\")
+                '"' -> builder.append("\\\"")
+                '\n' -> builder.append("\\n")
+                '\r' -> builder.append("\\r")
+                '\t' -> builder.append("\\t")
+                '\b' -> builder.append("\\b")
+                '\u000B' -> builder.append("\\v")
+                '\u000C' -> builder.append("\\f")
+                '\u2028' -> builder.append("\\u2028")
+                '\u2029' -> builder.append("\\u2029")
+                else -> if (character < ' ') {
+                    builder.append("\\u")
+                    builder.append(character.code.toString(16).padStart(4, '0'))
+                } else {
+                    builder.append(character)
+                }
+            }
+        }
+        builder.append('"')
+        return builder.toString()
+    }
+
+    /** 模块身份：普通模块保持 id；非 JS 资产按 id + assetType 区分。 */
+    private fun recordKey(source: ModuleSource): String =
+        source.id + (source.assetType?.let { "\u0000$it" } ?: "")
+
     /** 从入口按依赖闭包收集记录，避免把此前动态导入的无关模块纳入同一图。 */
     private fun graphFor(entry: ModuleRecord): ModuleGraph {
         val reachable = LinkedHashMap<String, ModuleRecord>()
         fun visit(record: ModuleRecord) {
-            if (reachable.put(record.id, record) != null) return
+            if (reachable.put(recordKey(record.source), record) != null) return
             record.dependencies.forEach(::visit)
         }
         visit(entry)

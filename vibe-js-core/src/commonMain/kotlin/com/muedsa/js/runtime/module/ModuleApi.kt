@@ -42,7 +42,8 @@ public data class ModuleRequest(
  * Provider 解析/读取后的模块源码。
  *
  * [id] 必须是宿主侧稳定且唯一的模块标识；同一个 id 表示同一个模块。
- * [source] 是宿主已经解码的文本，UTF-8 解码与 BOM 剥离属于宿主职责。
+ * [source] 是宿主已经解码的文本（普通 JS / JSON / text）；bytes 资产可为空，
+ * 此时使用 [bytes]。UTF-8 解码与 BOM 剥离属于宿主职责。
  * [sourceName] 只影响错误栈；[url] 只影响 `import.meta.url`，两者都不参与模块身份。
  */
 @ExperimentalModuleApi
@@ -51,6 +52,20 @@ public data class ModuleSource(
     public val source: String,
     public val sourceName: String = id,
     public val url: String? = null,
+    /**
+     * 资产类型；普通 ES module 为 null，JSON/text/bytes 由核心在加载期标记。
+     *
+     * 模块身份按 `id + assetType` 区分，因此同一路径以脚本和 text 两种形式
+     * 导入时不会错误复用同一个模块记录。
+     */
+    public val assetType: String? = null,
+    /**
+     * 原始字节资产；仅 `with { type: 'bytes' }` 使用。
+     *
+     * 普通 JS/JSON/text 模块保持 null。核心不会把该字段当作文本解码，
+     * 避免破坏 PNG 等二进制资产。
+     */
+    public val bytes: ByteArray? = null,
 )
 
 /**

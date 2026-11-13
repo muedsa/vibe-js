@@ -1237,10 +1237,14 @@ class Interpreter(
         if (target is JSTypedArray) {
             when (val classified = target.classifyIndex(key)) {
                 JSTypedArray.IndexKey.NotIndex -> Unit
-                // 规范：分离缓冲区的 Integer-Indexed [[Set]] 静默成功（返回 true）；
-                // 普通越界索引在接收者为自身时失败（保持既有严格模式行为）
-                JSTypedArray.IndexKey.Invalid ->
-                    return if (target.isDetached) true else receiver !== target
+                // 规范：Integer-Indexed [[Set]] 对非法 numeric index 仍先转换值并
+                // 返回 true；Receiver 不同时不转换、不写入。
+                JSTypedArray.IndexKey.Invalid -> {
+                    if (receiver === target) {
+                        convertTypedArrayElementValue(target, value)
+                    }
+                    return true
+                }
                 is JSTypedArray.IndexKey.Valid -> {
                     if (receiver === target) {
                         setTypedArrayElement(target, classified.index, value)
