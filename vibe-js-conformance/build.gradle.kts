@@ -258,7 +258,7 @@ val test262ModuleLanguageConformance = tasks.register<JavaExec>("test262ModuleLa
         test262Dir.asFile.absolutePath,
         reportDir.get().asFile.absolutePath,
         "--suite", "module",
-        "--filter", "language/",
+        "--filter", project.findProperty("test262Filter")?.toString() ?: "language/",
     )
     if (project.hasProperty("test262Limit")) {
         args("--limit", project.property("test262Limit").toString())

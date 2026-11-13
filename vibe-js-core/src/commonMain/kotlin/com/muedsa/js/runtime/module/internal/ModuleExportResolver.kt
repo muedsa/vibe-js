@@ -2,6 +2,7 @@
 
 package com.muedsa.js.runtime.module.internal
 
+import com.muedsa.js.ast.ImportPhase
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 
 /** ResolveExport 的结果；Namespace 对应 `export * as ns` 的命名空间导出。 */
@@ -13,6 +14,7 @@ internal sealed interface ResolveExportResult {
 
     data class Namespace(
         val module: ModuleRecord,
+        val phase: ImportPhase = ImportPhase.EAGER,
     ) : ResolveExportResult
 
     data object Ambiguous : ResolveExportResult
@@ -88,7 +90,9 @@ internal object ModuleExportResolver {
             if (imported != null) {
                 val target = module.dependencyFor(imported.moduleRequest)
                     ?: return ResolveExportResult.NotFound
-                if (imported.importName == "*") return ResolveExportResult.Namespace(target)
+                if (imported.importName == "*") {
+                    return ResolveExportResult.Namespace(target, imported.phase)
+                }
                 return resolveExport(target, imported.importName, resolveSet)
             }
             return ResolveExportResult.Resolved(module, local)

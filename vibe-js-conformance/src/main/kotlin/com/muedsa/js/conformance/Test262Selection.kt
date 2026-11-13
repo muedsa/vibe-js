@@ -371,5 +371,6 @@ internal object Test262Selection {
         "json-modules",
         "import-text",
         "import-bytes",
+        "import-defer",
     )
 }

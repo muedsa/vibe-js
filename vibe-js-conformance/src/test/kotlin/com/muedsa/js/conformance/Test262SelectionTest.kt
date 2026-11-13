@@ -233,10 +233,10 @@ class Test262SelectionTest {
 
     @Test
     fun `module 子集仍跳过未支持 feature`() {
-        val metadata = metadata(flags = setOf("module"), features = setOf("import-defer"))
+        val metadata = metadata(flags = setOf("module"), features = setOf("source-phase-imports"))
         assertEquals(
-            "unsupported feature: import-defer",
-            Test262Selection.skipReason("import defer * as ns from './x.js';", metadata, "module"),
+            "unsupported feature: source-phase-imports",
+            Test262Selection.skipReason("import source * as ns from './x.js';", metadata, "module"),
         )
     }
 

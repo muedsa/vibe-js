@@ -2,6 +2,7 @@
 
 package com.muedsa.js.runtime.module.internal
 
+import com.muedsa.js.ast.ImportPhase
 import com.muedsa.js.runtime.DeclarativeEnvironment
 import com.muedsa.js.runtime.Environment
 import com.muedsa.js.runtime.exception.JSException
@@ -42,7 +43,12 @@ internal class ModuleEnvironment(
             }
 
             is ModuleImportBinding.Namespace -> {
-                return imported.target.namespace
+                val namespace = if (imported.phase == ImportPhase.DEFER) {
+                    imported.target.deferredNamespace
+                } else {
+                    imported.target.namespace
+                }
+                return namespace
                     ?: throw JSException(
                         JSError("ReferenceError", "Module namespace is not initialized: ${imported.target.id}"),
                     )
@@ -84,7 +90,12 @@ internal class ModuleEnvironment(
             }
 
             is ResolveExportResult.Namespace -> {
-                result.module.namespace
+                val namespace = if (result.phase == ImportPhase.DEFER) {
+                    result.module.deferredNamespace
+                } else {
+                    result.module.namespace
+                }
+                namespace
                     ?: throw JSException(
                         JSError("ReferenceError", "Module namespace is not initialized: ${result.module.id}"),
                     )
@@ -106,7 +117,11 @@ internal class ModuleEnvironment(
                 return imported.target.environment?.resolveBindingValue(imported.bindingName)
 
             is ModuleImportBinding.Namespace ->
-                return imported.target.namespace
+                return if (imported.phase == ImportPhase.DEFER) {
+                    imported.target.deferredNamespace
+                } else {
+                    imported.target.namespace
+                }
 
             null -> Unit
         }

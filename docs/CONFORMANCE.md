@@ -24,7 +24,7 @@
 | Test262 ES2016+ | **30,443 / 30,443**，失败 0，崩溃 0，跳过 **26**（module flag + 宿主钩子） |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0，跳过 0 |
 | Test262 module-code | **593 / 593**，失败 0，崩溃 0，跳过 3（source-phase-imports） |
-| Test262 language module | **708 / 708**，失败 0，崩溃 0，跳过 109（未支持特性） |
+| Test262 language module | **812 / 812**，失败 0，崩溃 0，跳过 5（source-phase-imports） |
 | Node 差分 | **1432 / 1432** |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） |
 | conformance 单元测试 | **44 / 44**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4） |
@@ -82,7 +82,7 @@
 
 模块早期错误（early-module）共 63 条，解析成功 0、被拒绝 63、意外接受 0。模块允许列表 `parser-module-allowlist.txt` 当前为空；新增条目必须逐条写“相对语料根目录的 POSIX 路径 + 原因”，且只允许 `.module.js`，禁止目录/后缀/通配符。
 
-> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/异步求值/错误定位），TLA 仅在 Module goal 支持；Test262 module TLA 249/249、module-code 593/593、language module 708/708（未支持特性逐条跳过）；宿主加载器未实现，模块能力仍需 opt-in。
+> 模块语法已纳入 parser 门禁；阶段 0–9 已实现实验性 `Engine.runModule`（Provider/链接/环境/namespace/`import.meta`/`import.meta.resolve`/动态 `import()`/导入属性/异步求值/错误定位），TLA 仅在 Module goal 支持；Test262 module TLA 249/249、module-code 593/593、language module 812/812（source-phase-imports 逐条跳过）；宿主加载器未实现，模块能力仍需 opt-in。
 
 ### 3.4 早期错误（脚本）
 
@@ -185,7 +185,7 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 完整 `language/module-code` 当前 **593 / 593**（执行 593，失败 0、崩溃 0；另有 3 条 `source-phase-imports` 未支持而跳过）。已接入独立 `test262ModuleCodeConformance` strict 门禁。
 
-`language` 下所有受支持 module 用例当前 **708 / 708**（失败 0、崩溃 0；109 条 import-defer/source-phase modules 等未支持特性逐条跳过）。JSON/text/bytes 资产已支持：JSON 在 resolution 阶段校验，text/bytes 在加载期生成 default export，bytes 必须由 Provider 提供原始字节。已接入 `test262ModuleLanguageConformance` strict 门禁。
+`language` 下所有受支持 module 用例当前 **812 / 812**（失败 0、崩溃 0；5 条 source-phase-imports 跳过）。静态 `import defer`、动态 `import.defer`、deferred namespace 触发矩阵与 TLA 传递依赖已接入；JSON 在 resolution 阶段校验，text/bytes 在加载期生成 default export，bytes 必须由 Provider 提供原始字节。已接入 `test262ModuleLanguageConformance` strict 门禁。
 
 ### 5.4 Test262 ES2016+ 子集
 
@@ -203,7 +203,7 @@ Test262 没有版本字段，运行器用已实现的后 ES2015 特性作为版�
 
 ### 5.5 已启用并纳入基线的特性
 
-`Reflect` / `Reflect.construct`、`Proxy` / `proxy-missing-checks`、`BigInt`、`TypedArray` / `ArrayBuffer` / `DataView`（含 BigInt 视图、Float16、detach/transfer/immutable/resizable 语义）、`generators`、`async-iteration`、`uint8array-base64`、detached-buffer 语义，以及此前已支持的 ES2015 / ES2016+ 特性集合（class、解构、模板、默认/rest、for-of、Symbol、Promise、async/await、Iterator helpers、using、Set 方法等）。
+`Reflect` / `Reflect.construct`、`Proxy` / `proxy-missing-checks`、`BigInt`、`TypedArray` / `ArrayBuffer` / `DataView`（含 BigInt 视图、Float16、detach/transfer/immutable/resizable 语义）、`generators`、`async-iteration`、`uint8array-base64`、detached-buffer 语义、`import-defer` / `import.defer`，以及此前已支持的 ES2015 / ES2016+ 特性集合（class、解构、模板、默认/rest、for-of、Symbol、Promise、async/await、Iterator helpers、using、Set 方法等）。
 
 ### 5.6 harness 替换与注入
 
@@ -386,7 +386,7 @@ parser 报告同时输出脚本与模块分组（`categories` / `moduleCategorie
 
 ## 9. 已知范围与缺口
 
-- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、链接、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值；Test262 `language/module-code/top-level-await` 249/249，完整 `language/module-code` 593/593（3 条 source-phase-imports 跳过），`language` module 子集 708/708（109 条未支持特性跳过）。宿主加载器仍未实现；parser 的 262 个模块用例保留为现状回归门禁。
+- **模块执行（实验性）**：`Engine.runModule` 已支持 Provider、链接、live binding、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值；Test262 `language/module-code/top-level-await` 249/249，完整 `language/module-code` 593/593（3 条 source-phase-imports 跳过），`language` module 子集 812/812（5 条 source-phase-imports 跳过）。宿主加载器仍未实现；parser 的 262 个模块用例保留为现状回归门禁。
 - **顶层 await**：Module goal 已实现异步模块求值、异步依赖等待、cycle root、错误传播与动态 import 等待；Script goal 继续拒绝。
 - **模块扩展语法**：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；同一说明符带不同导入属性会被解析器拒绝。
 - **宿主生态**：已实现 UTF-8 子集 TextEncoder/TextDecoder、structuredClone 与 URL/URLSearchParams 常用能力（`:vibe-js-host`）；不实现 IDNA、完整 WHATWG URL 状态机、DOM / fetch / localStorage 等 Web API。

@@ -80,6 +80,13 @@ internal class ModuleDeclarationInstantiator(
                 interpreter = interpreter,
             ).attachAllocationBudget(interpreter.context.objectAllocations)
         }
+        if (record.deferredNamespace == null) {
+            record.deferredNamespace = JSDeferredModuleNamespace(
+                record = record,
+                symbolToStringTag = interpreter.intrinsics.symbolToStringTag,
+                interpreter = interpreter,
+            ).attachAllocationBudget(interpreter.context.objectAllocations)
+        }
         if (record.importMeta == null) {
             val importMeta = JSObject(prototype = null)
             importMeta.defineDataProperty(

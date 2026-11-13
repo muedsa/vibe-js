@@ -2,6 +2,7 @@
 
 package com.muedsa.js.runtime.module.internal
 
+import com.muedsa.js.ast.ImportPhase
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleLinkErrorKind
 import com.muedsa.js.runtime.module.ModuleLinkException
@@ -31,7 +32,8 @@ internal object ModuleLinker {
                     )
 
                 if (entry.importName == "*") {
-                    record.importBindings[entry.localName] = ModuleImportBinding.Namespace(target)
+                    record.importBindings[entry.localName] =
+                        ModuleImportBinding.Namespace(target, entry.phase)
                     continue
                 }
 
@@ -43,7 +45,7 @@ internal object ModuleLinker {
 
                     is ResolveExportResult.Namespace -> {
                         record.importBindings[entry.localName] =
-                            ModuleImportBinding.Namespace(result.module)
+                            ModuleImportBinding.Namespace(result.module, result.phase)
                     }
 
                     ResolveExportResult.Ambiguous -> throw ModuleLinkException(

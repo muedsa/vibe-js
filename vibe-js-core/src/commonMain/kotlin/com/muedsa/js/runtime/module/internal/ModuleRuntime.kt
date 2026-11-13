@@ -40,9 +40,15 @@ internal class ModuleRuntime(
         specifier: String,
         referrer: ModuleRecord,
         attributes: Map<String, String>,
+        deferred: Boolean = false,
     ): JSObject {
         val graph = resolver.loadDynamic(specifier, referrer.id, attributes, provider)
         ModuleLinker.link(graph)
-        return ModuleEvaluator(interpreter).evaluate(graph)
+        val evaluator = ModuleEvaluator(interpreter)
+        return if (deferred) {
+            evaluator.evaluateDeferred(graph)
+        } else {
+            evaluator.evaluate(graph)
+        }
     }
 }

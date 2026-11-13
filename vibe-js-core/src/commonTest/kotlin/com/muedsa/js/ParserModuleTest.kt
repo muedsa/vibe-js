@@ -13,6 +13,7 @@ import com.muedsa.js.ast.FunctionExpression
 import com.muedsa.js.ast.ImportCallExpr
 import com.muedsa.js.ast.ImportDeclaration
 import com.muedsa.js.ast.ImportMetaExpr
+import com.muedsa.js.ast.ImportPhase
 import com.muedsa.js.ast.MemberExpr
 import com.muedsa.js.ast.ModuleBindingKind
 import com.muedsa.js.ast.ModuleProgram
@@ -111,6 +112,32 @@ class ParserModuleTest {
             /* block */ export const a = 1;
             """.trimIndent()
         )
+    }
+
+    @Test
+    fun `import defer 解析为延迟命名空间且保留默认绑定`() {
+        val deferred = parseModule("""import defer * as ns from "./m.js";""")
+        val declaration = assertIs<ImportDeclaration>(deferred.items.single())
+        assertEquals(ImportPhase.DEFER, declaration.phase)
+        assertEquals("ns", declaration.namespaceImport)
+        assertEquals(setOf(ImportPhase.DEFER), deferred.requestedPhases["./m.js"])
+        assertEquals(ImportPhase.DEFER, deferred.importEntries.single().phase)
+
+        // `defer` 仍是合法的默认绑定名；没有 `*` 时按普通导入处理。
+        val namedDefault = parseModule("""import defer from "./m.js";""")
+        val eager = assertIs<ImportDeclaration>(namedDefault.items.single())
+        assertEquals(ImportPhase.EAGER, eager.phase)
+        assertEquals("defer", eager.specifiers.single().localName)
+
+        assertFailsWith<ParseException> {
+            parseModule("""import defer value from "./m.js";""")
+        }
+        assertFailsWith<ParseException> {
+            parseModule("""import defer { value } from "./m.js";""")
+        }
+        assertFailsWith<ParseException> {
+            parseModule("""export defer * from "./m.js";""")
+        }
     }
 
     @Test

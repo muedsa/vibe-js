@@ -20,8 +20,8 @@
 - 宿主负责：说明符规范化、源码读取、网络/文件/打包器、模块 id 的稳定性。
 - 当前已支持：静态 `import` / `export`、默认导出、re-export、`export *`、`export * as ns`、
   命名空间导入、`import.meta`、循环依赖、live binding、动态 `import()`、Top-Level Await、
-  import attributes、JSON/text/bytes module 资产。
-- 仍未实现：文件/URL/网络加载器、import-defer、source-phase-imports、Test262 module harness
+  import attributes、JSON/text/bytes module 资产、`import defer` / `import.defer`。
+- 仍未实现：文件/URL/网络加载器、source-phase-imports、Test262 module harness
   （后者位于 `:vibe-js-conformance`）。
 - `Engine.runModule` 每次调用使用独立模块图；同一模块在单次调用内只求值一次。
 - 模块共享 `Engine` 的 realm/global，但每个模块有独立 `ModuleEnvironment`。
@@ -769,7 +769,7 @@ M8.1–M8.6 已完成；模块图/求值 benchmark 已加入 JVM 基准套件。
 |---|---|---:|---|
 | L1 | 动态 `import()`：Promise、图复用、错误传播 | 已完成 | M7 |
 | L2 | Top-Level Await：异步求值状态机 | 已完成 | L1/M7 |
-| L3 | import attributes / JSON/text/bytes modules | 已完成 | M1/M4 |
+| L3 | import attributes / JSON/text/bytes modules / `import defer` / `import.defer` | 已完成 | M1/M4 |
 | L4 | 文件/URL/网络 Provider（仅 host） | 3–5 | M2/M3 |
 | L5 | Test262 module harness + 全量 module 门禁 | 5–9 | L1/L2 |
 

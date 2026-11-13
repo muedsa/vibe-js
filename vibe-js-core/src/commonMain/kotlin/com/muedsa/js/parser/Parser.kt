@@ -3718,6 +3718,12 @@ class Parser(
         advance() // import
         consume(TokenType.DOT, "Expected '.' after 'import'")
         val meta = peek()
+        if (meta.type == TokenType.IDENTIFIER && !meta.containsEscape &&
+            meta.value == "defer" && peek(1).type == TokenType.LPAREN
+        ) {
+            advance() // defer
+            return parseImportCallArguments(start, isDeferred = true)
+        }
         if (meta.type != TokenType.IDENTIFIER || meta.containsEscape || meta.value != "meta") {
             throw ParseException("Expected 'meta' after 'import.'", meta.range)
         }
@@ -3733,6 +3739,10 @@ class Parser(
      */
     private fun parseImportCallExpression(start: SourcePosition): Expression {
         advance() // import
+        return parseImportCallArguments(start, isDeferred = false)
+    }
+
+    private fun parseImportCallArguments(start: SourcePosition, isDeferred: Boolean): Expression {
         consume(TokenType.LPAREN, "Expected '(' after 'import'")
         if (check(TokenType.RPAREN)) {
             throw error("import() requires a module specifier")
@@ -3754,7 +3764,13 @@ class Parser(
             }
         }
         val close = consume(TokenType.RPAREN, "Expected ')' after import() arguments")
-        return trackAstNode(ImportCallExpr(arguments, SourceRange(start, close.range.end)))
+        return trackAstNode(
+            ImportCallExpr(
+                arguments = arguments,
+                range = SourceRange(start, close.range.end),
+                isDeferred = isDeferred,
+            )
+        )
     }
 
     /**
@@ -4456,7 +4472,17 @@ class Parser(
         val requestedModules = LinkedHashSet<String>()
         // 每个请求的导入属性；同一说明符带不同属性视为冲突（MVP 限制）
         val requestedAttributes = LinkedHashMap<String, Map<String, String>>()
-        fun recordRequest(specifier: String, attributes: Map<String, String>) {
+        // 同一说明符可以同时有 eager 与 defer 两条边，不能只保留一个相位。
+        val requestedPhases = LinkedHashMap<String, MutableSet<ImportPhase>>()
+        val requestedEagerModules = LinkedHashSet<String>()
+        val requestedDeferredModules = LinkedHashSet<String>()
+        val requestedRequests = mutableListOf<ModuleRequestInfo>()
+        val recordedRequestPhases = mutableSetOf<Pair<String, ImportPhase>>()
+        fun recordRequest(
+            specifier: String,
+            attributes: Map<String, String>,
+            phase: ImportPhase,
+        ) {
             val existing = requestedAttributes[specifier]
             if (existing != null && existing != attributes) {
                 throw ParseException(
@@ -4466,6 +4492,14 @@ class Parser(
             }
             requestedAttributes[specifier] = attributes
             requestedModules.add(specifier)
+            requestedPhases.getOrPut(specifier) { LinkedHashSet() }.add(phase)
+            when (phase) {
+                ImportPhase.EAGER -> requestedEagerModules.add(specifier)
+                ImportPhase.DEFER -> requestedDeferredModules.add(specifier)
+            }
+            if (recordedRequestPhases.add(specifier to phase)) {
+                requestedRequests.add(ModuleRequestInfo(specifier, phase))
+            }
         }
         // 导出名去重：同一个导出名只能出现一次（含 default）
         val exportedNames = mutableSetOf<String>()
@@ -4506,6 +4540,7 @@ class Parser(
                             it.localName,
                             result.item.range,
                             it.attributes,
+                            it.phase,
                         )
                     }
                 )
@@ -4532,13 +4567,15 @@ class Parser(
                 }
                 lexicalNames.addAll(result.lexicalNames)
                 for (entry in result.imports) {
-                    recordRequest(entry.moduleRequest, result.attributes)
+                    recordRequest(entry.moduleRequest, result.attributes, entry.phase)
                 }
                 for (entry in result.exports) {
-                    entry.moduleRequest?.let { recordRequest(it, result.attributes) }
+                    entry.moduleRequest?.let {
+                        recordRequest(it, result.attributes, ImportPhase.EAGER)
+                    }
                 }
                 for (specifier in result.moduleRequests) {
-                    recordRequest(specifier, result.attributes)
+                    recordRequest(specifier, result.attributes, result.phase)
                 }
             }
         } finally {
@@ -4604,6 +4641,10 @@ class Parser(
             hasTopLevelAwait = moduleHasTopLevelAwait,
             sourceInfo = sourceInfo,
             requestedAttributes = requestedAttributes.toMap(),
+            requestedPhases = requestedPhases.mapValues { it.value.toSet() },
+            requestedEagerModules = requestedEagerModules.toList(),
+            requestedDeferredModules = requestedDeferredModules.toList(),
+            requestedRequests = requestedRequests.toList(),
         )
     }
 
@@ -4693,6 +4734,8 @@ class Parser(
         val moduleRequests: List<String> = emptyList(),
         /** 本声明的 `with { ... }` 属性；仅静态 import/export 声明非空。 */
         val attributes: Map<String, String> = emptyMap(),
+        /** 本声明请求的相位；`import defer` 为 DEFER，其余为 EAGER。 */
+        val phase: ImportPhase = ImportPhase.EAGER,
     )
 
     /**
@@ -4857,6 +4900,20 @@ class Parser(
     /** `import` 声明：副作用、默认、具名、命名空间四种形态及其组合。 */
     private fun parseImportDeclaration(): ModuleParseResult {
         val start = advance().range.start // import
+        // `import defer * as ns`：只有 `defer` 后紧跟 `*` 才是 defer 语法；
+        // `import defer from "m"` 仍是名为 defer 的默认导入。
+        val isDeferSyntax = peek().type == TokenType.IDENTIFIER &&
+            !peek().containsEscape &&
+            peek().value == "defer" &&
+            peek(1).type == TokenType.MULTIPLY
+        var phase = ImportPhase.EAGER
+        if (isDeferSyntax) {
+            advance() // defer
+            phase = ImportPhase.DEFER
+        }
+        if (phase == ImportPhase.DEFER && !check(TokenType.MULTIPLY)) {
+            throw error("Expected '*' after 'import defer'")
+        }
         // 纯副作用导入：import "m";
         if (check(TokenType.STRING)) {
             val moduleRequest = parseModuleSpecifier()
@@ -4873,7 +4930,15 @@ class Parser(
                 ),
                 // 规范里副作用导入仍然产生 ImportEntry：ImportName 为 all、LocalName 为空；
                 // 这里用 "*" / "" 表示该哨兵值，模块求值器只据此触发依赖求值。
-                imports = listOf(ImportEntry(moduleRequest, "*", "", attributes = attributes)),
+                imports = listOf(
+                    ImportEntry(
+                        moduleRequest,
+                        "*",
+                        "",
+                        attributes = attributes,
+                        phase = ImportPhase.EAGER,
+                    )
+                ),
                 moduleRequests = listOf(moduleRequest),
                 attributes = attributes,
             )
@@ -4893,7 +4958,7 @@ class Parser(
             names.add("default" to defaultToken.value)
             lexical.add(defaultToken.value)
             if (!match(TokenType.COMMA)) {
-                return finishImportDeclaration(start, specifiers, namespaceImport, names, lexical)
+                return finishImportDeclaration(start, specifiers, namespaceImport, names, lexical, phase)
             }
         }
 
@@ -4939,7 +5004,7 @@ class Parser(
             }
             consume(TokenType.RBRACE, "Expected '}' after import list")
         }
-        return finishImportDeclaration(start, specifiers, namespaceImport, names, lexical)
+        return finishImportDeclaration(start, specifiers, namespaceImport, names, lexical, phase)
     }
 
     /** 解析 import 声明尾部的 `from "m" ;` 并组装结果。 */
@@ -4949,6 +5014,7 @@ class Parser(
         namespaceImport: String?,
         names: List<Pair<String, String>>,
         lexicalNames: List<String>,
+        phase: ImportPhase,
     ): ModuleParseResult {
         consumeFrom()
         val moduleRequest = parseModuleSpecifier()
@@ -4962,13 +5028,21 @@ class Parser(
                 isSideEffectOnly = false,
                 range = SourceRange(start, previous().range.end),
                 attributes = attributes,
+                phase = phase,
             ),
             imports = names.map { (importName, localName) ->
-                ImportEntry(moduleRequest, importName, localName, attributes = attributes)
+                ImportEntry(
+                    moduleRequest,
+                    importName,
+                    localName,
+                    attributes = attributes,
+                    phase = phase,
+                )
             },
             lexicalNames = lexicalNames,
             moduleRequests = listOf(moduleRequest),
             attributes = attributes,
+            phase = phase,
         )
     }
 

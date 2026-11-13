@@ -55,6 +55,21 @@ class ImportSpecifier(
     override val range: SourceRange,
 ) : ASTNode()
 
+/** 导入相位：决定目标模块何时参与求值，而不是模块本身的身份。 */
+enum class ImportPhase {
+    /** 普通导入；导入方求值时目标模块也完成求值。 */
+    EAGER,
+
+    /** `import defer`；只创建延迟 namespace，首次访问才触发求值。 */
+    DEFER,
+}
+
+/** 一条 ModuleRequest Record；同说明符可因 phase 不同而出现多次。 */
+class ModuleRequestInfo(
+    val specifier: String,
+    val phase: ImportPhase,
+)
+
 /**
  * `import` 声明。
  *
@@ -81,6 +96,8 @@ class ImportDeclaration(
     override val range: SourceRange,
     /** `with { ... }` 导入属性；键与值都是已解码字符串。 */
     val attributes: Map<String, String> = emptyMap(),
+    /** 该声明的导入相位；只有 `import defer * as ns` 为 DEFER。 */
+    val phase: ImportPhase = ImportPhase.EAGER,
 ) : ModuleItem()
 
 /**
@@ -154,6 +171,8 @@ class ImportEntry(
     val range: SourceRange = SourceRange.NONE,
     /** 该导入请求的 `with { ... }` 属性。 */
     val attributes: Map<String, String> = emptyMap(),
+    /** 该导入表项的相位。 */
+    val phase: ImportPhase = ImportPhase.EAGER,
 )
 
 /**
@@ -234,6 +253,8 @@ class ImportMetaExpr(
 class ImportCallExpr(
     val arguments: List<Expression>,
     override val range: SourceRange,
+    /** `import.defer(...)` 为 true；普通 `import(...)` 为 false。 */
+    val isDeferred: Boolean = false,
 ) : Expression() {
 
     /** 模块说明符（第一个实参）；`import()` 零参数时为 null。 */
@@ -280,6 +301,14 @@ class ModuleProgram(
     val sourceInfo: SourceInfo = SourceInfo(),
     /** 每个模块请求的导入属性；键为说明符，值按 `with` 子句的源码顺序。 */
     val requestedAttributes: Map<String, Map<String, String>> = emptyMap(),
+    /** 每个模块请求出现过的相位；同一说明符可同时有 EAGER 与 DEFER 边。 */
+    val requestedPhases: Map<String, Set<ImportPhase>> = emptyMap(),
+    /** 按源码顺序首次出现的 eager 请求；决定导入方的求值顺序。 */
+    val requestedEagerModules: List<String> = emptyList(),
+    /** 按源码顺序首次出现的 defer 请求；供 TLA 传递依赖收集使用。 */
+    val requestedDeferredModules: List<String> = emptyList(),
+    /** 按源码顺序的 ModuleRequest 列表；同说明符不同 phase 分别保留。 */
+    val requestedRequests: List<ModuleRequestInfo> = emptyList(),
 ) : ASTNode() {
 
     /** 模块代码恒为严格模式（ECMAScript 16.2.1.6：Module code is always strict mode code）。 */

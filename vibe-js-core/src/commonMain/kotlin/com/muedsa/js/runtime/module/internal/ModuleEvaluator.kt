@@ -2,6 +2,7 @@
 
 package com.muedsa.js.runtime.module.internal
 
+import com.muedsa.js.ast.ImportPhase
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.value.JSObject
@@ -25,6 +26,30 @@ internal class ModuleEvaluator(
 ) {
     private val instantiator = ModuleDeclarationInstantiator(interpreter)
     private var asyncOrder = 0
+
+    /**
+     * 动态 `import.defer`：只加载/链接并返回延迟 namespace；若存在 TLA
+     * 传递依赖，先求值这些异步依赖，再 resolve namespace。
+     */
+    suspend fun evaluateDeferred(graph: ModuleGraph): JSObject {
+        for (record in graph.records.values) {
+            if (record.environment == null) instantiator.instantiate(record)
+        }
+        val asyncDependencies = gatherAsynchronousTransitiveDependencies(
+            graph.entry,
+            mutableSetOf(),
+        )
+        if (asyncDependencies.isEmpty()) {
+            return graph.entry.deferredNamespace
+                ?: throw IllegalStateException("Deferred namespace is not initialized: ${graph.entry.id}")
+        }
+        val completions = asyncDependencies.map { dependency ->
+            evaluateModule(dependency, mutableListOf())
+        }
+        for (completion in completions) completion.await()
+        return graph.entry.deferredNamespace
+            ?: throw IllegalStateException("Deferred namespace is not initialized: ${graph.entry.id}")
+    }
 
     suspend fun evaluate(graph: ModuleGraph): JSObject {
         // 先建齐所有环境与 namespace，保证 import 转发和嵌套 namespace 可用。
@@ -69,8 +94,9 @@ internal class ModuleEvaluator(
         stack.add(record)
 
         val asyncDependencies = mutableListOf<CompletableDeferred<Unit>>()
+        val evaluationModules = evaluationModules(record)
         try {
-            for (dependency in record.dependencies) {
+            for (dependency in evaluationModules) {
                 val dependencyInStack =
                     dependency.status == ModuleStatus.EVALUATING && stack.contains(dependency)
                 val dependencyCompletion = evaluateModule(dependency, stack)
@@ -156,9 +182,137 @@ internal class ModuleEvaluator(
         return completion
     }
 
+    /**
+     * 构造当前模块的求值列表。
+     *
+     * eager 请求按源码顺序加入；defer 请求只把其异步传递依赖加入，
+     * 从而保证 defer 模块本身保持延迟，但其 TLA 依赖仍然提前启动。
+     */
+    private fun evaluationModules(record: ModuleRecord): List<ModuleRecord> {
+        val result = mutableListOf<ModuleRecord>()
+        val seen = mutableSetOf<ModuleRecord>()
+        fun add(module: ModuleRecord) {
+            if (seen.add(module)) result.add(module)
+        }
+        for (request in record.program.requestedRequests) {
+            val dependency = record.dependencyFor(request.specifier) ?: continue
+            if (request.phase == ImportPhase.EAGER) {
+                add(dependency)
+            } else {
+                for (module in gatherAsynchronousTransitiveDependencies(
+                    dependency,
+                    mutableSetOf(),
+                )) {
+                    add(module)
+                }
+            }
+        }
+        return result
+    }
+
+    private fun gatherAsynchronousTransitiveDependencies(
+        module: ModuleRecord,
+        seen: MutableSet<ModuleRecord>,
+    ): List<ModuleRecord> {
+        if (!seen.add(module)) return emptyList()
+        if (module.status == ModuleStatus.EVALUATING) return emptyList()
+        if (module.status == ModuleStatus.EVALUATED &&
+            module.cycleRoot?.status != ModuleStatus.EVALUATING_ASYNC
+        ) {
+            return emptyList()
+        }
+        if (module.program.hasTopLevelAwait) return listOf(module)
+        val result = mutableListOf<ModuleRecord>()
+        for (request in module.program.requestedRequests) {
+            val dependency = module.dependencyFor(request.specifier) ?: continue
+            for (found in gatherAsynchronousTransitiveDependencies(dependency, seen)) {
+                if (found !in result) result.add(found)
+            }
+        }
+        return result
+    }
+
     private fun completedCompletion(): CompletableDeferred<Unit> =
         CompletableDeferred<Unit>().apply { complete(Unit) }
 
     private fun failedCompletion(error: Throwable): CompletableDeferred<Unit> =
         CompletableDeferred<Unit>().apply { completeExceptionally(error) }
+
+    /**
+     * 同步求值路径：供 deferred namespace 的同步属性访问使用。
+     *
+     * 调用前必须确认图中没有 TLA / 正在异步求值的模块；同步路径不接受
+     * 挂起。同步与异步求值共享 ModuleStatus、环境、namespace 和错误缓存。
+     */
+    internal fun evaluateSync(record: ModuleRecord) {
+        if (record.environment == null) instantiator.instantiate(record)
+        if (record.status == ModuleStatus.ERRORED) {
+            throw record.evaluationError
+                ?: IllegalStateException("Module errored without an exception: ${record.id}")
+        }
+        if (!readyForSyncExecution(record, mutableSetOf())) {
+            interpreter.typeError("Cannot evaluate module synchronously: ${record.id}")
+        }
+        evaluateSyncInternal(record, mutableSetOf())
+    }
+
+    private fun evaluateSyncInternal(record: ModuleRecord, stack: MutableSet<ModuleRecord>) {
+        when (record.status) {
+            ModuleStatus.EVALUATED -> return
+            ModuleStatus.ERRORED -> {
+                throw record.evaluationError
+                    ?: IllegalStateException("Module errored without an exception: ${record.id}")
+            }
+            ModuleStatus.EVALUATING,
+            ModuleStatus.EVALUATING_ASYNC,
+            -> {
+                // ReadyForSyncExecution 已保证可以进入同步路径；这里只剩
+                // 正在同一同步调用栈中的循环。
+                if (record in stack) return
+                interpreter.typeError("Cannot evaluate module synchronously: ${record.id}")
+            }
+            else -> Unit
+        }
+
+        stack.add(record)
+        record.status = ModuleStatus.EVALUATING
+        try {
+            for (specifier in record.program.requestedEagerModules) {
+                val dependency = record.dependencyFor(specifier) ?: continue
+                if (dependency.environment == null) instantiator.instantiate(dependency)
+                evaluateSyncInternal(dependency, stack)
+            }
+            interpreter.runModuleSync(record)
+            record.status = ModuleStatus.EVALUATED
+            record.evaluationError = null
+        } catch (error: Throwable) {
+            record.status = ModuleStatus.ERRORED
+            record.evaluationError = error
+            throw error
+        } finally {
+            stack.remove(record)
+        }
+    }
+
+    private fun readyForSyncExecution(
+        record: ModuleRecord,
+        seen: MutableSet<ModuleRecord>,
+    ): Boolean {
+        if (!seen.add(record)) return true
+        when (record.status) {
+            ModuleStatus.EVALUATED -> return true
+            ModuleStatus.EVALUATING,
+            ModuleStatus.EVALUATING_ASYNC,
+            -> return false
+            else -> Unit
+        }
+        if (record.program.hasTopLevelAwait) return false
+        // ReadyForSyncExecution 遍历所有 ModuleRequest，包括 defer 边：
+        // 目标可能通过 deferred 循环依赖指向正在求值的祖先。
+        for (request in record.program.requestedRequests) {
+            val dependency = record.dependencyFor(request.specifier) ?: continue
+            if (!readyForSyncExecution(dependency, seen)) return false
+        }
+        return true
+    }
 }

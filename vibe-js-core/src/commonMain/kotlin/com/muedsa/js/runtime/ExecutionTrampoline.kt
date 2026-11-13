@@ -61,9 +61,18 @@ internal class ExecutionTrampoline(private val onIdle: (() -> Unit)? = null) : C
     }
 
     private fun resume(task: ResumeTask) {
+        val frameElement = task.context[ModuleFrameElement]
+        val currentFrame = frameElement?.interpreter?.frame
+        // 只在该续体不属于当前模块 frame 时切换；函数 frame 已由调用方恢复，
+        // 不能在函数体内部被模块 frame 覆盖。
+        val needsSwitch = frameElement != null &&
+            (currentFrame == null || currentFrame.moduleFrameOwner !== frameElement.record)
+        val previousFrame = currentFrame
+        if (needsSwitch) frameElement.interpreter.frame = frameElement.frame
         try {
             task.block.run()
         } finally {
+            if (needsSwitch) frameElement.interpreter.frame = previousFrame
             // 返回调度循环说明该段协程已结束或挂起；只有真实挂起才允许 async
             // 调用方取得 Promise，内部栈分段不能冒充 JavaScript 的 await。
             task.context[AsyncStartPhase]?.signalExternalSuspension()
@@ -72,6 +81,14 @@ internal class ExecutionTrampoline(private val onIdle: (() -> Unit)? = null) : C
 }
 
 /** async 首次真实挂起的握手，区分 JS await 与解释器内部的栈分段。 */
+internal class ModuleFrameElement(
+    val interpreter: Interpreter,
+    val frame: ExecutionContext,
+    val record: com.muedsa.js.runtime.module.internal.ModuleRecord,
+) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<ModuleFrameElement>
+}
+
 internal class AsyncStartPhase : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<AsyncStartPhase>
 

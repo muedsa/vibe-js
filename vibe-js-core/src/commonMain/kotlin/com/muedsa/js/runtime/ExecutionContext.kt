@@ -37,6 +37,9 @@ class ExecutionContext(
     /** 函数定义所在的模块；脚本或宿主函数为 null，供 import.meta / import() 使用。 */
     internal var sourceModule: ModuleRecord? = null
 
+    /** 当前 frame 所属的模块；函数 frame 继承调用时的模块，用于异步续体恢复。 */
+    internal var moduleFrameOwner: ModuleRecord? = null
+
     override var boundThis: JSValue
         get() = thisValue
         set(value) {

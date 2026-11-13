@@ -89,6 +89,7 @@ import com.muedsa.js.runtime.exception.StackFrame
 import com.muedsa.js.runtime.exception.StackFrameLink
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleLinkException
+import com.muedsa.js.runtime.module.internal.JSDeferredModuleNamespace
 import com.muedsa.js.runtime.module.internal.JSModuleNamespace
 import com.muedsa.js.runtime.module.internal.ModuleRecord
 import com.muedsa.js.runtime.module.internal.ModuleRuntime
@@ -141,8 +142,12 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.pow
+import kotlin.coroutines.Continuation
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.startCoroutine
 
 /**
  * AST 解释器（Executor 的第一实现）。
@@ -208,7 +213,7 @@ class Interpreter(
     private var tailCallBlockers = 0
 
     /** 当前执行上下文；运行脚本前为 null。 */
-    private var frame: ExecutionContext? = null
+    internal var frame: ExecutionContext? = null
 
     /** 当前模块求值记录；脚本/null 时 import.meta 与 import() 不可用。 */
     internal var currentModuleRecord: ModuleRecord? = null
@@ -336,6 +341,32 @@ class Interpreter(
     }
 
     /**
+     * 同步执行模块体，仅供 `import defer` 的 EvaluateSync 使用。
+     *
+     * 调用方必须先通过 ReadyForSyncExecution 保证没有 TLA；若模块体仍试图
+     * 挂起，这里直接失败，不能把同步属性访问变成异步等待。
+     */
+    @OptIn(ExperimentalModuleApi::class)
+    internal fun runModuleSync(record: ModuleRecord): JSValue {
+        val completion = SyncModuleCompletion()
+        suspend { runModule(record) }.startCoroutine(completion)
+        return completion.result?.getOrThrow()
+            ?: throw IllegalStateException(
+                "Synchronous module evaluation suspended: ${record.id}"
+            )
+    }
+
+    private class SyncModuleCompletion : Continuation<JSValue> {
+        var result: Result<JSValue>? = null
+
+        override val context: CoroutineContext = ExecutionTrampoline()
+
+        override fun resumeWith(result: Result<JSValue>) {
+            this.result = result
+        }
+    }
+
+    /**
      * 执行一个已实例化的模块体。
      *
      * 与 [runProgram] 不同：没有全局声明实例化（已由模块阶段完成），
@@ -358,6 +389,7 @@ class Interpreter(
             thisValue = JSUndefined,
             strict = true,
         )
+        moduleFrame.moduleFrameOwner = record
         pushStackFrame(
             "<module:${record.id}>",
             record.program.range,
@@ -366,22 +398,24 @@ class Interpreter(
         )
         frame = moduleFrame
         currentModuleRecord = record
-        try {
-            // 模块顶层 using/await using 的释放作用域覆盖整个模块体，
-            // TLA 完成后在 runModule 返回前释放资源。
-            withDisposalScope {
-                for (item in record.program.items) {
-                    executeModuleItem(item)
+        return withContext(ModuleFrameElement(this, moduleFrame, record)) {
+            try {
+                // 模块顶层 using/await using 的释放作用域覆盖整个模块体，
+                // TLA 完成后在 runModule 返回前释放资源。
+                withDisposalScope {
+                    for (item in record.program.items) {
+                        executeModuleItem(item)
+                    }
                 }
+                JSUndefined
+            } catch (error: Throwable) {
+                captureFailure(error)
+                throw error
+            } finally {
+                currentModuleRecord = previousModule
+                popStackFrame(countsTowardsDepth = false)
+                frame = previousFrame
             }
-            return JSUndefined
-        } catch (error: Throwable) {
-            captureFailure(error)
-            throw error
-        } finally {
-            currentModuleRecord = previousModule
-            popStackFrame(countsTowardsDepth = false)
-            frame = previousFrame
         }
     }
 
@@ -1206,6 +1240,8 @@ class Interpreter(
         value: JSValue,
         receiver: JSValue,
     ): Boolean {
+        // deferred namespace 的 [[Set]] 不触发求值，宿主持有该对象时也不应写入。
+        if (target is JSDeferredModuleNamespace) return false
         if (target is JSProxy) {
             val trap = proxyTrap(target, "set")
                 ?: return setWithReceiver(target.target, key, value, receiver)
@@ -1964,6 +2000,11 @@ class Interpreter(
             return
         }
         // 整数索引异质对象的 [[Set]]：规范数字索引直接写入元素或失败，不查原型链
+        if (objectValue is JSDeferredModuleNamespace) {
+            // deferred namespace 的 [[Set]] 恒为 false，且不能触发求值。
+            if (strict) throw typeError("Cannot assign to property '$key' on a module namespace")
+            return
+        }
         if (objectValue is JSTypedArray) {
             when (val classified = objectValue.classifyIndex(key)) {
                 JSTypedArray.IndexKey.NotIndex -> Unit
@@ -2637,7 +2678,10 @@ class Interpreter(
         thisInitialized = function.lexicalThisSource?.thisBound ?: true,
         variableEnv = variableEnvironment,
         inParameterInitialization = scope.hasParameterExpressions,
-    ).also { it.sourceModule = function.sourceModule }
+    ).also {
+        it.sourceModule = function.sourceModule
+        it.moduleFrameOwner = function.sourceModule ?: currentModuleRecord
+    }
 
     /**
      * 创建 arguments 对象并绑定形参（默认值/解构/rest 在参数环境中求值）。
@@ -4812,7 +4856,13 @@ class Interpreter(
                 job.currentModuleRecord = record
                 job.moduleRuntime = runtime
                 try {
-                    val namespace = runtime.importModule(job, specifier, record, attributes)
+                    val namespace = runtime.importModule(
+                        job,
+                        specifier,
+                        record,
+                        attributes,
+                        deferred = expression.isDeferred,
+                    )
                     PromiseSupport.resolve(job, promise, namespace)
                 } catch (error: CancellationException) {
                     throw error

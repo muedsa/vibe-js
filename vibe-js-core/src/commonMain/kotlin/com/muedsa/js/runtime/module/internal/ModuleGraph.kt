@@ -2,6 +2,7 @@
 
 package com.muedsa.js.runtime.module.internal
 
+import com.muedsa.js.ast.ImportPhase
 import com.muedsa.js.ast.ModuleProgram
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleSource
@@ -29,6 +30,7 @@ internal sealed interface ModuleImportBinding {
     /** `import * as ns` 或导入 `export * as ns`：需要目标模块的 namespace。 */
     data class Namespace(
         val target: ModuleRecord,
+        val phase: ImportPhase = ImportPhase.EAGER,
     ) : ModuleImportBinding
 }
 
@@ -63,6 +65,9 @@ internal class ModuleRecord(
     /** 阶段 6 创建 namespace exotic 对象后填充。 */
     var namespace: JSObject? = null
 
+    /** defer 导入使用的延迟 namespace；与 eager namespace 身份不同。 */
+    var deferredNamespace: JSObject? = null
+
     /** 阶段 7 创建 import.meta 对象后填充；同一模块复用。 */
     var importMeta: JSObject? = null
 
@@ -92,6 +97,13 @@ internal class ModuleRecord(
         val index = program.requestedModules.indexOf(specifier)
         return if (index >= 0) dependencies.getOrNull(index) else null
     }
+
+    /** 某个请求的相位集合；同一说明符可同时被 eager 和 defer 导入。 */
+    fun phasesFor(specifier: String): Set<ImportPhase> =
+        program.requestedPhases[specifier] ?: setOf(ImportPhase.EAGER)
+
+    /** 该请求是否需要在导入方求值时立即求值。 */
+    fun hasEagerPhase(specifier: String): Boolean = ImportPhase.EAGER in phasesFor(specifier)
 }
 
 /** 一次 runModule / 图加载的完整记录集合；不跨调用缓存。 */
