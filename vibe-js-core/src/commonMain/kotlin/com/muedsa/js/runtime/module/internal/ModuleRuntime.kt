@@ -38,13 +38,18 @@ internal class ModuleRuntime(
     suspend fun importModule(
         interpreter: Interpreter,
         specifier: String,
-        referrer: ModuleRecord,
+        referrer: ModuleRecord?,
         attributes: Map<String, String>,
         deferred: Boolean = false,
+        source: Boolean = false,
     ): JSObject {
-        val graph = resolver.loadDynamic(specifier, referrer.id, attributes, provider)
-        ModuleLinker.link(graph)
+        val graph = resolver.loadDynamic(specifier, referrer?.id, attributes, provider)
         val evaluator = ModuleEvaluator(interpreter)
+        if (source) {
+            // source phase 只拿 source 对象，不链接、不求值。
+            return evaluator.evaluateSource(graph)
+        }
+        ModuleLinker.link(graph)
         return if (deferred) {
             evaluator.evaluateDeferred(graph)
         } else {

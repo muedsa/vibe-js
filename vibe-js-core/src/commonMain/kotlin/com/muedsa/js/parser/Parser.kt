@@ -3363,6 +3363,14 @@ class Parser(
     private fun parseNewExpression(): Expression {
         val start = consume(TokenType.NEW, "Expected 'new'").range.start
 
+        // `import.source(...)` 是 CallExpression，不能作为 `new` 的构造器。
+        if (check(TokenType.IDENTIFIER) && peek().value == "import" &&
+            !peek().containsEscape && peek(1).type == TokenType.DOT &&
+            peek(2).type == TokenType.IDENTIFIER && !peek(2).containsEscape &&
+            peek(2).value == "source"
+        ) {
+            throw error("import.source() cannot be used with 'new'")
+        }
         // new.target 元属性
         if (match(TokenType.DOT)) {
             val property = consume(TokenType.IDENTIFIER, "Expected 'target' after 'new.'")
@@ -3655,13 +3663,27 @@ class Parser(
                 throw error("Unexpected private name")
 
             TokenType.IDENTIFIER -> {
-                // 模块表达式层的 import 元属性与动态导入；
-                // 脚本目标不进入该分支，仍按保留字报错（本切片不扩大到脚本）。
-                if (moduleContext && token.value == "import" && !token.containsEscape) {
-                    when (peek(1).type) {
-                        TokenType.DOT -> return parseImportMetaExpression(token.range.start)
-                        TokenType.LPAREN -> return parseImportCallExpression(token.range.start)
-                        else -> Unit
+                // 模块表达式层的 import 元属性与动态导入；脚本目标仅放行
+                // import() / import.source()，静态 import/export 仍按保留字拒绝。
+                if (token.value == "import" && !token.containsEscape) {
+                    if (moduleContext) {
+                        when (peek(1).type) {
+                            TokenType.DOT -> return parseImportMetaExpression(token.range.start)
+                            TokenType.LPAREN -> return parseImportCallExpression(token.range.start)
+                            else -> Unit
+                        }
+                    } else if (peek(1).type == TokenType.LPAREN) {
+                        // 动态 import() 在脚本目标中同样合法；普通静态 import
+                        // 仍由脚本声明路径拒绝。
+                        return parseImportCallExpression(token.range.start)
+                    } else if (
+                        peek(1).type == TokenType.DOT &&
+                        peek(2).type == TokenType.IDENTIFIER &&
+                        !peek(2).containsEscape &&
+                        peek(2).value == "source" &&
+                        peek(3).type == TokenType.LPAREN
+                    ) {
+                        return parseImportSourceCallExpression(token.range.start)
                     }
                 }
                 validateIdentifierToken(token)
@@ -3724,6 +3746,15 @@ class Parser(
             advance() // defer
             return parseImportCallArguments(start, isDeferred = true)
         }
+        if (meta.type == TokenType.IDENTIFIER && !meta.containsEscape &&
+            meta.value == "source"
+        ) {
+            advance() // source
+            if (!check(TokenType.LPAREN)) {
+                throw ParseException("Expected '(' after 'import.source'", peek().range)
+            }
+            return parseImportCallArguments(start, isSource = true)
+        }
         if (meta.type != TokenType.IDENTIFIER || meta.containsEscape || meta.value != "meta") {
             throw ParseException("Expected 'meta' after 'import.'", meta.range)
         }
@@ -3742,18 +3773,44 @@ class Parser(
         return parseImportCallArguments(start, isDeferred = false)
     }
 
-    private fun parseImportCallArguments(start: SourcePosition, isDeferred: Boolean): Expression {
+    /** 脚本目标中的 `import.source(...)`；语法与模块目标一致，仅允许 source 形式。 */
+    private fun parseImportSourceCallExpression(start: SourcePosition): Expression {
+        advance() // import
+        consume(TokenType.DOT, "Expected '.' after 'import'")
+        val source = consume(TokenType.IDENTIFIER, "Expected 'source' after 'import.'")
+        if (source.value != "source" || source.containsEscape) {
+            throw ParseException("Expected 'source' after 'import.'", source.range)
+        }
+        if (!check(TokenType.LPAREN)) {
+            throw ParseException("Expected '(' after 'import.source'", peek().range)
+        }
+        return parseImportCallArguments(start, isSource = true)
+    }
+
+    private fun parseImportCallArguments(
+        start: SourcePosition,
+        isDeferred: Boolean = false,
+        isSource: Boolean = false,
+    ): Expression {
         consume(TokenType.LPAREN, "Expected '(' after 'import'")
         if (check(TokenType.RPAREN)) {
             throw error("import() requires a module specifier")
         }
         val arguments = mutableListOf<Expression>()
-        if (!check(TokenType.RPAREN)) {
+        if (isSource) {
+            if (check(TokenType.ELLIPSIS)) {
+                throw error("Spread arguments are not allowed in import.source()")
+            }
+            arguments.add(parseAssignment())
+            if (match(TokenType.COMMA)) {
+                throw error("import.source() accepts exactly 1 argument")
+            }
+        } else if (!check(TokenType.RPAREN)) {
             while (true) {
                 if (check(TokenType.ELLIPSIS)) {
                     throw error("Spread arguments are not allowed in import()")
                 }
-                // 第三个实参从词法上就不属于 ImportCall 文法，在解析前给出位置准确的诊断
+                // 第三个实参从语法上就不属于 ImportCall 文法，在解析前给出位置准确的诊断
                 if (arguments.size >= 2) {
                     throw error("import() accepts at most 2 arguments")
                 }
@@ -3769,6 +3826,7 @@ class Parser(
                 arguments = arguments,
                 range = SourceRange(start, close.range.end),
                 isDeferred = isDeferred,
+                isSource = isSource,
             )
         )
     }
@@ -4496,6 +4554,7 @@ class Parser(
             when (phase) {
                 ImportPhase.EAGER -> requestedEagerModules.add(specifier)
                 ImportPhase.DEFER -> requestedDeferredModules.add(specifier)
+                ImportPhase.SOURCE -> Unit
             }
             if (recordedRequestPhases.add(specifier to phase)) {
                 requestedRequests.add(ModuleRequestInfo(specifier, phase))
@@ -4906,10 +4965,34 @@ class Parser(
             !peek().containsEscape &&
             peek().value == "defer" &&
             peek(1).type == TokenType.MULTIPLY
+        // `import source x from "m"`；注意 `import source from "m"` 仍是名为
+        // source 的默认导入，因此必须看到第二个 from 才能判定为 source phase。
+        val isSourceSyntax = peek().type == TokenType.IDENTIFIER &&
+            !peek().containsEscape &&
+            peek().value == "source" &&
+            peek(1).type == TokenType.IDENTIFIER &&
+            peek(2).type == TokenType.IDENTIFIER &&
+            !peek(2).containsEscape &&
+            peek(2).value == "from"
         var phase = ImportPhase.EAGER
         if (isDeferSyntax) {
             advance() // defer
             phase = ImportPhase.DEFER
+        } else if (isSourceSyntax) {
+            advance() // source
+            val localToken = consumeBindingIdentifier("Expected source import binding name")
+            validateIdentifierName(localToken.value, strict)
+            declareLexicalBinding(localToken.value)
+            return finishImportDeclaration(
+                start = start,
+                specifiers = listOf(
+                    ImportSpecifier("source", localToken.value, localToken.range)
+                ),
+                namespaceImport = null,
+                names = listOf("source" to localToken.value),
+                lexicalNames = listOf(localToken.value),
+                phase = ImportPhase.SOURCE,
+            )
         }
         if (phase == ImportPhase.DEFER && !check(TokenType.MULTIPLY)) {
             throw error("Expected '*' after 'import defer'")

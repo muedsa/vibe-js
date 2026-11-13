@@ -100,7 +100,7 @@ Lexer ──► Parser ──► AST (Program / ModuleProgram)
 7. `moduleContext` 会传播到模板字符串 `${...}` 的子解析器与子词法器，保证模块语境在嵌套表达式里一致；
 8. 当前执行模型：`Engine.runModule`（实验性，需 opt-in）加载 Provider 模块图、链接、建模块环境/namespace 并异步求值，返回入口 namespace。模块求值帧 `this = undefined`、严格模式；动态 `import()` 在模块内通过异步任务加载/链接/求值并返回 Promise，`import.meta.resolve` 委托 Provider；TLA 仅在 Module goal 支持，异步入口使用 `EventLoop.runAsyncTask`，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 
-已知限制：`export using` 尚未覆盖；脚本目标仍不支持 `import()`；同一说明符带不同导入属性会被解析器拒绝；未支持的 module 特性（source-phase-imports）逐条跳过，TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
+已知限制：`export using` 尚未覆盖；脚本目标支持动态 `import()` / `import.source()`（需宿主 Provider），静态 import/export 仍拒绝；同一说明符带不同导入属性会被解析器拒绝；source-phase-imports 已完整接入，TLA 设计见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 
 ## 5. 作用域模型
 
@@ -534,8 +534,8 @@ capability 的队列项，由单一驱动协程按 FIFO 串行恢复函数体：
   `ModuleProvider` / `InMemoryModuleProvider`、内部 `ModuleGraphResolver`、`ModuleExportResolver` /
   `ModuleLinker`、`ModuleEnvironment` / `ModuleDeclarationInstantiator`、`JSModuleNamespace`、
   `ModuleRuntime` 与 `Engine.runModule` 已提供；模块内动态 `import()`、`import.meta.resolve`
-  与静态/动态导入属性已接通。TLA、脚本目标中的 `import()`、宿主加载器与 Test262 module
-  harness **尚未实现**，API 需 opt-in。
+  与静态/动态导入属性已接通。TLA、脚本目标中的动态 `import()` / `import.source()` 与
+  Test262 module harness 已接通；宿主加载器仍未实现，API 需 opt-in。
 - **当前无计划/按需**：WeakRef / FinalizationRegistry、WeakMap/WeakSet 的真实弱引用（M2）、Intl、DOM/fetch 等真实 Web API、SharedArrayBuffer/Atomics、
   transfer/immutable/resizable ArrayBuffer 已支持；R1 资源约束已覆盖主要路径；性能优化（B2）与 API 契约（PKG1）无计划，
   S5.2 只做性能复测观测（见[后续路线](OPTIMIZATION_ROADMAP.md)）。

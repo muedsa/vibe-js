@@ -34,6 +34,27 @@ class Intrinsics(val globalObject: GlobalObject) {
     val templateCache: MutableList<Pair<Any, JSArray>> = mutableListOf()
 
     /** %ThrowTypeError% 内建函数：caller/arguments 访问器与严格 arguments.callee 共用同一对象。 */
+    /** %AbstractModuleSource%；import source 对象原型链根。 */
+    lateinit var abstractModuleSource: JSNativeFunction
+
+    /** 每种 host module source 类共享一个中间原型，避免每个对象单独创建。 */
+    private val moduleSourcePrototypes: MutableMap<String, JSObject> = mutableMapOf()
+
+    /**
+     * 创建 module source 对象；其 [[Prototype]] 链为
+     * object -> kindPrototype -> %AbstractModuleSource%.prototype。
+     */
+    internal fun createModuleSourceObject(className: String): JSObject {
+        val basePrototype = abstractModuleSource.functionPrototypeObject
+            ?: error("%AbstractModuleSource%.prototype is not initialized")
+        val kindPrototype = moduleSourcePrototypes.getOrPut(className) {
+            JSObject(prototype = basePrototype)
+        }
+        return JSObject(prototype = kindPrototype).also {
+            it.moduleSourceClassName = className
+        }
+    }
+
     var throwTypeErrorFunction: JSNativeFunction? = null
 
     /** %Function% 构造器：AsyncFunction 等派生构造器以它为 [[Prototype]]。 */

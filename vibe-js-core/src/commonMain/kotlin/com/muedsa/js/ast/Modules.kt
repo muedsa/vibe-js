@@ -62,6 +62,9 @@ enum class ImportPhase {
 
     /** `import defer`；只创建延迟 namespace，首次访问才触发求值。 */
     DEFER,
+
+    /** `import source` / `import.source()`锛氬彧鑾峰彇妯″潡 source 琛ㄧず锛屼笉瑙ｆ瀽/姹傚€笺€?*/
+    SOURCE,
 }
 
 /** 一条 ModuleRequest Record；同说明符可因 phase 不同而出现多次。 */
@@ -255,6 +258,8 @@ class ImportCallExpr(
     override val range: SourceRange,
     /** `import.defer(...)` 为 true；普通 `import(...)` 为 false。 */
     val isDeferred: Boolean = false,
+    /** `import.source(...)` 涓?true锛涙櫘閫?`import(...)` / `import.defer(...)` 涓?false銆?*/
+    val isSource: Boolean = false,
 ) : Expression() {
 
     /** 模块说明符（第一个实参）；`import()` 零参数时为 null。 */

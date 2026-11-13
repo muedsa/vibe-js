@@ -181,15 +181,14 @@ suspend fun runModuleExample() {
 }
 ```
 
-模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝
-`import` / `export`。阶段 0–9 已接通实验性 `Engine.runModule`（Provider、图加载/链接、环境、namespace、
+模块目标恒为严格模式，禁用 Annex B HTML 注释与 Annex B 语法；脚本目标继续拒绝静态 `import` / `export`；动态 `import()` / `import.source()` 需宿主通过 `Engine.installModuleProvider` 启用。阶段 0–9 已接通实验性 `Engine.runModule`（Provider、图加载/链接、环境、namespace、
 `import.meta` 与同步求值，需 `@ExperimentalModuleApi` opt-in）。模块内支持：
 
 - 动态 `import(specifier[, options])`，返回 Promise；加载/链接/求值失败以拒绝上报；
 - 静态 `import ... with { ... }`、`export ... from ... with { ... }` 与动态 `import(..., { with: ... })` 导入属性，原样传给 Provider；
 - `import.meta.url` 与 `import.meta.resolve(specifier)`（后者委托 `ModuleProvider.resolve`）。
 
-TLA 仅在 Module goal 支持；Test262 `language/module-code/top-level-await` 已纳入 TLA 验收并通过 249/249，`language/module-code` 593/593，`language` module 子集 812/812。模块图加载器与脚本目标中的 `import()` 仍未实现。
+TLA 仅在 Module goal 支持；Test262 `language/module-code/top-level-await` 已纳入 TLA 验收并通过 249/249，`language/module-code` 596/596，`language` module 子集 817/817。脚本目标支持动态 `import()` / `import.source()`（需宿主 Provider），静态 `import`/`export` 仍拒绝；模块图加载器未实现。
 TLA 设计见 [TLA_DESIGN.md](docs/TLA_DESIGN.md)；详见 [兼容性矩阵](docs/COMPATIBILITY.md) 与[后续路线](docs/OPTIMIZATION_ROADMAP.md)。
 
 ### 取消与超时
@@ -338,7 +337,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 - 异步：`async` 函数/箭头函数、`await`、Promise 微任务、async generator
 - 异步迭代：`for await...of`、`Symbol.asyncIterator`、`%AsyncIteratorPrototype%` / `%AsyncGeneratorPrototype%`
 - BigInt：`123n` 字面量（含 `0x`/`0o`/`0b` 前缀与 `n` 后缀）、算术/位运算/比较/幂运算与 BigInt 转换
-- 模块语法与实验性执行：`import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法；`Parser.parseModule()` 解析并预计算静态表，`Engine.runModule` 负责实验性链接、环境/namespace 初始化与同步/异步（含 TLA）求值，动态 `import()` 在模块内可用；脚本目标不支持 `import()`，模块加载器无计划
+- 模块语法与实验性执行：`import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法；`Parser.parseModule()` 解析并预计算静态表，`Engine.runModule` 负责实验性链接、环境/namespace 初始化与同步/异步（含 TLA）求值，动态 `import()` / `import.source()` 在模块和脚本目标中可用（脚本需宿主 Provider），静态 import/export 仍拒绝；模块加载器无计划
 - 资源管理：`using` / `await using`、DisposableStack / AsyncDisposableStack
 - 严格模式尾调用优化（含 try/catch/finally 的待处理语义阻断）
 
@@ -376,7 +375,7 @@ engine.run("console.log('hello'); setTimeout(function () { console.log('later');
 
 当前能力边界（决策与排期见 [docs/OPTIMIZATION_ROADMAP.md](docs/OPTIMIZATION_ROADMAP.md)）：
 
-- **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、静态/动态导入属性、JSON/text/bytes module 资产、静态 `import defer` / 动态 `import.defer` 与 TLA 异步求值，需 `@ExperimentalModuleApi` opt-in；Test262 module TLA 249/249、module-code 593/593、language module 812/812（未支持特性逐条跳过）见 [TLA_DESIGN.md](docs/TLA_DESIGN.md)；脚本目标中的 `import()` 与模块加载器 **未实现/无计划**；
+- **模块（实验性）**：`Parser.parseModule` 已支持 `import` / `export` 基础形式、`import.meta`、`import()` 表达式、导入属性 `with { ... }`、模块顶层 `await` 语法、类型化顶层绑定与 TLA 标记；`Engine.runModule` 已接通 Provider、链接、环境、namespace、`import.meta`、`import.meta.resolve`、动态 `import()`、静态/动态导入属性、JSON/text/bytes module 资产、静态 `import defer` / 动态 `import.defer`、`import source` / `import.source()` 与 TLA 异步求值，需 `@ExperimentalModuleApi` opt-in；Test262 module TLA 249/249、module-code 596/596、language module 817/817、source-phase 253/253，见 [TLA_DESIGN.md](docs/TLA_DESIGN.md)；脚本目标静态 import/export 仍拒绝，模块加载器 **未实现/无计划**；
 - **无计划**：WeakRef / FinalizationRegistry；
 - **宿主生态（已实现子集）**：`TextEncoder` / `TextDecoder`（UTF-8、fatal/ignoreBOM/stream）、`structuredClone`（对象/数组/Map/Set/Date/RegExp/二进制/循环）、`URL` / `URLSearchParams` 常用能力，均位于 `:vibe-js-host`；
 - **不在当前范围**：Intl、DOM / fetch / localStorage 等真实 Web API（宿主模块只提供通用宿主能力）、`ShadowRealm`、`SharedArrayBuffer` / `Atomics`、`Temporal`、装饰器；
@@ -474,18 +473,19 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1231 / 1231** |
-| core JS（Node）/ Wasm（Node） | 各 **1215 / 1215** |
+| core JVM | **1233 / 1233** |
+| core JS（Node）/ Wasm（Node） | 各 **1217 / 1217** |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** |
-| conformance 单元测试 | **44 / 44** |
+| conformance 单元测试 | **45 / 45** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |
 | Test262 ES5 | **15,248/15,248**（跳过 0） |
 | Test262 ES2015 | **63,716/63,716**，失败 0、崩溃 0，跳过 **326**（module flag 322 + 宿主钩子 4） |
 | Test262 ES2016+ | **30,443/30,443**，失败 0、崩溃 0，跳过 26（module flag + 宿主钩子） |
 | Test262 module TLA | **249/249**（`language/module-code/top-level-await`） |
-| Test262 module-code | **593/593**（3 条 source-phase-imports 跳过） |
-| Test262 language module | **812/812**（5 条 source-phase-imports 跳过） |
+| Test262 module-code | **596/596** |
+| Test262 language module | **817/817** |
+| Test262 source-phase-imports | **253/253**（475 次执行） |
 | Node 差分 / 真实库冒烟 | **1432/1432**、**375/375**（102 个库） |
 
 详细口径、跳过原因与推进顺序见 [docs/CONFORMANCE.md](docs/CONFORMANCE.md)。
@@ -512,7 +512,7 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 ## 阶段状态
 
 - **已完成**：ES5 / ES2015 常用语法与内建、Generator / async generator、`for await`、Proxy / Reflect、BigInt、TypedArray / ArrayBuffer / DataView（含 detach/transfer、immutable、base64/hex、Float16）；对应特性已纳入 Test262 基线。
-- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–9（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、JSON/text/bytes module 资产、`import defer` / `import.defer`、`Engine.runModule` 同步/异步求值与错误定位/预算/取消加固）已完成；模块加载器 **未实现/无计划**；TLA 已在 Module goal 接通，Test262 module TLA 249/249、module-code 593/593、language module 812/812；脚本目标中的 `import()` 仍不支持；API 需 opt-in。
+- **模块（实验性）**：`Parser.parseModule` 语法解析、阶段 0–9（类型化绑定/TLA 标记/range、公共 `ModuleProvider`/`InMemoryModuleProvider`/模块图预算、内部模块图递归加载、ResolveExport/import 链接、`ModuleEnvironment`/声明实例化、namespace exotic、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、JSON/text/bytes module 资产、`import defer` / `import.defer`、`import source` / `import.source()`、`Engine.runModule` 同步/异步求值与错误定位/预算/取消加固）已完成；模块加载器 **未实现/无计划**；TLA 已在 Module goal 接通，Test262 module TLA 249/249、module-code 596/596、language module 817/817、source-phase 253/253；脚本目标支持动态 `import()` / `import.source()`，但静态 import/export 仍拒绝；API 需 opt-in。
 - **未完成/无计划**：WeakRef / FinalizationRegistry、Intl / DOM / SharedArrayBuffer 等范围外项，以及 B2 性能优化与 PKG1 API 契约均为无计划；宿主生态已提供 TextEncoder/TextDecoder、structuredClone 与 URL 子集。
 
 ## 说明

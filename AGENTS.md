@@ -31,7 +31,7 @@
 - 变量提升信息由 Parser 预计算（`varDeclarations` / `functionDeclarations`），运行时不得全量扫描 AST。
 - Promise/async 使用 `EventLoop` 的微任务队列与协程调度；不得用平台线程或平台定时器替代。
 - 新增循环、迭代器消费、正则、JSON、集合操作、异步生成器泵或缓存时，必须接入现有执行预算/资源检查点；不得引入无界循环、无界缓存或无检查点的大批量操作。
-- 模块方向为 experimental：`Parser.parseModule`、`Engine.runModule`、Provider/链接/环境/namespace 已存在；`parseProgram` 脚本路径零改动；不得新增平台文件/URL 加载器；Test262 module harness 仅允许放在 `:vibe-js-conformance` 的 JVM 运行器中，不得进入核心；脚本目标继续拒绝 `import` / `export`。
+- 模块方向为 experimental：`Parser.parseModule`、`Engine.runModule`、Provider/链接/环境/namespace 已存在；`parseProgram` 脚本路径零改动；不得新增平台文件/URL 加载器；Test262 module harness 仅允许放在 `:vibe-js-conformance` 的 JVM 运行器中，不得进入核心；脚本目标继续拒绝静态 `import` / `export`；动态 `import()` / `import.source()` 需要宿主通过 `Engine.installModuleProvider` 提供模块运行时。
 - 核心不得引入文件/URL/网络 IO；`Engine.run(source)` 与实验性 `Engine.runModule(...)` 是执行入口，IO 由宿主 `ModuleProvider` 提供，且不得假设浏览器/Wasm 有文件系统。
 - 范围外与无计划项以 `docs/OPTIMIZATION_ROADMAP.md` 为准；不得顺手实现、承诺或写成“下一版本支持”。
 

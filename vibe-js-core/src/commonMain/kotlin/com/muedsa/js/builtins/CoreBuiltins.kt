@@ -22,6 +22,8 @@ object CoreBuiltins {
         // async generator 内建依赖 %AsyncIteratorPrototype% 与 Function.prototype
         AsyncGeneratorBuiltins.install(registry)
         SymbolBuiltins.install(registry)
+        // AbstractModuleSource 暴露 intrinsic；不是全局属性。
+        ModuleSourceBuiltins.install(registry)
         IteratorBuiltins.install(registry)
         ArrayBuiltins.install(registry)
         // ArrayBuffer 需要 Symbol.species/toStringTag 与 Function.prototype

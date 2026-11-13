@@ -31,6 +31,12 @@ internal object ModuleLinker {
                         message = "Module dependency was not loaded: ${entry.moduleRequest}",
                     )
 
+                if (entry.phase == ImportPhase.SOURCE) {
+                    record.importBindings[entry.localName] =
+                        ModuleImportBinding.Source(target)
+                    continue
+                }
+
                 if (entry.importName == "*") {
                     record.importBindings[entry.localName] =
                         ModuleImportBinding.Namespace(target, entry.phase)
@@ -46,6 +52,11 @@ internal object ModuleLinker {
                     is ResolveExportResult.Namespace -> {
                         record.importBindings[entry.localName] =
                             ModuleImportBinding.Namespace(result.module, result.phase)
+                    }
+
+                    is ResolveExportResult.Source -> {
+                        record.importBindings[entry.localName] =
+                            ModuleImportBinding.Source(result.module)
                     }
 
                     ResolveExportResult.Ambiguous -> throw ModuleLinkException(

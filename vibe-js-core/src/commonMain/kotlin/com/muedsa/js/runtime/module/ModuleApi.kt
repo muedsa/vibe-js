@@ -66,6 +66,12 @@ public data class ModuleSource(
      * 避免破坏 PNG 等二进制资产。
      */
     public val bytes: ByteArray? = null,
+    /**
+     * host module source 类名；非 null 表示该模块有 source phase 表示。
+     *
+     * 普通 JS/JSON/text 模块为 null，因此 `import.source` 会按规范抛 SyntaxError。
+     */
+    public val moduleSourceClassName: String? = null,
 )
 
 /**

@@ -292,12 +292,12 @@ class ModuleExecutionTest {
     }
 
     @Test
-    fun `脚本目标中的 import 调用仍被拒绝`() = runTest {
+    fun `脚本目标中的动态导入需要宿主模块运行时`() = runTest {
         val engine = Engine()
-        val error = assertFailsWith<ParseException> {
+        val error = assertFailsWith<JSException> {
             engine.run("""import("./b.js");""")
         }
-        assertTrue(error.message?.contains("import") == true)
+        assertTrue(error.message?.contains("module code") == true)
     }
 
     @Test

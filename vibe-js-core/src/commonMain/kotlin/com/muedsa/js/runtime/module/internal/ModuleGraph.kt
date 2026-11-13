@@ -27,6 +27,11 @@ internal sealed interface ModuleImportBinding {
         val bindingName: String,
     ) : ModuleImportBinding
 
+    /** `import source x` / re-export source binding：绑定目标模块的 source 对象。 */
+    data class Source(
+        val target: ModuleRecord,
+    ) : ModuleImportBinding
+
     /** `import * as ns` 或导入 `export * as ns`：需要目标模块的 namespace。 */
     data class Namespace(
         val target: ModuleRecord,
@@ -67,6 +72,9 @@ internal class ModuleRecord(
 
     /** defer 导入使用的延迟 namespace；与 eager namespace 身份不同。 */
     var deferredNamespace: JSObject? = null
+
+    /** host module source 表示；source phase 导入和 source binding 使用。 */
+    var moduleSourceObject: JSObject? = null
 
     /** 阶段 7 创建 import.meta 对象后填充；同一模块复用。 */
     var importMeta: JSObject? = null

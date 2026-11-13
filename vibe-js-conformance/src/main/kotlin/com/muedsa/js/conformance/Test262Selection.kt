@@ -74,6 +74,15 @@ internal object Test262Selection {
         filter: String?,
     ): SelectionDecision {
         if (metadata == null) return SelectionDecision.Excluded(EXCLUDED_NO_METADATA)
+        if (suite == "sourcephase") {
+            if (metadata.features.none { it == "source-phase-imports" || it == "source-phase-imports-module-source" }) {
+                return SelectionDecision.Excluded("非 source-phase 用例")
+            }
+            if (filter != null && !relativePath.contains(filter)) {
+                return SelectionDecision.Excluded(EXCLUDED_FILTER)
+            }
+            return SelectionDecision.Selected
+        }
         if (suite == "module") {
             if ("module" !in metadata.flags) {
                 return SelectionDecision.Excluded(EXCLUDED_NOT_MODULE)
@@ -145,7 +154,7 @@ internal object Test262Selection {
         // module 执行由独立 module suite 覆盖；generator 为旧版语料的历史 flag
         // （现行语料已改用 features: [generators]），保留判定以兼容旧语料，
         // 不影响已纳入基线的生成器用例
-        if (metadata.flags.any { it in setOf("module", "generator") } && suite != "module") {
+        if (metadata.flags.any { it in setOf("module", "generator") } && suite !in setOf("module", "sourcephase")) {
             return SkipDecision("unsupported flag")
         }
         // async 负数用例的期望落定方式与普通 $DONE 不同，暂不纳入
@@ -153,7 +162,9 @@ internal object Test262Selection {
             return SkipDecision("unsupported async negative")
         }
         val unsupportedFeature = metadata.features.firstOrNull {
-            it in unsupportedFeatures && !(suite == "module" && it in moduleSupportedFeatures)
+            it in unsupportedFeatures &&
+                !(suite == "module" && it in moduleSupportedFeatures) &&
+                !(suite == "sourcephase" && it in sourcephaseSupportedFeatures)
         }
         if (unsupportedFeature != null) {
             return SkipDecision("unsupported feature: $unsupportedFeature")
@@ -178,7 +189,8 @@ internal object Test262Selection {
         }
         if (metadata.negativePhase != null &&
             metadata.negativePhase !in setOf("parse", "runtime") &&
-            !(suite == "module" && metadata.negativePhase == "resolution")
+            !(suite == "module" && metadata.negativePhase == "resolution") &&
+            !(suite == "sourcephase" && metadata.negativePhase == "resolution")
         ) {
             return SkipDecision("unsupported negative phase: ${metadata.negativePhase}")
         }
@@ -190,7 +202,7 @@ internal object Test262Selection {
         Regex("""\$262\s*\.\s*([A-Za-z_$][A-Za-z0-9_$]*)""")
 
     /** runner 在 `$262` 上提供的宿主钩子；其余成员按不支持跳过。 */
-    private val supportedDollar262Members = setOf("evalScript", "detachArrayBuffer")
+    private val supportedDollar262Members = setOf("evalScript", "detachArrayBuffer", "AbstractModuleSource")
 
     /**
      * 脚本特性支持集合：ES2015 与 ES2016+ 子集都要求用例的全部 features 在此集合内。
@@ -364,6 +376,7 @@ internal object Test262Selection {
     )
 
     /** module suite 已支持、但在通用 unsupportedFeatures 中仍需放行的特性。 */
+    /** module suite 已支持、但在通用 unsupportedFeatures 中仍需放行的特性。 */
     private val moduleSupportedFeatures = setOf(
         "top-level-await",
         "dynamic-import",
@@ -372,5 +385,14 @@ internal object Test262Selection {
         "import-text",
         "import-bytes",
         "import-defer",
+        "source-phase-imports",
+        "source-phase-imports-module-source",
+    )
+
+    /** sourcephase suite 的完整特性放行集合。 */
+    private val sourcephaseSupportedFeatures = setOf(
+        "source-phase-imports",
+        "source-phase-imports-module-source",
+        "dynamic-import",
     )
 }

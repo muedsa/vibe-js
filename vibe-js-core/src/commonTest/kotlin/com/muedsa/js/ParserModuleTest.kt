@@ -458,10 +458,11 @@ class ParserModuleTest {
     }
 
     @Test
-    fun `脚本目标拒绝import元属性与动态导入`() {
-        // 本切片只把两种表达式接入模块目标；脚本中 import 仍是保留字
+    fun `脚本目标拒绝import元属性但允许动态导入与import源码导入`() {
+        // 静态 import/export 仍是脚本目标的保留语法；动态导入按规范可用。
         assertFailsWith<ParseException> { parseScript("import.meta.url;") }
-        assertFailsWith<ParseException> { parseScript("import(\"./m.js\");") }
+        parseScript("import(\"./m.js\");")
+        parseScript("import.source(\"./m.js\");")
         // 模块目标下二者都已可用
         parseModule("import.meta.url;")
         parseModule("import(\"./m.js\");")

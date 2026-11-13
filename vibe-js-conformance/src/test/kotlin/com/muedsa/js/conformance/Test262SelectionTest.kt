@@ -233,10 +233,34 @@ class Test262SelectionTest {
 
     @Test
     fun `module 子集仍跳过未支持 feature`() {
-        val metadata = metadata(flags = setOf("module"), features = setOf("source-phase-imports"))
+        val metadata = metadata(flags = setOf("module"), features = setOf("Temporal"))
         assertEquals(
-            "unsupported feature: source-phase-imports",
-            Test262Selection.skipReason("import source * as ns from './x.js';", metadata, "module"),
+            "unsupported feature: Temporal",
+            Test262Selection.skipReason("import defer * as ns from './x.js';", metadata, "module"),
+        )
+    }
+
+    @Test
+    fun `sourcephase 子集选中 source 特性并允许 staging`() {
+        val metadata = metadata(
+            flags = setOf("module"),
+            features = setOf("source-phase-imports", "source-phase-imports-module-source"),
+        )
+        assertIs<SelectionDecision.Selected>(
+            Test262Selection.decide(
+                "test/staging/source-phase-imports/x.js",
+                metadata,
+                "sourcephase",
+                false,
+                null,
+            )
+        )
+        assertNull(
+            Test262Selection.skipReason(
+                "import.source('<module source>');",
+                metadata,
+                "sourcephase",
+            )
         )
     }
 

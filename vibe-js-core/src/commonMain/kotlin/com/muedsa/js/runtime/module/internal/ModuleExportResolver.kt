@@ -17,6 +17,11 @@ internal sealed interface ResolveExportResult {
         val phase: ImportPhase = ImportPhase.EAGER,
     ) : ResolveExportResult
 
+    /** `import source x; export { x }`：解析为目标模块的 source 对象。 */
+    data class Source(
+        val module: ModuleRecord,
+    ) : ResolveExportResult
+
     data object Ambiguous : ResolveExportResult
     data object NotFound : ResolveExportResult
 }
@@ -63,6 +68,7 @@ internal object ModuleExportResolver {
                 ResolveExportResult.Ambiguous -> return ResolveExportResult.Ambiguous
                 is ResolveExportResult.Resolved,
                 is ResolveExportResult.Namespace,
+                is ResolveExportResult.Source,
                 -> {
                     if (starResolution == null) {
                         starResolution = result
@@ -90,6 +96,9 @@ internal object ModuleExportResolver {
             if (imported != null) {
                 val target = module.dependencyFor(imported.moduleRequest)
                     ?: return ResolveExportResult.NotFound
+                if (imported.phase == ImportPhase.SOURCE) {
+                    return ResolveExportResult.Source(target)
+                }
                 if (imported.importName == "*") {
                     return ResolveExportResult.Namespace(target, imported.phase)
                 }

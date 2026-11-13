@@ -73,6 +73,13 @@ internal class ModuleDeclarationInstantiator(
         }
 
         record.environment = environment
+        if (record.moduleSourceObject == null) {
+            record.source.moduleSourceClassName?.let { className ->
+                record.moduleSourceObject = interpreter.intrinsics
+                    .createModuleSourceObject(className)
+                    .attachAllocationBudget(interpreter.context.objectAllocations)
+            }
+        }
         if (record.namespace == null) {
             record.namespace = JSModuleNamespace(
                 record = record,

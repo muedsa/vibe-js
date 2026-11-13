@@ -51,15 +51,43 @@ internal class ModuleEvaluator(
             ?: throw IllegalStateException("Deferred namespace is not initialized: ${graph.entry.id}")
     }
 
+    /** 动态 `import.source`：只实例化 source 记录并返回 source 对象，不求值。 */
+    suspend fun evaluateSource(graph: ModuleGraph): JSObject {
+        for (record in graph.records.values) {
+            if (record.environment == null) instantiator.instantiate(record)
+        }
+        validateSourceBindings(graph)
+        return graph.entry.moduleSourceObject
+            ?: throw interpreter.syntaxError(
+                "Source phase is not available for module: ${graph.entry.id}"
+            )
+    }
+
     suspend fun evaluate(graph: ModuleGraph): JSObject {
         // 先建齐所有环境与 namespace，保证 import 转发和嵌套 namespace 可用。
         for (record in graph.records.values) {
             if (record.environment == null) instantiator.instantiate(record)
         }
+        validateSourceBindings(graph)
         val completion = evaluateModule(graph.entry, mutableListOf())
         completion.await()
         return graph.entry.namespace
             ?: throw IllegalStateException("Module namespace is not initialized: ${graph.entry.id}")
+    }
+
+    /** source phase binding 的目标没有 source 表示时，按规范在求值前抛 SyntaxError。 */
+    private fun validateSourceBindings(graph: ModuleGraph) {
+        for (record in graph.records.values) {
+            for (binding in record.importBindings.values) {
+                if (binding is ModuleImportBinding.Source &&
+                    binding.target.moduleSourceObject == null
+                ) {
+                    throw interpreter.syntaxError(
+                        "Source phase is not available for module: ${binding.target.id}"
+                    )
+                }
+            }
+        }
     }
 
     private suspend fun evaluateModule(
@@ -196,15 +224,18 @@ internal class ModuleEvaluator(
         }
         for (request in record.program.requestedRequests) {
             val dependency = record.dependencyFor(request.specifier) ?: continue
-            if (request.phase == ImportPhase.EAGER) {
-                add(dependency)
-            } else {
-                for (module in gatherAsynchronousTransitiveDependencies(
-                    dependency,
-                    mutableSetOf(),
-                )) {
-                    add(module)
+            when (request.phase) {
+                ImportPhase.EAGER -> add(dependency)
+                ImportPhase.DEFER -> {
+                    for (module in gatherAsynchronousTransitiveDependencies(
+                        dependency,
+                        mutableSetOf(),
+                    )) {
+                        add(module)
+                    }
                 }
+                // source phase 既不求值自身，也不参与 TLA 传递依赖。
+                ImportPhase.SOURCE -> Unit
             }
         }
         return result

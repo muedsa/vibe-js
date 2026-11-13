@@ -96,6 +96,9 @@ open class JSObject(
      */
     var internalState: Any? = null
 
+    /** [[ModuleSourceClassName]]；仅 module source 对象设置。 */
+    internal var moduleSourceClassName: String? = null
+
     /** 是否具有 [[ErrorData]] 内部槽（供 Error.isError 判断）。 */
     var isErrorData: Boolean = false
 

@@ -61,9 +61,10 @@
 | 私有字段/方法/访问器 | ✅ | 品牌检查、不可扩展与重复初始化报错、直接 eval 可见性 |
 | Generator（`function*` / `yield`） | ✅ | 同步/异步生成器、`yield*` 委托、`return`/`throw`/`next`、生成器方法、`%GeneratorFunction%` / `%AsyncGeneratorFunction%` 原型链；参数绑定在调用时完成 |
 | BigInt（字面量与运算） | ✅ | `123n`、算术/位运算/移位/比较/幂运算、`BigInt()` / `asIntN` / `asUintN`、与 Number 混用抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制 |
-| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；实验性 `Engine.runModule` 已支持 Provider 图加载、链接、声明实例化、异步求值与 namespace，需 opt-in；宿主加载器未实现。脚本目标继续拒绝 `import` / `export` |
+| 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；实验性 `Engine.runModule` 已支持 Provider 图加载、链接、声明实例化、异步求值与 namespace，需 opt-in；宿主加载器未实现。脚本目标继续拒绝静态 `import` / `export`，动态导入需宿主 Provider |
 | 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；模块求值中 `import.meta` 返回缓存的 url 对象，`import()` 执行时抛 `Dynamic import is not supported`；零参数在解析期报错 |
-| 模块顶层 await | ✅ | 模块语法层可解析 `await` / 顶层 `for await` 并记录 `hasTopLevelAwait`；`Engine.runModule` 已实现异步求值、异步依赖等待与 cycle root；Test262 TLA 子集 249/249，module-code 593/593。Script goal 仍拒绝 TLA |
+| source-phase-imports | ✅ | `import source` / `import.source()`、`%AbstractModuleSource%`、source binding/re-export；Test262 source-phase 253/253（475 次执行） |
+| 模块顶层 await | ✅ | 模块语法层可解析 `await` / 顶层 `for await` 并记录 `hasTopLevelAwait`；`Engine.runModule` 已实现异步求值、异步依赖等待与 cycle root；Test262 TLA 子集 249/249，module-code 596/596。Script goal 仍拒绝 TLA |
 | Proxy / Reflect | ✅ | Proxy 13 个 trap、`Proxy.revocable`、撤销状态与完整不变量校验；Reflect 13 个方法；解释器属性/调用/构造内部方法统一分派 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
 | 严格模式尾调用优化 | ✅ | return 尾位置（含条件/逻辑/逗号/标签模板），try/catch/finally 按待处理语义阻断 |
@@ -129,18 +130,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1231** + 宿主 40 个测试（2026-11-13 记录） |
-| JS（Node） | ✅ | 核心 **1215** + 宿主 40 个测试 |
-| Wasm（Node） | ✅ | 核心 **1215** + 宿主 40 个测试 |
+| JVM | ✅ | 核心 **1233** + 宿主 40 个测试（2026-11-13 记录） |
+| JS（Node） | ✅ | 核心 **1217** + 宿主 40 个测试 |
+| Wasm（Node） | ✅ | 核心 **1217** + 宿主 40 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1231 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1215。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1233 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1217。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-13）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **63,716/63,716**，失败 0、跳过 **326**（module flag 322 + 宿主钩子 4）；ES2016+ **30,443/30,443**，跳过 26；module TLA **249/249**；module-code **593/593**；language module **812/812**；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-13）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **63,716/63,716**，失败 0、跳过 **326**（module flag 322 + 宿主钩子 4）；ES2016+ **30,443/30,443**，跳过 26；module TLA **249/249**；module-code **596/596**；language module **817/817**；source-phase **253/253**（475 次执行）；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -159,7 +160,7 @@
 | `maxObjectCount` | 对象分配 | `ResourceLimitException` | 否 |
 | `maxMicrotasksPerRun` | 单轮微任务清空 | `ResourceLimitException` | 否 |
 
-- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、异步求值、动态 `import()` 与静态/动态导入属性；TLA 仅在 Module goal 支持，见 [TLA_DESIGN.md](TLA_DESIGN.md)。动态 `import()` 只在模块代码及其延迟回调中可用，脚本目标仍不支持；模块加载器仍无计划，Test262 module TLA/module-code/language module 子集已接入；API 需 opt-in；
+- 模块执行（实验性）：`Engine.runModule` 已支持 Provider 图加载、链接、模块环境、live binding、namespace、`import.meta`、`import.meta.resolve`、异步求值、动态 `import()` 与静态/动态导入属性；TLA 仅在 Module goal 支持，见 [TLA_DESIGN.md](TLA_DESIGN.md)。动态 `import()` / `import.source()` 在脚本目标中可用，但需要宿主通过 `Engine.installModuleProvider` 安装 ModuleProvider；静态 import/export 仍拒绝；模块加载器仍无计划，Test262 module TLA/module-code/language module 子集已接入；API 需 opt-in；
 - 模块语法限制：`export using` 未支持；`import()` 零参数与非 async 函数体中的 `await` 已在解析期拒绝；导入属性按说明符去重，同一说明符带不同属性会被解析器拒绝；
 - 模块导入属性与解析：`ModuleRequest.attributes` 原样传给 Provider；`import.meta.resolve` 委托 `ModuleProvider.resolve`（默认实现退化为 `load` 并返回 `url ?: id`）；
 - 模块目标已按规范禁用 Annex B HTML 注释与 Annex B 语法；脚本目标仍允许 HTML 注释；
@@ -222,9 +223,10 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `ConformanceTest` | 审查阶段 P0 问题回归 |
 | `RuntimeCancellationTest` / `RuntimeTimeoutTest`（JVM） | 协作式取消、异常透传、清理与复用；JVM 真实死循环超时 |
 | `RuntimeLimitsTest` / `ResourceLimitsTest` | 步数与逻辑调用深度、微任务及 async 预算、超限清理与复用；源码长度/嵌套深度/AST 节点/对象数量/JSON.parse 与 JSON.stringify 深度/正则步数（含显式降低预算时的嵌套量词路由）/排队任务/单轮微任务预算与异常分类 |
-| `ParserModuleTest` | `Parser.parseModule` 的 import/export 基础形式、import.meta/import()、模块顶层 await、模块早期错误、脚本目标零影响 |
+| `ParserModuleTest` | `Parser.parseModule` 的 import/export 基础形式、import.meta/import()、模块顶层 await、模块早期错误、脚本目标动态导入边界 |
 | `ModuleExecutionTest` 等模块测试 | Provider 图加载/链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、顶层 `this`、TLA 拒绝、执行/对象/微任务/待处理任务/源码长度（含边界成功）/AST 节点/嵌套深度预算与失败恢复 |
 | `ImportDeferTest` | `import defer` 延迟求值、trigger 边界、deferred/eager namespace 身份 |
+| `SourcePhaseImportTest` | source 对象原型链、不解析 source 文本、普通 JS source text 抛 SyntaxError |
 | `ModuleAssetTest` | JSON default 对象与加载期非法 JSON 拒绝、text 原始字符串、bytes immutable Uint8Array、同 id JS/text 并存、bytes 缺失契约、资产源码预算 |
 | `ModuleProviderContractTest` | 入口/依赖 referrer、null/异常、sourceName/url、精确 id、空与空白 id 校验、重复 specifier 去重、同 id 多 specifier 去重与首次源码/URL/sourceName 优先、URL 空值回退及空字符串保留、空 sourceName 错误栈、maxModules 与源码预算唯一计数 |
 | `ModuleExecutionMatrixTest` | 循环依赖求值/执行顺序、菱形依赖去重、依赖失败隔离（含入口体）、namespace 描述符（含嵌套/空/无导出入口 exotic 不变量、`__proto__` 数据属性、toStringTag 自有性/唯一符号/ownKeys 与 getOwnPropertyNames 反射面、Object.assign/Array.from 互操作、跨 specifier 身份）、显式导出、`export * as default`/`export * as ns`、default 排除/重导出/live binding、import.meta 缓存 |

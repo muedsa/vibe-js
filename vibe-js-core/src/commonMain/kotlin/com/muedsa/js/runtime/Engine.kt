@@ -109,6 +109,17 @@ class Engine(
     }
 
     /**
+     * 为脚本目标安装 `import.source()` 使用的 ModuleProvider。
+     *
+     * 脚本中没有静态 import/export，但 source phase 动态导入仍需要宿主解析模块；
+     * 该 API 仅暴露供 Test262/宿主显式启用，不影响普通脚本路径。
+     */
+    @ExperimentalModuleApi
+    fun installModuleProvider(provider: ModuleProvider) {
+        context.scriptModuleRuntime = ModuleRuntime(provider, limits)
+    }
+
+    /**
      * 预解析一段脚本，得到可重复执行的 AST。
      *
      * 解析阶段不接触全局环境，可在进入事件循环前完成；同一 AST 可多次执行，

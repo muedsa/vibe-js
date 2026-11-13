@@ -274,6 +274,36 @@ val test262ModuleLanguageConformance = tasks.register<JavaExec>("test262ModuleLa
     outputs.dir(reportDir)
 }
 
+/** 运行 source-phase-imports 全部特性用例（含 script/module 两种执行路径）。 */
+val test262SourcePhaseConformance = tasks.register<JavaExec>("test262SourcePhaseConformance") {
+    group = "verification"
+    description = "运行 Test262 source-phase-imports 子集并生成语义报告"
+    dependsOn(downloadTest262Corpus)
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.muedsa.js.conformance.Test262ConformanceKt")
+    val reportDir = conformanceReportDir.map { it.dir("test262-source-phase") }
+    args(
+        test262Dir.asFile.absolutePath,
+        reportDir.get().asFile.absolutePath,
+        "--suite", "sourcephase",
+    )
+    if (project.hasProperty("test262Filter")) {
+        args("--filter", project.property("test262Filter").toString())
+    }
+    if (project.hasProperty("test262Limit")) {
+        args("--limit", project.property("test262Limit").toString())
+    }
+    if (project.hasProperty("test262Jobs")) {
+        args("--jobs", project.property("test262Jobs").toString())
+    }
+    applyRunnerSettings()
+    if (project.hasProperty("strict")) {
+        args("--strict")
+    }
+    inputs.dir(test262Dir)
+    outputs.dir(reportDir)
+}
+
 /**
  * 运行 ES2016+ 特性种子子集。
  *

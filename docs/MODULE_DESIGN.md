@@ -20,8 +20,8 @@
 - 宿主负责：说明符规范化、源码读取、网络/文件/打包器、模块 id 的稳定性。
 - 当前已支持：静态 `import` / `export`、默认导出、re-export、`export *`、`export * as ns`、
   命名空间导入、`import.meta`、循环依赖、live binding、动态 `import()`、Top-Level Await、
-  import attributes、JSON/text/bytes module 资产、`import defer` / `import.defer`。
-- 仍未实现：文件/URL/网络加载器、source-phase-imports、Test262 module harness
+  import attributes、JSON/text/bytes module 资产、`import defer` / `import.defer`、`import source` / `import.source()` 与 `AbstractModuleSource`。
+- 仍未实现：文件/URL/网络加载器、Test262 module harness
   （后者位于 `:vibe-js-conformance`）。
 - `Engine.runModule` 每次调用使用独立模块图；同一模块在单次调用内只求值一次。
 - 模块共享 `Engine` 的 realm/global，但每个模块有独立 `ModuleEnvironment`。
@@ -153,6 +153,8 @@ data class ModuleSource(
     val assetType: String? = null,
     /** 原始字节资产；仅 bytes 类型使用。 */
     val bytes: ByteArray? = null,
+    /** host module source 类名；非 null 表示支持 source phase。 */
+    val moduleSourceClassName: String? = null,
 )
 
 fun interface ModuleProvider {
@@ -190,6 +192,7 @@ class InMemoryModuleProvider(
 - provider 可以跨 `runModule` 复用；核心不缓存 provider 实例。
 - `InMemoryModuleProvider` 使用精确 id，不做相对路径解析；宿主需要自行规范化。
 - JSON/text/bytes 资产通过 `with { type: ... }` 标记；bytes 必须由 Provider 提供 `bytes`。
+- `moduleSourceClassName` 只用于 host source 模块；普通 JS/JSON/text 模块为 null，`import.source` 按规范抛 `SyntaxError`。
 
 ### 4.3 Engine 入口（已实现，实验性）
 
@@ -203,6 +206,9 @@ suspend fun Engine.runModule(
     entrySpecifier: String,
     provider: ModuleProvider,
 ): JSObject
+
+// 脚本目标中的动态 import() / import.source() 需要显式安装 Provider
+fun Engine.installModuleProvider(provider: ModuleProvider)
 ```
 
 > 阶段 7 已实现上述两个重载；调用方需要 opt-in `@ExperimentalModuleApi`。
@@ -210,6 +216,7 @@ suspend fun Engine.runModule(
 - 两个重载都返回**入口模块的 namespace 对象**。
 - `ModuleSource` 入口允许省略 provider；如果源码包含静态 import，缺失 provider 会链接失败。
 - `entrySpecifier` 入口的 provider 必须能加载入口；`ModuleRequest.referrer = null`。
+- `installModuleProvider` 只影响脚本目标的动态导入；静态 `import`/`export` 仍拒绝。
 - `runModule` 复用 `eventLoop.runTask`、execution budget、对象分配预算和微任务清理。
 - 每次调用新建模块图和新预算；失败只丢弃本次图，Engine 可继续使用。
 - 不建议把 `ModuleProgram` 或内部 `ModuleRecord` 暴露给宿主。
@@ -769,7 +776,7 @@ M8.1–M8.6 已完成；模块图/求值 benchmark 已加入 JVM 基准套件。
 |---|---|---:|---|
 | L1 | 动态 `import()`：Promise、图复用、错误传播 | 已完成 | M7 |
 | L2 | Top-Level Await：异步求值状态机 | 已完成 | L1/M7 |
-| L3 | import attributes / JSON/text/bytes modules / `import defer` / `import.defer` | 已完成 | M1/M4 |
+| L3 | import attributes / JSON/text/bytes modules / `import defer` / `import.defer` / `import source` / `import.source()` / `AbstractModuleSource` | 已完成 | M1/M4 |
 | L4 | 文件/URL/网络 Provider（仅 host） | 3–5 | M2/M3 |
 | L5 | Test262 module harness + 全量 module 门禁 | 5–9 | L1/L2 |
 

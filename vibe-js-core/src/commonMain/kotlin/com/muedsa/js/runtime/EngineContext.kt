@@ -1,5 +1,6 @@
 package com.muedsa.js.runtime
 
+import com.muedsa.js.runtime.module.internal.ModuleRuntime
 import com.muedsa.js.runtime.value.ObjectAllocationBudget
 
 /**
@@ -30,4 +31,7 @@ class EngineContext(
      *        -> ObjectEnvironment（全局 var/function，委托给 globalObject）
      */
     lateinit var globalEnvironment: Environment
+
+    /** 脚本目标中 import.source() 使用的模块运行时；由宿主显式安装。 */
+    internal var scriptModuleRuntime: ModuleRuntime? = null
 }

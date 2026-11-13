@@ -7,7 +7,9 @@ import com.muedsa.js.builtins.JsonParseException
 import com.muedsa.js.builtins.JsonParser
 import com.muedsa.js.lexer.Lexer
 import com.muedsa.js.lexer.LexerException
+import com.muedsa.js.ast.ModuleProgram
 import com.muedsa.js.lexer.SourceInfo
+import com.muedsa.js.lexer.SourceRange
 import com.muedsa.js.parser.ParseException
 import com.muedsa.js.parser.Parser
 import com.muedsa.js.runtime.EngineLimits
@@ -72,7 +74,7 @@ internal class ModuleGraphResolver(
      */
     suspend fun loadDynamic(
         specifier: String,
-        referrer: String,
+        referrer: String?,
         attributes: Map<String, String>,
         provider: ModuleProvider,
     ): ModuleGraph {
@@ -135,7 +137,12 @@ internal class ModuleGraphResolver(
             )
         }
 
-        val program = parse(source)
+        // host module source 不解析源码；它只暴露 source phase 表示，不参与求值。
+        val program = if (source.moduleSourceClassName != null) {
+            emptyModuleProgram(source)
+        } else {
+            parse(source)
+        }
         val record = ModuleRecord(
             source = source,
             program = program,
@@ -325,6 +332,21 @@ internal class ModuleGraphResolver(
         visit(entry)
         return ModuleGraph(entry, reachable)
     }
+
+    private fun emptyModuleProgram(source: ModuleSource): ModuleProgram =
+        ModuleProgram(
+            items = emptyList(),
+            statements = emptyList(),
+            varDeclarations = emptyList(),
+            functionDeclarations = emptyList(),
+            lexicallyDeclaredNames = emptyList(),
+            importEntries = emptyList(),
+            exportEntries = emptyList(),
+            requestedModules = emptyList(),
+            hasUsingDeclaration = false,
+            range = SourceRange.NONE,
+            sourceInfo = SourceInfo(source.sourceName),
+        )
 
     private fun parse(source: ModuleSource): com.muedsa.js.ast.ModuleProgram {
         try {

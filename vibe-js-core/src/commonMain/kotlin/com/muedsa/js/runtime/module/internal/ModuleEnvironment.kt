@@ -42,6 +42,16 @@ internal class ModuleEnvironment(
                 return target.getBinding(imported.bindingName)
             }
 
+            is ModuleImportBinding.Source -> {
+                return imported.target.moduleSourceObject
+                    ?: throw JSException(
+                        JSError(
+                            "ReferenceError",
+                            "Module source is not available: ${imported.target.id}",
+                        ),
+                    )
+            }
+
             is ModuleImportBinding.Namespace -> {
                 val namespace = if (imported.phase == ImportPhase.DEFER) {
                     imported.target.deferredNamespace
@@ -89,6 +99,16 @@ internal class ModuleEnvironment(
                     )
             }
 
+            is ResolveExportResult.Source -> {
+                result.module.moduleSourceObject
+                    ?: throw JSException(
+                        JSError(
+                            "ReferenceError",
+                            "Module source is not available: ${result.module.id}",
+                        ),
+                    )
+            }
+
             is ResolveExportResult.Namespace -> {
                 val namespace = if (result.phase == ImportPhase.DEFER) {
                     result.module.deferredNamespace
@@ -115,6 +135,9 @@ internal class ModuleEnvironment(
         when (val imported = record.importBindings[name]) {
             is ModuleImportBinding.Resolved ->
                 return imported.target.environment?.resolveBindingValue(imported.bindingName)
+
+            is ModuleImportBinding.Source ->
+                return imported.target.moduleSourceObject
 
             is ModuleImportBinding.Namespace ->
                 return if (imported.phase == ImportPhase.DEFER) {

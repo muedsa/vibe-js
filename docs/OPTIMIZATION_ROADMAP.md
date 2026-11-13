@@ -6,7 +6,7 @@
 >
 > **2026-11-11 调整：模块阶段 0–9 已作为实验性实现完成**（Parser 静态表与导入属性、Provider API、内部图加载、静态链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、`Engine.runModule`、同步求值，以及错误定位/预算/取消/失败恢复加固）。API 需要 `@ExperimentalModuleApi` opt-in，不承诺正式版兼容性。模块文件/URL 加载器仍无计划；核心继续不引入平台文件/URL IO。TLA 与 Test262 module TLA 子集已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md)。
 >
-> **2026-11-12 调整：TLA 已落地**（仅 Module goal）。核心异步求值、异步事件循环入口、module-code 593/593 与 language module 812/812 已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md)；未支持的 module 特性逐条跳过。
+> **2026-11-12 调整：TLA 已落地**（仅 Module goal）。核心异步求值、异步事件循环入口、module-code 596/596 与 language module 817/817 已完成，见 [TLA_DESIGN.md](TLA_DESIGN.md)；未支持的 module 特性逐条跳过。
 
 ## 1. 当前基线
 
@@ -14,18 +14,19 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1231 / 1231** | 2026-11-13 本地运行 |
-| core JS / Wasm（Node） | 各 **1215 / 1215** | 2026-11-13 复跑 |
+| core JVM 单元测试 | **1233 / 1233** | 2026-11-13 本地运行 |
+| core JS / Wasm（Node） | 各 **1217 / 1217** | 2026-11-13 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
-| conformance 单元测试 | **44 / 44** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4 |
+| conformance 单元测试 | **45 / 45** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 25 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
 | parser 模块 | pass-module **76 / 76**、pass-explicit-module **76 / 76**、fail-module **47 / 47**、early-module **63 / 63**（拒绝） | 262 个 `.module.js`，允许列表 0 条 |
 | Test262 ES5 | **15,248 / 15,248**，失败 0，跳过 0 | 2026-11-12 复跑 |
 | Test262 ES2015 | **63,716 / 63,716**，失败 0，崩溃 0 | 选中 33,271；跳过 **326**（module flag 322 + 宿主钩子 4） |
 | Test262 ES2016+ | **30,443 / 30,443**，失败 0，崩溃 0 | 选中 15,473；跳过 26 |
 | Test262 module TLA | **249 / 249**，失败 0，崩溃 0 | 默认 `language/module-code/top-level-await` |
-| Test262 module-code | **593 / 593**，失败 0，崩溃 0 | 3 条 source-phase-imports 跳过 |
-| Test262 language module | **812 / 812**，失败 0，崩溃 0 | 5 条 source-phase-imports 跳过 |
+| Test262 module-code | **596 / 596**，失败 0，崩溃 0 | 无 |
+| Test262 language module | **817 / 817**，失败 0，崩溃 0 | 无 |
+| Test262 source-phase-imports | **253 / 253**，执行 **475 / 475** | 无 |
 | Node 差分 | **1432 / 1432** | 含 L 系列同步与异步用例 |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） | 2026-11-10 新增 base64-js/jmespath/jssha、d3-array/d3-hierarchy/earcut、d3-dsv/cbor-js/humanize-duration、msgpack-lite/d3-delaunay/topojson-client |
 
@@ -39,7 +40,7 @@
 - **二进制与数值**：BigInt、11 种 TypedArray、ArrayBuffer、DataView、detach/transfer 语义。
 - **集合与内建**：Iterator helpers、DisposableStack / AsyncDisposableStack、Promise 组合、`RegExp.escape`、ES2025 Set 方法等。
 - **宿主生态**：`:vibe-js-host` 提供 TextEncoder/TextDecoder（UTF-8、fatal/ignoreBOM/stream）、structuredClone（对象/数组/Map/Set/Date/RegExp/二进制/循环）、URL/URLSearchParams 常用子集。
-- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值，但 API 需 opt-in；Test262 module TLA 249/249、module-code 593/593、language module 812/812；宿主加载器仍无计划。
+- **模块（实验性）**：`Parser.parseModule()` 可解析 import/export 基础形式、`import.meta`、`import()`、导入属性 `with { ... }`、模块顶层 `await` 语法，并预计算静态表；`Engine.runModule` 已接通 Provider、加载/链接、环境、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性与 TLA 异步求值，但 API 需 opt-in；Test262 module TLA 249/249、module-code 596/596、language module 817/817、source-phase 253/253；宿主加载器仍无计划。
 - **资源约束**：`EngineLimits` 已覆盖源码长度、嵌套深度、AST 节点、对象数量、JSON 深度、正则步数、排队任务、单轮微任务等预算；`JSON.stringify` 与 `JSON.parse` 共用 `maxJsonDepth`，显式降低 `maxRegexSteps` 时嵌套量词正则路由到受预算约束的回退引擎。
 
 ### 1.3 当前边界
@@ -64,7 +65,7 @@
 1. **核心只接受宿主源码/Provider**：`Engine.runModule` 由宿主提供 `ModuleSource`/`ModuleProvider`；核心不读取文件、URL 或网络。
 2. **模块加载器涉及平台差异**：文件系统、URL、包解析在 JVM/Android/Native/Node 与浏览器/Wasm 上差异很大，放进核心会破坏“核心无平台 API”的约束。
 3. **平台矩阵不适合核心做 IO**：JVM/Android/Native/Node 可以读文件，浏览器/Wasm 不能；需要加载器的宿主应自行实现 Provider。
-4. **执行能力仍有边界**：TLA 已确认仅需 Module goal，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)；执行实现前需先完成事件循环异步入口与异步求值状态机。Test262 module harness 已纳入 TLA 验收设计；动态 `import()` 已在模块内可用，脚本目标仍不支持。
+4. **执行能力仍有边界**：TLA 已确认仅需 Module goal，设计见 [TLA_DESIGN.md](TLA_DESIGN.md)；执行实现前需先完成事件循环异步入口与异步求值状态机。Test262 module harness 已纳入 TLA 验收设计；动态 `import()` / `import.source()` 已在模块与脚本目标可用（脚本需宿主 Provider），静态 import/export 仍拒绝。
 5. **实验性 API 不承诺兼容**：`Engine.runModule` 与 Provider 类型需要 `@ExperimentalModuleApi` opt-in；签名、行为与错误分类仍可能调整。
 
 ## 3. 推进列表
@@ -178,8 +179,8 @@ repeat(100) {
 | `L4.2` | 模块链接（Module Record / ResolveExport） | **阶段 4 已完成（实验性）** |
 | `L4.3` | 模块求值（live binding / 命名空间） | **阶段 7 已完成（实验性、同步子集）** |
 | `L4.4` | 模块加载器抽象与宿主文件加载器 | **无计划**：Provider 抽象已有，文件/URL 加载器不在核心 |
-| `L4.6a+` | Test262 `module-code` parse 门禁 | **已完成**：262 个 parser 模块语料 + module-code 593/593 执行门禁 |
-| `L4.6b` | Test262 module harness | **已完成**：TLA 249/249；完整 module-code 593/593（3 条 source-phase-imports 跳过） |
+| `L4.6a+` | Test262 `module-code` parse 门禁 | **已完成**：262 个 parser 模块语料 + module-code 596/596 执行门禁 |
+| `L4.6b` | Test262 module harness | **已完成**：TLA 249/249；完整 module-code 596/596 |
 | `L4.7` | 顶层 await 执行 | **已完成**（仅 Module goal），见 [TLA_DESIGN.md](TLA_DESIGN.md) |
 
 保留现状：
@@ -528,7 +529,7 @@ data class EngineLimits(
 
 ## 10. 风险与约束
 
-1. **模块执行仍有限**：阶段 0–9 已实现模块图、动态 `import()`、导入属性、`import.meta.resolve` 与 TLA；module-code 593/593、language module 812/812；仅 source-phase-imports 逐条跳过；宿主文件/URL 加载器仍未实现；实验性 API 不承诺兼容性。
+1. **模块执行仍有限**：阶段 0–9 已实现模块图、动态 `import()`、导入属性、`import.meta.resolve` 与 TLA；module-code 596/596、language module 817/817、source-phase 253/253；宿主文件/URL 加载器仍未实现；实验性 API 不承诺兼容性。
 2. **KMP 与文件 IO 不匹配**：核心不能假设文件系统；JVM/Android/Native/Node 与浏览器/Wasm 的 IO 能力差异大，未来若重启模块方向，只能采用“核心抽象 + 宿主加载器”或纯内存模块表。
 3. **`Engine.run()` 的边界**：多次 `run` 共享全局环境，但不是模块；全局 `let`/`const`/`class` 重复声明仍可能冲突，宿主需要自行管理脚本边界。
 4. **维护主线依赖语料稳定**：`S6.2`/`S2.2` 受 Test262/真实库下载与版本影响，报告必须带 commit 与跳过口径。
@@ -568,6 +569,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
+| 2026-11-13 | **source-phase-imports 完整批次**：静态 `import source`、动态 `import.source()`、`AbstractModuleSource`、source binding/re-export、脚本目标动态导入；source-phase **253/253**（475 次执行），module-code **596/596**，language module **817/817** |
 | 2026-11-13 | **import-defer 完整批次**：静态 `import defer` + 动态 `import.defer`、deferred namespace 触发矩阵、同步 `EvaluateSync`、TLA 传递依赖、错误/循环；module language **812/812**，跳过 109→5 |
 | 2026-11-13 | **module 资产 Phase 0**：JSON/text/bytes 在包装前检查原始资产长度；bytes 缺失显式报 `INVALID_MODULE`，不再回退文本；补同 id JS/text 并存、bytes 契约与源码预算测试；module language 保持 **708/708** |
 | 2026-11-13 | **detached-buffer 语义批次**：启用 `align-detached-buffer-semantics-with-web-reality`，修正 TypedArray 无效 numeric index 的 `Reflect.set`、转换顺序与 receiver 语义；为 `JSDataView` 构造窗口增加不变量；ES2015 **63,716/63,716**、ES2016+ **30,443/30,443**；core JVM **1224**、JS/Wasm **1208** |

@@ -50,8 +50,8 @@ fun main(args: Array<String>) {
     val suite = args.indexOf("--suite").takeIf { it >= 0 }?.let { index ->
         args.getOrNull(index + 1)
     } ?: "es5"
-    if (suite !in setOf("es5", "es2015", "es2016plus", "module")) {
-        System.err.println("未知的 Test262 子集：$suite（可选 es5 / es2015 / es2016plus / module）")
+    if (suite !in setOf("es5", "es2015", "es2016plus", "module", "sourcephase")) {
+        System.err.println("未知的 Test262 子集：$suite（可选 es5 / es2015 / es2016plus / module / sourcephase）")
         exitProcess(3)
     }
     val limit = args.indexOf("--limit").takeIf { it >= 0 }?.let { index ->
@@ -298,10 +298,10 @@ private class Test262Runner(
     private fun collectTests(): SelectionStats {
         val selected = mutableListOf<TestFile>()
         val excluded = LinkedHashMap<String, Int>()
-        val roots = if (suite == "es2015" || suite == "es2016plus") {
-            listOf("test/language", "test/built-ins", "test/annexB")
-        } else {
-            listOf("test/language", "test/built-ins")
+        val roots = when (suite) {
+            "es2015", "es2016plus" -> listOf("test/language", "test/built-ins", "test/annexB")
+            "sourcephase" -> listOf("test/language", "test/built-ins", "test/staging")
+            else -> listOf("test/language", "test/built-ins")
         }
         for (rootName in roots) {
             val root = File(corpusDir, rootName)
@@ -309,7 +309,10 @@ private class Test262Runner(
             root.walkTopDown()
                 .filter { it.isFile && it.extension == "js" }
                 .filterNot { it.name.endsWith("_FIXTURE.js") }
-                .filterNot { it.path.contains("${File.separator}staging${File.separator}") }
+                .filterNot {
+                    suite != "sourcephase" &&
+                        it.path.contains("${File.separator}staging${File.separator}")
+                }
                 .sortedBy { it.relativeTo(corpusDir).invariantSeparatorsPath }
                 .forEach { file ->
                     val relativePath = file.relativeTo(corpusDir).invariantSeparatorsPath
@@ -651,6 +654,7 @@ private class Test262Runner(
      * 只判定 JS 语义层面的结果（断言、负数用例、异步 `$DONE`）；
      * 步数耗尽、超时、宿主取消与内部异常一律向上抛出，由 [CaseRuntime] 分类。
      */
+    @OptIn(ExperimentalModuleApi::class)
     private suspend fun executeInEngine(
         engine: Engine,
         test: TestFile,
@@ -661,8 +665,9 @@ private class Test262Runner(
         val negativePhase = test.metadata.negativePhase
         // 属性转义语料的 buildString 由宿主实现，避免在解释器中逐码点构造字符串
         registerBuildString(engine)
-        // $262.evalScript 宿主钩子：在同一 realm 中执行新 Script（GlobalDeclarationInstantiation 生效）
         registerDollar262(engine)
+        // 脚本目标中的 import.source() 需要宿主模块解析；普通脚本不使用该运行时。
+        engine.installModuleProvider(Test262ModuleProvider(corpusDir, test.file))
         // flags: [async] 的用例通过 $DONE 报告结果；runner 注入最小实现
         val asyncDone = if ("async" in test.metadata.flags) CompletableDeferred<JSValue>() else null
         if (asyncDone != null) {
@@ -735,6 +740,13 @@ private class Test262Runner(
     /** 以同一 realm 的新 Script 执行 evalScript 源码。 */
     private fun registerDollar262(engine: Engine) {
         val host = JSObject(prototype = engine.intrinsics.objectPrototype)
+        host.defineDataProperty(
+            key = PropertyKey.Str("AbstractModuleSource"),
+            value = engine.intrinsics.abstractModuleSource,
+            writable = true,
+            enumerable = false,
+            configurable = true,
+        )
         host.defineDataProperty(
             key = PropertyKey.Str("evalScript"),
             value = JSNativeFunction(
@@ -912,6 +924,14 @@ private class Test262ModuleProvider(
     private val entryDirectory = entryFile.canonicalFile.parentFile
 
     override suspend fun load(request: ModuleRequest): ModuleSource? {
+        if (request.specifier == "<module source>") {
+            return ModuleSource(
+                id = "<module source>",
+                source = "",
+                sourceName = "<module source>",
+                moduleSourceClassName = "Module Source",
+            )
+        }
         if (!request.specifier.startsWith(".")) return null
         val base = request.referrer
             ?.let { File(corpusRoot, it).canonicalFile.parentFile }
@@ -1014,6 +1034,7 @@ private data class Test262Report(
             "es2015" -> "ES2015"
             "es2016plus" -> "ES2016+"
             "module" -> "module"
+            "sourcephase" -> "source-phase"
             else -> "ES5"
         }
         file.writeText(
@@ -1031,9 +1052,10 @@ private data class Test262Report(
                     "es2015" -> appendLine("- 范围：test/language + test/built-ins 中按已支持特性筛选的 ES2015 子集（排除 ES5 与未支持特性）")
                     "es2016plus" -> appendLine("- 范围：非 ES5、全部特性已支持且命中 ES2016+ 特性种子的用例")
                     "module" -> appendLine("- 范围：带 `flags: [module]` 的 Test262 module 语料；默认 TLA 验收目录可用 --filter 定向")
+                    "sourcephase" -> appendLine("- 范围：features 含 source-phase-imports 的 script/module/staging 语料")
                     else -> appendLine("- 范围：test/language + test/built-ins 中带 `es5id` 的脚本")
                 }
-                if (suite == "module") {
+                if (suite == "module" || suite == "sourcephase") {
                     appendLine("- 跳过：当前未支持的 module 特性、运行器未提供的 \$262 钩子、缺失 include")
                 } else {
                     appendLine("- 跳过：不支持的 flag、当前不支持特性、运行器未提供的 \$262 钩子、缺失 include")
@@ -1234,6 +1256,7 @@ private data class Test262Report(
             "es2015" -> "ES2015"
             "es2016plus" -> "ES2016+"
             "module" -> "module"
+            "sourcephase" -> "source-phase"
             else -> "ES5"
         }
         println("Test262 $suiteLabel 子集语义基线")

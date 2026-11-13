@@ -4834,8 +4834,7 @@ class Interpreter(
     @OptIn(ExperimentalModuleApi::class)
     private suspend fun evaluateDynamicImport(expression: ImportCallExpr): JSValue {
         val record = resolveModuleRecord()
-            ?: throw syntaxError("import() is only available in module code")
-        val runtime = record.runtime ?: moduleRuntime
+        val runtime = record?.runtime ?: context.scriptModuleRuntime ?: moduleRuntime
             ?: throw syntaxError("import() is only available in module code")
         val specifierExpression = expression.specifier
             ?: throw typeError("import() requires a module specifier")
@@ -4862,6 +4861,7 @@ class Interpreter(
                         record,
                         attributes,
                         deferred = expression.isDeferred,
+                        source = expression.isSource,
                     )
                     PromiseSupport.resolve(job, promise, namespace)
                 } catch (error: CancellationException) {
