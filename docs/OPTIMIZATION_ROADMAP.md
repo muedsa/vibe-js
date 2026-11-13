@@ -14,8 +14,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1224 / 1224** | 2026-11-13 本地运行 |
-| core JS / Wasm（Node） | 各 **1208 / 1208** | 2026-11-13 复跑 |
+| core JVM 单元测试 | **1227 / 1227** | 2026-11-13 本地运行 |
+| core JS / Wasm（Node） | 各 **1211 / 1211** | 2026-11-13 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **44 / 44** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 24 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -568,6 +568,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
+| 2026-11-13 | **module 资产 Phase 0**：JSON/text/bytes 在包装前检查原始资产长度；bytes 缺失显式报 `INVALID_MODULE`，不再回退文本；补同 id JS/text 并存、bytes 契约与源码预算测试；module language 保持 **708/708** |
 | 2026-11-13 | **detached-buffer 语义批次**：启用 `align-detached-buffer-semantics-with-web-reality`，修正 TypedArray 无效 numeric index 的 `Reflect.set`、转换顺序与 receiver 语义；为 `JSDataView` 构造窗口增加不变量；ES2015 **63,716/63,716**、ES2016+ **30,443/30,443**；core JVM **1224**、JS/Wasm **1208** |
 | 2026-11-13 | **module JSON/text/bytes 资产**：新增 `ModuleSource.bytes`/`assetType`、JSON 加载期校验、text/bytes synthetic default export 与 immutable bytes；module language **708/708**，跳过 131→109 |
 | 2026-11-13 | **P2 API 不变量与 seed 收口**：`JSArrayBuffer` 构造器校验 byteLength/maxByteLength，`resize` 校验可调整性与范围；补 `TypedArray.prototype.at` 与 DataView BigInt 方法 seed；ES2016+ **30,183/30,183**、选中 15,330；core JVM **1218**、JS/Wasm **1202** |

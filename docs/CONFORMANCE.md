@@ -185,7 +185,7 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 完整 `language/module-code` 当前 **593 / 593**（执行 593，失败 0、崩溃 0；另有 3 条 `source-phase-imports` 未支持而跳过）。已接入独立 `test262ModuleCodeConformance` strict 门禁。
 
-`language` 下所有受支持 module 用例当前 **708 / 708**（失败 0、崩溃 0；109 条 import-defer/source-phase modules 等未支持特性逐条跳过）。已接入 `test262ModuleLanguageConformance` strict 门禁。
+`language` 下所有受支持 module 用例当前 **708 / 708**（失败 0、崩溃 0；109 条 import-defer/source-phase modules 等未支持特性逐条跳过）。JSON/text/bytes 资产已支持：JSON 在 resolution 阶段校验，text/bytes 在加载期生成 default export，bytes 必须由 Provider 提供原始字节。已接入 `test262ModuleLanguageConformance` strict 门禁。
 
 ### 5.4 Test262 ES2016+ 子集
 

@@ -203,18 +203,38 @@ internal class ModuleGraphResolver(
         referrer: String?,
     ): ModuleSource {
         return when (attributes["type"]) {
-            "json" -> source.copy(
-                source = jsonModuleSource(source, specifier, referrer),
-                assetType = "json",
-            )
-            "text" -> source.copy(
-                source = textModuleSource(source.source),
-                assetType = "text",
-            )
-            "bytes" -> source.copy(
-                source = bytesModuleSource(source.bytes ?: source.source.encodeToByteArray()),
-                assetType = "bytes",
-            )
+            "json" -> {
+                limits.checkSourceLength(source.source.length)
+                source.copy(
+                    source = jsonModuleSource(source, specifier, referrer),
+                    assetType = "json",
+                )
+            }
+            "text" -> {
+                limits.checkSourceLength(source.source.length)
+                source.copy(
+                    source = textModuleSource(source.source),
+                    assetType = "text",
+                )
+            }
+            "bytes" -> {
+                val bytes = source.bytes
+                    ?: throw invalidAsset(
+                        source,
+                        specifier,
+                        referrer,
+                        "bytes module requires ModuleSource.bytes",
+                    )
+                limits.checkSourceLength(
+                    (bytes.size.toLong() * 4L + 64L)
+                        .coerceAtMost(Int.MAX_VALUE.toLong())
+                        .toInt(),
+                )
+                source.copy(
+                    source = bytesModuleSource(bytes),
+                    assetType = "bytes",
+                )
+            }
             else -> source
         }
     }

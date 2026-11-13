@@ -1,6 +1,8 @@
 package com.muedsa.js
 
 import com.muedsa.js.runtime.Engine
+import com.muedsa.js.runtime.EngineLimits
+import com.muedsa.js.runtime.exception.ResourceLimitException
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
 import com.muedsa.js.runtime.module.ModuleLinkErrorKind
 import com.muedsa.js.runtime.module.ModuleLinkException
@@ -99,6 +101,81 @@ class ModuleAssetTest {
             ),
         )
         Engine().runModule("entry", provider)
+    }
+
+    @Test
+    fun `同一路径的 JS 与 text 模块按 assetType 区分`() = runTest {
+        val provider = AssetProvider(
+            mapOf(
+                "entry" to ModuleSource(
+                    id = "entry",
+                    source = """
+                        import js from "./same.js";
+                        import text from "./text-entry.js";
+                        if (js !== 1) {
+                          throw new Error("JS module was not loaded");
+                        }
+                        if (text !== "export default 1;") {
+                          throw new Error("text module was not loaded");
+                        }
+                    """.trimIndent(),
+                ),
+                "./text-entry.js" to ModuleSource(
+                    id = "./text-entry.js",
+                    source = """
+                        import text from "./same.js" with { type: "text" };
+                        export default text;
+                    """.trimIndent(),
+                ),
+                "./same.js" to ModuleSource(
+                    id = "./same.js",
+                    source = "export default 1;",
+                ),
+            ),
+        )
+        Engine().runModule("entry", provider)
+    }
+
+    @Test
+    fun `bytes 资产必须由 Provider 显式提供`() = runTest {
+        val provider = AssetProvider(
+            mapOf(
+                "entry" to ModuleSource(
+                    id = "entry",
+                    source = """
+                        import value from "./payload.bin" with { type: "bytes" };
+                        export default value;
+                    """.trimIndent(),
+                ),
+                "./payload.bin" to ModuleSource(
+                    id = "./payload.bin",
+                    source = "fallback text",
+                ),
+            ),
+        )
+        val error = assertFailsWith<ModuleLinkException> {
+            Engine().runModule("entry", provider)
+        }
+        assertEquals(ModuleLinkErrorKind.INVALID_MODULE, error.kind)
+    }
+
+    @Test
+    fun `资产长度在包装前受源码预算约束`() = runTest {
+        val provider = AssetProvider(
+            mapOf(
+                "entry" to ModuleSource(
+                    id = "entry",
+                    source = """import value from "./large.json" with { type: "json" };""",
+                ),
+                "./large.json" to ModuleSource(
+                    id = "./large.json",
+                    source = """{"value":"${"x".repeat(200)}"}""",
+                ),
+            ),
+        )
+        assertFailsWith<ResourceLimitException> {
+            Engine(limits = EngineLimits(maxSourceLength = 100)).runModule("entry", provider)
+        }
     }
 
     @Test

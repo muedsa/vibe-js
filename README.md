@@ -474,8 +474,8 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1224 / 1224** |
-| core JS（Node）/ Wasm（Node） | 各 **1208 / 1208** |
+| core JVM | **1227 / 1227** |
+| core JS（Node）/ Wasm（Node） | 各 **1211 / 1211** |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** |
 | conformance 单元测试 | **44 / 44** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
