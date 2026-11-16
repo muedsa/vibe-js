@@ -221,6 +221,14 @@ fun Engine.installModuleProvider(provider: ModuleProvider)
 - 每次调用新建模块图和新预算；失败只丢弃本次图，Engine 可继续使用。
 - 不建议把 `ModuleProgram` 或内部 `ModuleRecord` 暴露给宿主。
 
+### 4.4 source-phase 支持边界
+
+- `import source` / `import.source()` 当前是 **Test262/宿主扩展点**，不提供 Wasm 编译、实例化或原生 source 对象工厂。
+- 宿主通过 `ModuleSource.moduleSourceClassName` 标记可提供 source 表示的模块；普通 JS/JSON/text 模块为 null。
+- JS source text 模块的 source phase 按规范抛 `SyntaxError`，不能用来读取任意 JS 源码。
+- 脚本目标的 `import()` / `import.source()` 需要 `Engine.installModuleProvider`；静态 `import`/`export` 仍拒绝。
+- `%AbstractModuleSource%` 仅作为核心 intrinsic 暴露，不作为全局属性；Test262 通过 `$262.AbstractModuleSource` 访问。
+
 ## 5. Parser/AST 前置修改
 
 ### 5.1 `requestedModules` 修复

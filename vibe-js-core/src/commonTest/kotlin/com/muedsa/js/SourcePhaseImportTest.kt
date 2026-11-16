@@ -8,6 +8,7 @@ import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSError
+import com.muedsa.js.runtime.value.JSPromise
 import com.muedsa.js.runtime.value.PropertyKey
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -57,6 +58,31 @@ class SourcePhaseImportTest {
             engine.intrinsics.abstractModuleSource.functionPrototypeObject,
             prototype.prototype,
         )
+    }
+
+    @Test
+    fun `脚本目标 import source 使用已安装的模块 Provider`() = runTest {
+        val engine = Engine()
+        val provider = object : ModuleProvider {
+            override suspend fun load(request: ModuleRequest): ModuleSource? =
+                if (request.specifier == "./source.js") {
+                    ModuleSource(
+                        id = "source.js",
+                        source = "this is not javascript",
+                        sourceName = "source.js",
+                        moduleSourceClassName = "Module Source",
+                    )
+                } else {
+                    null
+                }
+        }
+        engine.installModuleProvider(provider)
+        val promise = assertIs<JSPromise>(
+            engine.run("""import.source("./source.js");""")
+        )
+        engine.eventLoop.drainMicrotasks()
+        val result = assertIs<JSObject>(promise.awaitResult())
+        assertEquals("Module Source", result.moduleSourceClassName)
     }
 
     @Test

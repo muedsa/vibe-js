@@ -63,7 +63,7 @@
 | BigInt（字面量与运算） | ✅ | `123n`、算术/位运算/移位/比较/幂运算、`BigInt()` / `asIntN` / `asUintN`、与 Number 混用抛 TypeError；结果受 `MAX_RESULT_BITS = 2^24` 位限制 |
 | 模块声明（import / export） | ⚠️ | `Parser.parseModule` 支持 `import` 四种基础形态、`export` 内联/子句/from/星号/default、静态 `ImportEntry`/`ExportEntry`、类型化 `ModuleProgram.bindings` 与模块早期错误；实验性 `Engine.runModule` 已支持 Provider 图加载、链接、声明实例化、异步求值与 namespace，需 opt-in；宿主加载器未实现。脚本目标继续拒绝静态 `import` / `export`，动态导入需宿主 Provider |
 | 模块表达式（import.meta / import()） | ⚠️ | 模块目标解析为 `ImportMetaExpr` / `ImportCallExpr`；模块求值中 `import.meta` 返回缓存的 url 对象，`import()` 执行时抛 `Dynamic import is not supported`；零参数在解析期报错 |
-| source-phase-imports | ✅ | `import source` / `import.source()`、`%AbstractModuleSource%`、source binding/re-export；Test262 source-phase 253/253（475 次执行） |
+| source-phase-imports | ✅ | `import source` / `import.source()`、`%AbstractModuleSource%`、source binding/re-export；Test262 source-phase 253/253（475 次执行）；仅 conformance/宿主扩展点，不提供 Wasm 实例化 |
 | 模块顶层 await | ✅ | 模块语法层可解析 `await` / 顶层 `for await` 并记录 `hasTopLevelAwait`；`Engine.runModule` 已实现异步求值、异步依赖等待与 cycle root；Test262 TLA 子集 249/249，module-code 596/596。Script goal 仍拒绝 TLA |
 | Proxy / Reflect | ✅ | Proxy 13 个 trap、`Proxy.revocable`、撤销状态与完整不变量校验；Reflect 13 个方法；解释器属性/调用/构造内部方法统一分派 |
 | 严格模式 `"use strict"` | ✅ | 重复参数、eval/arguments 名、with、delete、legacy 八进制、直接 eval 继承与单语句声明限制均已覆盖 |
@@ -130,13 +130,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1233** + 宿主 40 个测试（2026-11-13 记录） |
-| JS（Node） | ✅ | 核心 **1217** + 宿主 40 个测试 |
-| Wasm（Node） | ✅ | 核心 **1217** + 宿主 40 个测试 |
+| JVM | ✅ | 核心 **1234** + 宿主 40 个测试（2026-11-13 记录） |
+| JS（Node） | ✅ | 核心 **1218** + 宿主 40 个测试 |
+| Wasm（Node） | ✅ | 核心 **1218** + 宿主 40 个测试 |
 | Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1233 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1217。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1234 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1218。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。

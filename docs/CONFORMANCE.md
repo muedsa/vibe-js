@@ -189,7 +189,7 @@ Generator 形参 `yield`、async 形参 `await` 等早期错误不属于允许�
 
 完整 `language/module-code` 当前 **596 / 596**（执行 596，失败 0、崩溃 0）。已接入独立 `test262ModuleCodeConformance` strict 门禁。
 
-`language` 下所有受支持 module 用例当前 **817 / 817**（失败 0、崩溃 0）。静态 `import defer`、动态 `import.defer`、deferred namespace 触发矩阵、`import source` / `import.source()`、`AbstractModuleSource` 与 TLA 传递依赖已接入；JSON 在 resolution 阶段校验，text/bytes 在加载期生成 default export，bytes 必须由 Provider 提供原始字节。已接入 `test262ModuleLanguageConformance` strict 门禁。`test262SourcePhaseConformance` 覆盖 253 个 source-phase 文件（含 staging）并执行 **475** 次（strict/sloppy），全部通过。
+`language` 下所有受支持 module 用例当前 **817 / 817**（失败 0、崩溃 0）。静态 `import defer`、动态 `import.defer`、deferred namespace 触发矩阵、`import source` / `import.source()`、`AbstractModuleSource` 与 TLA 传递依赖已接入；JSON 在 resolution 阶段校验，text/bytes 在加载期生成 default export，bytes 必须由 Provider 提供原始字节。已接入 `test262ModuleLanguageConformance` strict 门禁。`test262SourcePhaseConformance` 覆盖 253 个 source-phase 文件（含 staging）并执行 **475** 次（strict/sloppy），全部通过。该能力定位为 conformance/宿主 source 扩展点，不提供 Wasm 实例化。
 
 ### 5.4 Test262 ES2016+ 子集
 

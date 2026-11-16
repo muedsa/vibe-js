@@ -14,8 +14,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1233 / 1233** | 2026-11-13 本地运行 |
-| core JS / Wasm（Node） | 各 **1217 / 1217** | 2026-11-13 复跑 |
+| core JVM 单元测试 | **1234 / 1234** | 2026-11-13 本地运行 |
+| core JS / Wasm（Node） | 各 **1218 / 1218** | 2026-11-13 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **45 / 45** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 25 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
