@@ -130,13 +130,13 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1234** + 宿主 40 个测试（2026-11-13 记录） |
-| JS（Node） | ✅ | 核心 **1218** + 宿主 40 个测试 |
-| Wasm（Node） | ✅ | 核心 **1218** + 宿主 40 个测试 |
-| Android | ✅ | CI `testAndroidHostTest`；core commonTest 与 host 40 个测试通过 |
+| JVM | ✅ | 核心 **1245** + 宿主 42 个测试（2026-11-13 记录） |
+| JS（Node） | ✅ | 核心 **1229** + 宿主 42 个测试 |
+| Wasm（Node） | ✅ | 核心 **1229** + 宿主 42 个测试 |
+| Android | ✅ | CI `testAndroidHostTest`；core commonTest 与 host 42 个测试通过 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1234 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1218。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1245 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1229。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
@@ -227,6 +227,8 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `ModuleExecutionTest` 等模块测试 | Provider 图加载/链接、ModuleEnvironment、namespace、`import.meta`/`import.meta.resolve`、动态 `import()`、导入属性、顶层 `this`、TLA 拒绝、执行/对象/微任务/待处理任务/源码长度（含边界成功）/AST 节点/嵌套深度预算与失败恢复 |
 | `ImportDeferTest` | `import defer` 延迟求值、trigger 边界、deferred/eager namespace 身份 |
 | `SourcePhaseImportTest` | source 对象原型链、不解析 source 文本、普通 JS source text 抛 SyntaxError |
+| `ReviewRegressionTest` | R01/R02/R03/R04/R05/R06/R07/R10/R11 回归探针 |
+| `ReviewHostRegressionTest` | structuredClone length/lastIndex 回归 |
 | `ModuleAssetTest` | JSON default 对象与加载期非法 JSON 拒绝、text 原始字符串、bytes immutable Uint8Array、同 id JS/text 并存、bytes 缺失契约、资产源码预算 |
 | `ModuleProviderContractTest` | 入口/依赖 referrer、null/异常、sourceName/url、精确 id、空与空白 id 校验、重复 specifier 去重、同 id 多 specifier 去重与首次源码/URL/sourceName 优先、URL 空值回退及空字符串保留、空 sourceName 错误栈、maxModules 与源码预算唯一计数 |
 | `ModuleExecutionMatrixTest` | 循环依赖求值/执行顺序、菱形依赖去重、依赖失败隔离（含入口体）、namespace 描述符（含嵌套/空/无导出入口 exotic 不变量、`__proto__` 数据属性、toStringTag 自有性/唯一符号/ownKeys 与 getOwnPropertyNames 反射面、Object.assign/Array.from 互操作、跨 specifier 身份）、显式导出、`export * as default`/`export * as ns`、default 排除/重导出/live binding、import.meta 缓存 |

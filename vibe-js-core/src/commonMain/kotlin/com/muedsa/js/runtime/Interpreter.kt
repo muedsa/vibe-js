@@ -3109,9 +3109,9 @@ class Interpreter(
             sourceInfo = sourceInfo,
         )
         function.sourceText = sourceText
-        // 模块内嵌套函数在延迟回调中创建时 currentModuleRecord 可能已清空，
-        // 回退到当前执行帧所属模块，保证后续 import.meta / import() 仍可定位。
-        function.sourceModule = currentModuleRecord ?: frame?.sourceModule
+        // 闭包的定义模块来自定义它的执行帧；currentModuleRecord 只作为模块顶层
+        // 创建函数时的回退，不能覆盖跨模块调用中的函数所属模块。
+        function.sourceModule = frame?.sourceModule ?: currentModuleRecord
         // ES5 15.3.5.4：非严格普通函数的 caller/arguments 是值为 null 的自有数据属性；
         // 严格函数、箭头、方法、async 与生成器函数不定义（读取落到 Function.prototype 拒绝访问器）
         if (!strict && !isArrow && !isMethod && !isAsync && !isGenerator) {
@@ -4847,7 +4847,13 @@ class Interpreter(
             PromiseSupport.reject(this, promise, error.value, error.stack)
             return promise
         }
-        val attributes = expression.options?.let { readImportAttributes(evaluate(it)) } ?: emptyMap()
+        val attributes = try {
+            expression.options?.let { readImportAttributes(evaluate(it)) } ?: emptyMap()
+        } catch (error: JSException) {
+            // 选项求值与属性转换失败同样必须拒绝返回的 Promise。
+            PromiseSupport.reject(this, promise, error.value, error.stack)
+            return promise
+        }
 
         context.eventLoop.enqueueMicrotask {
             context.eventLoop.launchAsyncTask {

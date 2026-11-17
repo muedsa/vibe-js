@@ -3157,7 +3157,7 @@ class Parser(
             throw error("Unary expression cannot be used as the left operand of '**'")
         }
         advance()
-        val exponent = parseExponentiation()
+        val exponent = withSyntaxNesting { parseExponentiation() }
         return trackAstNode(BinaryOp(base, "**", exponent, SourceRange(base.range.start, exponent.range.end)))
     }
 
@@ -3384,7 +3384,7 @@ class Parser(
         }
 
         var constructor: Expression =
-            if (check(TokenType.NEW)) parseNewExpression() else parsePrimary()
+            if (check(TokenType.NEW)) withSyntaxNesting { parseNewExpression() } else parsePrimary()
 
         // new 的构造器可以带成员链，例如 new a.b.C()
         while (true) {

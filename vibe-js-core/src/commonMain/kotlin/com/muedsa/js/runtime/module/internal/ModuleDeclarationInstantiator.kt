@@ -110,12 +110,12 @@ internal class ModuleDeclarationInstantiator(
                     length = 1,
                     prototype = interpreter.intrinsics.functionPrototype,
                 ) { inner, _, args ->
-                    val current = inner.resolveModuleRecord()
-                        ?: inner.typeError("import.meta.resolve is only available during module evaluation")
-                    val runtime = current.runtime ?: inner.moduleRuntime
+                    // resolve 的参照模块是定义 import.meta 的模块，不是调用方；
+                    // 导出后在别的模块中调用也必须使用 lib 的 referrer。
+                    val ownerRuntime = record.runtime ?: inner.moduleRuntime
                         ?: inner.typeError("import.meta.resolve is only available during module evaluation")
                     val specifier = inner.toStringValue(args.getOrElse(0) { JSUndefined })
-                    val resolved = runtime.resolve(specifier, current)
+                    val resolved = ownerRuntime.resolve(specifier, record)
                         ?: inner.typeError("Cannot resolve module specifier '$specifier'")
                     JSString(resolved)
                 },

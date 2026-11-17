@@ -70,11 +70,11 @@ object ReflectBuiltins {
             if (target == null || !interpreter.isConstructor(target)) {
                 interpreter.typeError("Reflect.construct target is not a constructor")
             }
-            val argumentsList = interpreter.createListFromArrayLike(args.getOrElse(1) { JSUndefined })
             val newTarget = args.getOrNull(2) ?: target
             if (!interpreter.isConstructor(newTarget)) {
                 interpreter.typeError("Reflect.construct newTarget is not a constructor")
             }
+            val argumentsList = interpreter.createListFromArrayLike(args.getOrElse(1) { JSUndefined })
             interpreter.construct(target, argumentsList, newTarget)
         }
 

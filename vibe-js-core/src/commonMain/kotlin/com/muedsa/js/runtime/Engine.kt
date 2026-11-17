@@ -276,54 +276,59 @@ class Engine(
     @OptIn(ExperimentalModuleApi::class)
     private suspend fun executeModuleGraph(graph: ModuleGraph, runtime: ModuleRuntime): JSObject {
         ModuleLinker.link(graph)
+        val previousModuleRuntime = interpreter.moduleRuntime
         interpreter.moduleRuntime = runtime
-        return eventLoop.runAsyncTask {
-            val previousBudget = eventLoop.executionBudget
-            val budget = ExecutionBudget(limits.maxSteps)
-            eventLoop.executionBudget = budget
-            context.objectAllocations.begin()
-            try {
-                var aborted = false
+        try {
+            return eventLoop.runAsyncTask {
+                val previousBudget = eventLoop.executionBudget
+                val budget = ExecutionBudget(limits.maxSteps)
+                eventLoop.executionBudget = budget
+                context.objectAllocations.begin()
                 try {
+                    var aborted = false
                     try {
-                        ModuleEvaluator(interpreter).evaluate(graph).also {
-                            budget.ensureAvailable()
+                        try {
+                            ModuleEvaluator(interpreter).evaluate(graph).also {
+                                budget.ensureAvailable()
+                            }
+                        } catch (error: CancellationException) {
+                            aborted = true
+                            throw error
+                        } catch (error: ExecutionLimitException) {
+                            aborted = true
+                            throw error
+                        } finally {
+                            if (!aborted) eventLoop.drainMicrotasks()
                         }
                     } catch (error: CancellationException) {
-                        aborted = true
+                        eventLoop.discardPendingMicrotasks()
                         throw error
                     } catch (error: ExecutionLimitException) {
-                        aborted = true
+                        eventLoop.discardPendingMicrotasks()
                         throw error
-                    } finally {
-                        if (!aborted) eventLoop.drainMicrotasks()
+                    } catch (error: ModuleLinkException) {
+                        throw error
+                    } catch (error: ResourceLimitException) {
+                        throw error
+                    } catch (error: JSException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        throw JSException(
+                            JSError(
+                                errorName = "InternalError",
+                                messageText = error.message ?: error::class.simpleName ?: "Internal error",
+                                prototype = intrinsics.errorPrototype,
+                            ),
+                            stack = interpreter.hostFailureStack ?: emptyList(),
+                        )
                     }
-                } catch (error: CancellationException) {
-                    eventLoop.discardPendingMicrotasks()
-                    throw error
-                } catch (error: ExecutionLimitException) {
-                    eventLoop.discardPendingMicrotasks()
-                    throw error
-                } catch (error: ModuleLinkException) {
-                    throw error
-                } catch (error: ResourceLimitException) {
-                    throw error
-                } catch (error: JSException) {
-                    throw error
-                } catch (error: Throwable) {
-                    throw JSException(
-                        JSError(
-                            errorName = "InternalError",
-                            messageText = error.message ?: error::class.simpleName ?: "Internal error",
-                            prototype = intrinsics.errorPrototype,
-                        ),
-                        stack = interpreter.hostFailureStack ?: emptyList(),
-                    )
+                } finally {
+                    context.objectAllocations.end()
+                    eventLoop.executionBudget = previousBudget
                 }
-            } finally {
-                context.objectAllocations.end()
-                eventLoop.executionBudget = previousBudget
             }
+        } finally {
+            interpreter.moduleRuntime = previousModuleRuntime
         }
     }
 

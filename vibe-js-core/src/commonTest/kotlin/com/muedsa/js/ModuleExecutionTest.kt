@@ -173,15 +173,26 @@ class ModuleExecutionTest {
     }
 
     @Test
-    fun `动态 import 的 with 值非字符串时同步抛 TypeError`() = runTest {
+    fun `动态 import 的 with 值非字符串时拒绝 Promise`() = runTest {
         val engine = Engine()
-        val error = assertFailsWith<JSException> {
-            engine.runModule(
-                source("a", """import("./b.js", { with: { type: 1 } });"""),
-                Provider(mapOf("./b.js" to source("b", "export const x = 1;"))),
-            )
-        }
-        assertEquals("TypeError", (error.value as JSError).errorName)
+        val namespace = engine.runModule(
+            source("a", """
+                let outcome;
+                try {
+                  const promise = import("./b.js", { with: { type: 1 } });
+                  outcome = "promise";
+                  await promise.catch(() => {});
+                } catch (e) {
+                  outcome = "sync";
+                }
+                export const result = outcome;
+            """.trimIndent()),
+            Provider(mapOf("./b.js" to source("b", "export const x = 1;"))),
+        )
+        assertEquals(
+            "promise",
+            (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSString).value,
+        )
     }
 
     @Test

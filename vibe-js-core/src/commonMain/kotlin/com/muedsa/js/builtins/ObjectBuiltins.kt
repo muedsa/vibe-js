@@ -660,7 +660,6 @@ object ObjectBuiltins {
                 val value = args.getOrNull(0)
                 JSBoolean.getJsBoolean(
                     when (value) {
-                        is JSArray -> value.frozen
                         is JSObject -> !interpreter.internalIsExtensible(value) &&
                             interpreter.internalOwnPropertyKeys(value).all { key ->
                                 val descriptor = interpreter.internalGetOwnProperty(value, key)
@@ -679,7 +678,6 @@ object ObjectBuiltins {
                 val value = args.getOrNull(0)
                 JSBoolean.getJsBoolean(
                     when (value) {
-                        is JSArray -> value.sealed
                         is JSObject -> !interpreter.internalIsExtensible(value) &&
                             interpreter.internalOwnPropertyKeys(value).all { key ->
                                 interpreter.internalGetOwnProperty(value, key)?.configurable == false
@@ -706,44 +704,43 @@ object ObjectBuiltins {
         key: PropertyKey,
         descriptorObject: JSObject,
     ): Boolean {
-        // Proxy：直接走 [[DefineOwnProperty]]，由 trap 负责不变量，避免预校验读取 gopd trap
+        val descriptor = interpreter.toPropertyDescriptor(descriptorObject)
+            ?: interpreter.typeError("Property description must be an object")
+        return applyConvertedDescriptor(interpreter, objectValue, key, descriptor)
+    }
+
+    /**
+     * 应用已经完成 ToPropertyDescriptor 转换的描述符。
+     *
+     * 与 Object.defineProperties 的两阶段语义配合：转换阶段不得修改目标，
+     * 应用阶段也不再读取描述符对象，避免重复触发 getter。
+     */
+    private suspend fun applyConvertedDescriptor(
+        interpreter: com.muedsa.js.runtime.Interpreter,
+        objectValue: JSObject,
+        key: PropertyKey,
+        converted: PropertyDescriptor,
+    ): Boolean {
+        // Proxy：直接走 [[DefineOwnProperty]]，由 trap 负责不变量。
         if (objectValue is JSProxy) {
-            val descriptor = interpreter.toPropertyDescriptor(descriptorObject)
-                ?: interpreter.typeError("Property description must be an object")
-            return interpreter.internalDefineOwnProperty(objectValue, key, descriptor)
+            return interpreter.internalDefineOwnProperty(objectValue, key, converted)
         }
 
-        suspend fun has(name: String): Boolean =
-            interpreter.internalHasProperty(descriptorObject, PropertyKey.Str(name))
-
-        suspend fun read(name: String): JSValue =
-            interpreter.getV(descriptorObject, PropertyKey.Str(name))
-
-        val hasValue = has("value")
-        val hasWritable = has("writable")
-        val hasGet = has("get")
-        val hasSet = has("set")
-        val hasEnumerable = has("enumerable")
-        val hasConfigurable = has("configurable")
-
-        val value = if (hasValue) read("value") else null
-        val writable = if (hasWritable) interpreter.toBoolean(read("writable")) else null
-        val getter = if (hasGet) read("get") else null
-        val setter = if (hasSet) read("set") else null
-        val enumerable = if (hasEnumerable) interpreter.toBoolean(read("enumerable")) else null
-        val configurable = if (hasConfigurable) interpreter.toBoolean(read("configurable")) else null
-
-        if (hasGet && getter != null && getter !is JSUndefined && !interpreter.isCallable(getter)) {
-            interpreter.typeError("Getter must be a function")
-        }
-        if (hasSet && setter != null && setter !is JSUndefined && !interpreter.isCallable(setter)) {
-            interpreter.typeError("Setter must be a function")
-        }
+        val hasValue = converted.hasValue
+        val hasWritable = converted.hasWritable
+        val hasGet = converted.hasGet
+        val hasSet = converted.hasSet
+        val hasEnumerable = converted.hasEnumerable
+        val hasConfigurable = converted.hasConfigurable
+        val value = converted.value
+        val writable = converted.writable
+        val getter = converted.get
+        val setter = converted.set
+        val enumerable = converted.enumerable
+        val configurable = converted.configurable
         val isAccessorDescriptor = hasGet || hasSet
         val isDataDescriptor = hasValue || hasWritable
-        if (isAccessorDescriptor && isDataDescriptor) {
-            interpreter.typeError("Invalid property descriptor: cannot be both accessor and data")
-        }
+
         var current = interpreter.internalGetOwnProperty(objectValue, key)
         // ES5 10.6：arguments 的映射索引在描述符层面视为可写数据属性，
         // 否则从映射访问器合并会错误保留参数 setter
@@ -758,7 +755,6 @@ object ObjectBuiltins {
                 )
             }
         }
-
 
         // 数组 length 的 RangeError 必须先于描述符不变量（ArraySetLength 顺序）
         val isArrayLength = objectValue is com.muedsa.js.runtime.value.JSArray &&
@@ -811,47 +807,38 @@ object ObjectBuiltins {
         }
 
         val descriptor = PropertyDescriptor()
-        // 访问器类型必须显式记录：get/set 可以都为 undefined
         descriptor.accessor = isAccessorDescriptor || (!isDataDescriptor && current?.isAccessor == true)
-        descriptor.enumerable = enumerable ?: current?.enumerable ?: false
-        descriptor.configurable = configurable ?: current?.configurable ?: false
+        descriptor.enumerable = if (hasEnumerable) enumerable else current?.enumerable ?: false
+        descriptor.configurable = if (hasConfigurable) configurable else current?.configurable ?: false
 
         when {
             current == null -> {
                 if (isAccessorDescriptor) {
-                    descriptor.get = if (hasGet && getter !is JSUndefined) getter else null
-                    descriptor.set = if (hasSet && setter !is JSUndefined) setter else null
+                    descriptor.get = getter
+                    descriptor.set = setter
                 } else {
                     descriptor.value = value ?: JSUndefined
-                    descriptor.writable = writable ?: false
+                    descriptor.writable = writable
                 }
             }
 
             isAccessorDescriptor -> {
                 if (current.isData) {
-                    descriptor.get = if (hasGet && getter !is JSUndefined) getter else null
-                    descriptor.set = if (hasSet && setter !is JSUndefined) setter else null
+                    descriptor.get = getter
+                    descriptor.set = setter
                 } else {
-                    descriptor.get = if (hasGet) {
-                        if (getter is JSUndefined) null else getter
-                    } else {
-                        current.get
-                    }
-                    descriptor.set = if (hasSet) {
-                        if (setter is JSUndefined) null else setter
-                    } else {
-                        current.set
-                    }
+                    descriptor.get = if (hasGet) getter else current.get
+                    descriptor.set = if (hasSet) setter else current.set
                 }
             }
 
             isDataDescriptor -> {
                 if (current.isAccessor) {
                     descriptor.value = value ?: JSUndefined
-                    descriptor.writable = writable ?: false
+                    descriptor.writable = writable
                 } else {
                     descriptor.value = if (hasValue) value else current.value
-                    descriptor.writable = if (hasWritable) writable ?: false else current.writable
+                    descriptor.writable = if (hasWritable) writable else current.writable
                 }
             }
 
@@ -864,7 +851,7 @@ object ObjectBuiltins {
             }
         }
 
-        // 合并结果是完整描述符：按最终类型标记哪些字段"存在"，
+        // 合并结果是完整描述符：按最终类型标记哪些字段“存在”，
         // 供内部 ValidateAndApply 与 Proxy trap 的 FromPropertyDescriptor 使用
         val finalAccessor = descriptor.isAccessor
         descriptor.hasValue = !finalAccessor
@@ -959,13 +946,20 @@ object ObjectBuiltins {
         target: JSObject,
         properties: JSObject,
     ) {
+        // 规范顺序：先完成所有 ToPropertyDescriptor 转换，再修改目标。
+        val descriptors = mutableListOf<Pair<PropertyKey, PropertyDescriptor>>()
         for (key in interpreter.internalOwnPropertyKeys(properties)) {
             // Object.defineProperties/Object.create 只处理可枚举的自有描述符条目
             if (interpreter.internalGetOwnProperty(properties, key)?.enumerable != true) continue
             val descriptorValue = interpreter.getV(properties, key)
             val descriptorObject = descriptorValue as? JSObject
                 ?: interpreter.typeError("Property description must be an object")
-            if (!definePropertyFromDescriptor(interpreter, target, key, descriptorObject)) {
+            val descriptor = interpreter.toPropertyDescriptor(descriptorObject)
+                ?: interpreter.typeError("Property description must be an object")
+            descriptors.add(key to descriptor)
+        }
+        for ((key, descriptor) in descriptors) {
+            if (!applyConvertedDescriptor(interpreter, target, key, descriptor)) {
                 interpreter.typeError("Cannot define property '$key'")
             }
         }

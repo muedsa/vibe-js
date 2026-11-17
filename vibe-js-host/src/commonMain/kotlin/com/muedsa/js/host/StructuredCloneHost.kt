@@ -115,7 +115,6 @@ private class StructuredCloner(
             matcher = JsRegexEngine(source.pattern, source.flags),
             prototype = intrinsics.regexpPrototype,
         )
-        target.setLastIndex(source.getLastIndex())
         clonedObjects[source] = target
         return target
     }
@@ -208,7 +207,6 @@ private class StructuredCloner(
     private suspend fun copyEnumerableProperties(source: JSObject, target: JSObject) {
         for (key in source.ownPropertyKeys()) {
             if (key !is PropertyKey.Str) continue
-            if (key == PropertyKey.LENGTH) continue
             val descriptor = source.getOwnProperty(key) ?: continue
             if (!descriptor.enumerable) continue
             val value = interpreter.getV(source, key)

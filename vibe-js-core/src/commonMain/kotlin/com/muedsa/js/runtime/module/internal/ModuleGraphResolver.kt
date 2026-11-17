@@ -19,6 +19,15 @@ import com.muedsa.js.runtime.module.ModuleLinkException
 import com.muedsa.js.runtime.module.ModuleProvider
 import com.muedsa.js.runtime.module.ModuleRequest
 import com.muedsa.js.runtime.module.ModuleSource
+import com.muedsa.js.runtime.value.JSArray
+import com.muedsa.js.runtime.value.JSBoolean
+import com.muedsa.js.runtime.value.JSNull
+import com.muedsa.js.runtime.value.JSNumber
+import com.muedsa.js.runtime.value.JSObject
+import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSValue
+import com.muedsa.js.runtime.value.NumberFormatting
+import com.muedsa.js.runtime.value.PropertyKey
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -251,7 +260,7 @@ internal class ModuleGraphResolver(
         specifier: String,
         referrer: String?,
     ): String {
-        try {
+        val json = try {
             JsonParser(
                 text = source.source,
                 objectPrototype = null,
@@ -263,8 +272,49 @@ internal class ModuleGraphResolver(
         } catch (error: JsonDepthLimitException) {
             throw invalidAsset(source, specifier, referrer, error.message ?: "JSON module is too deep")
         }
-        return "const __json = JSON.parse(${jsStringLiteral(source.source)});\n" +
+        // 直接生成字面量，避免依赖可被用户替换的全局 JSON.parse。
+        return "const __json = ${jsonLiteralSource(json)};\n" +
             "export default __json;\n"
+    }
+
+    /** 把已验证的 JSON 值编码成不依赖全局内建的安全 JS 字面量。 */
+    private fun jsonLiteralSource(value: JSValue): String = when (value) {
+        is JSNull -> "null"
+        is JSBoolean -> if (value.value) "true" else "false"
+        is JSNumber -> when {
+            value.value.isNaN() -> "0"
+            value.value == Double.POSITIVE_INFINITY -> "1e999"
+            value.value == Double.NEGATIVE_INFINITY -> "-1e999"
+            value.value == 0.0 && 1.0 / value.value < 0.0 -> "-0"
+            else -> NumberFormatting.toString(value.value)
+        }
+        is JSString -> jsStringLiteral(value.value)
+        is JSArray -> buildString {
+            append('[')
+            for (index in 0 until value.lengthLong) {
+                if (index > 0) append(',')
+                append(jsonLiteralSource(value.getElement(index) ?: JSNull))
+            }
+            append(']')
+        }
+        is JSObject -> buildString {
+            append('{')
+            var first = true
+            for (key in value.ownPropertyKeys()) {
+                if (key !is PropertyKey.Str) continue
+                val property = value.getOwnProperty(key) ?: continue
+                if (!property.enumerable) continue
+                if (!first) append(',')
+                first = false
+                // 计算属性键避免 "__proto__" 触发对象字面量的原型特殊语义。
+                append('[')
+                append(jsStringLiteral(key.value))
+                append("]:")
+                append(jsonLiteralSource(property.value ?: JSNull))
+            }
+            append('}')
+        }
+        else -> error("Unexpected JSON value: ${value::class.simpleName}")
     }
 
     private fun textModuleSource(text: String): String =

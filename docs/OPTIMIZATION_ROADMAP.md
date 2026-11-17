@@ -14,8 +14,8 @@
 
 | 检查 | 当前值 | 说明 |
 |---|---|---|
-| core JVM 单元测试 | **1234 / 1234** | 2026-11-13 本地运行 |
-| core JS / Wasm（Node） | 各 **1218 / 1218** | 2026-11-13 复跑 |
+| core JVM 单元测试 | **1245 / 1245** | 2026-11-13 本地运行 |
+| core JS / Wasm（Node） | 各 **1229 / 1229** | 2026-11-13 复跑 |
 | host JVM / JS / Wasm / Native | 各 **40 / 40** | 2026-11-12 新增 TLA 宿主测试；Windows Native 已复跑 |
 | conformance 单元测试 | **45 / 45** | ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 25 + RunMetadataTest 4 |
 | parser 脚本 | **1,907 / 1,907**；fail 674 / 682（允许 8）；early 5 / 605（允许 5） | pass / pass-explicit 各 1,907，允许 0 |
@@ -569,6 +569,7 @@ data class EngineLimits(
 
 | 日期 | 变更 |
 |---|
+| 2026-11-17 | **复核缺陷修复批次**：修复 R01–R11；新增 `ReviewRegressionTest` / `ReviewHostRegressionTest`；核心 JVM **1245**、JS/Wasm **1229**，host **42**，module/source-phase strict 仍全绿 |
 | 2026-11-13 | **source-phase-imports 完整批次**：静态 `import source`、动态 `import.source()`、`AbstractModuleSource`、source binding/re-export、脚本目标动态导入；source-phase **253/253**（475 次执行），module-code **596/596**，language module **817/817** |
 | 2026-11-13 | **import-defer 完整批次**：静态 `import defer` + 动态 `import.defer`、deferred namespace 触发矩阵、同步 `EvaluateSync`、TLA 传递依赖、错误/循环；module language **812/812**，跳过 109→5 |
 | 2026-11-13 | **module 资产 Phase 0**：JSON/text/bytes 在包装前检查原始资产长度；bytes 缺失显式报 `INVALID_MODULE`，不再回退文本；补同 id JS/text 并存、bytes 契约与源码预算测试；module language 保持 **708/708** |
