@@ -73,7 +73,7 @@ dependencies {
 }
 ```
 
-发布目标为 JVM / JS / WasmJs / Android；Native（含 Apple 目标与 mingwX64）尚未发布到该仓库。
+发布目标为 JVM / JS / WasmJs / Android（core 与 host）；Native（含 Apple 目标与 mingwX64）尚未发布到该仓库。
 
 ### 能力示例
 

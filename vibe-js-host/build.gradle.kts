@@ -5,6 +5,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
     `maven-publish`
 }
 
@@ -17,6 +18,21 @@ plugins {
  */
 kotlin {
     jvm {
+        compilations.configureEach {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    jvmTarget.set(JvmTarget.JVM_1_8)
+                }
+            }
+        }
+    }
+    android {
+        namespace = "com.muedsa.js.host"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+
+        withHostTestBuilder {}.configure {}
+
         compilations.configureEach {
             compileTaskProvider.configure {
                 compilerOptions {

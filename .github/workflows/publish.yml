@@ -40,6 +40,7 @@ jobs:
               :vibe-js-host:publishJvmPublicationToGitHubPackagesRepository
               :vibe-js-host:publishJsPublicationToGitHubPackagesRepository
               :vibe-js-host:publishWasmJsPublicationToGitHubPackagesRepository
+              :vibe-js-host:publishAndroidPublicationToGitHubPackagesRepository
               :vibe-js-host:publishLinuxX64PublicationToGitHubPackagesRepository
           # Apple 目标只能在 macOS 上编译
           - name: Apple Native

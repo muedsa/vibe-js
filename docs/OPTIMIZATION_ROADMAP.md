@@ -465,7 +465,7 @@ data class EngineLimits(
 |---|---|---|
 | `M2` 真实弱引用（WeakMap/WeakSet GC 语义） | **无计划** | 当前仍是强引用存储；JVM MVP 参考 12–18 人日 |
 | `B2` 性能优化 | **无计划** | 保留 `S5.2` 复测作为观测，不承诺优化；参考 25–48 人日 |
-| `PKG1.2–1.6` API 契约与发布准备 | **无计划** | explicitApi、Dokka、BCV、CHANGELOG、host Android 目标、发布冒烟均不排期；参考 7–13 人日 |
+| `PKG1.2–1.6` API 契约与发布准备 | **无计划** | explicitApi、Dokka、BCV、CHANGELOG、发布冒烟均不排期；参考 7–13 人日 |
 | Intl | **无计划 / 范围外** | `toLocaleString` 保持简化行为 |
 | 真实 DOM / Web API | **无计划 / 范围外** | fetch、localStorage、document 等由宿主自行提供 |
 | SharedArrayBuffer / Atomics | **无计划 / 范围外** | 单线程模型不引入共享内存 |

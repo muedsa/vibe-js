@@ -133,7 +133,7 @@
 | JVM | ✅ | 核心 **1234** + 宿主 40 个测试（2026-11-13 记录） |
 | JS（Node） | ✅ | 核心 **1218** + 宿主 40 个测试 |
 | Wasm（Node） | ✅ | 核心 **1218** + 宿主 40 个测试 |
-| Android | ⏳ | CI `testAndroidHostTest`；宿主模块没有 Android 目标 |
+| Android | ✅ | CI `testAndroidHostTest`；core commonTest 与 host 40 个测试通过 |
 | Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
 
 > 数字来自各平台测试报告。JVM 的 1234 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1218。"仅由 CI 覆盖"表示本次未在本地复跑。
