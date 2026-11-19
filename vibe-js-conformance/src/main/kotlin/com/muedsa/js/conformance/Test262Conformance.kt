@@ -273,8 +273,13 @@ private class Test262Runner(
     private suspend fun runOne(test: TestFile): TestOutcome {
         Test262Selection.skipDecision(test.source, test.metadata, suite, test.relativePath)
             ?.let { return TestOutcome.Skipped(test.relativePath, it.reason, it.textMatchOnly) }
-        val includes = loadIncludes(test.metadata.includes)
-            ?: return TestOutcome.Skipped(test.relativePath, "missing include")
+        // flags: [raw] 的用例是自包含脚本，不加载 sta.js/assert.js 等 harness。
+        val includes = if ("raw" in test.metadata.flags) {
+            emptyList()
+        } else {
+            loadIncludes(test.metadata.includes)
+                ?: return TestOutcome.Skipped(test.relativePath, "missing include")
+        }
         val results = variants(test.metadata.flags).map { variant ->
             val result = execute(test, variant, includes)
             RunRecord(
@@ -327,8 +332,13 @@ private class Test262Runner(
                     when (decision) {
                         is SelectionDecision.Selected -> {
                             val parsed = checkNotNull(metadata) { "选中的用例必须有 metadata" }
-                            // hashbang 用例的可执行前缀位于 metadata 之前，需保留
-                            val source = if ("hashbang" in parsed.features) prefix + body else body
+                            // hashbang 用例的可执行前缀位于 metadata 之前，需保留；
+                            // raw 用例必须原样运行 metadata 之前的全部源码。
+                            val source = if ("hashbang" in parsed.features || "raw" in parsed.flags) {
+                                prefix + body
+                            } else {
+                                body
+                            }
                             selected.add(
                                 TestFile(
                                     file = file,

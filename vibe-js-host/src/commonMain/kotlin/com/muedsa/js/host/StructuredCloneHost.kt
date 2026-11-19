@@ -127,6 +127,8 @@ private class StructuredCloner(
         val target = JSArrayBuffer(
             prototype = intrinsics.arrayBufferPrototype,
             byteLength = source.byteLength,
+            maxByteLength = source.maxByteLength,
+            isResizable = source.isResizable,
         )
         val bytes = readBufferBytes(interpreter, intrinsics, source, 0, source.byteLength)
         writeBufferBytes(target, bytes)
@@ -145,6 +147,7 @@ private class StructuredCloner(
             buffer = cloneArrayBuffer(source.buffer),
             byteOffset = source.byteOffset,
             length = source.length,
+            lengthTracking = source.isLengthTracking,
         )
         clonedObjects[source] = target
         return target
@@ -189,8 +192,10 @@ private class StructuredCloner(
         clonedObjects[source]?.let { return it as JSArray }
         val target = JSArray(prototype = intrinsics.arrayPrototype)
         clonedObjects[source] = target
+        // 先固定长度再读取元素；元素 getter 对源数组长度的副作用不能改变副本长度。
+        val length = source.lengthLong
         copyEnumerableProperties(source, target)
-        target.setLength(source.lengthLong)
+        target.setLength(length)
         return target
     }
 

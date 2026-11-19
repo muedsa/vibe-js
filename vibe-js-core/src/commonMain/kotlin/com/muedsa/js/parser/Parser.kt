@@ -4387,16 +4387,16 @@ class Parser(
     // 工具方法
     // ================================================================
 
-    /** 解析数字 Token 为 Double。 */
+    /** 解析数字 Token 为 Double；非十进制按数学值累积，不受带符号 Long 范围限制。 */
     private fun parseNumberLiteral(token: Token): Double {
         val text = token.value.replace("_", "")
         return try {
             when (token.type) {
-                TokenType.NUMBER_HEX -> text.substring(2).toLong(16).toDouble()
-                TokenType.NUMBER_OCT -> text.substring(2).toLong(8).toDouble()
-                TokenType.NUMBER_BIN -> text.substring(2).toLong(2).toDouble()
+                TokenType.NUMBER_HEX -> parseRadixNumber(text.substring(2), 16)
+                TokenType.NUMBER_OCT -> parseRadixNumber(text.substring(2), 8)
+                TokenType.NUMBER_BIN -> parseRadixNumber(text.substring(2), 2)
                 TokenType.NUMBER -> if (token.legacyOctal) {
-                    text.toLong(8).toDouble()
+                    parseRadixNumber(text, 8)
                 } else {
                     text.toDouble()
                 }
@@ -4405,6 +4405,17 @@ class Parser(
         } catch (_: NumberFormatException) {
             throw ParseException("Invalid number literal '${token.value}'", token.range)
         }
+    }
+
+    private fun parseRadixNumber(digits: String, radix: Int): Double {
+        if (digits.isEmpty()) throw NumberFormatException("empty number")
+        var value = 0.0
+        for (character in digits) {
+            val digit = character.digitToIntOrNull(radix)
+                ?: throw NumberFormatException("invalid digit")
+            value = value * radix + digit
+        }
+        return value
     }
 
     /** 如果当前 Token 类型匹配任意一个给定类型，则消费并返回 true。 */

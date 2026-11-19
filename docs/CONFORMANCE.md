@@ -1,6 +1,6 @@
 # 解析一致性与 Test262 基线
 
-> 更新：2026-11-12。代码基线：见最近提交。
+> 更新：2026-11-19。代码基线：见最近提交。
 >
 > 本文件记录 `test262-parser-tests`（脚本 + 模块）、Test262 ES5/ES2015/module TLA 子集、真实库 UMD 冒烟与 Node 差分的当前口径。
 > 最近一次全量运行的环境为 JDK 21、Kotlin 2.4.21、Gradle 9.9.0、Node v24.12.0、Windows 10/amd64；
@@ -29,7 +29,7 @@
 | Node 差分 | **1432 / 1432** |
 | 真实库 UMD 冒烟 | **375 / 375**（102 个库） |
 | conformance 单元测试 | **45 / 45**（ParserConformanceTest 6 + RunSupportTest 10 + Test262SelectionTest 25 + RunMetadataTest 4） |
-| host 单元测试 | **40 / 40**（JVM/JS/Wasm/Windows Native；含 HostEcosystemTest 13） |
+| host 单元测试 | **44 / 44**（JVM/JS/Wasm/Android/Windows Native；含 HostEcosystemTest 13） |
 
 ## 3. Parser 基线
 

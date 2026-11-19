@@ -6,9 +6,12 @@ import com.muedsa.js.ast.ModuleBindingKind
 import com.muedsa.js.lexer.SourceInfo
 import com.muedsa.js.runtime.Interpreter
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.value.JSArrayBuffer
 import com.muedsa.js.runtime.value.JSNativeFunction
 import com.muedsa.js.runtime.value.JSObject
 import com.muedsa.js.runtime.value.JSString
+import com.muedsa.js.runtime.value.JSTypedArray
+import com.muedsa.js.runtime.value.JSTypedArrayType
 import com.muedsa.js.runtime.value.JSUndefined
 import com.muedsa.js.runtime.value.PropertyKey
 
@@ -72,6 +75,12 @@ internal class ModuleDeclarationInstantiator(
             }
         }
 
+        // bytes 资产是核心生成的合成模块，不能通过用户可替换的全局 Uint8Array 构造。
+        // 该绑定只存在于该合成模块作用域，生成的源码只读取它。
+        if (record.source.assetType == "bytes" && record.source.bytes != null) {
+            environment.createLetBinding("__vibe_bytes", createBytesValue(record.source.bytes))
+        }
+
         record.environment = environment
         if (record.moduleSourceObject == null) {
             record.source.moduleSourceClassName?.let { className ->
@@ -126,5 +135,27 @@ internal class ModuleDeclarationInstantiator(
             record.importMeta = importMeta.attachAllocationBudget(interpreter.context.objectAllocations)
         }
         return environment
+    }
+
+    /** 用引擎内建创建 bytes 资产的默认导出值，避免解析用户作用域的全局构造器。 */
+    private fun createBytesValue(bytes: ByteArray): JSTypedArray {
+        val buffer = JSArrayBuffer(
+            prototype = interpreter.intrinsics.arrayBufferPrototype,
+            byteLength = bytes.size,
+        )
+        for (index in bytes.indices) {
+            buffer.setByte(index, bytes[index])
+        }
+        buffer.markImmutable()
+        buffer.attachAllocationBudget(interpreter.context.objectAllocations)
+        val view = JSTypedArray(
+            prototype = interpreter.intrinsics.typedArrayPrototypes.getValue(JSTypedArrayType.UINT8),
+            type = JSTypedArrayType.UINT8,
+            buffer = buffer,
+            byteOffset = 0,
+            length = bytes.size,
+        )
+        view.attachAllocationBudget(interpreter.context.objectAllocations)
+        return view
     }
 }

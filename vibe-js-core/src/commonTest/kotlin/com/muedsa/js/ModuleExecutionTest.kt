@@ -180,17 +180,16 @@ class ModuleExecutionTest {
                 let outcome;
                 try {
                   const promise = import("./b.js", { with: { type: 1 } });
-                  outcome = "promise";
-                  await promise.catch(() => {});
+                  outcome = await promise.then(() => "fulfilled", e => e.name);
                 } catch (e) {
-                  outcome = "sync";
+                  outcome = "sync:" + e.name;
                 }
                 export const result = outcome;
             """.trimIndent()),
             Provider(mapOf("./b.js" to source("b", "export const x = 1;"))),
         )
         assertEquals(
-            "promise",
+            "TypeError",
             (engine.interpreter.getProperty(namespace, PropertyKey.Str("result")) as JSString).value,
         )
     }

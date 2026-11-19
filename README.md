@@ -469,13 +469,13 @@ JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI �
 ./gradlew :vibe-js-conformance:differentialConformance
 ```
 
-当前基线（2026-11-12）：
+当前基线（2026-11-19）：
 
 | 检查 | 结果 |
 |---|---|
-| core JVM | **1245 / 1245** |
-| core JS（Node）/ Wasm（Node） | 各 **1229 / 1229** |
-| host JVM / JS / Wasm / Native | 各 **40 / 40** |
+| core JVM | **1254 / 1254** |
+| core JS（Node）/ Wasm（Node） | 各 **1238 / 1238** |
+| host JVM / JS / Wasm / Native | 各 **44 / 44** |
 | conformance 单元测试 | **45 / 45** |
 | parser 脚本 | **1,907/1,907**；fail 674/682（允许 8）；early **5/605**（允许 5） |
 | parser 模块 | **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝）；允许 0（262 个 `.module.js`） |

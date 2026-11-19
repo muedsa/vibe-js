@@ -130,18 +130,18 @@
 
 | 目标 | 状态 | 验证方式 |
 |---|---|---|
-| JVM | ✅ | 核心 **1245** + 宿主 42 个测试（2026-11-13 记录） |
-| JS（Node） | ✅ | 核心 **1229** + 宿主 42 个测试 |
-| Wasm（Node） | ✅ | 核心 **1229** + 宿主 42 个测试 |
-| Android | ✅ | CI `testAndroidHostTest`；core commonTest 与 host 42 个测试通过 |
-| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-12 本地复跑 Windows mingwX64 宿主 40 通过（核心 Native 近期未全量重跑） |
+| JVM | ✅ | 核心 **1254** + 宿主 44 个测试（2026-11-19 记录） |
+| JS（Node） | ✅ | 核心 **1238** + 宿主 44 个测试 |
+| Wasm（Node） | ✅ | 核心 **1238** + 宿主 44 个测试 |
+| Android | ✅ | CI `testAndroidHostTest`；core commonTest 与 host 44 个测试通过 |
+| Linux / Windows / macOS / iOS / tvOS / watchOS | ⏳ | CI 各目标测试；2026-11-19 本地复跑 Windows mingwX64 宿主 44 通过（核心 Native 近期未全量重跑） |
 
-> 数字来自各平台测试报告。JVM 的 1245 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1229。"仅由 CI 覆盖"表示本次未在本地复跑。
+> 数字来自各平台测试报告。JVM 的 1254 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1238。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
 > 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
-当前一致性基线（2026-11-13）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **63,716/63,716**，失败 0、跳过 **326**（module flag 322 + 宿主钩子 4）；ES2016+ **30,443/30,443**，跳过 26；module TLA **249/249**；module-code **596/596**；language module **817/817**；source-phase **253/253**（475 次执行）；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
+当前一致性基线（2026-11-19）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **63,716/63,716**，失败 0、跳过 **326**（module flag 322 + 宿主钩子 4）；ES2016+ **30,443/30,443**，跳过 26；module TLA **249/249**；module-code **596/596**；language module **817/817**；source-phase **253/253**（475 次执行）；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。
 
 ## 6. 已知差异
 
@@ -228,7 +228,8 @@ JS 无法通过 catch/finally 拦截；已完成的全局写入保留，尚未�
 | `ImportDeferTest` | `import defer` 延迟求值、trigger 边界、deferred/eager namespace 身份 |
 | `SourcePhaseImportTest` | source 对象原型链、不解析 source 文本、普通 JS source text 抛 SyntaxError |
 | `ReviewRegressionTest` | R01/R02/R03/R04/R05/R06/R07/R10/R11 回归探针 |
-| `ReviewHostRegressionTest` | structuredClone length/lastIndex 回归 |
+| `FollowupRegressionTest` | F1/F2/F3/E1/E2/E3/E6 与二次复核边界回归 |
+| `ReviewHostRegressionTest` | structuredClone length/lastIndex、可调整缓冲区与数组长度快照回归 |
 | `ModuleAssetTest` | JSON default 对象与加载期非法 JSON 拒绝、text 原始字符串、bytes immutable Uint8Array、同 id JS/text 并存、bytes 缺失契约、资产源码预算 |
 | `ModuleProviderContractTest` | 入口/依赖 referrer、null/异常、sourceName/url、精确 id、空与空白 id 校验、重复 specifier 去重、同 id 多 specifier 去重与首次源码/URL/sourceName 优先、URL 空值回退及空字符串保留、空 sourceName 错误栈、maxModules 与源码预算唯一计数 |
 | `ModuleExecutionMatrixTest` | 循环依赖求值/执行顺序、菱形依赖去重、依赖失败隔离（含入口体）、namespace 描述符（含嵌套/空/无导出入口 exotic 不变量、`__proto__` 数据属性、toStringTag 自有性/唯一符号/ownKeys 与 getOwnPropertyNames 反射面、Object.assign/Array.from 互操作、跨 specifier 身份）、显式导出、`export * as default`/`export * as ns`、default 排除/重导出/live binding、import.meta 缓存 |

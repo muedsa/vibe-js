@@ -59,6 +59,7 @@ internal class ModuleGraphResolver(
             specifier = entry.id,
             referrer = null,
             provider = provider,
+            sourceLength = entry.source.length,
         )
         return graphFor(entryRecord)
     }
@@ -109,6 +110,7 @@ internal class ModuleGraphResolver(
         specifier: String,
         referrer: String?,
         provider: ModuleProvider,
+        sourceLength: Int,
     ): ModuleRecord {
         currentCoroutineContext().ensureActive()
         if (source.id.isBlank()) {
@@ -123,7 +125,7 @@ internal class ModuleGraphResolver(
 
         records[recordKey(source)]?.let { return it }
 
-        limits.checkSourceLength(source.source.length)
+        limits.checkSourceLength(sourceLength)
         val maxModules = limits.maxModules
         if (maxModules != null && records.size >= maxModules) {
             throw ModuleLinkException(
@@ -134,7 +136,7 @@ internal class ModuleGraphResolver(
                 message = "Module graph exceeds maxModules=$maxModules",
             )
         }
-        val nextTotal = totalSourceLength + source.source.length
+        val nextTotal = totalSourceLength + sourceLength
         val maxTotal = limits.maxTotalModuleSourceLength
         if (maxTotal != null && nextTotal > maxTotal) {
             throw ModuleLinkException(
@@ -202,6 +204,7 @@ internal class ModuleGraphResolver(
             specifier = specifier,
             referrer = referrer,
             provider = provider,
+            sourceLength = loaded.source.length,
         ).also { requestCache[key] = it }
     }
 
@@ -247,7 +250,7 @@ internal class ModuleGraphResolver(
                         .toInt(),
                 )
                 source.copy(
-                    source = bytesModuleSource(bytes),
+                    source = bytesModuleSource(),
                     assetType = "bytes",
                 )
             }
@@ -272,13 +275,46 @@ internal class ModuleGraphResolver(
         } catch (error: JsonDepthLimitException) {
             throw invalidAsset(source, specifier, referrer, error.message ?: "JSON module is too deep")
         }
-        // 直接生成字面量，避免依赖可被用户替换的全局 JSON.parse。
-        return "const __json = ${jsonLiteralSource(json)};\n" +
-            "export default __json;\n"
+        // 生成平铺的容器声明，JSON 深度不会再消耗合成源码的 JS 语法嵌套配额。
+        val declarations = mutableListOf<String>()
+        var nextId = 0
+
+        fun encode(value: JSValue): String = when (value) {
+            is JSArray -> {
+                val name = "__vibe_json_${nextId++}"
+                val elements = (0 until value.lengthLong).map { index ->
+                    encode(value.getElement(index) ?: JSNull)
+                }
+                declarations.add("const $name = [${elements.joinToString(", ")}];")
+                name
+            }
+            is JSObject -> {
+                val name = "__vibe_json_${nextId++}"
+                val entries = mutableListOf<String>()
+                for (key in value.ownPropertyKeys()) {
+                    if (key !is PropertyKey.Str) continue
+                    val property = value.getOwnProperty(key) ?: continue
+                    if (!property.enumerable) continue
+                    // 计算属性键避免 "__proto__" 触发对象字面量的原型特殊语义。
+                    entries.add("[${jsStringLiteral(key.value)}]: ${encode(property.value ?: JSNull)}")
+                }
+                declarations.add("const $name = { ${entries.joinToString(", ")} };")
+                name
+            }
+            else -> jsonPrimitiveSource(value)
+        }
+
+        val root = encode(json)
+        return buildString {
+            for (declaration in declarations) {
+                append(declaration).append('\n')
+            }
+            append("export default ").append(root).append(";\n")
+        }
     }
 
-    /** 把已验证的 JSON 值编码成不依赖全局内建的安全 JS 字面量。 */
-    private fun jsonLiteralSource(value: JSValue): String = when (value) {
+    /** 把已验证的 JSON 原始值编码成 JS 字面量；容器由 [jsonModuleSource] 平铺声明。 */
+    private fun jsonPrimitiveSource(value: JSValue): String = when (value) {
         is JSNull -> "null"
         is JSBoolean -> if (value.value) "true" else "false"
         is JSNumber -> when {
@@ -289,42 +325,14 @@ internal class ModuleGraphResolver(
             else -> NumberFormatting.toString(value.value)
         }
         is JSString -> jsStringLiteral(value.value)
-        is JSArray -> buildString {
-            append('[')
-            for (index in 0 until value.lengthLong) {
-                if (index > 0) append(',')
-                append(jsonLiteralSource(value.getElement(index) ?: JSNull))
-            }
-            append(']')
-        }
-        is JSObject -> buildString {
-            append('{')
-            var first = true
-            for (key in value.ownPropertyKeys()) {
-                if (key !is PropertyKey.Str) continue
-                val property = value.getOwnProperty(key) ?: continue
-                if (!property.enumerable) continue
-                if (!first) append(',')
-                first = false
-                // 计算属性键避免 "__proto__" 触发对象字面量的原型特殊语义。
-                append('[')
-                append(jsStringLiteral(key.value))
-                append("]:")
-                append(jsonLiteralSource(property.value ?: JSNull))
-            }
-            append('}')
-        }
-        else -> error("Unexpected JSON value: ${value::class.simpleName}")
+        else -> error("Unexpected JSON primitive: ${value::class.simpleName}")
     }
 
     private fun textModuleSource(text: String): String =
         "export default ${jsStringLiteral(text)};\n"
 
-    private fun bytesModuleSource(bytes: ByteArray): String {
-        val values = bytes.joinToString(",") { (it.toInt() and 0xFF).toString() }
-        return "const __bytes = new Uint8Array([$values]);\n" +
-            "export default new Uint8Array(__bytes.buffer.transferToImmutable());\n"
-    }
+    private fun bytesModuleSource(): String =
+        "export default __vibe_bytes;\n"
 
     private fun invalidAsset(
         source: ModuleSource,

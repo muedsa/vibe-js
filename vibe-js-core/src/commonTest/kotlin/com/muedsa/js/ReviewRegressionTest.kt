@@ -81,14 +81,13 @@ class ReviewRegressionTest {
             let outcome;
             try {
               const promise = import("m", { with: { type: 123 } });
-              outcome = "promise";
-              await promise.catch(() => {});
+              outcome = await promise.then(() => "fulfilled", e => e.name);
             } catch (e) {
-              outcome = "sync";
+              outcome = "sync:" + e.name;
             }
             export const result = outcome;
         """.trimIndent(), InMemoryModuleProvider(mapOf("m" to "export const x = 1;")))
-        assertEquals("promise", (result as JSString).value)
+        assertEquals("TypeError", (result as JSString).value)
     }
 
     @Test

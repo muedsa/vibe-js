@@ -660,6 +660,14 @@ object ObjectBuiltins {
                 val value = args.getOrNull(0)
                 JSBoolean.getJsBoolean(
                     when (value) {
+                        // 已确认冻结的数组可以直接返回；手动改描述符的数组仍走真实检查。
+                        is JSArray -> value.frozen || (!interpreter.internalIsExtensible(value) &&
+                            interpreter.internalOwnPropertyKeys(value).all { key ->
+                                val descriptor = interpreter.internalGetOwnProperty(value, key)
+                                descriptor == null ||
+                                    (!descriptor.configurable && (descriptor.isAccessor || !descriptor.writable))
+                            })
+
                         is JSObject -> !interpreter.internalIsExtensible(value) &&
                             interpreter.internalOwnPropertyKeys(value).all { key ->
                                 val descriptor = interpreter.internalGetOwnProperty(value, key)
@@ -678,6 +686,12 @@ object ObjectBuiltins {
                 val value = args.getOrNull(0)
                 JSBoolean.getJsBoolean(
                     when (value) {
+                        // 已确认密封的数组可以直接返回；未知状态继续检查实际描述符。
+                        is JSArray -> value.sealed || (!interpreter.internalIsExtensible(value) &&
+                            interpreter.internalOwnPropertyKeys(value).all { key ->
+                                interpreter.internalGetOwnProperty(value, key)?.configurable == false
+                            })
+
                         is JSObject -> !interpreter.internalIsExtensible(value) &&
                             interpreter.internalOwnPropertyKeys(value).all { key ->
                                 interpreter.internalGetOwnProperty(value, key)?.configurable == false

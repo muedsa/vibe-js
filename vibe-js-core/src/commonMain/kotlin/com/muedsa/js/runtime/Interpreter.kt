@@ -225,8 +225,10 @@ class Interpreter(
      * 当前生效的模块记录：模块内函数调用优先使用函数所属模块
      * [ExecutionContext.sourceModule]，模块体求值期间回退到 [currentModuleRecord]。
      */
-    internal fun resolveModuleRecord(): ModuleRecord? =
-        frame?.sourceModule ?: currentModuleRecord
+    internal fun resolveModuleRecord(): ModuleRecord? {
+        val current = frame
+        return if (current?.sourceModuleKnown == true) current.sourceModule else currentModuleRecord
+    }
 
     /**
      * 生成器函数体执行期间绑定的暂停/恢复通道。
@@ -316,6 +318,7 @@ class Interpreter(
             thisValue = context.globalObject,
             strict = program.strict,
         )
+        programFrame.sourceModuleKnown = true
         pushStackFrame("<global>", program.range, countsTowardsDepth = false, sourceInfo = program.sourceInfo)
         frame = programFrame
         try {
@@ -390,6 +393,8 @@ class Interpreter(
             strict = true,
         )
         moduleFrame.moduleFrameOwner = record
+        moduleFrame.sourceModule = record
+        moduleFrame.sourceModuleKnown = true
         pushStackFrame(
             "<module:${record.id}>",
             record.program.range,
@@ -461,7 +466,7 @@ class Interpreter(
                 lexicalEnv = context.globalEnvironment,
                 thisValue = context.globalObject,
                 strict = false,
-            )
+            ).also { it.sourceModuleKnown = true }
         }
         return evaluate(expression)
     }
@@ -478,7 +483,7 @@ class Interpreter(
             lexicalEnv = context.globalEnvironment,
             thisValue = context.globalObject,
             strict = false,
-        )
+        ).also { it.sourceModuleKnown = true }
         val callerFunction = caller.function
         // 直接 eval 的代码继承调用方的严格模式与 super 语法上下文
         val program = try {
@@ -573,7 +578,10 @@ class Interpreter(
             variableEnv = varEnvironment,
             // 嵌套 eval 仍处于外层函数的参数初始化阶段
             inParameterInitialization = caller.inParameterInitialization,
-        ).also { it.sourceModule = caller.sourceModule }
+        ).also {
+            it.sourceModule = caller.sourceModule
+            it.sourceModuleKnown = caller.sourceModuleKnown
+        }
         // 直接 eval 不经过 callFunction，也必须计入深度。先检查再切换执行帧，
         // 避免超限抛错发生在 try/finally 之外时破坏调用方的词法环境。
         pushStackFrame("<eval>", program.range, sourceInfo = SourceInfo("<eval>"))
@@ -662,6 +670,7 @@ class Interpreter(
             strict = evalStrict,
             variableEnv = varEnvironment,
         )
+        evalFrame.sourceModuleKnown = true
         pushStackFrame("<eval>", program.range, sourceInfo = SourceInfo("<eval>"))
         frame = evalFrame
         return try {
@@ -1426,41 +1435,44 @@ class Interpreter(
         if (value is JSUndefined) return null
         if (value !is JSObject) throw typeError("Property description must be an object")
         val descriptor = PropertyDescriptor()
-        val hasValue = internalHasProperty(value, PropertyKey.Str("value"))
-        val hasWritable = internalHasProperty(value, PropertyKey.Str("writable"))
-        val hasGet = internalHasProperty(value, PropertyKey.Str("get"))
-        val hasSet = internalHasProperty(value, PropertyKey.Str("set"))
-        val hasEnumerable = internalHasProperty(value, PropertyKey.Str("enumerable"))
-        val hasConfigurable = internalHasProperty(value, PropertyKey.Str("configurable"))
-        // 记录字段是否存在：Proxy trap 的 Desc 参数与 FromPropertyDescriptor 依赖该信息
-        descriptor.hasValue = hasValue
-        descriptor.hasWritable = hasWritable
-        descriptor.hasGet = hasGet
-        descriptor.hasSet = hasSet
-        descriptor.hasEnumerable = hasEnumerable
-        descriptor.hasConfigurable = hasConfigurable
-        if (hasValue) descriptor.value = getV(value, PropertyKey.Str("value"))
-        if (hasWritable) descriptor.writable = toBoolean(getV(value, PropertyKey.Str("writable")))
-        if (hasGet) {
+
+        // ToPropertyDescriptor 按字段顺序逐个 HasProperty -> Get；getter 可以修改后续字段。
+        if (internalHasProperty(value, PropertyKey.Str("enumerable"))) {
+            descriptor.hasEnumerable = true
+            descriptor.enumerable = toBoolean(getV(value, PropertyKey.Str("enumerable")))
+        }
+        if (internalHasProperty(value, PropertyKey.Str("configurable"))) {
+            descriptor.hasConfigurable = true
+            descriptor.configurable = toBoolean(getV(value, PropertyKey.Str("configurable")))
+        }
+        if (internalHasProperty(value, PropertyKey.Str("value"))) {
+            descriptor.hasValue = true
+            descriptor.value = getV(value, PropertyKey.Str("value"))
+        }
+        if (internalHasProperty(value, PropertyKey.Str("writable"))) {
+            descriptor.hasWritable = true
+            descriptor.writable = toBoolean(getV(value, PropertyKey.Str("writable")))
+        }
+        if (internalHasProperty(value, PropertyKey.Str("get"))) {
+            descriptor.hasGet = true
             val getter = getV(value, PropertyKey.Str("get"))
             if (getter !is JSUndefined && !isCallable(getter)) {
                 throw typeError("Getter must be a function")
             }
             descriptor.get = if (getter is JSUndefined) null else getter
         }
-        if (hasSet) {
+        if (internalHasProperty(value, PropertyKey.Str("set"))) {
+            descriptor.hasSet = true
             val setter = getV(value, PropertyKey.Str("set"))
             if (setter !is JSUndefined && !isCallable(setter)) {
                 throw typeError("Setter must be a function")
             }
             descriptor.set = if (setter is JSUndefined) null else setter
         }
-        if (hasEnumerable) descriptor.enumerable = toBoolean(getV(value, PropertyKey.Str("enumerable")))
-        if (hasConfigurable) descriptor.configurable = toBoolean(getV(value, PropertyKey.Str("configurable")))
-        if ((hasGet || hasSet) && (hasValue || hasWritable)) {
+        if ((descriptor.hasGet || descriptor.hasSet) && (descriptor.hasValue || descriptor.hasWritable)) {
             throw typeError("Invalid property descriptor: cannot be both accessor and data")
         }
-        descriptor.accessor = hasGet || hasSet
+        descriptor.accessor = descriptor.hasGet || descriptor.hasSet
         return descriptor
     }
 
@@ -2680,6 +2692,7 @@ class Interpreter(
         inParameterInitialization = scope.hasParameterExpressions,
     ).also {
         it.sourceModule = function.sourceModule
+        it.sourceModuleKnown = true
         it.moduleFrameOwner = function.sourceModule ?: currentModuleRecord
     }
 
@@ -2951,7 +2964,10 @@ class Interpreter(
             isConstructor = true,
             variableEnv = calleeEnv,
             inParameterInitialization = hasParameterExpressions,
-        ).also { it.sourceModule = function.sourceModule }
+        ).also {
+            it.sourceModule = function.sourceModule
+            it.sourceModuleKnown = true
+        }
         pushStackFrame(function.name.ifEmpty { "anonymous" }, function.body?.range, sourceInfo = function.sourceInfo)
         frame = functionFrame
         val activeFrame = functionFrame
@@ -3109,9 +3125,12 @@ class Interpreter(
             sourceInfo = sourceInfo,
         )
         function.sourceText = sourceText
-        // 闭包的定义模块来自定义它的执行帧；currentModuleRecord 只作为模块顶层
-        // 创建函数时的回退，不能覆盖跨模块调用中的函数所属模块。
-        function.sourceModule = frame?.sourceModule ?: currentModuleRecord
+        // 闭包的定义模块来自定义它的执行帧；只有帧未携带权威模块身份时才回退。
+        function.sourceModule = if (frame?.sourceModuleKnown == true) {
+            frame?.sourceModule
+        } else {
+            currentModuleRecord
+        }
         // ES5 15.3.5.4：非严格普通函数的 caller/arguments 是值为 null 的自有数据属性；
         // 严格函数、箭头、方法、async 与生成器函数不定义（读取落到 Function.prototype 拒绝访问器）
         if (!strict && !isArrow && !isMethod && !isAsync && !isGenerator) {
@@ -4827,9 +4846,10 @@ class Interpreter(
     }
 
     /**
-     * 动态 `import()`：同步求值说明符与选项，加载/链接/求值在微任务中完成。
+     * 动态 `import()`：先求值两个表达式实参，再创建 Promise；加载/链接/求值在微任务中完成。
      *
-     * 说明符/选项求值错误同步抛出；模块加载、链接与求值错误以 Promise 拒绝上报。
+     * 说明符/选项表达式求值错误同步抛出；ToString(specifier) 与导入属性转换错误拒绝 Promise，
+     * 模块加载、链接与求值错误同样以 Promise 拒绝上报。该顺序与 EvaluateImportCall 一致。
      */
     @OptIn(ExperimentalModuleApi::class)
     private suspend fun evaluateDynamicImport(expression: ImportCallExpr): JSValue {
@@ -4838,9 +4858,12 @@ class Interpreter(
             ?: throw syntaxError("import() is only available in module code")
         val specifierExpression = expression.specifier
             ?: throw typeError("import() requires a module specifier")
+        // 两个实参都是同步求值；任何表达式求值异常都在创建 Promise 前向调用方传播。
+        val specifierValue = evaluate(specifierExpression)
+        val optionsValue = expression.options?.let { evaluate(it) } ?: JSUndefined
         val promise = JSPromise(intrinsics.promisePrototype)
         val specifier = try {
-            toStringValue(evaluate(specifierExpression))
+            toStringValue(specifierValue)
         } catch (error: JSException) {
             // ImportCall 的 ToString(specifier) 失败必须拒绝返回的 Promise，
             // 不能把 TypeError 同步抛给模块体。
@@ -4848,9 +4871,9 @@ class Interpreter(
             return promise
         }
         val attributes = try {
-            expression.options?.let { readImportAttributes(evaluate(it)) } ?: emptyMap()
+            if (optionsValue is JSUndefined) emptyMap() else readImportAttributes(optionsValue)
         } catch (error: JSException) {
-            // 选项求值与属性转换失败同样必须拒绝返回的 Promise。
+            // 选项值已经求值；导入属性转换失败必须拒绝返回的 Promise。
             PromiseSupport.reject(this, promise, error.value, error.stack)
             return promise
         }
@@ -5844,7 +5867,10 @@ class Interpreter(
                     thisInitialized = !derived,
                     variableEnv = calleeEnv,
                     inParameterInitialization = hasParameterExpressions,
-                ).also { it.sourceModule = superConstructor.sourceModule }
+                ).also {
+                    it.sourceModule = superConstructor.sourceModule
+                    it.sourceModuleKnown = true
+                }
                 pushStackFrame(
                     superConstructor.name.ifEmpty { "anonymous" }, superConstructor.body?.range,
                     sourceInfo = superConstructor.sourceInfo,

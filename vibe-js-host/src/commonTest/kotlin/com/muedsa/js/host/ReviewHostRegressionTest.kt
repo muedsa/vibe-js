@@ -38,4 +38,43 @@ class ReviewHostRegressionTest {
         """.trimIndent())
         assertEquals(0.0, (result as JSNumber).value)
     }
+
+    @Test
+    fun `克隆保留可调整缓冲区及视图长度模式`() = runTest {
+        val result = script("""
+            const b = new ArrayBuffer(2, { maxByteLength: 6 });
+            const copy = structuredClone({
+              b,
+              tracking: new Uint8Array(b),
+              fixed: new Uint8Array(b, 0, 2)
+            });
+            if (copy.b.resizable) {
+              copy.b.resize(4);
+            }
+            [
+              copy.b.resizable,
+              copy.b.maxByteLength,
+              copy.tracking.length,
+              copy.fixed.length,
+              copy.tracking.buffer === copy.b
+            ].join(":");
+        """.trimIndent())
+        assertEquals("true:6:4:2:true", (result as JSString).value)
+    }
+
+    @Test
+    fun `克隆数组先保存长度再读取元素`() = runTest {
+        val result = script("""
+            const a = [0];
+            Object.defineProperty(a, "0", {
+              get() {
+                a.length = 3;
+                return 7;
+              }
+            });
+            const c = structuredClone(a);
+            [c.length, c[0], a.length].join(":");
+        """.trimIndent())
+        assertEquals("1:7:3", (result as JSString).value)
+    }
 }

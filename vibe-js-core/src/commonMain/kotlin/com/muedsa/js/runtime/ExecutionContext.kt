@@ -37,6 +37,14 @@ class ExecutionContext(
     /** 函数定义所在的模块；脚本或宿主函数为 null，供 import.meta / import() 使用。 */
     internal var sourceModule: ModuleRecord? = null
 
+    /**
+     * [sourceModule] 是否已经是权威值。
+     *
+     * 脚本/模块顶层、函数和 eval 帧都明确知道自己属不属于模块；
+     * 仅在没有可继承帧的宿主内部路径才允许回退到 currentModuleRecord。
+     */
+    internal var sourceModuleKnown: Boolean = false
+
     /** 当前 frame 所属的模块；函数 frame 继承调用时的模块，用于异步续体恢复。 */
     internal var moduleFrameOwner: ModuleRecord? = null
 
