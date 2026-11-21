@@ -240,15 +240,19 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run Test262 module TLA subset
+      if: always()
       run: ./gradlew :vibe-js-conformance:test262ModuleConformance -Pstrict --console=plain
 
     - name: Run Test262 module-code subset
+      if: always()
       run: ./gradlew :vibe-js-conformance:test262ModuleCodeConformance -Pstrict --console=plain
 
     - name: Run Test262 language module subset
+      if: always()
       run: ./gradlew :vibe-js-conformance:test262ModuleLanguageConformance -Pstrict --console=plain
 
     - name: Run Test262 source-phase subset
+      if: always()
       run: ./gradlew :vibe-js-conformance:test262SourcePhaseConformance -Pstrict --console=plain
 
     - name: Publish summary

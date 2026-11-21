@@ -96,6 +96,7 @@ private class StructuredCloner(
         is JSDataView -> cloneDataView(value)
         is JSMap -> cloneMap(value)
         is JSSet -> cloneSet(value)
+        is JSError -> cloneError(value)
         is JSArray -> cloneArray(value)
         is JSObject -> cloneOrdinaryObject(value)
     }
@@ -163,6 +164,7 @@ private class StructuredCloner(
             buffer = cloneArrayBuffer(source.buffer),
             byteOffset = source.byteOffset,
             byteLength = source.byteLength,
+            lengthTracking = source.isLengthTracking,
         )
         clonedObjects[source] = target
         return target
@@ -196,6 +198,23 @@ private class StructuredCloner(
         val length = source.lengthLong
         copyEnumerableProperties(source, target)
         target.setLength(length)
+        return target
+    }
+
+    /**
+     * 结构化序列化会保留 Error 的名称、消息和错误原型；不能把它当普通对象，
+     * 否则副本会变成没有 name/message 的 {}。
+     */
+    private suspend fun cloneError(source: JSError): JSError {
+        clonedObjects[source]?.let { return it as JSError }
+        val target = JSError(
+            errorName = source.errorName,
+            messageText = source.messageText,
+            prototype = source.prototype ?: intrinsics.errorPrototype,
+            defineMessage = source.getOwnProperty(PropertyKey.MESSAGE) != null,
+        )
+        clonedObjects[source] = target
+        copyEnumerableProperties(source, target)
         return target
     }
 

@@ -42,6 +42,9 @@ class JSDataView(
 
     private val storedByteLength: Int = byteLength
 
+    /** 是否为 length-tracking 视图；structuredClone 需要保留该模式。 */
+    val isLengthTracking: Boolean get() = lengthTracking
+
     /** 被查看的缓冲区是否已分离（供内建访问器与读写前置检查使用）。 */
     val isDetached: Boolean get() = buffer.isDetached
 

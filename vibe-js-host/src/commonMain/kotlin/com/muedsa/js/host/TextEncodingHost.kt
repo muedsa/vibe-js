@@ -297,6 +297,8 @@ private class Utf8Decoder(
     fun decode(input: ByteArray, stream: Boolean): String {
         val data = if (pending.isEmpty()) input else pending + input
         pending = ByteArray(0)
+        // 空输入不处理任何字节，不能提前消耗 BOM 状态。
+        if (data.isEmpty()) return ""
         val builder = StringBuilder(data.size)
         var index = 0
 
@@ -362,7 +364,8 @@ private class Utf8Decoder(
                     }
                     if (!validSecond || third !in 0x80..0xBF) {
                         invalid(builder)
-                        index++
+                        // 已经匹配的 1/2 字节属于同一个非法序列，只回退到出错字节。
+                        index += if (validSecond) 2 else 1
                         continue
                     }
                     val codePoint = ((first and 0x0F) shl 12) or
@@ -392,7 +395,11 @@ private class Utf8Decoder(
                     }
                     if (!validSecond || third !in 0x80..0xBF || fourth !in 0x80..0xBF) {
                         invalid(builder)
-                        index++
+                        index += when {
+                            !validSecond -> 1
+                            third !in 0x80..0xBF -> 2
+                            else -> 3
+                        }
                         continue
                     }
                     val codePoint = ((first and 0x07) shl 18) or

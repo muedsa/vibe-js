@@ -162,16 +162,24 @@ internal class ModuleGraphResolver(
         records[recordKey(source)] = record
         totalSourceLength = nextTotal
 
-        for (dependencySpecifier in program.requestedModules) {
-            currentCoroutineContext().ensureActive()
-            val attributes = program.requestedAttributes[dependencySpecifier] ?: emptyMap()
-            val dependency = loadRequest(
-                specifier = dependencySpecifier,
-                referrer = source.id,
-                attributes = attributes,
-                provider = provider,
-            )
-            record.dependencies.add(dependency)
+        try {
+            for (dependencySpecifier in program.requestedModules) {
+                currentCoroutineContext().ensureActive()
+                val attributes = program.requestedAttributes[dependencySpecifier] ?: emptyMap()
+                val dependency = loadRequest(
+                    specifier = dependencySpecifier,
+                    referrer = source.id,
+                    attributes = attributes,
+                    provider = provider,
+                )
+                record.dependencies.add(dependency)
+            }
+        } catch (error: Throwable) {
+            // 失败记录不能留下半初始化的依赖表，否则下一次 import 会永久复用坏 record。
+            if (records.remove(recordKey(source)) != null) {
+                totalSourceLength -= sourceLength
+            }
+            throw error
         }
         return record
     }

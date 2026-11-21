@@ -213,8 +213,8 @@ private fun installUrlConstructor(
             val state = requireUrl(interpreter, thisValue)
             val value = args.getOrNull(0)?.let { interpreter.toStringValue(it) } ?: ""
             val scheme = value.removeSuffix(":").lowercase()
-            if (!isValidScheme(scheme)) interpreter.typeError("Invalid URL protocol")
-            state.scheme = scheme
+            // WHATWG setter：非法协议保持原值，不向脚本抛错。
+            if (isValidScheme(scheme)) state.scheme = scheme
             JSUndefined
         },
     )
@@ -227,10 +227,13 @@ private fun installUrlConstructor(
             val authority = try {
                 parseAuthority(args.getOrNull(0)?.let { interpreter.toStringValue(it) } ?: "")
             } catch (_: UrlParseException) {
-                interpreter.typeError("Invalid URL host")
+                null
             }
-            state.host = authority.host
-            state.port = authority.port?.takeUnless { it == defaultPort(state.scheme) }
+            // WHATWG setter：非法 host 保持原值。
+            if (authority != null && authority.host.isNotEmpty()) {
+                state.host = authority.host
+                state.port = authority.port?.takeUnless { it == defaultPort(state.scheme) }
+            }
             JSUndefined
         },
     )
@@ -241,7 +244,15 @@ private fun installUrlConstructor(
         set = { interpreter, thisValue, args ->
             val state = requireUrl(interpreter, thisValue)
             val value = args.getOrNull(0)?.let { interpreter.toStringValue(it) } ?: ""
-            state.host = value.lowercase()
+            // 空 hostname 和非法 hostname 都按 WHATWG 的 no-op 处理。
+            if (value.isNotEmpty()) {
+                val authority = try {
+                    parseAuthority(value)
+                } catch (_: UrlParseException) {
+                    null
+                }
+                if (authority != null && authority.host.isNotEmpty()) state.host = authority.host
+            }
             JSUndefined
         },
     )
@@ -252,7 +263,17 @@ private fun installUrlConstructor(
         set = { interpreter, thisValue, args ->
             val state = requireUrl(interpreter, thisValue)
             val raw = args.getOrNull(0)?.let { interpreter.toStringValue(it) } ?: ""
-            state.port = parsePort(raw, state.scheme)
+            var failed = false
+            val parsed = try {
+                parsePort(raw, state.scheme)
+            } catch (_: UrlParseException) {
+                failed = true
+                null
+            } catch (_: NumberFormatException) {
+                failed = true
+                null
+            }
+            if (!failed) state.port = parsed
             JSUndefined
         },
     )
@@ -272,7 +293,7 @@ private fun installUrlConstructor(
         "search",
         get = { interpreter, thisValue, _ ->
             val query = requireUrl(interpreter, thisValue).query
-            JSString(if (query.isNullOrEmpty()) "" else "?$query")
+            JSString(if (query == null) "" else "?$query")
         },
         set = { interpreter, thisValue, args ->
             val state = requireUrl(interpreter, thisValue)
@@ -346,6 +367,31 @@ private fun installUrlSearchParams(
             init == null || init is JSUndefined -> mutableListOf()
             init is JSObject && init.internalState is SearchParamsState ->
                 (init.internalState as SearchParamsState).entries.toMutableList()
+
+            init is JSObject -> {
+                val iterator = interpreter.getV(init, PropertyKey.Sym(intrinsics.symbolIterator))
+                if (interpreter.isCallable(iterator)) {
+                    val result = mutableListOf<Pair<String, String>>()
+                    interpreter.consumeIterator(init) { item ->
+                        val pair = item as? JSObject
+                            ?: interpreter.typeError("URLSearchParams sequence item must be a pair")
+                        val name = interpreter.toStringValue(interpreter.getV(pair, PropertyKey.Str("0")))
+                        val value = interpreter.toStringValue(interpreter.getV(pair, PropertyKey.Str("1")))
+                        result.add(name to value)
+                    }
+                    result
+                } else {
+                    // record 初始化：按自有可枚举字符串键读取，值做 ToString。
+                    val result = mutableListOf<Pair<String, String>>()
+                    for (key in init.ownPropertyKeys()) {
+                        if (key !is PropertyKey.Str) continue
+                        val descriptor = init.getOwnProperty(key) ?: continue
+                        if (!descriptor.enumerable) continue
+                        result.add(key.value to interpreter.toStringValue(interpreter.getV(init, key)))
+                    }
+                    result
+                }
+            }
 
             else -> parseQuery(interpreter.toStringValue(init).removePrefix("?")).toMutableList()
         }
@@ -469,6 +515,23 @@ private fun installUrlSearchParams(
             },
         )
     }
+    prototype.defineDataProperty(
+        key = PropertyKey.Sym(intrinsics.symbolIterator),
+        value = BuiltinHelpers.method(intrinsics, "[Symbol.iterator]", 0) { interpreter, thisValue, _ ->
+            createIterator(
+                intrinsics,
+                requireSearchParams(interpreter, thisValue).entries.map {
+                    JSArray(
+                        initialElements = listOf(JSString(it.first), JSString(it.second)),
+                        prototype = intrinsics.arrayPrototype,
+                    )
+                },
+            )
+        },
+        writable = true,
+        enumerable = false,
+        configurable = true,
+    )
     prototype.defineHostToStringTag(intrinsics, "URLSearchParams")
 
     registry.defineGlobal(
@@ -717,10 +780,11 @@ private fun defaultPort(scheme: String): Int? = when (scheme) {
 private fun splitPathQueryFragment(raw: String): Triple<String, String?, String?> {
     val hashIndex = raw.indexOf('#')
     val beforeHash = if (hashIndex < 0) raw else raw.substring(0, hashIndex)
-    val fragment = if (hashIndex < 0) null else raw.substring(hashIndex + 1).ifEmpty { null }
+    // 空 query/fragment 与“不存在”不同：`?`/`#` 之后保留空串。
+    val fragment = if (hashIndex < 0) null else raw.substring(hashIndex + 1)
     val queryIndex = beforeHash.indexOf('?')
     val path = if (queryIndex < 0) beforeHash else beforeHash.substring(0, queryIndex)
-    val query = if (queryIndex < 0) null else beforeHash.substring(queryIndex + 1).ifEmpty { null }
+    val query = if (queryIndex < 0) null else beforeHash.substring(queryIndex + 1)
     return Triple(path, query, fragment)
 }
 

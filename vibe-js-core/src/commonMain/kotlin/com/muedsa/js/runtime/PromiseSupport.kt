@@ -213,6 +213,18 @@ object PromiseSupport {
         )
     }
 
+    /**
+     * Await 内部订阅一个 Promise 时不创建可见 reaction，但仍必须标记为 handled；
+     * 若该拒绝已经上报过，再补发一次 rejectionhandled。
+     */
+    fun markHandled(interpreter: Interpreter, promise: JSPromise) {
+        val wasReported = promise.unhandledReported
+        promise.handled = true
+        if (wasReported) {
+            interpreter.context.eventLoop.reportRejectionHandled(promise)
+        }
+    }
+
     private fun registerReaction(
         interpreter: Interpreter,
         promise: JSPromise,

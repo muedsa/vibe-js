@@ -1822,6 +1822,20 @@ object ArrayBuiltins {
      *
      * 返回写入目标后的下一个索引；元素仅在 IsArray 时递归展开。
      */
+    private class FlattenFrame(
+        val source: JSObject,
+        val sourceLength: Long,
+        val depth: Long,
+        val applyMapper: Boolean,
+    ) {
+        var index: Long = 0
+    }
+
+    /**
+     * FlattenIntoArray 的迭代实现。
+     *
+     * 深度优先语义由显式栈保持；这样 `flat(Infinity)` 不会先撞上宿主调用栈。
+     */
     private suspend fun flattenIntoArray(
         interpreter: Interpreter,
         target: JSObject,
@@ -1833,38 +1847,43 @@ object ArrayBuiltins {
         thisArg: JSValue = JSUndefined,
     ): Long {
         var targetIndex = start
-        var sourceIndex = 0L
-        while (sourceIndex < sourceLength) {
-            val key = PropertyKey.Str(sourceIndex.toString())
-            if (interpreter.internalHasProperty(source, key)) {
-                var element = interpreter.getV(source, key)
-                if (mapper != null) {
-                    element = interpreter.callFunction(
-                        mapper,
-                        thisArg,
-                        listOf(element, JSNumber(sourceIndex.toDouble()), source),
-                    )
-                }
-                if (depth > 0 && interpreter.isArray(element)) {
-                    val nestedArray = element as JSObject
-                    val elementLength = lengthOf(interpreter, nestedArray)
-                    targetIndex = flattenIntoArray(
-                        interpreter,
-                        target,
-                        nestedArray,
-                        elementLength,
-                        targetIndex,
-                        depth - 1,
-                    )
-                } else {
-                    if (targetIndex >= MAX_SAFE_INTEGER) {
-                        interpreter.typeError("Invalid array length")
-                    }
-                    createDataPropertyOrThrow(interpreter, target, targetIndex, element)
-                    targetIndex++
-                }
+        val stack = ArrayDeque<FlattenFrame>()
+        stack.addLast(FlattenFrame(source, sourceLength, depth, applyMapper = mapper != null))
+        while (stack.isNotEmpty()) {
+            val frame = stack.last()
+            if (frame.index >= frame.sourceLength) {
+                stack.removeLast()
+                continue
             }
-            sourceIndex++
+            val sourceIndex = frame.index++
+            interpreter.checkExecution()
+            val key = PropertyKey.Str(sourceIndex.toString())
+            if (!interpreter.internalHasProperty(frame.source, key)) continue
+            var element = interpreter.getV(frame.source, key)
+            if (frame.applyMapper && mapper != null) {
+                element = interpreter.callFunction(
+                    mapper,
+                    thisArg,
+                    listOf(element, JSNumber(sourceIndex.toDouble()), frame.source),
+                )
+            }
+            if (frame.depth > 0 && interpreter.isArray(element)) {
+                val nestedArray = element as JSObject
+                stack.addLast(
+                    FlattenFrame(
+                        source = nestedArray,
+                        sourceLength = lengthOf(interpreter, nestedArray),
+                        depth = frame.depth - 1,
+                        applyMapper = false,
+                    ),
+                )
+            } else {
+                if (targetIndex >= MAX_SAFE_INTEGER) {
+                    interpreter.typeError("Invalid array length")
+                }
+                createDataPropertyOrThrow(interpreter, target, targetIndex, element)
+                targetIndex++
+            }
         }
         return targetIndex
     }
@@ -1890,28 +1909,33 @@ object ArrayBuiltins {
         length: Long,
         separator: String,
     ): String {
-        val parts = ArrayList<String>()
-        var index = 0L
-        while (index < length) {
-            interpreter.checkExecution()
-            val element = elementAt(interpreter, objectValue, index)
-            parts.add(
-                if (element == null || element is JSNull || element is JSUndefined) {
-                    ""
-                } else {
-                    interpreter.toStringValue(element)
-                }
-            )
-            index++
+        if (!interpreter.activeJoinObjects.add(objectValue)) return ""
+        try {
+            val parts = ArrayList<String>()
+            var index = 0L
+            while (index < length) {
+                interpreter.checkExecution()
+                val element = elementAt(interpreter, objectValue, index)
+                parts.add(
+                    if (element == null || element is JSNull || element is JSUndefined) {
+                        ""
+                    } else {
+                        interpreter.toStringValue(element)
+                    }
+                )
+                index++
+            }
+            return parts.joinToString(separator)
+        } finally {
+            interpreter.activeJoinObjects.remove(objectValue)
         }
-        return parts.joinToString(separator)
     }
 
     /**
      * 规范 Array.prototype.sort：SortIndexedProperties + 顺序写回。
      *
      * 按 HasProperty/Get 收集现有元素（含原型链，跳过空洞），
-     * 使用稳定插入排序执行 SortCompare（支持 suspend 比较函数），
+     * 使用稳定归并排序执行 SortCompare（支持 suspend 比较函数），
      * 然后逐个 Set 写回并删除剩余索引；数组长度由元素写入自然维持。
      */
     private suspend fun sortElements(
@@ -1931,19 +1955,7 @@ object ArrayBuiltins {
             index++
         }
 
-        for (position in 1 until values.size) {
-            interpreter.checkExecution()
-            val current = values[position]
-            var cursor = position - 1
-            while (cursor >= 0 &&
-                sortCompare(interpreter, values[cursor], current, comparator) > 0.0
-            ) {
-                interpreter.checkExecution()
-                values[cursor + 1] = values[cursor]
-                cursor--
-            }
-            values[cursor + 1] = current
-        }
+        mergeSortValues(interpreter, values, comparator)
 
         for (position in values.indices) {
             interpreter.checkExecution()
@@ -1958,6 +1970,54 @@ object ArrayBuiltins {
         while (position < length) {
             deletePropertyOrThrow(interpreter, objectValue, PropertyKey.Str(position.toString()))
             position++
+        }
+    }
+
+    /**
+     * 稳定自底向上归并排序。
+     *
+     * 数组 sort 是高频操作，不能用插入排序；归并比较次数为 O(n log n)，
+     * 且只在合并阶段消费挂起比较器与执行检查点。
+     */
+    private suspend fun mergeSortValues(
+        interpreter: Interpreter,
+        values: MutableList<JSValue>,
+        comparator: JSValue?,
+    ) {
+        val size = values.size
+        if (size < 2) return
+        val buffer = arrayOfNulls<JSValue>(size)
+        var width = 1
+        while (width < size) {
+            var start = 0
+            while (start < size) {
+                val middle = (start.toLong() + width.toLong()).coerceAtMost(size.toLong()).toInt()
+                val end = (start.toLong() + width.toLong() * 2L).coerceAtMost(size.toLong()).toInt()
+                var left = start
+                var right = middle
+                var destination = start
+                while (left < middle && right < end) {
+                    interpreter.checkExecution()
+                    if (sortCompare(interpreter, values[left], values[right], comparator) <= 0.0) {
+                        buffer[destination++] = values[left++]
+                    } else {
+                        buffer[destination++] = values[right++]
+                    }
+                }
+                while (left < middle) {
+                    interpreter.checkExecution()
+                    buffer[destination++] = values[left++]
+                }
+                while (right < end) {
+                    interpreter.checkExecution()
+                    buffer[destination++] = values[right++]
+                }
+                start = end
+            }
+            for (index in 0 until size) {
+                values[index] = buffer[index] ?: JSUndefined
+            }
+            width *= 2
         }
     }
 

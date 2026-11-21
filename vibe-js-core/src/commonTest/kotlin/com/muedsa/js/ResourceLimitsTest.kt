@@ -600,7 +600,7 @@ class ResourceLimitsTest {
     }
 
     @Test
-    fun `Array sort 的插入排序比较循环消耗步数预算`() = runTest {
+    fun `Array sort 的比较循环消耗步数预算`() = runTest {
         val engine = Engine(limits = EngineLimits(maxSteps = 500))
         try {
             engine.registry.defineGlobal(

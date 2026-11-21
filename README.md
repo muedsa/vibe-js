@@ -73,7 +73,7 @@ dependencies {
 }
 ```
 
-发布目标为 JVM / JS / WasmJs / Android（core 与 host）；Native（含 Apple 目标与 mingwX64）尚未发布到该仓库。
+发布目标为 JVM / JS / WasmJs / Android（core 与 host），以及 Linux、macOS、Windows 和 Apple Native 目标。
 
 ### 能力示例
 
@@ -413,7 +413,7 @@ lexer -> parser -> AST (Program / ModuleProgram)
 
 ## 构建与测试
 
-构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）。发布的 JVM 字节码 target 为 **1.8**，因此
+构建使用 **JDK 21**（Gradle 9.9.0 要求运行 JVM 17–27）。发布的 JVM 字节码 target 为 **1.8**，因此
 JVM 产物最低运行 **Java 8**；Android `minSdk` 为 **24**。本机或 CI 只升级构建 JDK 不会改变产物运行门槛。
 
 ```bash

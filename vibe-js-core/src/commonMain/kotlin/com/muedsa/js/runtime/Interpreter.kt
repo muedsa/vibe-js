@@ -88,6 +88,7 @@ import com.muedsa.js.runtime.exception.GeneratorReturn
 import com.muedsa.js.runtime.exception.StackFrame
 import com.muedsa.js.runtime.exception.StackFrameLink
 import com.muedsa.js.runtime.module.ExperimentalModuleApi
+import com.muedsa.js.runtime.module.ModuleLinkErrorKind
 import com.muedsa.js.runtime.module.ModuleLinkException
 import com.muedsa.js.runtime.module.internal.JSDeferredModuleNamespace
 import com.muedsa.js.runtime.module.internal.JSModuleNamespace
@@ -138,6 +139,7 @@ import com.muedsa.js.runtime.value.PrivateSlot
 import com.muedsa.js.runtime.value.PropertyKey
 import com.muedsa.js.runtime.value.ThisBindingSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -181,6 +183,12 @@ class Interpreter(
         val parent = snapshotStackLink(callRange)
         child.stackHead = parent?.let { StackFrameLink(it.frame.copy(isAsync = true), it.parent) }
         child.currentRange = child.stackHead?.frame?.range
+    }
+
+    /** 生成器体沿用恢复方的栈帧，但不把调用方标记成 async。 */
+    internal fun forkForGenerator(parent: StackFrameLink?): Interpreter = Interpreter(context).also { child ->
+        child.stackHead = parent
+        child.currentRange = parent?.frame?.range
     }
 
     /** 不可变祖先链与当前执行位置；async 只共享冻结后的祖先，不共享可变解释器状态。 */
@@ -263,6 +271,9 @@ class Interpreter(
      * 或执行配额；单线程宿主仍须确保取消信号有机会被调度。
      */
     private var stepsUntilCancellationCheck = 1024
+
+    /** 当前线程正在执行 Array.prototype.join 的对象；用于终止循环数组的递归。 */
+    internal val activeJoinObjects: MutableSet<JSObject> = mutableSetOf()
 
     /** 内建长循环也使用同一检查点，统一消费预算并保持协作式取消语义。 */
     internal suspend fun checkExecution() {
@@ -2475,8 +2486,13 @@ class Interpreter(
      * 保持暂停状态，仍能在后续任务中恢复；引擎关闭时随事件循环一起取消。
      * UNDISPATCHED 让函数体同步执行到第一个 yield，保证 next() 同步返回结果。
      */
+    @Suppress("UNNECESSARY_SAFE_CALL")
     internal fun launchGeneratorBody(generator: JSGenerator) {
-        context.eventLoop.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        var createdJob: Job? = null
+        createdJob = context.eventLoop.scope.launch(
+            context = EventLoop.GeneratorBody(),
+            start = CoroutineStart.UNDISPATCHED,
+        ) {
             try {
                 executeGeneratorBody(generator)
             } catch (error: CancellationException) {
@@ -2501,8 +2517,11 @@ class Interpreter(
                         )
                     )
                 )
+            } finally {
+                createdJob?.let { context.eventLoop.unregisterGeneratorJob(it) }
             }
         }
+        createdJob?.let { context.eventLoop.registerGeneratorJob(it) }
     }
 
     /**
@@ -2529,7 +2548,7 @@ class Interpreter(
      * 这里只恢复执行上下文并执行函数体，不会重新求值默认值。
      */
     internal suspend fun executeGeneratorBody(generator: JSGenerator) {
-        val bodyInterpreter = forkForCallback()
+        val bodyInterpreter = forkForGenerator(generator.resumeStack)
         bodyInterpreter.generatorChannels = generator.channels
         bodyInterpreter.generatorIsAsync = generator.isAsync
         bodyInterpreter.generatorFunction = generator.function
@@ -4902,13 +4921,27 @@ class Interpreter(
                 } catch (error: JSException) {
                     PromiseSupport.reject(job, promise, error.value, error.stack)
                 } catch (error: ModuleLinkException) {
+                    // Link 阶段的导出解析失败在规范中是 SyntaxError；找不到模块等
+                    // 仍然是普通 Error。
+                    val syntaxFailure = when (error.kind) {
+                        ModuleLinkErrorKind.MISSING_EXPORT,
+                        ModuleLinkErrorKind.AMBIGUOUS_EXPORT,
+                        ModuleLinkErrorKind.INVALID_MODULE,
+                        -> true
+
+                        else -> false
+                    }
                     PromiseSupport.reject(
                         job,
                         promise,
                         JSError(
-                            errorName = "Error",
+                            errorName = if (syntaxFailure) "SyntaxError" else "Error",
                             messageText = error.message ?: "Module loading failed",
-                            prototype = job.intrinsics.errorPrototype,
+                            prototype = if (syntaxFailure) {
+                                job.intrinsics.syntaxErrorPrototype
+                            } else {
+                                job.intrinsics.errorPrototype
+                            },
                         ),
                         job.captureStack(),
                     )
@@ -5783,6 +5816,8 @@ class Interpreter(
      */
     private suspend fun awaitPromiseValue(value: JSValue): JSValue {
         val promise = PromiseSupport.promiseResolve(this, value)
+        // Await 等价于 PerformPromiseThen：订阅后该拒绝不再属于未处理。
+        PromiseSupport.markHandled(this, promise)
         val result = try {
             promise.awaitResult()
         } catch (error: JSException) {
@@ -9044,7 +9079,7 @@ class Interpreter(
     }
 
     /** 冻结当前执行位置；祖先帧不可变，async 可以安全共享而无需复制整条栈。 */
-    private fun snapshotStackLink(rangeOverride: SourceRange? = null): StackFrameLink? {
+    internal fun snapshotStackLink(rangeOverride: SourceRange? = null): StackFrameLink? {
         val head = stackHead ?: return null
         val range = rangeOverride?.takeIf { it.start.line > 0 } ?: currentRange
         return if (head.frame.range == range) head else StackFrameLink(head.frame.copy(range = range), head.parent)

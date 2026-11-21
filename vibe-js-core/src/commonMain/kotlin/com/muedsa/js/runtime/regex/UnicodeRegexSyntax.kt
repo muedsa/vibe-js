@@ -31,8 +31,12 @@ internal object JsRegexSyntax {
                 }
 
                 c == '[' -> {
-                    index = plainClassEnd(pattern, index)
-                    if (index < 0) return invalid(pattern)
+                    val end = plainClassEnd(pattern, index)
+                    if (end < 0) return invalid(pattern)
+                    if (plainClassRangeOutOfOrder(pattern, index, end)) {
+                        return "Invalid regular expression: /$pattern/: Range out of order in character class"
+                    }
+                    index = end
                     lastAtom = true
                     lastQuantifier = false
                 }
@@ -134,6 +138,58 @@ internal object JsRegexSyntax {
             }
         }
         return -1
+    }
+
+    /**
+     * 非 unicode 字符类也必须执行范围顺序检查；仅检查未转义的简单端点，
+     * 复杂转义端点交给执行引擎在构造时校验。
+     */
+    private fun plainClassRangeOutOfOrder(pattern: String, start: Int, end: Int): Boolean {
+        var index = start + 1
+        if (index < end && pattern[index] == '^') index++
+        var lastLiteral: Char? = null
+        while (index < end - 1) {
+            val current = pattern[index]
+            if (current == '\\') {
+                // 转义原子（\d、\u{...}、\xNN 等）不是可供比较的简单端点。
+                lastLiteral = null
+                index += plainEscapeLength(pattern, index)
+                continue
+            }
+            if (current == '-' && lastLiteral != null && index + 1 < end - 1) {
+                val right = pattern[index + 1]
+                // 左侧字符已经是前一个范围的终点时，当前 '-' 按字面量处理。
+                val followsRange = index >= start + 2 && pattern[index - 2] == '-'
+                if (!followsRange && right != '\\' && right != '-' && right != ']' &&
+                    !lastLiteral.isSurrogate() && !right.isSurrogate()
+                ) {
+                    if (lastLiteral.code > right.code) return true
+                    lastLiteral = right
+                    index += 2
+                    continue
+                }
+            }
+            lastLiteral = current.takeUnless { it == '-' || it == ']' || it == '[' || it == '^' }
+            index++
+        }
+        return false
+    }
+
+    /** 返回字符类内一个转义序列的字符长度；不完整转义至少消费反斜杠与下一个字符。 */
+    private fun plainEscapeLength(pattern: String, start: Int): Int {
+        if (start + 1 >= pattern.length) return 1
+        return when (pattern[start + 1]) {
+            'u' -> if (start + 2 < pattern.length && pattern[start + 2] == '{') {
+                val close = pattern.indexOf('}', start + 3)
+                if (close < 0) pattern.length - start else close - start + 1
+            } else {
+                6.coerceAtMost(pattern.length - start)
+            }
+
+            'x' -> 4.coerceAtMost(pattern.length - start)
+            'c' -> 3.coerceAtMost(pattern.length - start)
+            else -> 2.coerceAtMost(pattern.length - start)
+        }
     }
 
     /** 校验 {m}/{m,}/{m,n} 的上下界顺序（m <= n）。 */

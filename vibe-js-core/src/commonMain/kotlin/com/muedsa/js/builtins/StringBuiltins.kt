@@ -31,6 +31,9 @@ import com.muedsa.js.runtime.value.PropertyKey
  */
 object StringBuiltins {
 
+    /** 与 V8 一致的保守最大字符串长度；超过时按规范抛 RangeError。 */
+    private const val MAX_STRING_LENGTH = 536_870_888
+
     fun install(registry: BuiltinRegistry) {
         val intrinsics = registry.intrinsics
         val stringPrototype = intrinsics.stringPrototype
@@ -515,6 +518,9 @@ object StringBuiltins {
                     if (count > Int.MAX_VALUE / text.length) {
                         interpreter.rangeError("Invalid string length")
                     }
+                    if (count * text.length > MAX_STRING_LENGTH.toLong()) {
+                        interpreter.rangeError("Invalid string length")
+                    }
                     JSString(text.repeat(count.toInt()))
                 }
             },
@@ -843,10 +849,15 @@ object StringBuiltins {
             value = BuiltinHelpers.method(intrinsics, "padStart", 1) { interpreter, thisValue, args ->
                 requireCoercible(interpreter, thisValue, "String.prototype.padStart")
                 val text = interpreter.toStringValue(thisValue)
-                val targetLength = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
+                val targetLength = args.getOrNull(0)?.let { interpreter.conversions.toLength(it) } ?: 0L
                 val fill = args.getOrNull(1)?.takeUnless { it is JSUndefined }
                     ?.let { interpreter.toStringValue(it) } ?: " "
-                JSString(pad(text, targetLength, fill, start = true))
+                if (targetLength > MAX_STRING_LENGTH.toLong() &&
+                    targetLength > text.length.toLong() && fill.isNotEmpty()
+                ) {
+                    interpreter.rangeError("Invalid string length")
+                }
+                JSString(pad(text, targetLength.toInt(), fill, start = true))
             },
         )
 
@@ -855,10 +866,15 @@ object StringBuiltins {
             value = BuiltinHelpers.method(intrinsics, "padEnd", 1) { interpreter, thisValue, args ->
                 requireCoercible(interpreter, thisValue, "String.prototype.padEnd")
                 val text = interpreter.toStringValue(thisValue)
-                val targetLength = args.getOrNull(0)?.let { interpreter.toNumber(it).toInt() } ?: 0
+                val targetLength = args.getOrNull(0)?.let { interpreter.conversions.toLength(it) } ?: 0L
                 val fill = args.getOrNull(1)?.takeUnless { it is JSUndefined }
                     ?.let { interpreter.toStringValue(it) } ?: " "
-                JSString(pad(text, targetLength, fill, start = false))
+                if (targetLength > MAX_STRING_LENGTH.toLong() &&
+                    targetLength > text.length.toLong() && fill.isNotEmpty()
+                ) {
+                    interpreter.rangeError("Invalid string length")
+                }
+                JSString(pad(text, targetLength.toInt(), fill, start = false))
             },
         )
 

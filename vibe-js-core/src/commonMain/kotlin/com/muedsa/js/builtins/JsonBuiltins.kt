@@ -2,6 +2,7 @@ package com.muedsa.js.builtins
 
 import com.muedsa.js.runtime.BuiltinRegistry
 import com.muedsa.js.runtime.Interpreter
+import com.muedsa.js.runtime.exception.JSException
 import com.muedsa.js.runtime.value.JSArray
 import com.muedsa.js.runtime.value.JSBigInt
 import com.muedsa.js.runtime.value.JSBoolean
@@ -313,6 +314,9 @@ object JsonBuiltins {
 
     /**
      * 序列化 holder[key]；返回 null 表示该值应被忽略。
+     *
+     * 容器序列化使用显式栈而不是 Kotlin 递归，避免 Wasm/Native 在
+     * maxJsonDepth 之前耗尽宿主调用栈。
      */
     private suspend fun serializeProperty(
         interpreter: Interpreter,
@@ -325,6 +329,25 @@ object JsonBuiltins {
         seen: MutableSet<JSObject>,
         depth: Int,
     ): String? {
+        val value = resolvePropertyValue(interpreter, holder, key, replacer)
+        return serializeResolvedValue(
+            interpreter = interpreter,
+            value = value,
+            replacer = replacer,
+            propertyList = propertyList,
+            gap = gap,
+            indent = indent,
+            seen = seen,
+            depth = depth,
+        )
+    }
+
+    private suspend fun resolvePropertyValue(
+        interpreter: Interpreter,
+        holder: JSObject,
+        key: String,
+        replacer: JSValue?,
+    ): JSValue {
         var value = interpreter.getV(holder, PropertyKey.Str(key))
 
         // 规范 SerializeJSONProperty 步骤 2：Object 或 BigInt 都要读取 toJSON；
@@ -344,23 +367,209 @@ object JsonBuiltins {
                 listOf(JSString(key), value),
             )
         }
+        return value
+    }
 
-        // [[IsRawJSON]]：直接输出原始 JSON 文本
-        if (value is JSObject && value.isRawJson) {
-            return (value.getOwnDataValue(PropertyKey.Str("rawJSON")) as? JSString)?.value
+    /** 一个等待子值的容器；parts 保存已完成的子串。 */
+    private class JsonFrame(
+        val value: JSObject,
+        val isArray: Boolean,
+        val depth: Int,
+        val indent: String,
+        val childIndent: String,
+        val keys: List<String>?,
+        val length: Long,
+        val propertyKey: String?,
+    ) {
+        var index: Long = 0
+        var keyIndex: Int = 0
+        val parts: MutableList<String> = mutableListOf()
+    }
+
+    /**
+     * 迭代式 SerializeJSONProperty：叶子直接返回文本，容器压入显式栈。
+     */
+    private suspend fun serializeResolvedValue(
+        interpreter: Interpreter,
+        value: JSValue,
+        replacer: JSValue?,
+        propertyList: List<String>?,
+        gap: String,
+        indent: String,
+        seen: MutableSet<JSObject>,
+        depth: Int,
+    ): String? {
+        var resolved = value
+        while (resolved is JSBoxedPrimitive) {
+            when (val primitive = resolved.primitive) {
+                is JSNumber -> resolved = JSNumber(interpreter.toNumber(resolved))
+                is JSString -> resolved = JSString(interpreter.toStringValue(resolved))
+                is JSBoolean -> resolved = primitive
+                is JSBigInt -> interpreter.typeError("Do not know how to serialize a BigInt")
+                else -> break
+            }
+        }
+        if (resolved is JSObject && resolved.isRawJson) {
+            return (resolved.getOwnDataValue(PropertyKey.Str("rawJSON")) as? JSString)?.value
                 ?: "null"
         }
+        if (!isJsonContainer(interpreter, resolved)) {
+            return serializeJsonLeaf(interpreter, resolved)
+        }
 
-        return serializeValue(
+        val container = resolved as JSObject
+        val root = newFrame(
             interpreter = interpreter,
-            value = value,
-            replacer = replacer,
+            value = container,
+            parent = null,
+            propertyKey = null,
             propertyList = propertyList,
             gap = gap,
             indent = indent,
-            seen = seen,
             depth = depth,
+            seen = seen,
         )
+        val stack = ArrayDeque<JsonFrame>()
+        stack.addLast(root)
+        while (stack.isNotEmpty()) {
+            val frame = stack.last()
+            val key = nextKey(frame)
+            if (key == null) {
+                val text = finishFrame(interpreter, frame, gap)
+                seen.remove(frame.value)
+                stack.removeLast()
+                val parent = stack.lastOrNull()
+                if (parent == null) return text
+                appendChild(interpreter, parent, frame.propertyKey ?: "", text, gap)
+                continue
+            }
+
+            interpreter.checkExecution()
+            val child = resolvePropertyValue(interpreter, frame.value, key, replacer)
+            if (child is JSObject && child.isRawJson) {
+                val raw = (child.getOwnDataValue(PropertyKey.Str("rawJSON")) as? JSString)?.value ?: "null"
+                appendChild(interpreter, frame, key, raw, gap)
+                continue
+            }
+            var unwrapped = child
+            while (unwrapped is JSBoxedPrimitive) {
+                when (val primitive = unwrapped.primitive) {
+                    is JSNumber -> unwrapped = JSNumber(interpreter.toNumber(unwrapped))
+                    is JSString -> unwrapped = JSString(interpreter.toStringValue(unwrapped))
+                    is JSBoolean -> unwrapped = primitive
+                    is JSBigInt -> interpreter.typeError("Do not know how to serialize a BigInt")
+                    else -> break
+                }
+            }
+            if (isJsonContainer(interpreter, unwrapped)) {
+                val childFrame = newFrame(
+                    interpreter = interpreter,
+                    value = unwrapped as JSObject,
+                    parent = frame,
+                    propertyKey = if (frame.isArray) null else key,
+                    propertyList = propertyList,
+                    gap = gap,
+                    indent = frame.childIndent,
+                    depth = frame.depth,
+                    seen = seen,
+                )
+                stack.addLast(childFrame)
+            } else {
+                val leaf = serializeJsonLeaf(interpreter, unwrapped)
+                if (leaf != null) appendChild(interpreter, frame, key, leaf, gap)
+                else if (frame.isArray) appendChild(interpreter, frame, key, "null", gap)
+            }
+        }
+        return null
+    }
+
+    private fun isJsonContainer(interpreter: Interpreter, value: JSValue): Boolean =
+        value is JSObject && !interpreter.isCallable(value)
+
+    private suspend fun serializeJsonLeaf(interpreter: Interpreter, value: JSValue): String? = when (value) {
+        is JSNull -> "null"
+        is JSUndefined -> null
+        is JSBoolean -> value.value.toString()
+        is JSNumber -> if (value.value.isFinite()) NumberFormatting.toString(value.value) else "null"
+        is JSString -> quote(interpreter, value.value)
+        is JSSymbol -> null
+        is JSBigInt -> interpreter.typeError("Do not know how to serialize a BigInt")
+        is JSFunction, is JSNativeFunction -> null
+        else -> null
+    }
+
+    private suspend fun newFrame(
+        interpreter: Interpreter,
+        value: JSObject,
+        parent: JsonFrame?,
+        propertyKey: String?,
+        propertyList: List<String>?,
+        gap: String,
+        indent: String,
+        depth: Int,
+        seen: MutableSet<JSObject>,
+    ): JsonFrame {
+        if (!seen.add(value)) interpreter.typeError("Converting circular structure to JSON")
+        val containerDepth = depth + 1
+        checkJsonStringifyDepth(interpreter, containerDepth)
+        val isArray = interpreter.isArray(value)
+        val keys = if (isArray) {
+            null
+        } else {
+            propertyList ?: interpreter.internalOwnPropertyKeys(value)
+                .filterIsInstance<PropertyKey.Str>()
+                .filter { interpreter.internalGetOwnProperty(value, it)?.enumerable == true }
+                .map { it.value }
+        }
+        val length = if (isArray) interpreter.lengthOfArrayLike(value) else 0L
+        return JsonFrame(
+            value = value,
+            isArray = isArray,
+            depth = containerDepth,
+            indent = indent,
+            childIndent = parent?.childIndent?.plus(gap) ?: indent + gap,
+            keys = keys,
+            length = length,
+            propertyKey = propertyKey,
+        )
+    }
+
+    private fun nextKey(frame: JsonFrame): String? =
+        if (frame.isArray) {
+            if (frame.index >= frame.length) null else (frame.index++).toString()
+        } else {
+            val keys = frame.keys ?: return null
+            if (frame.keyIndex >= keys.size) null else keys[frame.keyIndex++]
+        }
+
+    private suspend fun appendChild(
+        interpreter: Interpreter,
+        frame: JsonFrame,
+        key: String,
+        text: String,
+        gap: String,
+    ) {
+        if (frame.isArray) {
+            frame.parts.add(text)
+        } else {
+            val separator = if (gap.isEmpty()) ":" else ": "
+            frame.parts.add("${quote(interpreter, key)}$separator$text")
+        }
+    }
+
+    private fun finishFrame(interpreter: Interpreter, frame: JsonFrame, gap: String): String {
+        if (frame.isArray) {
+            return if (gap.isEmpty() || frame.parts.isEmpty()) {
+                "[${frame.parts.joinToString(",")}]"
+            } else {
+                "[\n${frame.childIndent}${frame.parts.joinToString(",\n${frame.childIndent}")}\n${frame.indent}]"
+            }
+        }
+        return if (gap.isEmpty() || frame.parts.isEmpty()) {
+            "{${frame.parts.joinToString(",")}}"
+        } else {
+            "{\n${frame.childIndent}${frame.parts.joinToString(",\n${frame.childIndent}")}\n${frame.indent}}"
+        }
     }
 
     /** 序列化入口：包装对象先按内部槽展开（ToNumber/ToString/[[BooleanData]]）。 */

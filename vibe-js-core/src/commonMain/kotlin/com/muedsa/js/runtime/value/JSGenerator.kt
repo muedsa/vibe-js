@@ -6,6 +6,7 @@ import com.muedsa.js.runtime.PromiseCapability
 import com.muedsa.js.runtime.PromiseSupport
 import com.muedsa.js.runtime.exception.ExecutionLimitException
 import com.muedsa.js.runtime.exception.JSException
+import com.muedsa.js.runtime.exception.StackFrameLink
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 
@@ -75,6 +76,9 @@ class JSGenerator internal constructor(
     /** 请求 / 步骤通道组合。 */
     internal val channels = GeneratorChannels()
 
+    /** 恢复方栈帧；在首次 next/return/throw 时冻结，供生成器体错误栈使用。 */
+    internal var resumeStack: StackFrameLink? = null
+
     /** 规范的 [[GeneratorState]]。 */
     private var state = GeneratorState.SUSPENDED_START
 
@@ -96,18 +100,21 @@ class JSGenerator internal constructor(
     /** `next(value)`：推进到下一个 yield 或完成。 */
     suspend fun next(value: JSValue = JSUndefined): JSObject {
         checkNotRunning()
+        resumeStack = interpreter.snapshotStackLink()
         return stepResult(advance(GeneratorRequest.Next(value)))
     }
 
     /** `return(value)`：让生成器以给定返回值结束（finally 仍会执行）。 */
     suspend fun returnValue(value: JSValue = JSUndefined): JSObject {
         checkNotRunning()
+        resumeStack = interpreter.snapshotStackLink()
         return stepResult(advance(GeneratorRequest.Return(value)))
     }
 
     /** `throw(value)`：在挂起点抛出异常；未捕获时以异常结束生成器。 */
     suspend fun throwValue(value: JSValue): JSObject {
         checkNotRunning()
+        resumeStack = interpreter.snapshotStackLink()
         return stepResult(advance(GeneratorRequest.Throw(value)))
     }
 
@@ -206,16 +213,22 @@ class JSGenerator internal constructor(
     // ================================================================
 
     /** `next(value)`：请求入队，返回一个在微任务中落定的 Promise。 */
-    suspend fun nextAsync(value: JSValue = JSUndefined): JSValue =
-        enqueueAsync(GeneratorRequest.Next(value))
+    suspend fun nextAsync(value: JSValue = JSUndefined): JSValue {
+        resumeStack = interpreter.snapshotStackLink()
+        return enqueueAsync(GeneratorRequest.Next(value))
+    }
 
     /** `return(value)`：请求入队；函数体内的 finally 与 using/IteratorClose 清理照常执行。 */
-    suspend fun returnAsync(value: JSValue = JSUndefined): JSValue =
-        enqueueAsync(GeneratorRequest.Return(value))
+    suspend fun returnAsync(value: JSValue = JSUndefined): JSValue {
+        resumeStack = interpreter.snapshotStackLink()
+        return enqueueAsync(GeneratorRequest.Return(value))
+    }
 
     /** `throw(value)`：把异常投递到挂起点，可被函数体内的 catch 捕获。 */
-    suspend fun throwAsync(value: JSValue): JSValue =
-        enqueueAsync(GeneratorRequest.Throw(value))
+    suspend fun throwAsync(value: JSValue): JSValue {
+        resumeStack = interpreter.snapshotStackLink()
+        return enqueueAsync(GeneratorRequest.Throw(value))
+    }
 
     /**
      * 把恢复请求加入队列并确保驱动协程在运行。

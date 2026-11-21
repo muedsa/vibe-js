@@ -138,7 +138,7 @@
 
 > 数字来自各平台测试报告。JVM 的 1254 包含 L4/R1/M2/模块 Provider、图加载、链接、环境、namespace、TLA 异步求值、动态 import、导入属性、Iterator 组合器、模块图压力与错误定位新增的 commonTest 用例；JS/Wasm 已在当前基线复跑，均为 1238。"仅由 CI 覆盖"表示本次未在本地复跑。
 >
-> 构建使用 **JDK 21**（Gradle 9.8.2 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
+> 构建使用 **JDK 21**（Gradle 9.9.0 要求运行 JVM 17–27）；发布 JVM 字节码 target 为 **1.8**，
 > 因此 JVM 产物最低运行 **Java 8**，Android `minSdk` 为 **24**。升级构建 JDK 不改变产物运行门槛。
 
 当前一致性基线（2026-11-19）：parser 脚本 **1,907/1,907**、模块 **76/76 + 76/76 + 47/47 + 63/63**（early 拒绝；early 接受 5/605，均为允许项）；Test262 ES5 **15,248/15,248**；ES2015 **63,716/63,716**，失败 0、跳过 **326**（module flag 322 + 宿主钩子 4）；ES2016+ **30,443/30,443**，跳过 26；module TLA **249/249**；module-code **596/596**；language module **817/817**；source-phase **253/253**（475 次执行）；Node 差分 **1432/1432**；真实库 **375/375**（102 个库）。详细口径见 [CONFORMANCE.md](CONFORMANCE.md)。

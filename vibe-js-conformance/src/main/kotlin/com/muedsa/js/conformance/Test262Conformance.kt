@@ -106,8 +106,8 @@ fun main(args: Array<String>) {
     if (report.crashedRuns > 0) {
         exitProcess(2)
     }
-    if (strict && report.executedRuns == 0) {
-        System.err.println("Test262 未执行任何用例，严格模式判定失败")
+    if (strict && (report.selectedTests == 0 || report.executedRuns == 0)) {
+        System.err.println("Test262 未选中或未执行任何用例，严格模式判定失败")
         exitProcess(1)
     }
     if (strict && report.failedRuns > 0) {

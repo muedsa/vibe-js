@@ -423,28 +423,12 @@ class Parser(
         strict = initialStrict || detectUseStrictDirectiveAt(0)
         val start = peek().range.start
         val body = mutableListOf<Statement>()
-        var inDirectivePrologue = true
 
         pushDeclScope(DeclScopeKind.PROGRAM)
         try {
             while (!isAtEnd()) {
                 val statement = parseStatement()
                 body.add(statement)
-
-                // 指令序言：开头连续的字符串字面量表达式语句
-                if (inDirectivePrologue) {
-                    if (statement is ExpressionStatement && statement.expression is StringLiteral) {
-                        // 只有源码字面形式完全一致（无转义）才是指令
-                        if (!statement.expression.containsEscape &&
-                            statement.expression.value == "use strict"
-                        ) {
-                            strict = true
-                        }
-                    } else {
-                        // 空语句不是 ExpressionStatement，也会结束指令序言
-                        inDirectivePrologue = false
-                    }
-                }
             }
         } finally {
             popDeclScope()
@@ -925,21 +909,22 @@ class Parser(
     }
 
     /** 解析单语句体，并记录上下文以拒绝词法声明等早期错误。 */
-    private fun parseSingleStatement(allowFunctionDeclaration: Boolean = false): Statement {
-        val previousContext = singleStatementContext
-        val previousAllowFunction = allowFunctionInSingleStatement
-        singleStatementContext = true
-        allowFunctionInSingleStatement = allowFunctionDeclaration
-        val previousUsingAllowed = usingDeclarationAllowed
-        usingDeclarationAllowed = false
-        return try {
-            parseStatement()
-        } finally {
-            usingDeclarationAllowed = previousUsingAllowed
-            singleStatementContext = previousContext
-            allowFunctionInSingleStatement = previousAllowFunction
+    private fun parseSingleStatement(allowFunctionDeclaration: Boolean = false): Statement =
+        withSyntaxNesting {
+            val previousContext = singleStatementContext
+            val previousAllowFunction = allowFunctionInSingleStatement
+            singleStatementContext = true
+            allowFunctionInSingleStatement = allowFunctionDeclaration
+            val previousUsingAllowed = usingDeclarationAllowed
+            usingDeclarationAllowed = false
+            try {
+                parseStatement()
+            } finally {
+                usingDeclarationAllowed = previousUsingAllowed
+                singleStatementContext = previousContext
+                allowFunctionInSingleStatement = previousAllowFunction
+            }
         }
-    }
 
     /** 在循环上下文中解析语句体。 */
     private inline fun <T> withLoopContext(block: () -> T): T {
@@ -2794,7 +2779,7 @@ class Parser(
             }
             validateStrictAssignmentTarget(left)
             advance()
-            val value = parseAssignment()
+            val value = withSyntaxNesting { parseAssignment() }
             // 目标中的简写默认值属于合法模式，不向后续表达式传播
             patternDefaultsSeen = defaultsBefore
             return trackAstNode(AssignmentExpr(
@@ -3035,9 +3020,9 @@ class Parser(
         val condition = parseCoalesce()
         if (!match(TokenType.QUESTION)) return condition
 
-        val thenBranch = parseAssignment()
+        val thenBranch = withSyntaxNesting { parseAssignment() }
         consume(TokenType.COLON, "Expected ':' in conditional expression")
-        val elseBranch = parseAssignment()
+        val elseBranch = withSyntaxNesting { parseAssignment() }
         return trackAstNode(ConditionalExpr(
             condition,
             thenBranch,

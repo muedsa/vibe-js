@@ -69,11 +69,34 @@ class EventLoop(
         companion object Key : CoroutineContext.Key<Entry>
     }
 
+    /**
+     * 标记生成器体协程。
+     *
+     * 生成器停在 yield 时协程仍会挂起，但它不是可由宿主推进的事件循环任务；
+     * pendingTasks/runUntilIdle 不能因此永久等待。
+     */
+    internal class GeneratorBody : AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<GeneratorBody>
+    }
+
+    /** 停在 yield 的生成器体 Job；它们不是可推进的事件循环任务。 */
+    private val generatorJobs = mutableSetOf<Job>()
+
+    internal fun registerGeneratorJob(job: Job) {
+        if (!job.isCompleted) generatorJobs.add(job)
+    }
+
+    internal fun unregisterGeneratorJob(job: Job) {
+        generatorJobs.remove(job)
+    }
+
     /** 任务快照用于观察与等待；并发读到的是瞬时状态，不是全局对象的访问锁。 */
     val pendingTasks: PendingTasks get() = PendingTasks(
         microtasks = microtasks.size,
         timers = timers.value.size,
-        asyncTasks = lifetime.children.count { !it.isCompleted },
+        asyncTasks = lifetime.children.count {
+            !it.isCompleted && it !in generatorJobs
+        },
         executions = operations.value.size,
         rejectionNotifications = unhandledRejections.size,
     )

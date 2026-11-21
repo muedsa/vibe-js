@@ -1386,6 +1386,12 @@ class Lexer(
         }
         if (index < 0) return true
         val previous = input[index]
+        if (previous == '+' || previous == '-') {
+            // 后置自增/自减后是除号；二元加/减后仍可能是正则。
+            var runStart = index
+            while (runStart > 0 && input[runStart - 1] == previous) runStart--
+            if (index - runStart + 1 == 2) return false
+        }
         if (previous.isLetterOrDigit() || previous == '_' || previous == '$') {
             // 关键字之后允许正则，普通标识符/数字之后是除号
             var wordStart = index
@@ -1394,6 +1400,12 @@ class Lexer(
             ) {
                 wordStart--
             }
+            // `obj.return / 2`：关键字只是属性名，不能按关键字后的正则处理
+            var beforeWord = wordStart - 1
+            while (beforeWord >= 0 && input[beforeWord].let { it == ' ' || it == '\t' || it == '\n' || it == '\r' }) {
+                beforeWord--
+            }
+            if (beforeWord >= 0 && input[beforeWord] == '.') return false
             val word = input.substring(wordStart, index + 1)
             return word in setOf(
                 "return", "typeof", "instanceof", "in", "of", "new", "delete", "void",
@@ -1496,6 +1508,7 @@ class Lexer(
         if (previousTokenType == TokenType.DOT || previousTokenType == TokenType.QUESTION_DOT) {
             return false
         }
+        if (looksLikeNumericDivision()) return false
         return looksLikeRegexLiteral()
     }
 
@@ -1512,7 +1525,33 @@ class Lexer(
         if (previousTokenType == TokenType.DOT || previousTokenType == TokenType.QUESTION_DOT) {
             return false
         }
+        if (looksLikeNumericDivision()) return false
         return looksLikeRegexLiteral()
+    }
+
+    /** 识别 `await / 2 / 2`、`yield / 2 / 2` 这类明确的除法链。 */
+    private fun looksLikeNumericDivision(): Boolean {
+        // 模块中的 await 必定是关键字，`await /1/` 是正则而不是除法。
+        if (moduleContext) return false
+        var index = pos + 1
+        var inClass = false
+        while (index < input.length) {
+            when (val c = input[index]) {
+                '\n', '\r', '\u2028', '\u2029' -> return false
+                '\\' -> index++
+                '[' -> inClass = true
+                ']' -> inClass = false
+                '/' -> if (!inClass) {
+                    val raw = input.substring(pos + 1, index)
+                    // 有空白包围的数字才优先按除法处理；`/1/` 仍按正则字面量。
+                    return raw.any { it.isWhitespace() } && raw.trim().toDoubleOrNull() != null
+                }
+
+                else -> Unit
+            }
+            index++
+        }
+        return false
     }
 
     /**
@@ -1591,14 +1630,17 @@ class Lexer(
                 advance()
                 val codePoint = if (peek() == '{') {
                     advance()
-                    var value = 0
+                    var value = 0L
                     var digits = 0
                     while (peek() != '}' && pos < input.length) {
                         val digit = hexDigitValue(peek())
-                        if (digit < 0 || digits >= 6) {
+                        if (digit < 0) {
                             throw lexerError("Invalid unicode escape in identifier", startLine, startColumn, startOffset)
                         }
-                        value = value * 16 + digit
+                        value = value * 16L + digit
+                        if (value > 0x10FFFFL) {
+                            throw lexerError("Invalid unicode escape in identifier", startLine, startColumn, startOffset)
+                        }
                         digits++
                         advance()
                     }
@@ -1606,7 +1648,7 @@ class Lexer(
                         throw lexerError("Invalid unicode escape in identifier", startLine, startColumn, startOffset)
                     }
                     advance() // '}'
-                    value
+                    value.toInt()
                 } else {
                     var value = 0
                     repeat(4) {
